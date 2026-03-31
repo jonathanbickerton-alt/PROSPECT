@@ -1169,12 +1169,12 @@ export default function App() {
   useEffect(() => {
     if (activeView === 'whatif') {
       const key = makeForecastKey(step2Filter.segment, step2Filter.product, step2Filter.channel);
-      const bf = forecastStore.get(key) ?? null;
-      setBaseForecast(bf);
+      const bf = forecastStore.get(key);
+      if (bf !== undefined) setBaseForecast(bf);
     } else if (activeView === 'vsactuals') {
       const key = makeForecastKey(step3Filter.segment, step3Filter.product, step3Filter.channel);
-      const bf = forecastStore.get(key) ?? null;
-      setBaseForecast(bf);
+      const bf = forecastStore.get(key);
+      if (bf !== undefined) setBaseForecast(bf);
     }
   }, [activeView]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2714,6 +2714,101 @@ export default function App() {
 
     setSavedForecasts(prev => ({ ...prev, ...newForecasts }));
 
+    // Also create typed BaseForecast objects (IBRO-combined) for each unique
+    // seg|prod|chan so that ForecastVsActualsTab can compute MAPE against them.
+    // One BaseForecast covers all four metrics; bulk savedForecasts are per-metric.
+    if (wiInflowVal && wiOutflowVal && wiRetentionVal && wiDateCol && wiMetricCol && wiValueCol) {
+      const uniqueCohorts = new Map<string, { seg: string; prod: string; chan: string }>();
+      for (const target of targets) {
+        if (target.forecastType === 'Standard Forecast') {
+          const k = `${target.segment}|${target.product}|${target.channel || 'All'}`;
+          if (!uniqueCohorts.has(k)) {
+            uniqueCohorts.set(k, { seg: target.segment, prod: target.product, chan: target.channel || 'All' });
+          }
+        }
+      }
+
+      const runPreUnc  = options?.preHorizonUncertainty  ?? genPreHorizonUncertainty;
+      const runPostExp = options?.postHorizonExpansionRate ?? genPostHorizonExpansionRate;
+      const runConfHor = options?.confidenceHorizon ?? confidenceHorizon;
+      const runModel   = options?.model ?? selectedForecastModel;
+
+      const newTypedForecasts = new Map<string, BaseForecast>();
+      for (const [fKey, { seg, prod, chan }] of uniqueCohorts.entries()) {
+        let allIBRO = data
+          .map(row => ({ ...row, _parsedDate: new Date(row[wiDateCol]) }))
+          .filter(row => isValid(row._parsedDate));
+        if (wiSegmentCol && seg !== 'All') allIBRO = allIBRO.filter(r => String(r[wiSegmentCol]) === seg);
+        if (wiProductCol && prod !== 'All') allIBRO = allIBRO.filter(r => String(r[wiProductCol]) === prod);
+        if (wiChannelCol && chan !== 'All') allIBRO = allIBRO.filter(r => String(r[wiChannelCol]) === chan);
+
+        const ibroMap = new Map<number, AggregatedIBRORow>();
+        allIBRO.forEach(row => {
+          const t = row._parsedDate.getTime();
+          if (!ibroMap.has(t)) ibroMap.set(t, { _parsedDate: row._parsedDate, inflow: 0, outflow: 0, retention: 0, arpu: 0 });
+          const entry = ibroMap.get(t)!;
+          const metric = String(row[wiMetricCol]);
+          const val = Number(row[wiValueCol]) || 0;
+          if (metric === wiInflowVal) entry.inflow += val;
+          else if (metric === wiOutflowVal) entry.outflow += val;
+          else if (metric === wiRetentionVal) entry.retention += val;
+        });
+
+        if (wiRevenueCol || wiArpuCol) {
+          const subsMap = new Map<number, number>();
+          const revMap = new Map<number, number>();
+          allIBRO.forEach(row => {
+            const t = row._parsedDate.getTime();
+            const metric = String(row[wiMetricCol]);
+            const val = Number(row[wiValueCol]) || 0;
+            if (metric === wiBaseVal || metric === wiInflowVal) subsMap.set(t, (subsMap.get(t) || 0) + val);
+            const rev = Number(row[wiRevenueCol]) || 0;
+            const arpu = Number(row[wiArpuCol]) || 0;
+            revMap.set(t, (revMap.get(t) || 0) + (rev || arpu * val));
+          });
+          ibroMap.forEach((entry, t) => {
+            const subs = subsMap.get(t) || 0;
+            const rev = revMap.get(t) || 0;
+            if (subs > 0) entry.arpu = rev / subs;
+          });
+        }
+
+        const ibroArr = Array.from(ibroMap.values())
+          .filter(e => e.inflow > 0 || e.outflow > 0 || e.retention > 0)
+          .sort((a, b) => a._parsedDate.getTime() - b._parsedDate.getTime());
+
+        const baseReadings = new Map<number, number>();
+        allIBRO.filter(r => String(r[wiMetricCol]) === wiBaseVal).forEach(r => {
+          const t = r._parsedDate.getTime();
+          baseReadings.set(t, (baseReadings.get(t) || 0) + (Number(r[wiValueCol]) || 0));
+        });
+        const seedBase = baseReadings.size > 0 ? (baseReadings.get(Math.max(...baseReadings.keys())) || 0) : 0;
+
+        const bf = calculateBaseForecast(
+          ibroArr,
+          { segment: seg, product: prod, channel: chan, scenario: 'Base Case' },
+          seedBase,
+          genLength,
+          runPreUnc,
+          runPostExp,
+          runConfHor,
+          runModel,
+        );
+        if (bf) {
+          console.log(`[generateAllMissingForecasts] BaseForecast built for store key: ${fKey}`);
+          newTypedForecasts.set(fKey, bf);
+        }
+      }
+
+      if (newTypedForecasts.size > 0) {
+        setForecastStore(prev => {
+          const next = new Map(prev);
+          for (const [k, v] of newTypedForecasts.entries()) next.set(k, v);
+          return next;
+        });
+      }
+    }
+
     // Record the run in ForecastContext history.
     const now = new Date().toISOString();
     const record: BulkRunRecord = {
@@ -2736,7 +2831,7 @@ export default function App() {
     setBulkRuns(prev => [...prev, record]);
 
     return { generated, failed };
-  }, [allCohorts, computeCohortForecastData, selectedForecastModel, genPreHorizonUncertainty, genPostHorizonExpansionRate, confidenceHorizon, genLength]);
+  }, [allCohorts, computeCohortForecastData, selectedForecastModel, genPreHorizonUncertainty, genPostHorizonExpansionRate, confidenceHorizon, genLength, data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiChannelCol]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // After a single-combo forecast is saved, check whether there are remaining combinations
   // without a forecast and show the bulk-generate prompt if so.
@@ -2761,6 +2856,8 @@ export default function App() {
       setBaseForecast={setBaseForecast}
       adjustedForecast={adjustedForecast}
       setAdjustedForecast={setAdjustedForecast}
+      forecastStore={forecastStore}
+      setForecastStore={setForecastStore}
       hasLegacyBaseline={hasLegacyBaseline}
       updatedAt={forecastUpdatedAt}
       bulkRuns={bulkRuns}
