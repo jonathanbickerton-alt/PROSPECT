@@ -1,0 +1,36 @@
+# ── Node dependencies ─────────────────────────────────────────────────────────
+# Always reinstalled inside the build stage from the lock file.
+node_modules/
+
+# ── Previous builds ───────────────────────────────────────────────────────────
+dist/
+
+# ── Version control ───────────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── Claude Code internals ─────────────────────────────────────────────────────
+.claude/
+
+# ── Local data and exports ────────────────────────────────────────────────────
+PROSPECT_data/
+Zipped Versions/
+
+# ── Python / Streamlit artefacts ─────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+app.py
+run_app.py
+requirements.txt
+
+# ── Editor and OS noise ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+
+# ── Environment files ─────────────────────────────────────────────────────────
+# Never bake secrets into the image — inject them at runtime via Cloud Run.
+.env
+.env.*

@@ -1,0 +1,8 @@
+{
+  "name": "Remix: PROSPECT v4.3 - Scenario compare",
+  "description": "Predictive Reporting Of Scenarios \u0026 Planned Execution for Commercial Trends.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

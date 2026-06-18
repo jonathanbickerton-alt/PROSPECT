@@ -70,7 +70,7 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
               <select 
                 value={overallSegmentFilter} 
                 onChange={(e) => setOverallSegmentFilter(e.target.value)}
-                className="text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none"
+                className="appearance-none text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none"
               >
                 <option value="All">All Segments</option>
                 {Array.from(new Set(allCohorts.map(c => c.segment))).map(s => <option key={s} value={s}>{s}</option>)}
@@ -81,7 +81,7 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
               <select 
                 value={overallProductFilter} 
                 onChange={(e) => setOverallProductFilter(e.target.value)}
-                className="text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none"
+                className="appearance-none text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none"
               >
                 <option value="All">All Products</option>
                 {Array.from(new Set(allCohorts.map(c => c.product))).map(p => <option key={p} value={p}>{p}</option>)}
@@ -92,7 +92,7 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
               <select 
                 value={overallChannelFilter} 
                 onChange={(e) => setOverallChannelFilter(e.target.value)}
-                className="text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none"
+                className="appearance-none text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none"
               >
                 <option value="All">All Channels</option>
                 {Array.from(new Set(allCohorts.map(c => c.channel))).map(ch => <option key={ch as string} value={ch as string}>{ch as string}</option>)}
@@ -103,7 +103,7 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
               <select 
                 value={overallTypeFilter} 
                 onChange={(e) => setOverallTypeFilter(e.target.value)}
-                className="text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none"
+                className="appearance-none text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none"
               >
                 <option value="All">All Types</option>
                 {Array.from(new Set(allCohorts.map(c => c.forecastType))).map(t => <option key={t as string} value={t as string}>{t as string}</option>)}
@@ -114,7 +114,7 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
               <select 
                 value={overallStatusFilter} 
                 onChange={(e) => setOverallStatusFilter(e.target.value)}
-                className="text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none"
+                className="appearance-none text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none"
               >
                 <option value="All">All Statuses</option>
                 <option value="forecasted">Forecasted</option>
@@ -195,7 +195,7 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-600">
+            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
               <tr>
                 <th className="px-6 py-4 font-semibold">Customer Segment</th>
                 <th className="px-6 py-4 font-semibold">Product</th>

@@ -6,12 +6,17 @@ export interface MarketEvent {
   scenario: 'Inflow' | 'Retention' | 'Outflow' | 'ARPU';
   segment: string;
   product: string;
+  /** L2 product sub-category — 'All' or absent means apply to all L2 within the L1 product */
+  productL2?: string;
   channel: string;
+  /** L2 channel sub-category — 'All' or absent means apply to all L2 within the L1 channel */
+  channelL2?: string;
   date: string; // yyyy-MM
   subscriberVolume: number;
   customerVolume: number;
   revenue: number;
   arpu: number;
+  name?: string;
   comment: string;
   /** Months of churn protection for inflow-event subscribers before they enter the at-risk pool. Default 24. */
   contractLength: number;
@@ -98,11 +103,16 @@ function fitDampedTrendParams(y: number[], alpha: number, beta: number, phi: num
  * Runs the HW recursion and returns { mse, sigma } in one pass.
  * One-step-ahead fitted value at step i is L_{i-1} + T_{i-1}.
  * Returns Infinity values when any observation is non-finite.
+ * Every parameter combination is evaluated over the full series — no early stopping.
  */
-function hwResiduals(y: number[], alpha: number, beta: number): { mse: number; sigma: number } {
+function hwResiduals(
+  y: number[],
+  alpha: number,
+  beta: number,
+): { mse: number; sigma: number } {
   let { L, T } = initLT(y);
   let sse = 0;
-  const n = y.length - 1; // number of one-step residuals
+  const n = y.length - 1;
   for (let i = 1; i < y.length; i++) {
     const fitted = L + T;
     const err = y[i] - fitted;
@@ -119,8 +129,14 @@ function hwResiduals(y: number[], alpha: number, beta: number): { mse: number; s
 /**
  * Runs the Damped Trend recursion and returns { mse, sigma }.
  * One-step-ahead fitted value at step i is L_{i-1} + φ·T_{i-1}.
+ * Every parameter combination is evaluated over the full series — no early stopping.
  */
-function dtResiduals(y: number[], alpha: number, beta: number, phi: number): { mse: number; sigma: number } {
+function dtResiduals(
+  y: number[],
+  alpha: number,
+  beta: number,
+  phi: number,
+): { mse: number; sigma: number } {
   let { L, T } = initLT(y);
   let sse = 0;
   const n = y.length - 1;
@@ -200,7 +216,8 @@ function initHWTriple(y: number[], calStartMonth: number): { L: number; T: numbe
  * proportional confidence bands).
  *
  * Recursion starts at i = 12 (first post-initialisation observation).
- * One-step-ahead fitted value at step i: (L + T) × S[slotPrev]
+ * One-step-ahead fitted value at step i: (L + T) × S[slotPrev].
+ * Every parameter combination is evaluated over the full post-init series — no early stopping.
  */
 function hwTripleResiduals(
   y: number[],
@@ -325,14 +342,20 @@ function buildBands(
   sigmaScale = 1,
 ): ForecastBand[] {
   const s = sigma * sigmaScale;
+  // Pre-horizon: FLAT (no sqrt(t) growth). Width = preHorizonZ × σ, controlled by the
+  // user z-score slider so the near-term band is tight and consistent.
+  const preHalfWidth = preHorizonZ * s;
+  // Post-horizon grows from the pre-horizon endpoint — anchored formula guarantees
+  // exact continuity at t = confidenceHorizon + 1 with no visible jump.
+  // Growth after the horizon: +1.96 × postRate × σ × (√t − √(horizon+1)).
+  const sqrtBoundary = Math.sqrt(confidenceHorizon + 1);
   const bands: ForecastBand[] = [];
   for (let t = 1; t <= months; t++) {
     const mean = getMean(t);
-    const sqrtT = Math.sqrt(t);
     const halfWidth =
       t <= confidenceHorizon
-        ? preHorizonZ * s * sqrtT
-        : 1.96 * postHorizonExpansionRate * s * sqrtT;
+        ? preHalfWidth
+        : preHalfWidth + 1.96 * postHorizonExpansionRate * s * (Math.sqrt(t) - sqrtBoundary);
     bands.push({
       mean: Number(mean.toFixed(2)),
       optimistic:  Number((mean + halfWidth).toFixed(2)),
@@ -366,12 +389,19 @@ function buildProportionalBands(
   sigmaScale = 1,
 ): ForecastBand[] {
   const scaledSigma = sigmaRelative * sigmaScale;
+  // Pre-horizon: FLAT relative band — no sqrt(t) growth.
+  // Width = preHorizonZ × σ_rel × |mean|, constant in relative terms so the
+  // near-term band is tight and consistent.
+  const preRelHalfWidth = preHorizonZ * scaledSigma;
+  // Anchor point so post-horizon starts exactly where pre-horizon ends.
+  const sqrtBoundary = Math.sqrt(confidenceHorizon + 1);
   const bands: ForecastBand[] = [];
   for (let t = 1; t <= months; t++) {
     const mean = getMean(t);
-    const sqrtT = Math.sqrt(t);
-    const z = t <= confidenceHorizon ? preHorizonZ : 1.96 * postHorizonExpansionRate;
-    const halfWidth = z * scaledSigma * Math.abs(mean) * sqrtT;
+    const relHalfWidth = t <= confidenceHorizon
+      ? preRelHalfWidth
+      : preRelHalfWidth + 1.96 * postHorizonExpansionRate * scaledSigma * (Math.sqrt(t) - sqrtBoundary);
+    const halfWidth = relHalfWidth * Math.abs(mean);
     bands.push({
       mean:        Number(mean.toFixed(2)),
       optimistic:  Number((mean + halfWidth).toFixed(2)),
@@ -528,6 +558,11 @@ export interface AggregatedIBRORow {
   retention: number;
   /** Blended ARPU for the month (revenue / total subs). 0 if revenue data unavailable. */
   arpu: number;
+  /** Per-scenario ARPU: revenue for that scenario / subscriber volume for that scenario */
+  inflowArpu: number;
+  outflowArpu: number;
+  retentionArpu: number;
+  baseArpu: number;
 }
 
 /**
@@ -592,18 +627,80 @@ export function calculateBaseForecast(
 
   if (!inflowResult || !outflowResult || !retentionResult) return null;
 
-  // ARPU: use the selected model at half uncertainty — ARPU tends to be more stable.
-  // Falls back to flat mean of last 3 months if fitting fails.
+  // Helper: fit ARPU series with reduced uncertainty — ARPU is a very stable rate
+  // metric and should not have wide confidence bands.
+  // Both pre- and post-horizon are scaled to 10% of the volume rates so that the
+  // band widths are consistent across the horizon (pre-horizon never exceeds post).
+  // Pessimistic band is clamped to ≥ 0 since negative ARPU is not physically possible.
+  const arpuPostHorizonRate = postHorizonExpansionRate * 0.1;
+  const arpuPreHorizonZ     = preHorizonUncertainty    * 0.1;
+  const fitArpuSeries = (values: number[]): ForecastBand[] => {
+    const result: FitResult | null =
+      fitAndBuildBands(values, model, forecastMonths, arpuPreHorizonZ, arpuPostHorizonRate, confidenceHorizon, 0.5, calStartMonth);
+    let bands: ForecastBand[] = result?.bands ?? (() => {
+      const slice = values.slice(-3);
+      const flat = Number((slice.reduce((a, b) => a + b, 0) / Math.max(1, slice.length)).toFixed(2));
+      return Array.from({ length: forecastMonths }, () => ({ mean: flat, optimistic: flat, pessimistic: flat }));
+    })();
+    // Boundary correction: anchor the first forecast mean exactly to the last historical actual.
+    const lastActual = values[values.length - 1];
+    if (lastActual > 0 && bands.length > 0) {
+      const offset = lastActual - bands[0].mean;
+      console.log('[ARPU boundary] cohort=', `${cohort.segment}|${cohort.product}|${cohort.channel}`, 'lastActual=', lastActual, 'rawFittedFirst=', bands[0].mean, 'offset=', offset, 'correctionApplied=', offset !== 0);
+      if (offset !== 0) {
+        bands = bands.map(b => ({
+          mean:        b.mean        + offset,
+          optimistic:  b.optimistic  + offset,
+          pessimistic: b.pessimistic + offset,
+        }));
+      }
+    }
+    // Clamp pessimistic band — ARPU cannot be negative.
+    bands = bands.map(b => ({ ...b, pessimistic: Math.max(0, b.pessimistic) }));
+    return bands;
+  };
+
+  // Blended ARPU: reduced pre- and post-horizon uncertainty for stability.
   const arpuValues = sorted.map(r => r.arpu);
   const arpuResult: FitResult | null =
-    fitAndBuildBands(arpuValues, model, forecastMonths, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon, 0.5, calStartMonth);
+    fitAndBuildBands(arpuValues, model, forecastMonths, arpuPreHorizonZ, arpuPostHorizonRate, confidenceHorizon, 0.5, calStartMonth);
 
   const fallbackArpuParams: FittedParams = { alpha: 0.3, beta: 0.1, mse: 0, sigma: 0 };
-  const arpuBands: ForecastBand[] = arpuResult?.bands ?? (() => {
+  let arpuBands: ForecastBand[] = arpuResult?.bands ?? (() => {
     const slice = arpuValues.slice(-3);
     const flat = Number((slice.reduce((a, b) => a + b, 0) / Math.max(1, slice.length)).toFixed(2));
     return Array.from({ length: forecastMonths }, () => ({ mean: flat, optimistic: flat, pessimistic: flat }));
   })();
+
+  // Boundary correction for blended ARPU
+  {
+    const lastActualArpu = arpuValues[arpuValues.length - 1];
+    if (lastActualArpu > 0 && arpuBands.length > 0) {
+      const offset = lastActualArpu - arpuBands[0].mean;
+      console.log('[ARPU boundary] cohort=', `${cohort.segment}|${cohort.product}|${cohort.channel}`, 'series=blended', 'lastActual=', lastActualArpu, 'rawFittedFirst=', arpuBands[0].mean, 'offset=', offset, 'correctionApplied=', offset !== 0);
+      if (offset !== 0) {
+        arpuBands = arpuBands.map(b => ({
+          mean:        b.mean        + offset,
+          optimistic:  b.optimistic  + offset,
+          pessimistic: b.pessimistic + offset,
+        }));
+      }
+    }
+  }
+  // Clamp blended ARPU pessimistic band — ARPU cannot be negative.
+  arpuBands = arpuBands.map(b => ({ ...b, pessimistic: Math.max(0, b.pessimistic) }));
+
+  // Per-scenario ARPU: fit independent HW models for each IBRO scenario
+  const inflowArpuBands    = fitArpuSeries(sorted.map(r => r.inflowArpu));
+  const outflowArpuBands   = fitArpuSeries(sorted.map(r => r.outflowArpu));
+  const retentionArpuBands = fitArpuSeries(sorted.map(r => r.retentionArpu));
+  const baseArpuBands      = fitArpuSeries(sorted.map(r => r.baseArpu));
+
+  // Fit results for per-scenario ARPU params (used for fittedParams storage)
+  const inflowArpuResult    = fitAndBuildBands(sorted.map(r => r.inflowArpu),    model, forecastMonths, arpuPreHorizonZ, arpuPostHorizonRate, confidenceHorizon, 0.5, calStartMonth);
+  const outflowArpuResult   = fitAndBuildBands(sorted.map(r => r.outflowArpu),   model, forecastMonths, arpuPreHorizonZ, arpuPostHorizonRate, confidenceHorizon, 0.5, calStartMonth);
+  const retentionArpuResult = fitAndBuildBands(sorted.map(r => r.retentionArpu), model, forecastMonths, arpuPreHorizonZ, arpuPostHorizonRate, confidenceHorizon, 0.5, calStartMonth);
+  const baseArpuResult      = fitAndBuildBands(sorted.map(r => r.baseArpu),      model, forecastMonths, arpuPreHorizonZ, arpuPostHorizonRate, confidenceHorizon, 0.5, calStartMonth);
 
   const lastDate = sorted[sorted.length - 1]._parsedDate;
   const historicalMonths = sorted.map(r => format(r._parsedDate, 'yyyy-MM'));
@@ -617,6 +714,10 @@ export function calculateBaseForecast(
     // than modifying Base directly — consistent with the what-if engine.
     retention: retentionResult.bands[i],
     arpu: arpuBands[i],
+    inflowArpu:    inflowArpuBands[i],
+    outflowArpu:   outflowArpuBands[i],
+    retentionArpu: retentionArpuBands[i],
+    baseArpu:      baseArpuBands[i],
   }));
 
   // Any series that fell back to HW due to insufficient data for seasonal model
@@ -639,6 +740,10 @@ export function calculateBaseForecast(
       outflow:   outflowResult.params,
       retention: retentionResult.params,
       arpu:      arpuResult?.params ?? fallbackArpuParams,
+      inflowArpu:    inflowArpuResult?.params,
+      outflowArpu:   outflowArpuResult?.params,
+      retentionArpu: retentionArpuResult?.params,
+      baseArpu:      baseArpuResult?.params,
     },
     ...(anySeasonalFallback ? { seasonalFallback: true } : {}),
     ...(missingMonths.length > 0 ? { missingMonths } : {}),
@@ -648,6 +753,69 @@ export function calculateBaseForecast(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Phase 1 — Pre-Aggregation helper for bulk forecasting
+// ---------------------------------------------------------------------------
+
+/**
+ * A raw data row enriched with a pre-parsed `_parsedDate` field.
+ * The remaining fields are the original row values as-is.
+ */
+export type PreAggRow = Record<string, any> & { _parsedDate: Date };
+
+/**
+ * Map produced by `buildCohortDataMap`.
+ * Key: `seg|prod|prodL2|chan|chanL2` (the 5-part cohort identifier).
+ * Value: every valid row that belongs to that cohort across ALL metrics.
+ *
+ * The caller decides which metric(s) to select from the bucket.
+ * Rows are NOT sorted — callers must sort by `_parsedDate.getTime()` themselves.
+ */
+export type CohortDataMap = Map<string, PreAggRow[]>;
+
+/**
+ * Single O(N) pass over `data` that groups each valid row into a CohortDataMap.
+ *
+ * Call this ONCE before the bulk forecasting loop, then replace per-cohort
+ * `.filter()` chains with a direct O(1) `.get(key)` lookup.
+ *
+ * Rows whose `wiDateCol` value is not a valid Date are silently skipped.
+ *
+ * @param data           Raw input rows (the same array passed to WhatIfConfig.data).
+ * @param wiDateCol      Column name for the date field.
+ * @param wiSegmentCol   Column name for segment  ('' → every row keyed as 'All').
+ * @param wiProductCol   Column name for product L1 ('' → 'All').
+ * @param wiProductL2Col Column name for product L2 ('' → 'All').
+ * @param wiChannelCol   Column name for channel L1 ('' → 'All').
+ * @param wiChannelL2Col Column name for channel L2 ('' → 'All').
+ */
+export function buildCohortDataMap(
+  data: any[],
+  wiDateCol: string,
+  wiSegmentCol: string,
+  wiProductCol: string,
+  wiProductL2Col: string,
+  wiChannelCol: string,
+  wiChannelL2Col: string,
+): CohortDataMap {
+  const map: CohortDataMap = new Map();
+  for (const row of data) {
+    const d = new Date(row[wiDateCol]);
+    if (!isValid(d)) continue;
+    const seg    = wiSegmentCol   ? String(row[wiSegmentCol]   || 'All').trim() : 'All';
+    const prod   = wiProductCol   ? String(row[wiProductCol]   || 'All').trim() : 'All';
+    const prodL2 = wiProductL2Col ? (String(row[wiProductL2Col] || '').trim() || 'All') : 'All';
+    const chan   = wiChannelCol   ? String(row[wiChannelCol]   || 'All').trim() : 'All';
+    const chanL2 = wiChannelL2Col ? (String(row[wiChannelL2Col] || '').trim() || 'All') : 'All';
+    const key = `${seg}|${prod}|${prodL2}|${chan}|${chanL2}`;
+    const enriched: PreAggRow = { ...row, _parsedDate: d };
+    const bucket = map.get(key);
+    if (bucket) bucket.push(enriched);
+    else map.set(key, [enriched]);
+  }
+  return map;
+}
 
 export const getUniqueCombos = (
   processedData: any[],

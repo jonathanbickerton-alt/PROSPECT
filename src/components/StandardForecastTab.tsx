@@ -1,9 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { useForecast } from '../context/ForecastContext';
-import { Settings, ChevronUp, ChevronDown, Filter, Info, Download, LayersIcon, SlidersHorizontal } from 'lucide-react';
+import { Settings, Filter, Info, Download, LayersIcon, Database, CheckCircle2, AlertCircle, SlidersHorizontal } from 'lucide-react';
 import type { ForecastModel } from '../types/forecast';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Line, Brush } from 'recharts';
 import { format, parse, isValid } from 'date-fns';
+import { HierarchicalDropdown } from './HierarchicalDropdown';
+import type { HierarchicalSelection } from './HierarchicalDropdown';
+import { DataMappingDrawer } from './DataMappingDrawer';
 
 interface StandardForecastTabProps {
   data: any[];
@@ -14,6 +17,10 @@ interface StandardForecastTabProps {
   setWiMetricCol: (val: string) => void;
   wiValueCol: string;
   setWiValueCol: (val: string) => void;
+  wiArpuCol: string;
+  setWiArpuCol: (val: string) => void;
+  wiRevenueCol: string;
+  setWiRevenueCol: (val: string) => void;
   wiInflowVal: string;
   setWiInflowVal: (val: string) => void;
   wiOutflowVal: string;
@@ -26,14 +33,24 @@ interface StandardForecastTabProps {
   setWiSegmentCol: (val: string) => void;
   wiProductCol: string;
   setWiProductCol: (val: string) => void;
+  wiProductL2Col?: string;
+  setWiProductL2Col?: (val: string) => void;
   wiChannelCol: string;
   setWiChannelCol: (val: string) => void;
+  wiChannelL2Col?: string;
+  setWiChannelL2Col?: (val: string) => void;
+  productTree?: Map<string, string[]>;
+  channelTree?: Map<string, string[]>;
   segmentValue: string;
   setSegmentValue: (val: string) => void;
   productValue: string;
   setProductValue: (val: string) => void;
+  productL2Value?: string;
+  setProductL2Value?: (val: string) => void;
   channelValue: string;
   setChannelValue: (val: string) => void;
+  channelL2Value?: string;
+  setChannelL2Value?: (val: string) => void;
   segmentMode: string;
   setSegmentMode: (val: string) => void;
   productMode: string;
@@ -75,19 +92,28 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
   wiDateCol, setWiDateCol,
   wiMetricCol, setWiMetricCol,
   wiValueCol, setWiValueCol,
+  wiArpuCol, setWiArpuCol,
+  wiRevenueCol, setWiRevenueCol,
   wiInflowVal, setWiInflowVal,
   wiOutflowVal, setWiOutflowVal,
   wiBaseVal, setWiBaseVal,
   wiRetentionVal, setWiRetentionVal,
   wiSegmentCol, setWiSegmentCol,
   wiProductCol, setWiProductCol,
+  wiProductL2Col = '',
+  setWiProductL2Col,
   wiChannelCol, setWiChannelCol,
+  wiChannelL2Col = '',
+  setWiChannelL2Col,
+  productTree,
+  channelTree,
   segmentValue, setSegmentValue,
   productValue, setProductValue,
+  productL2Value = '',
+  setProductL2Value,
   channelValue, setChannelValue,
-  segmentMode, setSegmentMode,
-  productMode, setProductMode,
-  channelMode, setChannelMode,
+  channelL2Value = '',
+  setChannelL2Value,
   stdScenario, setStdScenario,
   selectedForecastModel, setSelectedForecastModel,
   preHorizonUncertainty, setPreHorizonUncertainty,
@@ -108,8 +134,64 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
   cohortGenLog,
   onSelectCohort,
 }) => {
-  const [showMappingMenu, setShowMappingMenu] = useState(true);
+  const [showDataMappingDrawer, setShowDataMappingDrawer] = useState(false);
+  const [stdChartView, setStdChartView] = useState<'volume' | 'value'>('volume');
   const { baseForecast, bulkRuns } = useForecast();
+
+  const mappingComplete = !!(wiDateCol && wiMetricCol && wiValueCol && wiInflowVal && wiOutflowVal);
+
+  // ARPU chart data — historical from raw data + forecast bands from baseForecast
+  const arpuChartData = useMemo(() => {
+    if (!baseForecast) return [];
+    const histSet = new Set(baseForecast.historicalMonths);
+
+    // Accumulate historical ARPU from raw data rows matching the current cohort selection
+    const histMap = new Map<string, { revSum: number; volSum: number; arpuVol: number }>();
+    for (const row of data) {
+      const rowSeg  = wiSegmentCol  ? String(row[wiSegmentCol]  ?? '') : '';
+      const rowProd = wiProductCol  ? String(row[wiProductCol]  ?? '') : '';
+      const rowChan = wiChannelCol  ? String(row[wiChannelCol]  ?? '') : '';
+      const segOk  = !wiSegmentCol  || segmentValue === 'All (Aggregated)' || rowSeg  === segmentValue;
+      const prodOk = !wiProductCol  || productValue === 'All (Aggregated)' || rowProd === productValue;
+      const chanOk = !wiChannelCol  || channelValue === 'All (Aggregated)' || rowChan === channelValue;
+      if (!segOk || !prodOk || !chanOk) continue;
+      const dateVal = row[wiDateCol];
+      if (!dateVal) continue;
+      const dateObj = new Date(dateVal as string);
+      if (!isValid(dateObj)) continue;
+      const month = format(dateObj, 'yyyy-MM');
+      if (!histSet.has(month)) continue;
+      const vol  = Number(row[wiValueCol]) || 0;
+      const rev  = wiRevenueCol ? Number(row[wiRevenueCol]) || 0 : 0;
+      const arpu = wiArpuCol    ? Number(row[wiArpuCol])    || 0 : 0;
+      const acc  = histMap.get(month) ?? { revSum: 0, volSum: 0, arpuVol: 0 };
+      acc.volSum += vol;
+      acc.revSum += rev;
+      if (arpu > 0) acc.arpuVol += arpu * vol;
+      histMap.set(month, acc);
+    }
+
+    const rows: any[] = [];
+    for (const month of baseForecast.historicalMonths) {
+      const acc = histMap.get(month);
+      let histArpu: number | null = null;
+      if (acc && acc.volSum > 0) {
+        if (acc.revSum > 0) histArpu = acc.revSum / acc.volSum;
+        else if (acc.arpuVol > 0) histArpu = acc.arpuVol / acc.volSum;
+      }
+      rows.push({ date: month, Historical: histArpu, 'Mean (Base)': null, Optimistic: null, Pessimistic: null });
+    }
+    for (const m of baseForecast.months) {
+      rows.push({
+        date: m.month,
+        Historical: null,
+        'Mean (Base)': m.arpu.mean,
+        Optimistic: m.arpu.optimistic,
+        Pessimistic: Math.max(0, m.arpu.pessimistic),
+      });
+    }
+    return rows.sort((a, b) => (a.date as string).localeCompare(b.date as string));
+  }, [baseForecast, data, wiDateCol, wiValueCol, wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiChannelCol, segmentValue, productValue, channelValue]);
 
   // --- Manual-generation side panel helpers ---
 
@@ -169,7 +251,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
           <button
             onClick={onOpenManageBulk}
             title="Manage Bulk Generations"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors border border-indigo-100"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
           >
             <LayersIcon size={13} />
             Manage
@@ -189,203 +271,109 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
           </div>
         ) : (
           <>
-            <div className="space-y-4">
-              <button 
-                onClick={() => setShowMappingMenu(!showMappingMenu)}
-                className="w-full flex items-center justify-between text-sm font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-700 transition-colors bg-slate-50 p-3 rounded-lg border border-slate-200"
+            {/* ── Data Mapping button ── */}
+            <div>
+              <button
+                onClick={() => setShowDataMappingDrawer(true)}
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors"
               >
-                <span className="flex items-center gap-2"><Settings size={16} /> Data Mapping & Metrics</span>
-                {showMappingMenu ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                <span className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <Database size={15} className="text-slate-500" />
+                  Data Mapping &amp; Segmentation
+                </span>
+                {mappingComplete
+                  ? <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
+                  : <AlertCircle size={15} className="text-amber-400 shrink-0" />}
               </button>
-              
-              {showMappingMenu && (
-                <div className="space-y-4 pt-2 border-t border-slate-100">
-                  <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                    1. Data Mapping
-                  </h3>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-900 mb-1">Date Column</label>
-                    <select value={wiDateCol} onChange={(e) => setWiDateCol(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2.5 bg-slate-50 outline-none">
-                      {columns.map((col) => <option key={col} value={col}>{col}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-900 mb-1">Metric/Dimension Column</label>
-                    <select value={wiMetricCol} onChange={(e) => setWiMetricCol(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2.5 bg-slate-50 outline-none">
-                      {columns.map((col) => <option key={col} value={col}>{col}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-900 mb-1">Subscriber Volume Column</label>
-                    <select value={wiValueCol} onChange={(e) => setWiValueCol(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2.5 bg-slate-50 outline-none">
-                      {columns.map((col) => <option key={col} value={col}>{col}</option>)}
-                    </select>
-                  </div>
-                  
-                  {wiMetricCol && (
-                    <div className="space-y-4 pt-4 border-t border-slate-100">
-                      <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                        2. Metric Identification
-                      </h3>
-                      {(() => {
-                        const uniqueMetrics = Array.from(new Set(data.map(r => String(r[wiMetricCol])).filter(v => v && v !== 'undefined'))).sort();
-                        return (
-                          <>
-                            <div>
-                              <label className="block text-xs font-semibold text-slate-900 mb-1">Inflow Identifier</label>
-                              <select value={wiInflowVal} onChange={(e) => setWiInflowVal(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2.5 bg-slate-50 outline-none">
-                                <option value="">-- Select --</option>
-                                {uniqueMetrics.map(m => <option key={m} value={m}>{m}</option>)}
-                              </select>
-                            </div>
-                            <div>
-                              <label className="block text-xs font-semibold text-slate-900 mb-1">Outflow Identifier</label>
-                              <select value={wiOutflowVal} onChange={(e) => setWiOutflowVal(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2.5 bg-slate-50 outline-none">
-                                <option value="">-- Select --</option>
-                                {uniqueMetrics.map(m => <option key={m} value={m}>{m}</option>)}
-                              </select>
-                            </div>
-                            <div>
-                              <label className="block text-xs font-semibold text-slate-900 mb-1">Base Identifier</label>
-                              <select value={wiBaseVal} onChange={(e) => setWiBaseVal(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2.5 bg-slate-50 outline-none">
-                                <option value="">-- Select --</option>
-                                {uniqueMetrics.map(m => <option key={m} value={m}>{m}</option>)}
-                              </select>
-                            </div>
-                            <div>
-                              <label className="block text-xs font-semibold text-slate-900 mb-1">Retention Identifier</label>
-                              <select value={wiRetentionVal} onChange={(e) => setWiRetentionVal(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2.5 bg-slate-50 outline-none">
-                                <option value="">-- Select --</option>
-                                {uniqueMetrics.map(m => <option key={m} value={m}>{m}</option>)}
-                              </select>
-                            </div>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  )}
-                </div>
+              {!mappingComplete && (
+                <p className="text-[11px] text-amber-600 mt-1.5 px-1">
+                  Complete column mapping to enable forecasting
+                </p>
               )}
             </div>
 
-            <div className="space-y-4 pt-4 border-t border-slate-100">
-              <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                <Filter size={16} /> Segmentation (Optional)
-              </h3>
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-900 mb-1">Segment Column</label>
-                  <select value={wiSegmentCol} onChange={(e) => { setWiSegmentCol(e.target.value); setSegmentValue(''); }} className="w-full text-sm border border-slate-200 rounded-lg p-2.5 bg-slate-50 outline-none">
-                    <option value="">None</option>
-                    {columns.map((col) => <option key={col} value={col}>{col}</option>)}
-                  </select>
-                </div>
-                
-                <div>
-                  <label className="block text-xs font-semibold text-slate-900 mb-1">Product Column</label>
-                  <select value={wiProductCol} onChange={(e) => { setWiProductCol(e.target.value); setProductValue(''); }} className="w-full text-sm border border-slate-200 rounded-lg p-2.5 bg-slate-50 outline-none">
-                    <option value="">None</option>
-                    {columns.map((col) => <option key={col} value={col}>{col}</option>)}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-900 mb-1">Channel Column</label>
-                  <select value={wiChannelCol} onChange={(e) => { setWiChannelCol(e.target.value); setChannelValue(''); }} className="w-full text-sm border border-slate-200 rounded-lg p-2.5 bg-slate-50 outline-none">
-                    <option value="">None</option>
-                    {columns.map((col) => <option key={col} value={col}>{col}</option>)}
-                  </select>
-                </div>
-              </div>
-              
-              {(wiSegmentCol || wiProductCol || wiChannelCol) && (
+            {/* ── Segmentation filters ── */}
+            {(wiSegmentCol || wiProductCol || wiChannelCol) && (
+              <div className="space-y-4 pt-2 border-t border-slate-100">
+                <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                  <Filter size={16} /> Filters
+                </h3>
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
                   {wiSegmentCol && (
-                    <div className="space-y-2">
-                      <label className="block text-xs font-medium text-slate-700 mb-1">Segment Mode</label>
-                      <div className="flex flex-col gap-2">
-                        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                          <input type="radio" checked={segmentMode === 'filter'} onChange={() => setSegmentMode('filter')} className="accent-[#e60000]" />
-                          Filter to one category
-                        </label>
-                        <label className={`flex items-center gap-2 text-sm cursor-pointer ${(productMode === 'compare' || channelMode === 'compare') ? 'text-slate-400' : 'text-slate-700'}`}>
-                          <input type="radio" checked={segmentMode === 'compare'} onChange={() => setSegmentMode('compare')} disabled={productMode === 'compare' || channelMode === 'compare'} className="accent-[#e60000]" />
-                          Compare all categories {(productMode === 'compare' || channelMode === 'compare') && '(Disabled)'}
-                        </label>
-                      </div>
-                      {segmentMode === 'filter' && (
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1">Select Segment Value</label>
-                          <select value={segmentValue} onChange={(e) => setSegmentValue(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none">
-                            <option value="">-- Select --</option>
-                            <option value="All (Aggregated)">All (Aggregated)</option>
-                            {Array.from(new Set(data.map(r => String(r[wiSegmentCol])).filter(v => v && v !== 'undefined'))).sort().map(v => (
-                              <option key={v} value={v}>{v}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-medium text-slate-700">Segment</label>
+                      <select value={segmentValue} onChange={(e) => setSegmentValue(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none">
+                        <option value="">-- Select --</option>
+                        <option value="All (Aggregated)">All (Aggregated)</option>
+                        {Array.from(new Set(data.map(r => String(r[wiSegmentCol])).filter(v => v && v !== 'undefined'))).sort().map(v => (
+                          <option key={v} value={v}>{v}</option>
+                        ))}
+                      </select>
                     </div>
                   )}
-                  
+
                   {wiProductCol && (
-                    <div className="space-y-2">
-                      <label className="block text-xs font-medium text-slate-700 mb-1">Product Mode</label>
-                      <div className="flex flex-col gap-2">
-                        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                          <input type="radio" checked={productMode === 'filter'} onChange={() => setProductMode('filter')} className="accent-[#e60000]" />
-                          Filter to one product
-                        </label>
-                        <label className={`flex items-center gap-2 text-sm cursor-pointer ${(segmentMode === 'compare' || channelMode === 'compare') ? 'text-slate-400' : 'text-slate-700'}`}>
-                          <input type="radio" checked={productMode === 'compare'} onChange={() => setProductMode('compare')} disabled={segmentMode === 'compare' || channelMode === 'compare'} className="accent-[#e60000]" />
-                          Compare all products {(segmentMode === 'compare' || channelMode === 'compare') && '(Disabled)'}
-                        </label>
-                      </div>
-                      {productMode === 'filter' && (
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1">Select Product Value</label>
-                          <select value={productValue} onChange={(e) => setProductValue(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none">
-                            <option value="">-- Select --</option>
-                            <option value="All (Aggregated)">All (Aggregated)</option>
-                            {Array.from(new Set(data.map(r => String(r[wiProductCol])).filter(v => v && v !== 'undefined'))).sort().map(v => (
-                              <option key={v} value={v}>{v}</option>
-                            ))}
-                          </select>
-                        </div>
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-medium text-slate-700">Product</label>
+                      {productTree && productTree.size > 0 ? (
+                        <HierarchicalDropdown
+                          label=""
+                          tree={productTree}
+                          value={{
+                            l1: productValue && productValue !== 'All (Aggregated)' ? productValue : null,
+                            l2: productL2Value || null,
+                          }}
+                          onChange={(v: HierarchicalSelection) => {
+                            setProductValue(v.l1 ?? 'All (Aggregated)');
+                            setProductL2Value?.(v.l2 ?? '');
+                          }}
+                          variant="light"
+                          className="w-full"
+                        />
+                      ) : (
+                        <select value={productValue} onChange={(e) => setProductValue(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none">
+                          <option value="">-- Select --</option>
+                          <option value="All (Aggregated)">All (Aggregated)</option>
+                          {Array.from(new Set(data.map(r => String(r[wiProductCol])).filter(v => v && v !== 'undefined'))).sort().map(v => (
+                            <option key={v} value={v}>{v}</option>
+                          ))}
+                        </select>
                       )}
                     </div>
                   )}
 
                   {wiChannelCol && (
-                    <div className="space-y-2">
-                      <label className="block text-xs font-medium text-slate-700 mb-1">Channel Mode</label>
-                      <div className="flex flex-col gap-2">
-                        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                          <input type="radio" checked={channelMode === 'filter'} onChange={() => setChannelMode('filter')} className="accent-[#e60000]" />
-                          Filter to one channel
-                        </label>
-                        <label className={`flex items-center gap-2 text-sm cursor-pointer ${(segmentMode === 'compare' || productMode === 'compare') ? 'text-slate-400' : 'text-slate-700'}`}>
-                          <input type="radio" checked={channelMode === 'compare'} onChange={() => setChannelMode('compare')} disabled={segmentMode === 'compare' || productMode === 'compare'} className="accent-[#e60000]" />
-                          Compare all channels {(segmentMode === 'compare' || productMode === 'compare') && '(Disabled)'}
-                        </label>
-                      </div>
-                      {channelMode === 'filter' && (
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1">Select Channel Value</label>
-                          <select value={channelValue} onChange={(e) => setChannelValue(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none">
-                            <option value="">-- Select --</option>
-                            <option value="All (Aggregated)">All (Aggregated)</option>
-                            {Array.from(new Set(data.map(r => String(r[wiChannelCol])).filter(v => v && v !== 'undefined'))).sort().map(v => (
-                              <option key={v} value={v}>{v}</option>
-                            ))}
-                          </select>
-                        </div>
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-medium text-slate-700">Channel</label>
+                      {channelTree && channelTree.size > 0 ? (
+                        <HierarchicalDropdown
+                          label=""
+                          tree={channelTree}
+                          value={{
+                            l1: channelValue && channelValue !== 'All (Aggregated)' ? channelValue : null,
+                            l2: channelL2Value || null,
+                          }}
+                          onChange={(v: HierarchicalSelection) => {
+                            setChannelValue(v.l1 ?? 'All (Aggregated)');
+                            setChannelL2Value?.(v.l2 ?? '');
+                          }}
+                          variant="light"
+                          className="w-full"
+                        />
+                      ) : (
+                        <select value={channelValue} onChange={(e) => setChannelValue(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none">
+                          <option value="">-- Select --</option>
+                          <option value="All (Aggregated)">All (Aggregated)</option>
+                          {Array.from(new Set(data.map(r => String(r[wiChannelCol])).filter(v => v && v !== 'undefined'))).sort().map(v => (
+                            <option key={v} value={v}>{v}</option>
+                          ))}
+                        </select>
                       )}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
             <div className="space-y-4 pt-4 border-t border-slate-100">
               <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
@@ -519,6 +507,20 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                 </h3>
                 <div className="flex flex-col items-end gap-3">
                   <div className="flex items-center gap-4">
+                    {/* Volume / Value toggle — only shown when ARPU is available and not in compare mode */}
+                    {!compareCategories.length && baseForecast && (wiArpuCol || wiRevenueCol) && (
+                      <div className="flex bg-slate-100 p-1 rounded-lg">
+                        {(['volume', 'value'] as const).map(v => (
+                          <button
+                            key={v}
+                            onClick={() => setStdChartView(v)}
+                            className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${stdChartView === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                          >
+                            {v === 'volume' ? 'Volume' : 'Value (ARPU)'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] uppercase font-bold text-slate-400">Window Size</span>
                       <div className="flex bg-slate-100 p-1 rounded-lg">
@@ -541,9 +543,28 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   </div>
                 </div>
               </div>
+              {(() => {
+                const activeChartData = stdChartView === 'value' ? arpuChartData : stdChartData;
+                const arpuDomain: [number | string, number | string] = (() => {
+                  if (stdChartView !== 'value') return ['auto', 'auto'];
+                  const vals: number[] = [];
+                  for (const row of arpuChartData) {
+                    for (const k of ['Historical', 'Mean (Base)', 'Optimistic', 'Pessimistic']) {
+                      const v = row[k];
+                      if (typeof v === 'number' && isFinite(v) && v > 0) vals.push(v);
+                    }
+                  }
+                  if (vals.length < 2) return ['auto', 'auto'];
+                  const lo = Math.min(...vals), hi = Math.max(...vals);
+                  const range = hi - lo, mid = (lo + hi) / 2;
+                  const eff = Math.max(range, mid * 0.05);
+                  const pad = eff * 0.15;
+                  return [parseFloat(Math.max(0, lo - pad).toFixed(2)), parseFloat((hi + pad).toFixed(2))];
+                })();
+                return (
               <div className="h-[400px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={stdChartData} margin={{ top: 5, right: 20, bottom: 40, left: 0 }}>
+                  <LineChart data={activeChartData} margin={{ top: 5, right: 20, bottom: 40, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                     <XAxis
                       dataKey="date"
@@ -561,7 +582,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                         }
                       }}
                     />
-                    <YAxis tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(value) => formatNumber(value)} />
+                    <YAxis tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(value) => formatNumber(value)} domain={arpuDomain} />
                     <Tooltip
                       formatter={(value: number) => formatNumber(value)}
                       contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
@@ -620,7 +641,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                       height={30}
                       stroke="#cbd5e1"
                       startIndex={windowOffset}
-                      endIndex={Math.min(stdChartData.length - 1, windowOffset + windowSize - 1)}
+                      endIndex={Math.min(activeChartData.length - 1, windowOffset + windowSize - 1)}
                       onChange={(obj: any) => {
                         if (obj && typeof obj.startIndex === 'number' && typeof obj.endIndex === 'number') {
                           setWindowOffset(obj.startIndex);
@@ -632,6 +653,8 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   </LineChart>
                 </ResponsiveContainer>
               </div>
+                );
+              })()}
             </div>
 
             {/* Missing-month gap warning */}
@@ -723,13 +746,22 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
 
             {/* Data Preview Table */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
-              <h3 className="text-lg font-semibold text-slate-900 mb-4">Data Preview</h3>
+              <h3 className="text-lg font-semibold text-slate-900 mb-4">
+                {stdChartView === 'value' ? 'ARPU Data Preview' : 'Data Preview'}
+              </h3>
               <div className="overflow-x-auto rounded-xl border border-slate-200 max-h-[400px]">
                 <table className="w-full text-sm text-left relative">
                   <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
                     <tr>
                       <th className="px-6 py-4 font-semibold">Date</th>
-                      {compareCategories.length > 0 ? (
+                      {stdChartView === 'value' ? (
+                        <>
+                          <th className="px-6 py-4 font-semibold">Historical ARPU</th>
+                          <th className="px-6 py-4 font-semibold">Mean (Base)</th>
+                          <th className="px-6 py-4 font-semibold">Optimistic</th>
+                          <th className="px-6 py-4 font-semibold">Pessimistic</th>
+                        </>
+                      ) : compareCategories.length > 0 ? (
                         compareCategories.map(cat => (
                           <React.Fragment key={cat}>
                             <th className="px-6 py-4 font-semibold">{cat} (Historical)</th>
@@ -747,10 +779,17 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {stdChartData.map((row, idx) => (
+                    {(stdChartView === 'value' ? arpuChartData : stdChartData).map((row, idx) => (
                       <tr key={idx} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4 font-medium text-slate-900">{row.date}</td>
-                        {compareCategories.length > 0 ? (
+                        {stdChartView === 'value' ? (
+                          <>
+                            <td className="px-6 py-4 text-slate-600">{row['Historical'] != null ? formatNumber(row['Historical']) : '—'}</td>
+                            <td className="px-6 py-4 text-slate-600">{row['Mean (Base)'] != null ? formatNumber(row['Mean (Base)']) : '—'}</td>
+                            <td className="px-6 py-4 text-emerald-600">{row['Optimistic'] != null ? formatNumber(row['Optimistic']) : '—'}</td>
+                            <td className="px-6 py-4 text-rose-600">{row['Pessimistic'] != null ? formatNumber(row['Pessimistic']) : '—'}</td>
+                          </>
+                        ) : compareCategories.length > 0 ? (
                           compareCategories.map(cat => (
                             <React.Fragment key={cat}>
                               <td className="px-6 py-4 text-slate-600">{formatNumber(row[`${cat} (Historical)`])}</td>
@@ -787,7 +826,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   </p>
                   <button
                     onClick={() => setActiveView('home')}
-                    className="px-5 py-2.5 bg-[#e60000] text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors"
+                    className="px-5 py-2.5 bg-[#e60000] text-white rounded-lg text-sm font-semibold hover:bg-[#cc0000] transition-colors"
                   >
                     Go to Home
                   </button>
@@ -808,6 +847,28 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
           </div>
         )}
       </div>
+
+      {/* Data Mapping Drawer */}
+      <DataMappingDrawer
+        isOpen={showDataMappingDrawer}
+        onClose={() => setShowDataMappingDrawer(false)}
+        columns={columns}
+        data={data}
+        wiDateCol={wiDateCol} setWiDateCol={setWiDateCol}
+        wiMetricCol={wiMetricCol} setWiMetricCol={setWiMetricCol}
+        wiValueCol={wiValueCol} setWiValueCol={setWiValueCol}
+        wiArpuCol={wiArpuCol} setWiArpuCol={setWiArpuCol}
+        wiRevenueCol={wiRevenueCol} setWiRevenueCol={setWiRevenueCol}
+        wiInflowVal={wiInflowVal} setWiInflowVal={setWiInflowVal}
+        wiOutflowVal={wiOutflowVal} setWiOutflowVal={setWiOutflowVal}
+        wiBaseVal={wiBaseVal} setWiBaseVal={setWiBaseVal}
+        wiRetentionVal={wiRetentionVal} setWiRetentionVal={setWiRetentionVal}
+        wiSegmentCol={wiSegmentCol} setWiSegmentCol={setWiSegmentCol}
+        wiProductCol={wiProductCol} setWiProductCol={setWiProductCol}
+        wiProductL2Col={wiProductL2Col} setWiProductL2Col={setWiProductL2Col}
+        wiChannelCol={wiChannelCol} setWiChannelCol={setWiChannelCol}
+        wiChannelL2Col={wiChannelL2Col} setWiChannelL2Col={setWiChannelL2Col}
+      />
     </>
   );
 };

@@ -331,19 +331,19 @@ export const ChallengerModels: React.FC<ChallengerModelsProps> = ({ actuals, for
             <Filter size={16} className="text-slate-400" />
             <span className="text-xs font-semibold text-slate-500 uppercase">Filters</span>
           </div>
-          <select value={segmentFilter} onChange={e => setSegmentFilter(e.target.value)} className="text-sm border-none bg-transparent outline-none text-slate-700 font-medium cursor-pointer">
+          <select value={segmentFilter} onChange={e => setSegmentFilter(e.target.value)} className="appearance-none text-sm border border-slate-200 rounded-lg bg-white outline-none text-slate-700 font-medium cursor-pointer px-2 py-1">
             {uniqueSegments.map(s => <option key={s} value={s}>{s === 'All' ? 'All Segments' : s}</option>)}
           </select>
-          <select value={productFilter} onChange={e => setProductFilter(e.target.value)} className="text-sm border-none bg-transparent outline-none text-slate-700 font-medium cursor-pointer border-l border-slate-100 pl-3">
+          <select value={productFilter} onChange={e => setProductFilter(e.target.value)} className="appearance-none text-sm border border-slate-200 rounded-lg bg-white outline-none text-slate-700 font-medium cursor-pointer px-2 py-1">
             {uniqueProducts.map(p => <option key={p} value={p}>{p === 'All' ? 'All Products' : p}</option>)}
           </select>
-          <select value={channelFilter} onChange={e => setChannelFilter(e.target.value)} className="text-sm border-none bg-transparent outline-none text-slate-700 font-medium cursor-pointer border-l border-slate-100 pl-3">
+          <select value={channelFilter} onChange={e => setChannelFilter(e.target.value)} className="appearance-none text-sm border border-slate-200 rounded-lg bg-white outline-none text-slate-700 font-medium cursor-pointer px-2 py-1">
             {uniqueChannels.map(c => <option key={c} value={c}>{c === 'All' ? 'All Channels' : c}</option>)}
           </select>
-          <select value={scenarioFilter} onChange={e => setScenarioFilter(e.target.value)} className="text-sm border-none bg-transparent outline-none text-slate-700 font-medium cursor-pointer border-l border-slate-100 pl-3">
+          <select value={scenarioFilter} onChange={e => setScenarioFilter(e.target.value)} className="appearance-none text-sm border border-slate-200 rounded-lg bg-white outline-none text-slate-700 font-medium cursor-pointer px-2 py-1">
             {uniqueScenarios.map(s => <option key={s} value={s}>{s === 'All' ? 'All Scenarios' : s}</option>)}
           </select>
-          <select value={forecastTypeFilter} onChange={e => setForecastTypeFilter(e.target.value)} className="text-sm border-none bg-transparent outline-none text-slate-700 font-medium cursor-pointer border-l border-slate-100 pl-3">
+          <select value={forecastTypeFilter} onChange={e => setForecastTypeFilter(e.target.value)} className="appearance-none text-sm border border-slate-200 rounded-lg bg-white outline-none text-slate-700 font-medium cursor-pointer px-2 py-1">
             {uniqueForecastTypes.map(t => <option key={t} value={t}>{t === 'All' ? 'All Forecast Types' : t}</option>)}
           </select>
         </div>

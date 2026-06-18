@@ -80,7 +80,7 @@ export function ForecastSummaryBar() {
       {eventCount > 0 && (
         <>
           <div className="flex items-center gap-1.5 shrink-0">
-            <span className="bg-indigo-600 text-white px-2 py-0.5 rounded-full font-semibold">
+            <span className="bg-[#e60000] text-white px-2 py-0.5 rounded-full font-semibold">
               {eventCount} event{eventCount !== 1 ? 's' : ''}
             </span>
             <span className="text-slate-400">applied</span>

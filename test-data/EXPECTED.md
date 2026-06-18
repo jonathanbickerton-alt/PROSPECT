@@ -1,0 +1,223 @@
+# PROSPECT — Expected Behaviour & Known-Good Reference
+
+This file is the source of truth for the qa-tester, debugger and
+regression-guard agents. It captures known-good cohort values and the
+correct expected behaviour for every previously-fixed issue, so the agents
+can assert against concrete facts rather than vague impressions.
+
+> **Maintenance note:** Values marked `(confirm)` should be verified against
+> the current synthetic data file before relying on them. Update this file
+> whenever a new bug is fixed so the regression checklist stays complete.
+
+---
+
+## 1. Test data
+
+- **Primary file:** `test-data/VBU_IBRO_Synthetic_ForecastTest_ProductL2_Full_Jan2023_Jun2026.xlsx`
+  (42-month file; a Dec 2025 variant also exists but does not cover the full actuals range)
+- **Historical data range:** Jan 2023 – Dec 2025
+- **Actuals range:** through **June 2026** — nothing should plot beyond this
+  for any actuals series
+- **Forecast horizon:** through Dec 2027 (24 months from forecast start)
+- Almost every PROSPECT bug is data-dependent. Agents MUST load this file
+  before testing — code-only reasoning will not reproduce most issues.
+
+---
+
+## 2. Dimension structure
+
+**Customer Segment:** Corporate, Large Enterprise, MNC, SME, SOHO (+ `All`)
+
+**Product L1:** Mobile Data, Fixed Connectivity, IoT Connectivity,
+Mobile Voice (+ `All`)
+
+**Product L2 (newly added):** High Value, Medium Value, Low Value (+ `All`)
+— hierarchical child of Product L1
+
+**Channel L1:** Direct, Indirect (+ `All`)
+
+**Channel L2:** sub-channels of Channel L1 (+ `All`) — 9 confirmed values:
+- Under **Direct** (5): `Field / Regional Sales`, `Inside Sales`,
+  `Call Centre / Tele-sales`, `Strategic / Global Accounts`, `Digital Direct`
+- Under **Indirect** (4): `Partner / Reseller`, `Distributor`,
+  `Alliance / Strategic Partner`, `Wholesale / Agent`
+- No `All` row exists in the raw data — `All` is a UI/key placeholder only
+
+**Hierarchy rules:**
+- Selecting a Product L1 includes all its Product L2 children
+- Selecting a Product L2 narrows to that specific sub-category
+- Same logic for Channel L1 / Channel L2
+- Cohort store key format includes L2 placeholders, e.g.
+  `Segment|ProductL1|ProductL2|ChannelL1|ChannelL2` with `All` where a
+  level is not specified — confirmed in `src/App.tsx:1342-1348` (`makeForecastKey`)
+
+---
+
+## 3. Known ARPU levels by Product L1
+
+ARPU clusters by product type. These are the approximate stable levels seen
+across cohorts and are the anchor for ARPU correctness checks:
+
+| Product L1         | Approx ARPU | Notes |
+|--------------------|-------------|-------|
+| IoT Connectivity   | ~3.3–3.4    | Lowest ARPU product (blended rev/subs across all 4 IBRO types) |
+| Mobile Voice       | ~9.6–9.7    | |
+| Mobile Data        | ~13.7–13.9  | |
+| Fixed Connectivity | ~17.2–17.5  | Highest ARPU product |
+| Blended (All)      | ~12.2–12.5  | |
+
+If an ARPU forecast or actual for a cohort falls far outside its product
+band, something is wrong — likely a cohort key mismatch or an aggregation
+error pulling the wrong slice.
+
+---
+
+## 4. Known-good reference cohort
+
+**Corporate · IoT Connectivity · Indirect** (the cohort used throughout
+debugging). Approximate values for the comparison window:
+
+| Series    | Actual (approx) | Forecast (approx) | Expected MAPE |
+|-----------|-----------------|-------------------|---------------|
+| Inflow    | ~3,450          | ~3,520            | low, <5%      |
+| Outflow   | ~3,165          | ~3,130            | low, <5%      |
+| Retention | ~2,390          | ~2,430            | low, <5%      |
+| Base      | ~31,640         | ~31,740           | low, <2%      |
+| ARPU      | ~3.3–3.4        | ~3.3–3.4          | very low, <1% |
+
+This cohort is stable and well-forecast. Every IBRO component should score
+**85+** and the ARPU MAPE should be near zero. If ARPU shows 0, or any
+component shows a red/orange score for this cohort, a regression has
+occurred.
+
+---
+
+## 5. Forecasting engine — expected behaviour
+
+- Three models: **Holt Linear**, **Damped Trend**, **Holt-Winters** (true
+  triple exponential smoothing with seasonality)
+- Per-series grid search optimises α/β (Holt Linear), α/β/φ (Damped Trend),
+  α/β/γ (Holt-Winters) — parameters differ per cohort
+- Holt-Winters requires ≥24 data points; below that it falls back to Holt
+  Linear with an amber UI warning (`seasonalFallback: true`)
+- Confidence bands are derived from in-sample residual standard deviation,
+  not a cosmetic proportional cone
+- The What-If / Market Events engine uses the model stored in
+  ForecastContext for that cohort — **never** a hardcoded Holt-Winters path
+- Gap detection fires an amber warning on any cohort with missing months,
+  on both the Baseline tab and the Market Events tab
+
+### ARPU boundary correction
+- On forecast generation, the ARPU forecast is anchored to the last
+  historical ARPU actual via an offset correction
+- Console log to confirm: `[ARPU boundary] lastActual=… rawFittedFirst=…
+  offset=… correctionApplied=true`
+- The first forecast ARPU value should equal the last actual ARPU value
+- If the ARPU forecast jumps away from the last actual at the boundary, the
+  correction has not been applied — likely because forecasts in the store
+  predate the fix and need regenerating
+
+---
+
+## 6. Base — expected behaviour
+
+- **Base actuals are read DIRECTLY from the uploaded file.** They are never
+  derived from Inflow/Outflow for the actuals series.
+- Base actuals must NOT extend beyond the last actual month (June 2026)
+- Base derivation (`Base[t] = Base[t-1] + Inflow[t-1] - Outflow[t-1]`)
+  happens ONLY in the forecast path, with the one-period lag
+- If Base actuals appear in months beyond June 2026, the derivation is
+  wrongly running on the actuals series — a regression
+
+---
+
+## 7. MAPE & accuracy scoring — expected behaviour
+
+### MAPE cards
+- Populate for every valid filter state without a row click being required
+- `All` filters aggregate across all matching cohorts
+- A specific cohort filter scopes to that cohort
+- ARPU MAPE must be **non-zero** for:
+  - Segment-only grouping
+  - Segment + Channel L1 grouping
+  - (these were both previously broken — high-priority regression checks)
+- Actuals and forecast must be filtered at the SAME aggregation level —
+  mismatched levels were the root cause of nonsensical scores
+
+### Accuracy scoring model (Historical Accuracy by Cohort)
+- **Primary driver:** absolute % deviation from the mean forecast, symmetric
+  (over and under treated identically)
+- **Secondary:** confidence band position — outside-band applies a small
+  penalty (−5 if primary ≥65, −10 if primary <65) as an attention flag
+- Approx primary scale: 0–1% dev → 95–100; 1–3% → 85–95; 3–5% → 75–85;
+  5–10% → 60–75; 10–20% → 40–60; >20% → toward 0
+- **Any actual within the confidence band should score 80+**
+- Colour bands: 85–100 green, 70–84 amber, 50–69 orange, 0–49 red
+- Directional labels: **Over** / **Under** / **—** (symmetric, colour-coded)
+- Five components scored independently; Overall = mean of the five
+- Per-cell tooltip shows month-by-month inputs (actual, mean, deviation %,
+  in-band, monthly score) — these MUST match the monthly variance table
+- Market Events toggle: Exclude (Baseline) vs Include (Adjusted); Adjusted
+  always exists and equals Baseline when a cohort has no events
+
+### Sanity check
+A cohort whose monthly variance table shows all months in-band with
+variances under ~2% should score **80+** on that component. A score of
+36–65 for such a cohort is a bug (this was a real, repeatedly-hit issue).
+
+---
+
+## 8. Filters & navigation — expected behaviour
+
+- Changing any filter NEVER triggers a re-forecast — filters are view-only
+- Stored forecasts are never modified, cleared or overwritten by filtering
+- Global filter bar and in-page COMPARING chips stay in sync
+- Filters default to `All` on entering a step where that behaviour is set
+- Clicking a cohort row in the accuracy table highlights it and scopes the
+  chart ONLY — it must not change the filter bar or filter the table
+- The accuracy table always shows all cohorts; it is never filtered by a
+  row click or by the global filter
+
+---
+
+## 9. Session export / import — expected behaviour
+
+- Export includes every data point: actuals, baseline forecasts, market
+  events, adjusted forecasts, bulk generation history, model acceptance log,
+  metadata — now including Product L2 and Channel L2
+- Default filename: `PROSPECT Forecast Save — DD MMM YYYY HH:mm.xlsx`
+- Import validates the file is a PROSPECT save, restores full state, and
+  returns the user to the step they were on at export
+- Cohort keys in the export include L2 and round-trip correctly on import
+
+---
+
+## 10. Remove Actuals — expected behaviour
+
+- Period range + optional dimension filters select which actuals to remove
+- Preview shows affected cohort-months before confirming
+- Confirming removes matching rows from ForecastContext and recalculates all
+  MAPE, scores and chart data reactively
+- Removing all actuals shows a clear empty state, not silent zeros
+
+---
+
+## 11. Regression checklist (the short version)
+
+Every item below was a real bug. Confirm all after any change:
+
+1. ARPU MAPE non-zero for Segment-only and Segment+Channel groupings
+2. Base actuals read from file, not derived, not beyond June 2026
+3. ARPU boundary correction applied on generation (check console log)
+4. What-If engine uses selected model, not hardcoded Holt-Winters
+5. In-band actuals score 80+; scoring is mean-proximity-primary, symmetric
+6. Tooltip inputs match the monthly variance table
+7. Filters never re-forecast; actuals and forecast filtered at same level
+8. Cohort row click scopes chart only; never filters table or filter bar
+9. Hierarchical Product L1/L2 and Channel L1/L2 filter correctly
+10. Export/import round-trips full state including L2 fields
+11. Gap detection warning appears for cohorts with missing months
+12. All three models generate without error with per-cohort parameters
+
+**Verdict rule:** "SAFE FOR USER TESTING" only if all pass. Otherwise list
+the failures and the cohort/filter combination that exposed each.

@@ -13,7 +13,9 @@ interface CohortEntry {
   id: string;
   segment: string;
   product: string;
+  productL2?: string;
   channel: string;
+  channelL2?: string;
   scenario: string;
   forecastType: string;
   hasForecast: boolean;
@@ -46,8 +48,14 @@ export interface ManageBulkDrawerProps {
 // ---------------------------------------------------------------------------
 
 function cohortLabel(c: CohortEntry): string {
-  return [c.segment, c.product, c.channel]
-    .filter(v => v && v !== 'All')
+  const prodLabel = c.product && c.product !== 'All'
+    ? (c.productL2 && c.productL2 !== 'All' ? `${c.product} · ${c.productL2}` : c.product)
+    : null;
+  const chanLabel = c.channel && c.channel !== 'All'
+    ? (c.channelL2 && c.channelL2 !== 'All' ? `${c.channel} · ${c.channelL2}` : c.channel)
+    : null;
+  return [c.segment !== 'All' ? c.segment : null, prodLabel, chanLabel]
+    .filter(Boolean)
     .join(' · ') || 'All cohorts';
 }
 
@@ -201,8 +209,8 @@ export function ManageBulkDrawer({
               <ArrowLeft size={18} />
             </button>
           )}
-          <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
-            <LayersIcon size={16} className="text-indigo-600" />
+          <div className="w-8 h-8 rounded-lg bg-[#e60000]/10 flex items-center justify-center shrink-0">
+            <LayersIcon size={16} className="text-[#e60000]" />
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="text-sm font-bold text-slate-900">
