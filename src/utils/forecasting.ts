@@ -17,6 +17,8 @@ export interface MarketEvent {
   revenue: number;
   arpu: number;
   name?: string;
+  /** Campaign name groups multiple events into one named campaign — empty string = uncategorised */
+  campaignName: string;
   comment: string;
   /** Months of churn protection for inflow-event subscribers before they enter the at-risk pool. Default 24. */
   contractLength: number;
@@ -153,6 +155,36 @@ function dtResiduals(
   return { mse, sigma: Math.sqrt(mse) };
 }
 
+function fitSESParams(y: number[], alpha: number): { L: number } {
+  const w = Math.min(6, y.length);
+  const slice = y.slice(0, w);
+  let L = slice.reduce((a, b) => a + b, 0) / w;
+  for (let i = 1; i < y.length; i++) {
+    L = alpha * y[i] + (1 - alpha) * L;
+  }
+  return { L };
+}
+
+function sesResiduals(
+  y: number[],
+  alpha: number,
+): { mse: number; sigma: number } {
+  const w = Math.min(6, y.length);
+  const slice = y.slice(0, w);
+  let L = slice.reduce((a, b) => a + b, 0) / w;
+  let sse = 0;
+  const n = y.length - 1;
+  for (let i = 1; i < y.length; i++) {
+    const fitted = L;
+    const err = y[i] - fitted;
+    if (!isFinite(err)) return { mse: Infinity, sigma: Infinity };
+    sse += err * err;
+    L = alpha * y[i] + (1 - alpha) * L;
+  }
+  const mse = sse / n;
+  return { mse, sigma: Math.sqrt(mse) };
+}
+
 // ---------------------------------------------------------------------------
 // Grid search optimisers — return the winning FittedParams
 // ---------------------------------------------------------------------------
@@ -178,6 +210,19 @@ function optimiseDampedTrend(y: number[]): FittedParams {
         const { mse, sigma } = dtResiduals(y, alpha, beta, phi);
         if (mse < bestMse) { bestMse = mse; best = { alpha, beta, phi, mse, sigma }; }
       }
+    }
+  }
+  return best;
+}
+
+function optimiseSES(y: number[]): FittedParams {
+  let bestMse = Infinity;
+  let best: FittedParams = { alpha: 0.3, beta: 0, mse: Infinity, sigma: Infinity };
+  for (const alpha of ALPHA_GRID) {
+    const { mse, sigma } = sesResiduals(y, alpha);
+    if (mse < bestMse) {
+      bestMse = mse;
+      best = { alpha, beta: 0, mse, sigma };
     }
   }
   return best;
@@ -458,6 +503,16 @@ function fitAndBuildBands(
 ): FitResult | null {
   if (values.length < 4) return null;
 
+  if (model === 'Simple Exponential Smoothing') {
+    const params = optimiseSES(values);
+    const m = fitSESParams(values, params.alpha);
+    const bands = buildBands(
+      t => m.L,
+      forecastMonths, params.sigma, confidenceHorizon, postHorizonExpansionRate, preHorizonZ, sigmaScale,
+    );
+    return { bands, params };
+  }
+
   if (model === 'Damped Trend') {
     const params = optimiseDampedTrend(values);
     const phi = params.phi!;
@@ -523,11 +578,12 @@ export function calculateHoltWinters(
   preHorizonUncertainty: number,
   postHorizonExpansionRate: number,
   confidenceHorizon: number = 3,
+  model: ForecastModel = 'Holt Linear',
 ) {
   const y = data.map(row => Number(row[targetCol]) || 0);
   // fitAndBuildBands handles the full optimise → fit → band pipeline.
   // preHorizonUncertainty is now the pre-horizon z-score; postHorizonExpansionRate is the multiplier.
-  const result = fitAndBuildBands(y, 'Holt Linear', months, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon);
+  const result = fitAndBuildBands(y, model, months, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon);
   if (!result) return null;
 
   const lastDate: Date = data[data.length - 1]._parsedDate;
@@ -747,6 +803,9 @@ export function calculateBaseForecast(
     },
     ...(anySeasonalFallback ? { seasonalFallback: true } : {}),
     ...(missingMonths.length > 0 ? { missingMonths } : {}),
+    preHorizonUncertaintyUsed: preHorizonUncertainty,
+    postHorizonExpansionRateUsed: postHorizonExpansionRate,
+    confidenceHorizonUsed: confidenceHorizon,
   };
 }
 
@@ -1363,3 +1422,428 @@ export function computeWhatIfData(
     ...(missingMonths.length > 0 ? { missingMonths } : {}),
   };
 }
+
+export interface ModelRecommendation {
+  recommendedModel: ForecastModel;
+  reason: string;
+  confidence: 'Low' | 'Medium' | 'High';
+  metrics: {
+    historyLength: number;
+    trendStrengthLabel: string;
+    trendStabilityLabel: string;
+    seasonalityLabel: string;
+    volatilityLabel: string;
+    bestModelByFit: string;
+    fitMapeValues: {
+      'Simple Exponential Smoothing': number;
+      'Holt Linear': number;
+      'Damped Trend': number;
+      'Holt-Winters': number;
+    };
+  };
+}
+
+/**
+ * High-quality model analysis and selection recommendation engine.
+ * Computes trend strength, seasonality autocorrelation, detrended volatility,
+ * and runs full grid-search optimization to backtest which model fits historical data best.
+ */
+export function analyzeAndRecommendModel(
+  values: number[],
+  calendarStartMonth = 0
+): ModelRecommendation {
+  const len = values.length;
+
+  // Defaults for extremely short history
+  if (len < 4) {
+    return {
+      recommendedModel: 'Simple Exponential Smoothing',
+      reason: 'Extremely limited history (fewer than 4 observations) is available. A simple, level-only model is recommended to prevent over-fitting.',
+      confidence: 'Low',
+      metrics: {
+        historyLength: len,
+        trendStrengthLabel: 'No pattern detected (insufficient data)',
+        trendStabilityLabel: 'Not stable (insufficient data)',
+        seasonalityLabel: 'No pattern detected (insufficient data)',
+        volatilityLabel: 'N/A',
+        bestModelByFit: 'Simple Exponential Smoothing',
+        fitMapeValues: {
+          'Simple Exponential Smoothing': 0,
+          'Holt Linear': 0,
+          'Damped Trend': 0,
+          'Holt-Winters': 0,
+        },
+      },
+    };
+  }
+
+  // Calculate series stats
+  const sumY = values.reduce((a, b) => a + b, 0);
+  const mean = sumY / len;
+
+  // 1. Trend detection via linear regression
+  let trendStrength = 0;
+  let clearTrend = false;
+  let trendIsStable = true;
+  let slopeSign = 0;
+
+  let sumX = 0, sumXY = 0, sumXX = 0;
+  for (let i = 0; i < len; i++) {
+    sumX += i;
+    sumXY += i * values[i];
+    sumXX += i * i;
+  }
+  const denom = len * sumXX - sumX * sumX;
+  if (denom !== 0) {
+    const slope = (len * sumXY - sumX * sumY) / denom;
+    slopeSign = Math.sign(slope);
+    const intercept = (sumY - slope * sumX) / len;
+
+    let sst = 0, ssr = 0;
+    for (let i = 0; i < len; i++) {
+      const diffY = values[i] - mean;
+      const pred = intercept + slope * i;
+      const diffPred = values[i] - pred;
+      sst += diffY * diffY;
+      ssr += diffPred * diffPred;
+    }
+    
+    // R^2 as trend strength
+    trendStrength = sst > 0 ? 1 - (ssr / sst) : 0;
+    if (trendStrength < 0) trendStrength = 0;
+
+    const rangeChange = slope * (len - 1);
+    const relativeChange = mean > 0 ? Math.abs(rangeChange) / mean : 0;
+
+    // A clear trend exists if there's solid relative growth/decay and R^2 is decent
+    if (trendStrength > 0.3 && relativeChange > 0.12 && len >= 6) {
+      clearTrend = true;
+      if (trendStrength < 0.55) {
+        trendIsStable = false;
+      }
+    }
+  }
+
+  // 2. Seasonality detection (lag-12 autocorrelation)
+  let seasonalityStrength = 0;
+  let seasonalityDetected = false;
+  if (len >= 12) {
+    const lag = 12;
+    const n = len - lag;
+    if (n >= 2) {
+      let sumProd = 0, sumX2 = 0, sumY2 = 0;
+      const meanX = values.slice(0, n).reduce((a, b) => a + b, 0) / n;
+      const meanY = values.slice(lag, lag + n).reduce((a, b) => a + b, 0) / n;
+      for (let i = 0; i < n; i++) {
+        const dx = values[i] - meanX;
+        const dy = values[i + lag] - meanY;
+        sumProd += dx * dy;
+        sumX2 += dx * dx;
+        sumY2 += dy * dy;
+      }
+      const correlationDenom = Math.sqrt(sumX2 * sumY2);
+      seasonalityStrength = correlationDenom > 0 ? sumProd / correlationDenom : 0;
+      if (seasonalityStrength > 0.35) {
+        seasonalityDetected = true;
+      }
+    }
+  }
+
+  // 3. Volatility (detrended residual standard deviation divided by mean)
+  let detrendedSD = 0;
+  if (denom !== 0) {
+    const slope = (len * sumXY - sumX * sumY) / denom;
+    const intercept = (sumY - slope * sumX) / len;
+    let sse = 0;
+    for (let i = 0; i < len; i++) {
+      const pred = intercept + slope * i;
+      const err = values[i] - pred;
+      sse += err * err;
+    }
+    detrendedSD = Math.sqrt(sse / Math.max(1, len - 1));
+  } else {
+    let varY = 0;
+    for (let i = 0; i < len; i++) {
+      const diffY = values[i] - mean;
+      varY += diffY * diffY;
+    }
+    detrendedSD = Math.sqrt(varY / Math.max(1, len - 1));
+  }
+  const relVolatility = mean > 0 ? (detrendedSD / mean) : 0;
+
+  // 4. Run grid-search optimization to backtest and check min MSE / relative error for fit
+  const sesOpt = optimiseSES(values);
+  const hlOpt = optimiseHW(values);
+  const dtOpt = optimiseDampedTrend(values);
+
+  const sesMape = mean > 0 ? (sesOpt.sigma / mean) * 100 : 0;
+  const hlMape  = mean > 0 ? (hlOpt.sigma / mean) * 100 : 0;
+  const dtMape  = mean > 0 ? (dtOpt.sigma / mean) * 100 : 0;
+
+  let hwMape = Infinity;
+  let hwOpt: FittedParams | null = null;
+  if (len >= 24) {
+    hwOpt = optimiseHWTriple(values, calendarStartMonth);
+    hwMape = hwOpt.sigma * 100; // Multiplicative HW residual sigma is already relative
+  }
+
+  // Decide winner by fit
+  let bestFitModel: ForecastModel = 'Simple Exponential Smoothing';
+  let minMape = sesMape;
+  if (hlMape < minMape) { minMape = hlMape; bestFitModel = 'Holt Linear'; }
+  if (dtMape < minMape && dtMape < hlMape) { minMape = dtMape; bestFitModel = 'Damped Trend'; }
+  if (hwMape < minMape && len >= 24) { minMape = hwMape; bestFitModel = 'Holt-Winters'; }
+
+  // 5. Apply primary selection logic and construct recommendation
+  let recommended: ForecastModel = 'Simple Exponential Smoothing';
+  let reason = '';
+  let confidence: 'Low' | 'Medium' | 'High' = 'High';
+
+  if (len < 6) {
+    recommended = 'Simple Exponential Smoothing';
+    reason = `Short history of ${len} months detected. A simple level-only model is recommended to prevent over-fitting.`;
+    confidence = 'Low';
+  } else if (seasonalityDetected && len >= 12) {
+    recommended = len >= 24 ? 'Holt-Winters' : 'Holt Linear';
+    if (len >= 24) {
+      reason = 'Recurring monthly peaks and seasonal cycles detected over a solid multi-year history. Holt-Winters triple exponential smoothing is ideal here.';
+      confidence = 'High';
+    } else {
+      reason = 'Seasonal monthly peaks identified, but history is too brief for a full 24-month Holt-Winters cycle. Holt Linear is recommended as a robust alternative.';
+      confidence = 'Medium';
+    }
+  } else if (clearTrend) {
+    if (trendIsStable && hlOpt.mse <= dtOpt.mse) {
+      recommended = 'Holt Linear';
+      reason = `Clear growth pattern detected with a stable, consistent direction over the last ${len} months.`;
+      confidence = 'High';
+    } else {
+      recommended = 'Damped Trend';
+      reason = `Consistent growth pattern is visible, but exhibits standard fluctuations or potential flattening. Damped Trend will safely taper off over-projections.`;
+      confidence = 'Medium';
+    }
+  } else {
+    // Stable / level series
+    recommended = 'Simple Exponential Smoothing';
+    reason = 'Flat or highly stable series with no strong pattern detected over the available history.';
+    confidence = 'High';
+  }
+
+  // 6. Backtesting refinement: If the backtesting winner's error is significantly lower, upgrade the recommendation
+  if (len >= 6 && recommended !== bestFitModel) {
+    const currentMape = recommended === 'Simple Exponential Smoothing' ? sesMape :
+                         recommended === 'Holt Linear' ? hlMape :
+                         recommended === 'Damped Trend' ? dtMape : hwMape;
+    
+    // If the backtesting model reduces the forecast error by over 15% relative
+    if (minMape < currentMape * 0.85 && isFinite(minMape)) {
+      const isHWAllowed = bestFitModel !== 'Holt-Winters' || len >= 24;
+      if (isHWAllowed) {
+        recommended = bestFitModel;
+        reason = `Refined by historical backtesting: "${bestFitModel}" achieved the lowest fitted error of ${minMape.toFixed(1)}% (improving upon original heuristic error of ${currentMape.toFixed(1)}%).`;
+        confidence = 'High';
+      }
+    }
+  }
+
+  // Labels for metrics panel
+  const trendStrengthLabel = trendStrength > 0.65 ? 'Consistent' : trendStrength > 0.3 ? 'Moderate' : 'No clear trend';
+  const trendStabilityLabel = trendIsStable ? 'Stable direction' : 'Expected to flatten or fluctuate';
+  const seasonalityLabel = seasonalityDetected ? 'Recurring monthly peaks' : 'No strong pattern detected';
+  const volatilityLabel = relVolatility > 0.25 ? 'High volatility' : relVolatility > 0.1 ? 'Moderate volatility' : 'Low volatility';
+
+  return {
+    recommendedModel: recommended,
+    reason,
+    confidence,
+    metrics: {
+      historyLength: len,
+      trendStrengthLabel,
+      trendStabilityLabel,
+      seasonalityLabel,
+      volatilityLabel,
+      bestModelByFit: bestFitModel,
+      fitMapeValues: {
+        'Simple Exponential Smoothing': isFinite(sesMape) ? sesMape : 0,
+        'Holt Linear': isFinite(hlMape) ? hlMape : 0,
+        'Damped Trend': isFinite(dtMape) ? dtMape : 0,
+        'Holt-Winters': isFinite(hwMape) ? hwMape : 0,
+      }
+    }
+  };
+}
+
+export interface ConfidenceRecommendation {
+  profile: 'Stable' | 'Balanced' | 'Cautious';
+  preHorizonZ: number;
+  postHorizonMultiplier: number;
+  confidenceHorizon: number;
+  reason: string;
+  strength: 'Low' | 'Medium' | 'High';
+}
+
+/**
+ * High-quality confidence settings recommendation engine.
+ * Classifies the time series segment into a risk profile (Stable, Balanced, Cautious)
+ * based on history length, relative volatility, average volume, and backtesting fit error.
+ */
+export function analyzeAndRecommendConfidence(
+  values: number[],
+  calendarStartMonth = 0
+): ConfidenceRecommendation {
+  const len = values.length;
+
+  if (len < 4) {
+    return {
+      profile: 'Cautious',
+      preHorizonZ: 1.96,
+      postHorizonMultiplier: 2.0,
+      confidenceHorizon: 2,
+      reason: 'This segment has limited history and higher month-to-month movement, so a wider forecast range is recommended.',
+      strength: 'Low',
+    };
+  }
+
+  const sumY = values.reduce((a, b) => a + b, 0);
+  const mean = sumY / len;
+
+  // Linear regression to get detrended SD for volatility
+  let sumX = 0, sumXY = 0, sumXX = 0;
+  for (let i = 0; i < len; i++) {
+    sumX += i;
+    sumXY += i * values[i];
+    sumXX += i * i;
+  }
+  const denom = len * sumXX - sumX * sumX;
+  let detrendedSD = 0;
+  if (denom !== 0) {
+    const slope = (len * sumXY - sumX * sumY) / denom;
+    const intercept = (sumY - slope * sumX) / len;
+    let sse = 0;
+    for (let i = 0; i < len; i++) {
+      const pred = intercept + slope * i;
+      const err = values[i] - pred;
+      sse += err * err;
+    }
+    detrendedSD = Math.sqrt(sse / Math.max(1, len - 1));
+  } else {
+    let varY = 0;
+    for (let i = 0; i < len; i++) {
+      const diffY = values[i] - mean;
+      varY += diffY * diffY;
+    }
+    detrendedSD = Math.sqrt(varY / Math.max(1, len - 1));
+  }
+  const relVolatility = mean > 0 ? (detrendedSD / mean) : 0;
+
+  // Check for zeros or missing style irregularities
+  const hasZeroOrNegative = values.some(v => v <= 0);
+
+  // Compute best backtesting fitted error (min MAPE among the standard models)
+  const sesOpt = optimiseSES(values);
+  const hlOpt = optimiseHW(values);
+  const dtOpt = optimiseDampedTrend(values);
+
+  const sesMape = mean > 0 ? (sesOpt.sigma / mean) * 100 : 0;
+  const hlMape  = mean > 0 ? (hlOpt.sigma / mean) * 100 : 0;
+  const dtMape  = mean > 0 ? (dtOpt.sigma / mean) * 100 : 0;
+
+  let hwMape = Infinity;
+  if (len >= 24) {
+    const hwOpt = optimiseHWTriple(values, calendarStartMonth);
+    hwMape = hwOpt.sigma * 100;
+  }
+
+  const minMape = Math.min(
+    isFinite(sesMape) ? sesMape : Infinity,
+    isFinite(hlMape) ? hlMape : Infinity,
+    isFinite(dtMape) ? dtMape : Infinity,
+    isFinite(hwMape) ? hwMape : Infinity
+  );
+
+  // Define decision components
+  const isHighVolatility = relVolatility > 0.28;
+  const isLowVolatility = relVolatility < 0.12;
+  const isHighError = minMape > 25;
+  const isLowError = minMape < 12;
+  const isLowVolume = mean < 50;
+
+  // Primary profile classification rules
+  let profile: 'Stable' | 'Balanced' | 'Cautious' = 'Balanced';
+  let reason = '';
+  let strength: 'Low' | 'Medium' | 'High' = 'Medium';
+
+  if (len < 6) {
+    profile = 'Cautious';
+    reason = 'This segment has limited history and higher month-to-month movement, so a wider forecast range is recommended.';
+    strength = 'High';
+  } else if (len >= 6 && len < 12) {
+    if (isLowVolatility) {
+      profile = 'Balanced';
+      reason = 'This segment has some usable history but moderate duration, and exhibits stable volatility. A balanced forecast range is recommended.';
+      strength = 'Medium';
+    } else {
+      profile = 'Cautious';
+      reason = 'This segment has limited history and higher month-to-month movement, so a wider forecast range is recommended.';
+      strength = 'High';
+    }
+  } else if (isHighVolatility) {
+    profile = 'Cautious';
+    reason = 'This segment has limited history and higher month-to-month movement, so a wider forecast range is recommended.';
+    strength = 'High';
+  } else if (isLowVolume) {
+    if (isHighVolatility || hasZeroOrNegative) {
+      profile = 'Cautious';
+      reason = 'This segment has limited history and higher month-to-month movement, so a wider forecast range is recommended.';
+      strength = 'Medium';
+    } else {
+      profile = 'Balanced';
+      reason = 'This segment has enough history, but some month-to-month movement is present. A balanced forecast range is recommended.';
+      strength = 'Medium';
+    }
+  } else if (isHighError) {
+    profile = 'Cautious';
+    reason = 'Previous forecasts were less reliable for this segment, so the optimistic and pessimistic range should be wider.';
+    strength = 'High';
+  } else if (isLowError && isLowVolatility && len >= 12 && !hasZeroOrNegative) {
+    profile = 'Stable';
+    reason = 'This segment has a stable historical pattern and previous forecasts were close to actuals, so a narrower forecast range is suitable.';
+    strength = 'High';
+  } else {
+    profile = 'Balanced';
+    reason = 'This segment has enough history, but some month-to-month movement is present. A balanced forecast range is recommended.';
+    strength = 'Medium';
+  }
+
+  // Choose settings based on profiles
+  if (profile === 'Stable') {
+    return {
+      profile: 'Stable',
+      preHorizonZ: 1.28,
+      postHorizonMultiplier: 1.25,
+      confidenceHorizon: 6,
+      reason,
+      strength,
+    };
+  } else if (profile === 'Cautious') {
+    return {
+      profile: 'Cautious',
+      preHorizonZ: 1.96,
+      postHorizonMultiplier: 2.0,
+      confidenceHorizon: 2, // 1 to 3 months
+      reason,
+      strength,
+    };
+  } else {
+    return {
+      profile: 'Balanced',
+      preHorizonZ: 1.64,
+      postHorizonMultiplier: 1.5,
+      confidenceHorizon: 3,
+      reason,
+      strength,
+    };
+  }
+}
+
+

@@ -4,8 +4,9 @@
  * Damped Trend: Holt Linear with trend damped toward flat — phi optimised per series.
  * Holt-Winters: triple exponential smoothing with multiplicative seasonality — α, β, γ
  *   optimised per series; requires ≥ 24 months (two full seasonal cycles).
+ * Simple Exponential Smoothing: level smoothing — α optimised per series.
  */
-export type ForecastModel = 'Holt Linear' | 'Damped Trend' | 'Holt-Winters';
+export type ForecastModel = 'Holt Linear' | 'Damped Trend' | 'Holt-Winters' | 'Simple Exponential Smoothing';
 
 /**
  * Smoothing parameters chosen by per-series MSE grid search.
@@ -151,6 +152,10 @@ export interface BaseForecast {
    * so the user knows the seasonal model was not used as selected.
    */
   seasonalFallback?: boolean;
+  /** Confidence params actually used to generate this forecast (may differ from UI sliders when auto-confidence is active). */
+  preHorizonUncertaintyUsed?: number;
+  postHorizonExpansionRateUsed?: number;
+  confidenceHorizonUsed?: number;
   /**
    * Calendar months (yyyy-MM) that are absent from the historical series but
    * fall between the first and last observed month.  Non-empty only when the
@@ -256,33 +261,6 @@ export interface YieldEvent {
 export type MarketEventType = 'Inflow' | 'Retention' | 'Outflow';
 
 /**
- * A single user-defined market event that modifies one IBRO flow metric.
- * The event is scoped to a cohort dimension subset and spans durationMonths
- * consecutive months starting from startMonth.
- *
- * volumeImpact: absolute subscriber/customer count change per month
- * arpuImpact:   absolute € ARPU change per month (for revenue-bearing events)
- */
-export interface MarketEvent {
-  id: string;
-  eventType: MarketEventType;
-  /** Dimensions the event applies to — empty string means "all" for that dimension */
-  segment: string;
-  product: string;
-  channel: string;
-  /** First affected month in yyyy-MM format */
-  startMonth: string;
-  /** Number of consecutive months the event is active (≥ 1) */
-  durationMonths: number;
-  /** Absolute change in subscriber/customer volume per month (can be negative) */
-  volumeImpact: number;
-  /** Absolute change in ARPU per month (can be negative, 0 if not applicable) */
-  arpuImpact: number;
-  /** Optional free-text description */
-  comment?: string;
-}
-
-/**
  * The IBRO metrics for a single month after market events have been applied.
  * Base is still not stored — callers derive it from the running stock.
  */
@@ -311,7 +289,7 @@ export interface AdjustedForecastMonth {
  */
 export interface MarketEventAdjustedForecast {
   base: BaseForecast;
-  marketEvents: MarketEvent[];
+  marketEvents: unknown[];
   /** Adjusted monthly series — same length and order as base.months */
   adjustedMonths: AdjustedForecastMonth[];
 }

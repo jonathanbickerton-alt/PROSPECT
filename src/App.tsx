@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
+import { useTranslation } from 'react-i18next';
 import { calculateHoltWinters, MarketEvent, computeWhatIfData, WhatIfConfig, getUniqueCombos, calculateBaseForecast, buildCohortDataMap } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent } from './types/forecast';
@@ -118,6 +119,7 @@ const formatNumber = (num: number | null | undefined) => {
 };
 
 export default function App() {
+  const { t } = useTranslation();
   const [activeView, setActiveView] = useState<'home' | 'standard' | 'whatif' | 'overall' | 'vsactuals' | 'compare'>('home');
   const [data, setData] = useState<any[]>([]);
   const [columns, setColumns] = useState<string[]>([]);
@@ -215,8 +217,9 @@ export default function App() {
       customerVolume:   neg(newEvent.customerVolume   || 0),
       revenue:          neg(newEvent.revenue           || 0),
       arpu:             neg(newEvent.arpu              || 0),
-      name:    newEvent.name    || '',
-      comment: newEvent.comment || '',
+      name:         newEvent.name         || '',
+      campaignName: newEvent.campaignName || '',
+      comment:      newEvent.comment      || '',
       contractLength: newEvent.contractLength ?? 24,
     };
     setMarketEvents(prev => [...prev, event]);
@@ -233,6 +236,7 @@ export default function App() {
       revenue: 0,
       arpu: 0,
       name: '',
+      campaignName: '',
       comment: '',
       contractLength: 24,
     });
@@ -240,6 +244,10 @@ export default function App() {
 
   const removeMarketEvent = (id: string) => {
     setMarketEvents(prev => prev.filter(e => e.id !== id));
+  };
+
+  const updateMarketEvent = (id: string, patch: Partial<MarketEvent>) => {
+    setMarketEvents(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
   };
 
   const handleImportActualsFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -418,9 +426,9 @@ export default function App() {
         Last_Historical_Outflow: bf.lastHistoricalOutflow,
         Seasonal_Fallback: bf.seasonalFallback ? 'Yes' : 'No',
         Fitted_Params_JSON: bf.fittedParams ? JSON.stringify(bf.fittedParams) : '',
-        Pre_Horizon_Uncertainty_Pct:     preHorizonUncertainty,
-        Post_Horizon_Expansion_Rate_Pct: postHorizonExpansionRate,
-        Confidence_Horizon_Months:       confidenceHorizon,
+        Pre_Horizon_Uncertainty_Pct:     bf.preHorizonUncertaintyUsed     ?? preHorizonUncertainty,
+        Post_Horizon_Expansion_Rate_Pct: bf.postHorizonExpansionRateUsed  ?? postHorizonExpansionRate,
+        Confidence_Horizon_Months:       bf.confidenceHorizonUsed         ?? confidenceHorizon,
         Forecast_Length_Months:          stdForecastLength,
         Bulk_Run_Name:    bulkRun?.name ?? '',
         Bulk_Run_Comment: bulkRun?.comment ?? '',
@@ -452,6 +460,7 @@ export default function App() {
     const evtRows = marketEvents.map(e => ({
       ID: e.id,
       Name: e.name ?? '',
+      Campaign_Name: e.campaignName ?? '',
       Scenario: e.scenario,
       Segment: e.segment,
       Product: e.product,
@@ -803,6 +812,7 @@ export default function App() {
           restoredEvents = evtRaw.map(r => ({
             id:               String(r.ID ?? Math.random().toString(36).substr(2, 9)),
             name:             String(r.Name ?? ''),
+            campaignName:     String(r.Campaign_Name ?? ''),
             scenario:         r.Scenario,
             segment:          r.Segment,
             product:          r.Product,
@@ -1094,6 +1104,7 @@ export default function App() {
     // Add Market Events as a separate sheet so they can be re-imported next month
     if (marketEvents.length > 0) {
       const eventRows = marketEvents.map(e => ({
+        Campaign_Name: e.campaignName ?? '',
         Scenario: e.scenario,
         Segment: e.segment,
         Product: e.product,
@@ -1211,6 +1222,8 @@ export default function App() {
     customerVolume: 0,
     revenue: 0,
     arpu: 0,
+    name: '',
+    campaignName: '',
     comment: '',
     contractLength: 24,
   });
@@ -1530,17 +1543,21 @@ export default function App() {
             const neg = (v: number) => isOut ? -Math.abs(v) : v;
             return {
               id: Math.random().toString(36).substr(2, 9),
+              name: String(r['Name'] || ''),
+              campaignName: String(r['Campaign_Name'] || ''),
               scenario: scen,
               segment: String(r['Segment'] || 'All'),
               product: String(r['Product'] || 'All'),
+              productL2: String(r['Product_L2'] || 'All'),
               channel: String(r['Channel'] || 'All'),
-              date: String(r['Date'] || ''),
+              channelL2: String(r['Channel_L2'] || 'All'),
+              date: String(r['Date'] || r['Start_Month'] || ''),
               subscriberVolume: neg(Number(r['Subscriber_Volume']) || 0),
               customerVolume:   neg(Number(r['Customer_Volume'])   || 0),
               revenue:          neg(Number(r['Revenue'])           || 0),
               arpu:             neg(Number(r['ARPU'])              || 0),
               comment: String(r['Comment'] || ''),
-              contractLength: Number(r['Contract_Length']) || 24,
+              contractLength: Number(r['Contract_Length'] || r['Contract_Length_Months']) || 24,
             };
           });
           setMarketEvents(restoredEvents);
@@ -1682,7 +1699,7 @@ export default function App() {
         
         if (aggArr.length < 2) return;
 
-        const hw = calculateHoltWinters(aggArr, wiDateCol, wiValueCol, stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon);
+        const hw = calculateHoltWinters(aggArr, wiDateCol, wiValueCol, stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon, selectedForecastModel);
         
         aggArr.forEach(row => {
           const t = row._parsedDate.getTime();
@@ -1715,7 +1732,7 @@ export default function App() {
         });
         const aggArr = Array.from(aggMap.values()).sort((a, b) => a._parsedDate.getTime() - b._parsedDate.getTime());
         if (aggArr.length < 2) return;
-        const hw = calculateHoltWinters(aggArr, wiDateCol, wiValueCol, stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon);
+        const hw = calculateHoltWinters(aggArr, wiDateCol, wiValueCol, stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon, selectedForecastModel);
         if (hw) {
           const hist = aggArr.map((row) => {
             const { _parsedDate, ...rest } = row;
@@ -1774,7 +1791,7 @@ export default function App() {
         
         if (aggArr.length < 2) return;
 
-        const hw = calculateHoltWinters(aggArr, wiDateCol, wiValueCol, stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon);
+        const hw = calculateHoltWinters(aggArr, wiDateCol, wiValueCol, stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon, selectedForecastModel);
         
         aggArr.forEach(row => {
           const t = row._parsedDate.getTime();
@@ -1807,7 +1824,7 @@ export default function App() {
         });
         const aggArr = Array.from(aggMap.values()).sort((a, b) => a._parsedDate.getTime() - b._parsedDate.getTime());
         if (aggArr.length < 2) return;
-        const hw = calculateHoltWinters(aggArr, wiDateCol, wiValueCol, stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon);
+        const hw = calculateHoltWinters(aggArr, wiDateCol, wiValueCol, stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon, selectedForecastModel);
         if (hw) {
           const hist = aggArr.map((row) => {
             const { _parsedDate, ...rest } = row;
@@ -1866,7 +1883,7 @@ export default function App() {
         
         if (aggArr.length < 2) return;
 
-        const hw = calculateHoltWinters(aggArr, wiDateCol, wiValueCol, stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon);
+        const hw = calculateHoltWinters(aggArr, wiDateCol, wiValueCol, stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon, selectedForecastModel);
         
         aggArr.forEach(row => {
           const t = row._parsedDate.getTime();
@@ -1900,7 +1917,7 @@ export default function App() {
         });
         const aggArr = Array.from(aggMap.values()).sort((a, b) => a._parsedDate.getTime() - b._parsedDate.getTime());
         if (aggArr.length < 2) return;
-        const hw = calculateHoltWinters(aggArr, wiDateCol, wiValueCol, stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon);
+        const hw = calculateHoltWinters(aggArr, wiDateCol, wiValueCol, stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon, selectedForecastModel);
         if (hw) {
           const hist = aggArr.map((row) => {
             const { _parsedDate, ...rest } = row;
@@ -1947,7 +1964,7 @@ export default function App() {
 
         if (aggArr.length < 2) return;
 
-        const hw = calculateHoltWinters(aggArr, wiDateCol, wiValueCol, stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon);
+        const hw = calculateHoltWinters(aggArr, wiDateCol, wiValueCol, stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon, selectedForecastModel);
         if (hw) {
           const hist = aggArr.map(row => ({
             ...row,
@@ -2094,7 +2111,7 @@ export default function App() {
     });
 
     const aggregatedData = Array.from(aggregatedDataMap.values()).sort((a, b) => a._parsedDate.getTime() - b._parsedDate.getTime());
-    const newForecastData = calculateHoltWinters(aggregatedData, wiDateCol, wiValueCol, stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon);
+    const newForecastData = calculateHoltWinters(aggregatedData, wiDateCol, wiValueCol, stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon, selectedForecastModel);
 
     if (!newForecastData) {
       setError('Not enough valid data points to generate a forecast (need at least 4).');
@@ -3280,7 +3297,7 @@ export default function App() {
     const runPostExp = manualParams?.postHorizonExpansionRate ?? genPostHorizonExpansionRate;
     const runConfHor = manualParams?.confidenceHorizon ?? confidenceHorizon;
 
-    const newForecastData = calculateHoltWinters(aggregatedData, wiDateCol, wiValueCol, genLength, runPreUnc, runPostExp, runConfHor);
+    const newForecastData = calculateHoltWinters(aggregatedData, wiDateCol, wiValueCol, genLength, runPreUnc, runPostExp, runConfHor, selectedForecastModel);
 
     if (!newForecastData) {
       return null;
@@ -3342,6 +3359,8 @@ export default function App() {
     model?: ForecastModel;
     name?: string;
     comment?: string;
+    autoModel?: boolean;
+    autoConfidence?: boolean;
   }): Promise<{ generated: number; failed: number }> => {
     const targets = options?.cohortIds
       ? allCohorts.filter(c => options.cohortIds!.includes(c.id))
@@ -3447,6 +3466,8 @@ export default function App() {
       runPostExp,
       runConfHor,
       runModel,
+      autoModel:      options?.autoModel      ?? true,
+      autoConfidence: options?.autoConfidence ?? true,
     };
 
     setGenerationProgress({ current: 0, total: targets.length });
@@ -3611,7 +3632,7 @@ export default function App() {
                   : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
-              Home
+              {t('home')}
             </button>
             <button
               onClick={() => setActiveView('overall')}
@@ -3621,7 +3642,7 @@ export default function App() {
                   : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
-              Overall Forecast
+              {t('standard_forecast')}
             </button>
             <button
               onClick={() => setActiveView('compare')}
@@ -3631,7 +3652,7 @@ export default function App() {
                   : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
-              Compare Scenarios
+              {t('compare_scenarios')}
             </button>
           </div>
         </div>
@@ -3786,6 +3807,7 @@ export default function App() {
             setMarketEvents={setMarketEvents}
             addMarketEvent={addMarketEvent}
             removeMarketEvent={removeMarketEvent}
+            updateMarketEvent={updateMarketEvent}
             yieldEvents={yieldEvents}
             newYieldEvent={newYieldEvent}
             setNewYieldEvent={setNewYieldEvent}
@@ -3919,6 +3941,7 @@ export default function App() {
           confidenceHorizon,
           forecastLength: stdForecastLength,
         }}
+        currentModel={selectedForecastModel}
         generationProgress={generationProgress}
         onConfirm={(opts) => generateAllMissingForecasts(opts)}
       />

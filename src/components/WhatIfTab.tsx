@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import { format, parse, isValid, addMonths } from 'date-fns';
 import { useForecast } from '../context/ForecastContext';
-import type { AdjustedForecastMonth, MarketEvent as NewMarketEvent, MarketEventAdjustedForecast, YieldEvent, PricingEvent } from '../types/forecast';
+import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent } from '../types/forecast';
 import type { MarketEvent } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
@@ -41,6 +41,7 @@ interface WhatIfTabProps {
   setMarketEvents: (e: MarketEvent[]) => void;
   addMarketEvent: () => void;
   removeMarketEvent: (id: string) => void;
+  updateMarketEvent: (id: string, patch: Partial<MarketEvent>) => void;
   /** Yield Events (Value tab) */
   yieldEvents: YieldEvent[];
   newYieldEvent: Partial<YieldEvent>;
@@ -114,6 +115,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   setMarketEvents,
   addMarketEvent,
   removeMarketEvent,
+  updateMarketEvent,
   yieldEvents,
   newYieldEvent,
   setNewYieldEvent,
@@ -134,6 +136,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const { baseForecast, setAdjustedForecast } = useForecast();
 
   const [selectedKpis, setSelectedKpis] = useState<KpiName[]>(['Inflow', 'Outflow', 'Retention', 'Base']);
+
+  // null = add-new mode; a string id = editing that event
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
   // ---------------------------------------------------------------------------
   // Local view filter — independent from Step 1 selections.
@@ -925,8 +930,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         customerVolume:   neg(Math.round((newEvent.customerVolume || 0) * fraction)),
         revenue:          neg(Math.round((newEvent.revenue        || 0) * fraction)),
         arpu:             neg(newEvent.arpu || 0),
-        name:             newEvent.name    || '',
-        comment:          newEvent.comment  || '',
+        name:             newEvent.name         || '',
+        campaignName:     newEvent.campaignName || '',
+        comment:          newEvent.comment      || '',
         contractLength:   newEvent.contractLength ?? 24,
       };
     });
@@ -935,13 +941,75 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setNewEvent({
       scenario: 'Inflow', segment: 'All', product: 'All', productL2: 'All',
       channel: 'All', channelL2: 'All', date: format(new Date(), 'yyyy-MM'),
-      subscriberVolume: 0, customerVolume: 0, revenue: 0, arpu: 0, name: '', comment: '', contractLength: 24,
+      subscriberVolume: 0, customerVolume: 0, revenue: 0, arpu: 0, name: '', campaignName: '', comment: '', contractLength: 24,
     });
     setSpreadEnabled(false);
     setSpreadMonths(3);
     setSpreadDistType('even');
     setCustomDist([34, 33, 33]);
   }, [newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, addMarketEvent, setMarketEvents, marketEvents, setNewEvent]);
+
+  const BLANK_EVENT: Partial<MarketEvent> = {
+    scenario: 'Inflow', segment: 'All', product: 'All', productL2: 'All',
+    channel: 'All', channelL2: 'All', date: format(new Date(), 'yyyy-MM'),
+    subscriberVolume: 0, customerVolume: 0, revenue: 0, arpu: 0,
+    name: '', campaignName: '', comment: '', contractLength: 24,
+  };
+
+  const handleEditStart = useCallback((event: MarketEvent) => {
+    const isOutflow = event.scenario === 'Outflow';
+    // Display absolute values — the neg() convention is re-applied on save
+    const abs = (v: number) => isOutflow ? Math.abs(v) : v;
+    setNewEvent({
+      scenario: event.scenario,
+      segment: event.segment,
+      product: event.product,
+      productL2: event.productL2 ?? 'All',
+      channel: event.channel,
+      channelL2: event.channelL2 ?? 'All',
+      date: event.date,
+      subscriberVolume: abs(event.subscriberVolume),
+      customerVolume: abs(event.customerVolume),
+      revenue: abs(event.revenue),
+      arpu: abs(event.arpu),
+      name: event.name ?? '',
+      campaignName: event.campaignName ?? '',
+      comment: event.comment,
+      contractLength: event.contractLength,
+    });
+    setEditingEventId(event.id);
+    setSpreadEnabled(false);
+  }, [setNewEvent]);
+
+  const handleSaveEdit = useCallback(() => {
+    if (!editingEventId || !newEvent.date) return;
+    const isOutflow = newEvent.scenario === 'Outflow';
+    const neg = (v: number) => isOutflow ? -Math.abs(v) : v;
+    updateMarketEvent(editingEventId, {
+      scenario: newEvent.scenario as MarketEvent['scenario'],
+      segment: newEvent.segment ?? 'All',
+      product: newEvent.product ?? 'All',
+      productL2: newEvent.productL2 ?? 'All',
+      channel: newEvent.channel ?? 'All',
+      channelL2: newEvent.channelL2 ?? 'All',
+      date: newEvent.date,
+      subscriberVolume: neg(newEvent.subscriberVolume ?? 0),
+      customerVolume:   neg(newEvent.customerVolume   ?? 0),
+      revenue:          neg(newEvent.revenue           ?? 0),
+      arpu:             neg(newEvent.arpu              ?? 0),
+      name: newEvent.name ?? '',
+      campaignName: newEvent.campaignName ?? '',
+      comment: newEvent.comment ?? '',
+      contractLength: newEvent.contractLength ?? 24,
+    });
+    setEditingEventId(null);
+    setNewEvent(BLANK_EVENT);
+  }, [editingEventId, newEvent, updateMarketEvent, setNewEvent]);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingEventId(null);
+    setNewEvent(BLANK_EVENT);
+  }, [setNewEvent]);
 
   // -------------------------------------------------------------------------
   // Write MarketEventAdjustedForecast back to context whenever inputs change
@@ -953,26 +1021,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       return;
     }
 
-    // Convert legacy market events to the new typed format (ARPU events skipped —
-    // they have no direct equivalent in the new MarketEventType enum yet)
-    const typedEvents: NewMarketEvent[] = marketEvents
-      .filter(e => e.scenario !== 'ARPU')
-      .map(e => ({
-        id: e.id,
-        eventType: e.scenario as NewMarketEvent['eventType'],
-        segment: e.segment,
-        product: e.product,
-        channel: e.channel,
-        startMonth: e.date,
-        durationMonths: 1,
-        volumeImpact: e.subscriberVolume,
-        arpuImpact: e.arpu,
-        comment: e.comment,
-      }));
-
     const adjusted: MarketEventAdjustedForecast = {
       base: baseForecast,
-      marketEvents: typedEvents,
+      marketEvents,
       adjustedMonths,
     };
     setAdjustedForecast(adjusted);
@@ -1299,21 +1350,27 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     tickFormatter={() => ''}
                   />
 
-                  {/* Event reference lines */}
-                  {marketEvents.map((e, idx) => {
-                    const d = parse(e.date, 'yyyy-MM', new Date());
-                    if (!isValid(d)) return null;
-                    return (
+                  {/* Event reference lines — deduplicated by month; label shows campaign/event name or scenario */}
+                  {(() => {
+                    const seen = new Map<string, string[]>();
+                    marketEvents.forEach(e => {
+                      if (!isValid(parse(e.date, 'yyyy-MM', new Date()))) return;
+                      const label = e.campaignName || e.name || e.scenario;
+                      if (!seen.has(e.date)) seen.set(e.date, []);
+                      const labels = seen.get(e.date)!;
+                      if (!labels.includes(label)) labels.push(label);
+                    });
+                    return Array.from(seen.entries()).map(([date, labels]) => (
                       <ReferenceLine
-                        key={`ref-${idx}`}
-                        x={e.date}
+                        key={`ref-${date}`}
+                        x={date}
                         yAxisId="left"
                         stroke="#f43f5e"
                         strokeDasharray="3 3"
-                        label={{ position: 'top', value: e.name || e.scenario, fill: '#f43f5e', fontSize: 9 }}
+                        label={{ position: 'top', value: labels.join(' / '), fill: '#f43f5e', fontSize: 9 }}
                       />
-                    );
-                  })}
+                    ));
+                  })()}
 
                   {selectedKpis.map(kpi => {
                     const c = KPI_COLORS[kpi];
@@ -1677,13 +1734,29 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               </div>
             )}
 
-            {/* Name + Comment + Add button */}
+            {/* Campaign + Name + Comment + Action buttons */}
+            {editingEventId && (
+              <div className="mt-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                Editing event — modify the fields above then click Save Changes.
+              </div>
+            )}
             <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-end">
-              <div className="md:w-48 shrink-0">
+              <div className="md:w-44 shrink-0">
+                <label className="block text-xs font-medium text-slate-500 mb-1">Campaign Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Summer Promo 2026"
+                  value={newEvent.campaignName ?? ''}
+                  onChange={e => setNewEvent({ ...newEvent, campaignName: e.target.value })}
+                  className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
+                />
+              </div>
+              <div className="md:w-36 shrink-0">
                 <label className="block text-xs font-medium text-slate-500 mb-1">Event Name</label>
                 <input
                   type="text"
-                  placeholder="e.g. Q2 Campaign"
+                  placeholder="e.g. Q2 Wave 1"
                   value={newEvent.name ?? ''}
                   onChange={e => setNewEvent({ ...newEvent, name: e.target.value })}
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
@@ -1699,13 +1772,31 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
               </div>
-              <button
-                onClick={handleAddMarketEvent}
-                disabled={!newEvent.date || newEvent.subscriberVolume === undefined}
-                className="shrink-0 bg-[#e60000] text-white text-sm font-semibold py-2 px-6 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {spreadEnabled ? `Add ${spreadMonths} Events` : 'Add Event'}
-              </button>
+              {editingEventId ? (
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={handleSaveEdit}
+                    disabled={!newEvent.date}
+                    className="bg-[#e60000] text-white text-sm font-semibold py-2 px-5 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Save Changes
+                  </button>
+                  <button
+                    onClick={handleCancelEdit}
+                    className="bg-white border border-slate-200 text-slate-600 text-sm font-semibold py-2 px-4 rounded-lg hover:bg-slate-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={handleAddMarketEvent}
+                  disabled={!newEvent.date || newEvent.subscriberVolume === undefined}
+                  className="shrink-0 bg-[#e60000] text-white text-sm font-semibold py-2 px-6 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {spreadEnabled ? `Add ${spreadMonths} Events` : 'Add Event'}
+                </button>
+              )}
             </div>
           </div>
 
@@ -1714,6 +1805,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             <table className="w-full text-sm text-left">
               <thead className="text-xs text-slate-500 bg-slate-50 border-b border-slate-200">
                 <tr>
+                  <th className="px-5 py-3 font-semibold">Campaign</th>
                   <th className="px-5 py-3 font-semibold">Month</th>
                   <th className="px-5 py-3 font-semibold">Segment</th>
                   <th className="px-5 py-3 font-semibold">Product</th>
@@ -1724,20 +1816,26 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   <th className="px-5 py-3 font-semibold text-right">Outflow Δ</th>
                   <th className="px-5 py-3 font-semibold text-right">ARPU Δ</th>
                   <th className="px-5 py-3 font-semibold">Comment</th>
+                  <th className="px-5 py-3 font-semibold text-center">Edit</th>
                   <th className="px-5 py-3 font-semibold text-center">Remove</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {marketEvents.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-5 py-8 text-center text-slate-400 italic text-sm">
+                    <td colSpan={13} className="px-5 py-8 text-center text-slate-400 italic text-sm">
                       No market events yet. Use the form above to add events — they adjust the chart immediately.
                     </td>
                   </tr>
                 ) : (
                   marketEvents
                     .slice()
-                    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+                    .sort((a, b) => {
+                      const ca = a.campaignName || '';
+                      const cb = b.campaignName || '';
+                      if (ca !== cb) return ca.localeCompare(cb);
+                      return String(a.date).localeCompare(String(b.date));
+                    })
                     .map(event => {
                       const isRetention = event.scenario === 'Retention';
                       const isInflow    = event.scenario === 'Inflow';
@@ -1763,10 +1861,26 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       // Helper: render a signed numeric delta cell
                       const fmtDelta = (v: number) => (v > 0 ? '+' : '') + formatNumber(v);
 
+                      const isEditing = editingEventId === event.id;
+                      const campaignLabel = event.campaignName || '';
+
                       return (
                         <React.Fragment key={event.id}>
-                          <tr className={`hover:bg-slate-50 transition-colors ${hasWarning ? 'bg-amber-50/40' : ''}`}>
-                            <td className="px-5 py-3 font-medium text-slate-700">{fmtMonth(event.date)}</td>
+                          <tr className={`hover:bg-slate-50 transition-colors ${
+                            isEditing ? 'bg-amber-50/60 ring-1 ring-inset ring-amber-300' :
+                            hasWarning ? 'bg-amber-50/40' : ''
+                          }`}>
+                            {/* Campaign column — shows badge for named campaigns */}
+                            <td className="px-5 py-3 text-xs max-w-[140px]">
+                              {campaignLabel ? (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full" title={campaignLabel}>
+                                  {campaignLabel}
+                                </span>
+                              ) : (
+                                <span className="text-slate-300">—</span>
+                              )}
+                            </td>
+                            <td className="px-5 py-3 font-medium text-slate-700 whitespace-nowrap">{fmtMonth(event.date)}</td>
                             <td className="px-5 py-3 text-slate-600 text-xs">{event.segment}</td>
                             <td className="px-5 py-3 text-slate-600 text-xs">
                               {event.product}{event.productL2 && event.productL2 !== 'All' ? ` — ${event.productL2}` : ''}
@@ -1792,8 +1906,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 Retention dual-impact (emerald, outflow is reduced) */}
                             <td className={`px-5 py-3 text-right font-semibold text-xs ${
                               outflowDelta === null ? 'text-slate-300' :
-                              isOutflow    ? 'text-rose-600' :    // Outflow: bad (more leaving)
-                              isRetention  ? 'text-emerald-600' : // Retention: good (fewer leaving)
+                              isOutflow    ? 'text-rose-600' :
+                              isRetention  ? 'text-emerald-600' :
                               'text-slate-600'
                             }`}>
                               {outflowDelta !== null ? fmtDelta(outflowDelta) : '—'}
@@ -1811,6 +1925,23 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             <td className="px-5 py-3 text-center">
                               <button
                                 type="button"
+                                onClick={(e) => { e.stopPropagation(); handleEditStart(event); }}
+                                className={`p-1 rounded transition-colors ${
+                                  isEditing
+                                    ? 'text-amber-600 bg-amber-100'
+                                    : 'text-slate-400 hover:text-[#e60000] hover:bg-[#e60000]/5'
+                                }`}
+                                title={isEditing ? 'Currently editing' : 'Edit event'}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                </svg>
+                              </button>
+                            </td>
+                            <td className="px-5 py-3 text-center">
+                              <button
+                                type="button"
                                 onClick={(e) => { e.stopPropagation(); removeMarketEvent(event.id); }}
                                 className="text-rose-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors"
                               >
@@ -1820,7 +1951,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           </tr>
                           {hasWarning && (
                             <tr className="bg-amber-50">
-                              <td colSpan={11} className="px-5 py-2 text-xs text-amber-700 flex items-center gap-2">
+                              <td colSpan={13} className="px-5 py-2 text-xs text-amber-700 flex items-center gap-2">
                                 <AlertTriangle size={12} className="text-amber-500 shrink-0 inline mr-1" />
                                 Retention volume ({formatNumber(event.subscriberVolume)}) exceeds forecast Outflow for {fmtMonth(event.date)}.
                                 The retained volume will be clamped to the available Outflow — reduce the event volume to avoid over-retention.
