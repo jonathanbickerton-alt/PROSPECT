@@ -1104,16 +1104,20 @@ export default function App() {
     // Add Market Events as a separate sheet so they can be re-imported next month
     if (marketEvents.length > 0) {
       const eventRows = marketEvents.map(e => ({
+        Name: e.name ?? '',
         Campaign_Name: e.campaignName ?? '',
         Scenario: e.scenario,
         Segment: e.segment,
         Product: e.product,
+        Product_L2: e.productL2 ?? 'All',
         Channel: e.channel,
+        Channel_L2: e.channelL2 ?? 'All',
         Date: e.date,
         Subscriber_Volume: e.subscriberVolume,
         Customer_Volume: e.customerVolume,
         Revenue: e.revenue,
         ARPU: e.arpu,
+        Contract_Length_Months: e.contractLength ?? 24,
         Comment: e.comment,
       }));
       const wsEvents = XLSX.utils.json_to_sheet(eventRows);

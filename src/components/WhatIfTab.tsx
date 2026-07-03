@@ -1,5 +1,5 @@
 import React, { useMemo, useEffect, useState, useCallback } from 'react';
-import { ArrowLeft, Info, Download, Trash2, CheckCircle2, XCircle, Activity, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Info, Download, Trash2, CheckCircle2, XCircle, Activity, AlertTriangle, Pencil } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip,
   Legend, Line, Brush, ReferenceLine,
@@ -1752,7 +1752,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
               </div>
-              <div className="md:w-36 shrink-0">
+              <div className="md:w-44 shrink-0">
                 <label className="block text-xs font-medium text-slate-500 mb-1">Event Name</label>
                 <input
                   type="text"
@@ -1933,10 +1933,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 }`}
                                 title={isEditing ? 'Currently editing' : 'Edit event'}
                               >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                </svg>
+                                <Pencil size={14} />
                               </button>
                             </td>
                             <td className="px-5 py-3 text-center">
