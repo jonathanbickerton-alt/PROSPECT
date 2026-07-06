@@ -327,12 +327,33 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
     return cohortGenLog
       .filter(e => !allBulkIds.has(e.cohortId))
       .map(e => {
+        // Formats all end in |type|scenario. Peel those off the end, then read
+        // the dimension tuple by length (9-part incl. tariff, 7-part pre-tariff,
+        // 3-part legacy) — never by a fixed positional index.
         const parts = e.cohortId.split('|');
-        return { cohortId: e.cohortId, segment: parts[0] || 'All', product: parts[1] || 'All', channel: parts[2] || 'All', scenario: parts[4] || '', timestamp: e.timestamp, modelUsed: e.modelUsed };
+        const scenario = parts[parts.length - 1] || '';
+        const dims = parts.slice(0, parts.length - 2);
+        let segment = 'All', product = 'All', channel = 'All';
+        if (dims.length >= 7)      { segment = dims[0]; product = dims[1]; channel = dims[3]; }
+        else if (dims.length === 5){ segment = dims[0]; product = dims[1]; channel = dims[3]; }
+        else                       { segment = dims[0] || 'All'; product = dims[1] || 'All'; channel = dims[2] || 'All'; }
+        return { cohortId: e.cohortId, segment, product, channel, scenario, timestamp: e.timestamp, modelUsed: e.modelUsed };
       });
   }, [cohortGenLog, allBulkIds]);
 
-  const activeCohortId = `${segmentValue === 'All (Aggregated)' ? 'All' : segmentValue}|${productValue === 'All (Aggregated)' ? 'All' : productValue}|${channelValue === 'All (Aggregated)' ? 'All' : channelValue}|Standard Forecast|${stdScenario}`;
+  // Built to match the 9-part manualCohortId/stdId format so the active row
+  // highlights correctly (seg|prod|prodL2|chan|chanL2|tariffL1|tariffL2|type|scen).
+  const activeCohortId = [
+    segmentValue === 'All (Aggregated)' ? 'All' : segmentValue,
+    productValue === 'All (Aggregated)' ? 'All' : productValue,
+    productL2Value || 'All',
+    channelValue === 'All (Aggregated)' ? 'All' : channelValue,
+    channelL2Value || 'All',
+    tariffValue === 'All (Aggregated)' ? 'All' : (tariffValue || 'All'),
+    tariffL2Value || 'All',
+    'Standard Forecast',
+    stdScenario,
+  ].join('|');
 
   // Legend label for the forecast mean line — includes the model name once a
   // forecast has been generated, so the chart self-documents which model was used.

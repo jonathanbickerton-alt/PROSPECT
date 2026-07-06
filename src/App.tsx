@@ -1639,21 +1639,31 @@ export default function App() {
   // Loads a previously saved cohort's forecast data into the chart and sets
   // the filter controls to match, without re-running the model.
   const onSelectCohort = useCallback((cohortId: string) => {
+    // cohortId formats, all ending in |type|scenario:
+    //   9-part dims: seg|prodL1|prodL2|chanL1|chanL2|tariffL1|tariffL2|type|scen
+    //   7-part dims: seg|prodL1|prodL2|chanL1|chanL2|type|scen (pre-tariff)
+    //   5-part dims: seg|prod|chan|type|scen (legacy)
+    // Parse robustly by peeling type + scenario off the END, then read the
+    // dimension tuple by its length — never by a fixed positional index.
     const parts = cohortId.split('|');
-    // New format: seg|prodL1|prodL2|chanL1|chanL2|type|scen (7 parts)
-    // Old format: seg|prod|chan|type|scen (5 parts)
-    const isNewFormat = parts.length >= 7;
-    const seg    = parts[0];
-    const prod   = parts[1];
-    const prodL2 = isNewFormat ? parts[2] : 'All';
-    const chan    = isNewFormat ? parts[3] : parts[2];
-    const chanL2 = isNewFormat ? parts[4] : 'All';
-    const scen   = isNewFormat ? parts[6] : parts[4];
+    const scen = parts[parts.length - 1];
+    const dims = parts.slice(0, parts.length - 2); // drop type + scenario
+    let seg = 'All', prod = 'All', prodL2 = 'All', chan = 'All', chanL2 = 'All', tarL1 = 'All', tarL2 = 'All';
+    if (dims.length >= 7) {
+      [seg, prod, prodL2, chan, chanL2, tarL1, tarL2] = dims;
+    } else if (dims.length === 5) {
+      [seg, prod, prodL2, chan, chanL2] = dims;
+    } else {
+      // legacy 3-part: seg|prod|chan
+      [seg, prod, chan] = dims;
+    }
     setSegmentValue(seg === 'All' ? 'All (Aggregated)' : seg);
     setProductValue(prod === 'All' ? 'All (Aggregated)' : prod);
     setProductL2Value(prodL2 === 'All' ? '' : prodL2);
     setChannelValue(chan === 'All' ? 'All (Aggregated)' : chan);
     setChannelL2Value(chanL2 === 'All' ? '' : chanL2);
+    setTariffValue(tarL1 === 'All' ? 'All (Aggregated)' : tarL1);
+    setTariffL2Value(tarL2 === 'All' ? '' : tarL2);
     setStdScenario(scen || 'Inflow');
     const saved = savedForecasts[cohortId];
     if (saved) setForecastData(saved);
