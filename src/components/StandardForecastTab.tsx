@@ -391,7 +391,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
             </div>
 
             {/* ── Segmentation filters ── */}
-            {(wiSegmentCol || wiProductCol || wiChannelCol) && (
+            {(wiSegmentCol || wiProductCol || wiChannelCol || wiTariffL1Col) && (
               <div className="space-y-4 pt-2 border-t border-slate-100">
                 <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
                   <Filter size={16} /> Filters
