@@ -1,12 +1,12 @@
 import React, { useMemo, useEffect, useState, useCallback } from 'react';
-import { ArrowLeft, Info, Download, Trash2, CheckCircle2, XCircle, Activity, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Info, Download, Trash2, CheckCircle2, XCircle, Activity, AlertTriangle, Pencil } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip,
   Legend, Line, Brush, ReferenceLine,
 } from 'recharts';
-import { format, parse, isValid, addMonths } from 'date-fns';
+import { format, parse, isValid, addMonths, differenceInCalendarMonths } from 'date-fns';
 import { useForecast } from '../context/ForecastContext';
-import type { AdjustedForecastMonth, MarketEvent as NewMarketEvent, MarketEventAdjustedForecast, YieldEvent, PricingEvent } from '../types/forecast';
+import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent } from '../types/forecast';
 import type { MarketEvent } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
@@ -41,6 +41,7 @@ interface WhatIfTabProps {
   setMarketEvents: (e: MarketEvent[]) => void;
   addMarketEvent: () => void;
   removeMarketEvent: (id: string) => void;
+  updateMarketEvent: (id: string, patch: Partial<MarketEvent>) => void;
   /** Yield Events (Value tab) */
   yieldEvents: YieldEvent[];
   newYieldEvent: Partial<YieldEvent>;
@@ -114,6 +115,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   setMarketEvents,
   addMarketEvent,
   removeMarketEvent,
+  updateMarketEvent,
   yieldEvents,
   newYieldEvent,
   setNewYieldEvent,
@@ -134,6 +136,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const { baseForecast, setAdjustedForecast } = useForecast();
 
   const [selectedKpis, setSelectedKpis] = useState<KpiName[]>(['Inflow', 'Outflow', 'Retention', 'Base']);
+
+  // null = add-new mode; a string id = editing that event
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  // null = not editing a campaign; a string = editing all events sharing that campaignName
+  const [editingCampaign, setEditingCampaign] = useState<string | null>(null);
 
   // ---------------------------------------------------------------------------
   // Local view filter — independent from Step 1 selections.
@@ -925,8 +932,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         customerVolume:   neg(Math.round((newEvent.customerVolume || 0) * fraction)),
         revenue:          neg(Math.round((newEvent.revenue        || 0) * fraction)),
         arpu:             neg(newEvent.arpu || 0),
-        name:             newEvent.name    || '',
-        comment:          newEvent.comment  || '',
+        name:             newEvent.name         || '',
+        campaignName:     newEvent.campaignName || '',
+        comment:          newEvent.comment      || '',
         contractLength:   newEvent.contractLength ?? 24,
       };
     });
@@ -935,13 +943,253 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setNewEvent({
       scenario: 'Inflow', segment: 'All', product: 'All', productL2: 'All',
       channel: 'All', channelL2: 'All', date: format(new Date(), 'yyyy-MM'),
-      subscriberVolume: 0, customerVolume: 0, revenue: 0, arpu: 0, name: '', comment: '', contractLength: 24,
+      subscriberVolume: 0, customerVolume: 0, revenue: 0, arpu: 0, name: '', campaignName: '', comment: '', contractLength: 24,
     });
     setSpreadEnabled(false);
     setSpreadMonths(3);
     setSpreadDistType('even');
     setCustomDist([34, 33, 33]);
   }, [newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, addMarketEvent, setMarketEvents, marketEvents, setNewEvent]);
+
+  const BLANK_EVENT: Partial<MarketEvent> = {
+    scenario: 'Inflow', segment: 'All', product: 'All', productL2: 'All',
+    channel: 'All', channelL2: 'All', date: format(new Date(), 'yyyy-MM'),
+    subscriberVolume: 0, customerVolume: 0, revenue: 0, arpu: 0,
+    name: '', campaignName: '', comment: '', contractLength: 24,
+  };
+
+  const handleEditStart = useCallback((event: MarketEvent) => {
+    const isOutflow = event.scenario === 'Outflow';
+    // Display absolute values — the neg() convention is re-applied on save
+    const abs = (v: number) => isOutflow ? Math.abs(v) : v;
+    setNewEvent({
+      scenario: event.scenario,
+      segment: event.segment,
+      product: event.product,
+      productL2: event.productL2 ?? 'All',
+      channel: event.channel,
+      channelL2: event.channelL2 ?? 'All',
+      date: event.date,
+      subscriberVolume: abs(event.subscriberVolume),
+      customerVolume: abs(event.customerVolume),
+      revenue: abs(event.revenue),
+      arpu: abs(event.arpu),
+      name: event.name ?? '',
+      campaignName: event.campaignName ?? '',
+      comment: event.comment,
+      contractLength: event.contractLength,
+    });
+    setEditingEventId(event.id);
+    setEditingCampaign(null);
+    setSpreadEnabled(false);
+  }, [setNewEvent]);
+
+  // ── Campaign group edit ────────────────────────────────────────────────────
+  // A campaign is group-editable when all its events share scenario + cohort
+  // dimensions + contract length (i.e. it is a pure volume spread), the month
+  // span fits the spread control (≤24), and it is not a multi-month ARPU group.
+  const campaignGroups = useMemo(() => {
+    const groups = new Map<string, { rows: MarketEvent[]; editable: boolean; reason: string }>();
+    marketEvents.forEach(e => {
+      if (!e.campaignName) return;
+      if (!groups.has(e.campaignName)) groups.set(e.campaignName, { rows: [], editable: true, reason: '' });
+      groups.get(e.campaignName)!.rows.push(e);
+    });
+    groups.forEach(g => {
+      g.rows.sort((a, b) => a.date.localeCompare(b.date));
+      const first = g.rows[0];
+      const homogeneous = g.rows.every(e =>
+        e.scenario === first.scenario &&
+        e.segment === first.segment &&
+        e.product === first.product &&
+        (e.productL2 ?? 'All') === (first.productL2 ?? 'All') &&
+        e.channel === first.channel &&
+        (e.channelL2 ?? 'All') === (first.channelL2 ?? 'All') &&
+        e.contractLength === first.contractLength
+      );
+      const d0 = parse(first.date, 'yyyy-MM', new Date());
+      const dN = parse(g.rows[g.rows.length - 1].date, 'yyyy-MM', new Date());
+      const span = isValid(d0) && isValid(dN) ? differenceInCalendarMonths(dN, d0) + 1 : 0;
+      if (!homogeneous) {
+        g.editable = false;
+        g.reason = 'Events in this campaign target different scenarios or cohorts — edit rows individually';
+      } else if (first.scenario === 'ARPU' && g.rows.length > 1) {
+        g.editable = false;
+        g.reason = 'Multi-month ARPU campaigns cannot be edited as a spread — edit rows individually';
+      } else if (span > 24) {
+        g.editable = false;
+        g.reason = 'Campaign spans more than 24 months — edit rows individually';
+      } else if (span < 1) {
+        g.editable = false;
+        g.reason = 'Campaign has an invalid month — edit rows individually';
+      }
+    });
+    return groups;
+  }, [marketEvents]);
+
+  const handleEditCampaignStart = useCallback((campaign: string) => {
+    const group = campaignGroups.get(campaign);
+    if (!group || !group.editable) return;
+    const rows = group.rows;
+
+    // Single-row campaigns edit exactly like a single event
+    if (rows.length === 1) {
+      handleEditStart(rows[0]);
+      setEditingEventId(null);
+      setEditingCampaign(campaign);
+      return;
+    }
+
+    const first = rows[0];
+    const isOutflow = first.scenario === 'Outflow';
+    const abs = (v: number) => isOutflow ? Math.abs(v) : v;
+
+    // Reverse-engineer the spread from the stored rows: total volume is the
+    // sum, span is first→last month, per-month % is each row's share.
+    const d0 = parse(first.date, 'yyyy-MM', new Date());
+    const span = differenceInCalendarMonths(parse(rows[rows.length - 1].date, 'yyyy-MM', new Date()), d0) + 1;
+    const volByOffset = new Array(span).fill(0);
+    let totalSub = 0, totalCust = 0, totalRev = 0;
+    rows.forEach(e => {
+      const off = differenceInCalendarMonths(parse(e.date, 'yyyy-MM', new Date()), d0);
+      volByOffset[off] += Math.abs(e.subscriberVolume);
+      totalSub  += Math.abs(e.subscriberVolume);
+      totalCust += Math.abs(e.customerVolume);
+      totalRev  += Math.abs(e.revenue);
+    });
+
+    // Derive percentages summing to exactly 100 (residual goes to month 1,
+    // matching the even-split remainder convention used on creation)
+    const pcts = volByOffset.map(v => totalSub > 0 ? Math.round((v / totalSub) * 100) : 0);
+    pcts[0] += 100 - pcts.reduce((s, p) => s + p, 0);
+
+    // Even if every month's volume is within rounding distance of the mean
+    const mean = totalSub / span;
+    const isEven = volByOffset.every(v => Math.abs(v - mean) <= 1);
+
+    setNewEvent({
+      scenario: first.scenario,
+      segment: first.segment,
+      product: first.product,
+      productL2: first.productL2 ?? 'All',
+      channel: first.channel,
+      channelL2: first.channelL2 ?? 'All',
+      date: first.date,
+      subscriberVolume: totalSub,
+      customerVolume: totalCust,
+      revenue: totalRev,
+      arpu: abs(first.arpu),
+      name: '',
+      campaignName: campaign,
+      comment: rows.find(e => e.comment)?.comment ?? '',
+      contractLength: first.contractLength,
+    });
+    setSpreadEnabled(true);
+    setSpreadMonths(span);
+    setSpreadDistType(isEven ? 'even' : 'custom');
+    setCustomDist(pcts);
+    setEditingEventId(null);
+    setEditingCampaign(campaign);
+  }, [campaignGroups, handleEditStart, setNewEvent]);
+
+  const handleSaveCampaign = useCallback(() => {
+    if (!editingCampaign || !newEvent.date) return;
+    const isOutflow = newEvent.scenario === 'Outflow';
+    const neg = (v: number) => isOutflow ? -Math.abs(v) : v;
+
+    let newEvents: MarketEvent[];
+    if (!spreadEnabled || newEvent.scenario === 'ARPU') {
+      newEvents = [{
+        id: Math.random().toString(36).substr(2, 9),
+        scenario: newEvent.scenario as MarketEvent['scenario'],
+        segment: newEvent.segment || 'All',
+        product: newEvent.product || 'All',
+        productL2: newEvent.productL2 || 'All',
+        channel: newEvent.channel || 'All',
+        channelL2: newEvent.channelL2 || 'All',
+        date: newEvent.date,
+        subscriberVolume: neg(newEvent.subscriberVolume || 0),
+        customerVolume:   neg(newEvent.customerVolume   || 0),
+        revenue:          neg(newEvent.revenue           || 0),
+        arpu:             neg(newEvent.arpu              || 0),
+        name: '',
+        campaignName: newEvent.campaignName || '',
+        comment: newEvent.comment || '',
+        contractLength: newEvent.contractLength ?? 24,
+      }];
+    } else {
+      const pcts = spreadDistType === 'even'
+        ? Array.from({ length: spreadMonths }, () => 100 / spreadMonths)
+        : customDist.slice(0, spreadMonths);
+      const total = pcts.reduce((s, p) => s + p, 0);
+      if (total <= 0) return;
+      const baseDate = parse(newEvent.date, 'yyyy-MM', new Date());
+      newEvents = pcts.map((pct, i) => {
+        const fraction = pct / total;
+        return {
+          id: Math.random().toString(36).substr(2, 9),
+          scenario: newEvent.scenario as MarketEvent['scenario'],
+          segment: newEvent.segment || 'All',
+          product: newEvent.product || 'All',
+          productL2: newEvent.productL2 || 'All',
+          channel: newEvent.channel || 'All',
+          channelL2: newEvent.channelL2 || 'All',
+          date: format(addMonths(baseDate, i), 'yyyy-MM'),
+          subscriberVolume: neg(Math.round((newEvent.subscriberVolume || 0) * fraction)),
+          customerVolume:   neg(Math.round((newEvent.customerVolume   || 0) * fraction)),
+          revenue:          neg(Math.round((newEvent.revenue           || 0) * fraction)),
+          arpu:             neg(newEvent.arpu || 0),
+          name: '',
+          campaignName: newEvent.campaignName || '',
+          comment: newEvent.comment || '',
+          contractLength: newEvent.contractLength ?? 24,
+        };
+      });
+    }
+
+    setMarketEvents([...marketEvents.filter(e => e.campaignName !== editingCampaign), ...newEvents]);
+    setEditingCampaign(null);
+    setNewEvent(BLANK_EVENT);
+    setSpreadEnabled(false);
+    setSpreadMonths(3);
+    setSpreadDistType('even');
+    setCustomDist([34, 33, 33]);
+  }, [editingCampaign, newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, marketEvents, setMarketEvents, setNewEvent]);
+
+  const handleSaveEdit = useCallback(() => {
+    if (!editingEventId || !newEvent.date) return;
+    const isOutflow = newEvent.scenario === 'Outflow';
+    const neg = (v: number) => isOutflow ? -Math.abs(v) : v;
+    updateMarketEvent(editingEventId, {
+      scenario: newEvent.scenario as MarketEvent['scenario'],
+      segment: newEvent.segment ?? 'All',
+      product: newEvent.product ?? 'All',
+      productL2: newEvent.productL2 ?? 'All',
+      channel: newEvent.channel ?? 'All',
+      channelL2: newEvent.channelL2 ?? 'All',
+      date: newEvent.date,
+      subscriberVolume: neg(newEvent.subscriberVolume ?? 0),
+      customerVolume:   neg(newEvent.customerVolume   ?? 0),
+      revenue:          neg(newEvent.revenue           ?? 0),
+      arpu:             neg(newEvent.arpu              ?? 0),
+      name: newEvent.name ?? '',
+      campaignName: newEvent.campaignName ?? '',
+      comment: newEvent.comment ?? '',
+      contractLength: newEvent.contractLength ?? 24,
+    });
+    setEditingEventId(null);
+    setNewEvent(BLANK_EVENT);
+  }, [editingEventId, newEvent, updateMarketEvent, setNewEvent]);
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingEventId(null);
+    setEditingCampaign(null);
+    setNewEvent(BLANK_EVENT);
+    setSpreadEnabled(false);
+    setSpreadMonths(3);
+    setSpreadDistType('even');
+    setCustomDist([34, 33, 33]);
+  }, [setNewEvent]);
 
   // -------------------------------------------------------------------------
   // Write MarketEventAdjustedForecast back to context whenever inputs change
@@ -953,26 +1201,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       return;
     }
 
-    // Convert legacy market events to the new typed format (ARPU events skipped —
-    // they have no direct equivalent in the new MarketEventType enum yet)
-    const typedEvents: NewMarketEvent[] = marketEvents
-      .filter(e => e.scenario !== 'ARPU')
-      .map(e => ({
-        id: e.id,
-        eventType: e.scenario as NewMarketEvent['eventType'],
-        segment: e.segment,
-        product: e.product,
-        channel: e.channel,
-        startMonth: e.date,
-        durationMonths: 1,
-        volumeImpact: e.subscriberVolume,
-        arpuImpact: e.arpu,
-        comment: e.comment,
-      }));
-
     const adjusted: MarketEventAdjustedForecast = {
       base: baseForecast,
-      marketEvents: typedEvents,
+      marketEvents,
       adjustedMonths,
     };
     setAdjustedForecast(adjusted);
@@ -1299,21 +1530,27 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     tickFormatter={() => ''}
                   />
 
-                  {/* Event reference lines */}
-                  {marketEvents.map((e, idx) => {
-                    const d = parse(e.date, 'yyyy-MM', new Date());
-                    if (!isValid(d)) return null;
-                    return (
+                  {/* Event reference lines — deduplicated by month; label shows campaign/event name or scenario */}
+                  {(() => {
+                    const seen = new Map<string, string[]>();
+                    marketEvents.forEach(e => {
+                      if (!isValid(parse(e.date, 'yyyy-MM', new Date()))) return;
+                      const label = e.campaignName || e.name || e.scenario;
+                      if (!seen.has(e.date)) seen.set(e.date, []);
+                      const labels = seen.get(e.date)!;
+                      if (!labels.includes(label)) labels.push(label);
+                    });
+                    return Array.from(seen.entries()).map(([date, labels]) => (
                       <ReferenceLine
-                        key={`ref-${idx}`}
-                        x={e.date}
+                        key={`ref-${date}`}
+                        x={date}
                         yAxisId="left"
                         stroke="#f43f5e"
                         strokeDasharray="3 3"
-                        label={{ position: 'top', value: e.name || e.scenario, fill: '#f43f5e', fontSize: 9 }}
+                        label={{ position: 'top', value: labels.join(' / '), fill: '#f43f5e', fontSize: 9 }}
                       />
-                    );
-                  })}
+                    ));
+                  })()}
 
                   {selectedKpis.map(kpi => {
                     const c = KPI_COLORS[kpi];
@@ -1677,15 +1914,26 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               </div>
             )}
 
-            {/* Name + Comment + Add button */}
+            {/* Campaign + Comment + Action buttons */}
+            {editingCampaign ? (
+              <div className="mt-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                Editing campaign "{editingCampaign}" — saving will replace all of its events with the values above.
+              </div>
+            ) : editingEventId ? (
+              <div className="mt-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                Editing event — modify the fields above then click Save Changes.
+              </div>
+            ) : null}
             <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-end">
-              <div className="md:w-48 shrink-0">
-                <label className="block text-xs font-medium text-slate-500 mb-1">Event Name</label>
+              <div className="md:w-56 shrink-0">
+                <label className="block text-xs font-medium text-slate-500 mb-1">Campaign Name</label>
                 <input
                   type="text"
-                  placeholder="e.g. Q2 Campaign"
-                  value={newEvent.name ?? ''}
-                  onChange={e => setNewEvent({ ...newEvent, name: e.target.value })}
+                  placeholder="e.g. Summer Promo 2026"
+                  value={newEvent.campaignName ?? ''}
+                  onChange={e => setNewEvent({ ...newEvent, campaignName: e.target.value })}
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
               </div>
@@ -1699,13 +1947,31 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
               </div>
-              <button
-                onClick={handleAddMarketEvent}
-                disabled={!newEvent.date || newEvent.subscriberVolume === undefined}
-                className="shrink-0 bg-[#e60000] text-white text-sm font-semibold py-2 px-6 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {spreadEnabled ? `Add ${spreadMonths} Events` : 'Add Event'}
-              </button>
+              {(editingEventId || editingCampaign) ? (
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={editingCampaign ? handleSaveCampaign : handleSaveEdit}
+                    disabled={!newEvent.date}
+                    className="bg-[#e60000] text-white text-sm font-semibold py-2 px-5 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {editingCampaign ? 'Save Campaign' : 'Save Changes'}
+                  </button>
+                  <button
+                    onClick={handleCancelEdit}
+                    className="bg-white border border-slate-200 text-slate-600 text-sm font-semibold py-2 px-4 rounded-lg hover:bg-slate-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={handleAddMarketEvent}
+                  disabled={!newEvent.date || newEvent.subscriberVolume === undefined}
+                  className="shrink-0 bg-[#e60000] text-white text-sm font-semibold py-2 px-6 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {spreadEnabled ? `Add ${spreadMonths} Events` : 'Add Event'}
+                </button>
+              )}
             </div>
           </div>
 
@@ -1714,6 +1980,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             <table className="w-full text-sm text-left">
               <thead className="text-xs text-slate-500 bg-slate-50 border-b border-slate-200">
                 <tr>
+                  <th className="px-5 py-3 font-semibold">Campaign</th>
                   <th className="px-5 py-3 font-semibold">Month</th>
                   <th className="px-5 py-3 font-semibold">Segment</th>
                   <th className="px-5 py-3 font-semibold">Product</th>
@@ -1724,20 +1991,26 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   <th className="px-5 py-3 font-semibold text-right">Outflow Δ</th>
                   <th className="px-5 py-3 font-semibold text-right">ARPU Δ</th>
                   <th className="px-5 py-3 font-semibold">Comment</th>
+                  <th className="px-5 py-3 font-semibold text-center">Edit</th>
                   <th className="px-5 py-3 font-semibold text-center">Remove</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {marketEvents.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-5 py-8 text-center text-slate-400 italic text-sm">
+                    <td colSpan={13} className="px-5 py-8 text-center text-slate-400 italic text-sm">
                       No market events yet. Use the form above to add events — they adjust the chart immediately.
                     </td>
                   </tr>
                 ) : (
                   marketEvents
                     .slice()
-                    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+                    .sort((a, b) => {
+                      const ca = a.campaignName || '';
+                      const cb = b.campaignName || '';
+                      if (ca !== cb) return ca.localeCompare(cb);
+                      return String(a.date).localeCompare(String(b.date));
+                    })
                     .map(event => {
                       const isRetention = event.scenario === 'Retention';
                       const isInflow    = event.scenario === 'Inflow';
@@ -1763,10 +2036,43 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       // Helper: render a signed numeric delta cell
                       const fmtDelta = (v: number) => (v > 0 ? '+' : '') + formatNumber(v);
 
+                      const isEditing = editingEventId === event.id
+                        || (editingCampaign !== null && event.campaignName === editingCampaign);
+                      const campaignLabel = event.campaignName || '';
+                      const group = campaignLabel ? campaignGroups.get(campaignLabel) : undefined;
+
                       return (
                         <React.Fragment key={event.id}>
-                          <tr className={`hover:bg-slate-50 transition-colors ${hasWarning ? 'bg-amber-50/40' : ''}`}>
-                            <td className="px-5 py-3 font-medium text-slate-700">{fmtMonth(event.date)}</td>
+                          <tr className={`hover:bg-slate-50 transition-colors ${
+                            isEditing ? 'bg-amber-50/60 ring-1 ring-inset ring-amber-300' :
+                            hasWarning ? 'bg-amber-50/40' : ''
+                          }`}>
+                            {/* Campaign column — badge doubles as the group-edit control */}
+                            <td className="px-5 py-3 text-xs max-w-[160px]">
+                              {campaignLabel ? (
+                                group?.editable ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); handleEditCampaignStart(campaignLabel); }}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full hover:bg-[#e60000]/15 transition-colors cursor-pointer"
+                                    title={`Edit campaign "${campaignLabel}" (${group.rows.length} event${group.rows.length === 1 ? '' : 's'})`}
+                                  >
+                                    <Pencil size={11} className="shrink-0" />
+                                    {campaignLabel}
+                                  </button>
+                                ) : (
+                                  <span
+                                    className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full opacity-60 cursor-not-allowed"
+                                    title={group?.reason || campaignLabel}
+                                  >
+                                    {campaignLabel}
+                                  </span>
+                                )
+                              ) : (
+                                <span className="text-slate-300">—</span>
+                              )}
+                            </td>
+                            <td className="px-5 py-3 font-medium text-slate-700 whitespace-nowrap">{fmtMonth(event.date)}</td>
                             <td className="px-5 py-3 text-slate-600 text-xs">{event.segment}</td>
                             <td className="px-5 py-3 text-slate-600 text-xs">
                               {event.product}{event.productL2 && event.productL2 !== 'All' ? ` — ${event.productL2}` : ''}
@@ -1792,8 +2098,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 Retention dual-impact (emerald, outflow is reduced) */}
                             <td className={`px-5 py-3 text-right font-semibold text-xs ${
                               outflowDelta === null ? 'text-slate-300' :
-                              isOutflow    ? 'text-rose-600' :    // Outflow: bad (more leaving)
-                              isRetention  ? 'text-emerald-600' : // Retention: good (fewer leaving)
+                              isOutflow    ? 'text-rose-600' :
+                              isRetention  ? 'text-emerald-600' :
                               'text-slate-600'
                             }`}>
                               {outflowDelta !== null ? fmtDelta(outflowDelta) : '—'}
@@ -1811,6 +2117,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             <td className="px-5 py-3 text-center">
                               <button
                                 type="button"
+                                onClick={(e) => { e.stopPropagation(); handleEditStart(event); }}
+                                className={`p-1 rounded transition-colors ${
+                                  isEditing
+                                    ? 'text-amber-600 bg-amber-100'
+                                    : 'text-slate-400 hover:text-[#e60000] hover:bg-[#e60000]/5'
+                                }`}
+                                title={isEditing ? 'Currently editing' : 'Edit event'}
+                              >
+                                <Pencil size={14} />
+                              </button>
+                            </td>
+                            <td className="px-5 py-3 text-center">
+                              <button
+                                type="button"
                                 onClick={(e) => { e.stopPropagation(); removeMarketEvent(event.id); }}
                                 className="text-rose-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors"
                               >
@@ -1820,7 +2140,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           </tr>
                           {hasWarning && (
                             <tr className="bg-amber-50">
-                              <td colSpan={11} className="px-5 py-2 text-xs text-amber-700 flex items-center gap-2">
+                              <td colSpan={13} className="px-5 py-2 text-xs text-amber-700 flex items-center gap-2">
                                 <AlertTriangle size={12} className="text-amber-500 shrink-0 inline mr-1" />
                                 Retention volume ({formatNumber(event.subscriberVolume)}) exceeds forecast Outflow for {fmtMonth(event.date)}.
                                 The retained volume will be clamped to the available Outflow — reduce the event volume to avoid over-retention.
