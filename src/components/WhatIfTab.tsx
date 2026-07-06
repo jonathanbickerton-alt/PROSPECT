@@ -4,7 +4,7 @@ import {
   ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip,
   Legend, Line, Brush, ReferenceLine,
 } from 'recharts';
-import { format, parse, isValid, addMonths } from 'date-fns';
+import { format, parse, isValid, addMonths, differenceInCalendarMonths } from 'date-fns';
 import { useForecast } from '../context/ForecastContext';
 import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent } from '../types/forecast';
 import type { MarketEvent } from '../utils/forecasting';
@@ -139,6 +139,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   // null = add-new mode; a string id = editing that event
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  // null = not editing a campaign; a string = editing all events sharing that campaignName
+  const [editingCampaign, setEditingCampaign] = useState<string | null>(null);
 
   // ---------------------------------------------------------------------------
   // Local view filter — independent from Step 1 selections.
@@ -978,8 +980,181 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       contractLength: event.contractLength,
     });
     setEditingEventId(event.id);
+    setEditingCampaign(null);
     setSpreadEnabled(false);
   }, [setNewEvent]);
+
+  // ── Campaign group edit ────────────────────────────────────────────────────
+  // A campaign is group-editable when all its events share scenario + cohort
+  // dimensions + contract length (i.e. it is a pure volume spread), the month
+  // span fits the spread control (≤24), and it is not a multi-month ARPU group.
+  const campaignGroups = useMemo(() => {
+    const groups = new Map<string, { rows: MarketEvent[]; editable: boolean; reason: string }>();
+    marketEvents.forEach(e => {
+      if (!e.campaignName) return;
+      if (!groups.has(e.campaignName)) groups.set(e.campaignName, { rows: [], editable: true, reason: '' });
+      groups.get(e.campaignName)!.rows.push(e);
+    });
+    groups.forEach(g => {
+      g.rows.sort((a, b) => a.date.localeCompare(b.date));
+      const first = g.rows[0];
+      const homogeneous = g.rows.every(e =>
+        e.scenario === first.scenario &&
+        e.segment === first.segment &&
+        e.product === first.product &&
+        (e.productL2 ?? 'All') === (first.productL2 ?? 'All') &&
+        e.channel === first.channel &&
+        (e.channelL2 ?? 'All') === (first.channelL2 ?? 'All') &&
+        e.contractLength === first.contractLength
+      );
+      const d0 = parse(first.date, 'yyyy-MM', new Date());
+      const dN = parse(g.rows[g.rows.length - 1].date, 'yyyy-MM', new Date());
+      const span = isValid(d0) && isValid(dN) ? differenceInCalendarMonths(dN, d0) + 1 : 0;
+      if (!homogeneous) {
+        g.editable = false;
+        g.reason = 'Events in this campaign target different scenarios or cohorts — edit rows individually';
+      } else if (first.scenario === 'ARPU' && g.rows.length > 1) {
+        g.editable = false;
+        g.reason = 'Multi-month ARPU campaigns cannot be edited as a spread — edit rows individually';
+      } else if (span > 24) {
+        g.editable = false;
+        g.reason = 'Campaign spans more than 24 months — edit rows individually';
+      } else if (span < 1) {
+        g.editable = false;
+        g.reason = 'Campaign has an invalid month — edit rows individually';
+      }
+    });
+    return groups;
+  }, [marketEvents]);
+
+  const handleEditCampaignStart = useCallback((campaign: string) => {
+    const group = campaignGroups.get(campaign);
+    if (!group || !group.editable) return;
+    const rows = group.rows;
+
+    // Single-row campaigns edit exactly like a single event
+    if (rows.length === 1) {
+      handleEditStart(rows[0]);
+      setEditingEventId(null);
+      setEditingCampaign(campaign);
+      return;
+    }
+
+    const first = rows[0];
+    const isOutflow = first.scenario === 'Outflow';
+    const abs = (v: number) => isOutflow ? Math.abs(v) : v;
+
+    // Reverse-engineer the spread from the stored rows: total volume is the
+    // sum, span is first→last month, per-month % is each row's share.
+    const d0 = parse(first.date, 'yyyy-MM', new Date());
+    const span = differenceInCalendarMonths(parse(rows[rows.length - 1].date, 'yyyy-MM', new Date()), d0) + 1;
+    const volByOffset = new Array(span).fill(0);
+    let totalSub = 0, totalCust = 0, totalRev = 0;
+    rows.forEach(e => {
+      const off = differenceInCalendarMonths(parse(e.date, 'yyyy-MM', new Date()), d0);
+      volByOffset[off] += Math.abs(e.subscriberVolume);
+      totalSub  += Math.abs(e.subscriberVolume);
+      totalCust += Math.abs(e.customerVolume);
+      totalRev  += Math.abs(e.revenue);
+    });
+
+    // Derive percentages summing to exactly 100 (residual goes to month 1,
+    // matching the even-split remainder convention used on creation)
+    const pcts = volByOffset.map(v => totalSub > 0 ? Math.round((v / totalSub) * 100) : 0);
+    pcts[0] += 100 - pcts.reduce((s, p) => s + p, 0);
+
+    // Even if every month's volume is within rounding distance of the mean
+    const mean = totalSub / span;
+    const isEven = volByOffset.every(v => Math.abs(v - mean) <= 1);
+
+    setNewEvent({
+      scenario: first.scenario,
+      segment: first.segment,
+      product: first.product,
+      productL2: first.productL2 ?? 'All',
+      channel: first.channel,
+      channelL2: first.channelL2 ?? 'All',
+      date: first.date,
+      subscriberVolume: totalSub,
+      customerVolume: totalCust,
+      revenue: totalRev,
+      arpu: abs(first.arpu),
+      name: '',
+      campaignName: campaign,
+      comment: rows.find(e => e.comment)?.comment ?? '',
+      contractLength: first.contractLength,
+    });
+    setSpreadEnabled(true);
+    setSpreadMonths(span);
+    setSpreadDistType(isEven ? 'even' : 'custom');
+    setCustomDist(pcts);
+    setEditingEventId(null);
+    setEditingCampaign(campaign);
+  }, [campaignGroups, handleEditStart, setNewEvent]);
+
+  const handleSaveCampaign = useCallback(() => {
+    if (!editingCampaign || !newEvent.date) return;
+    const isOutflow = newEvent.scenario === 'Outflow';
+    const neg = (v: number) => isOutflow ? -Math.abs(v) : v;
+
+    let newEvents: MarketEvent[];
+    if (!spreadEnabled || newEvent.scenario === 'ARPU') {
+      newEvents = [{
+        id: Math.random().toString(36).substr(2, 9),
+        scenario: newEvent.scenario as MarketEvent['scenario'],
+        segment: newEvent.segment || 'All',
+        product: newEvent.product || 'All',
+        productL2: newEvent.productL2 || 'All',
+        channel: newEvent.channel || 'All',
+        channelL2: newEvent.channelL2 || 'All',
+        date: newEvent.date,
+        subscriberVolume: neg(newEvent.subscriberVolume || 0),
+        customerVolume:   neg(newEvent.customerVolume   || 0),
+        revenue:          neg(newEvent.revenue           || 0),
+        arpu:             neg(newEvent.arpu              || 0),
+        name: '',
+        campaignName: newEvent.campaignName || '',
+        comment: newEvent.comment || '',
+        contractLength: newEvent.contractLength ?? 24,
+      }];
+    } else {
+      const pcts = spreadDistType === 'even'
+        ? Array.from({ length: spreadMonths }, () => 100 / spreadMonths)
+        : customDist.slice(0, spreadMonths);
+      const total = pcts.reduce((s, p) => s + p, 0);
+      if (total <= 0) return;
+      const baseDate = parse(newEvent.date, 'yyyy-MM', new Date());
+      newEvents = pcts.map((pct, i) => {
+        const fraction = pct / total;
+        return {
+          id: Math.random().toString(36).substr(2, 9),
+          scenario: newEvent.scenario as MarketEvent['scenario'],
+          segment: newEvent.segment || 'All',
+          product: newEvent.product || 'All',
+          productL2: newEvent.productL2 || 'All',
+          channel: newEvent.channel || 'All',
+          channelL2: newEvent.channelL2 || 'All',
+          date: format(addMonths(baseDate, i), 'yyyy-MM'),
+          subscriberVolume: neg(Math.round((newEvent.subscriberVolume || 0) * fraction)),
+          customerVolume:   neg(Math.round((newEvent.customerVolume   || 0) * fraction)),
+          revenue:          neg(Math.round((newEvent.revenue           || 0) * fraction)),
+          arpu:             neg(newEvent.arpu || 0),
+          name: '',
+          campaignName: newEvent.campaignName || '',
+          comment: newEvent.comment || '',
+          contractLength: newEvent.contractLength ?? 24,
+        };
+      });
+    }
+
+    setMarketEvents([...marketEvents.filter(e => e.campaignName !== editingCampaign), ...newEvents]);
+    setEditingCampaign(null);
+    setNewEvent(BLANK_EVENT);
+    setSpreadEnabled(false);
+    setSpreadMonths(3);
+    setSpreadDistType('even');
+    setCustomDist([34, 33, 33]);
+  }, [editingCampaign, newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, marketEvents, setMarketEvents, setNewEvent]);
 
   const handleSaveEdit = useCallback(() => {
     if (!editingEventId || !newEvent.date) return;
@@ -1008,7 +1183,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   const handleCancelEdit = useCallback(() => {
     setEditingEventId(null);
+    setEditingCampaign(null);
     setNewEvent(BLANK_EVENT);
+    setSpreadEnabled(false);
+    setSpreadMonths(3);
+    setSpreadDistType('even');
+    setCustomDist([34, 33, 33]);
   }, [setNewEvent]);
 
   // -------------------------------------------------------------------------
@@ -1734,31 +1914,26 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               </div>
             )}
 
-            {/* Campaign + Name + Comment + Action buttons */}
-            {editingEventId && (
+            {/* Campaign + Comment + Action buttons */}
+            {editingCampaign ? (
+              <div className="mt-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                Editing campaign "{editingCampaign}" — saving will replace all of its events with the values above.
+              </div>
+            ) : editingEventId ? (
               <div className="mt-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium flex items-center gap-2">
                 <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
                 Editing event — modify the fields above then click Save Changes.
               </div>
-            )}
+            ) : null}
             <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-end">
-              <div className="md:w-44 shrink-0">
+              <div className="md:w-56 shrink-0">
                 <label className="block text-xs font-medium text-slate-500 mb-1">Campaign Name</label>
                 <input
                   type="text"
                   placeholder="e.g. Summer Promo 2026"
                   value={newEvent.campaignName ?? ''}
                   onChange={e => setNewEvent({ ...newEvent, campaignName: e.target.value })}
-                  className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
-                />
-              </div>
-              <div className="md:w-44 shrink-0">
-                <label className="block text-xs font-medium text-slate-500 mb-1">Event Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Q2 Wave 1"
-                  value={newEvent.name ?? ''}
-                  onChange={e => setNewEvent({ ...newEvent, name: e.target.value })}
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
               </div>
@@ -1772,14 +1947,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
               </div>
-              {editingEventId ? (
+              {(editingEventId || editingCampaign) ? (
                 <div className="flex gap-2 shrink-0">
                   <button
-                    onClick={handleSaveEdit}
+                    onClick={editingCampaign ? handleSaveCampaign : handleSaveEdit}
                     disabled={!newEvent.date}
                     className="bg-[#e60000] text-white text-sm font-semibold py-2 px-5 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    Save Changes
+                    {editingCampaign ? 'Save Campaign' : 'Save Changes'}
                   </button>
                   <button
                     onClick={handleCancelEdit}
@@ -1861,8 +2036,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       // Helper: render a signed numeric delta cell
                       const fmtDelta = (v: number) => (v > 0 ? '+' : '') + formatNumber(v);
 
-                      const isEditing = editingEventId === event.id;
+                      const isEditing = editingEventId === event.id
+                        || (editingCampaign !== null && event.campaignName === editingCampaign);
                       const campaignLabel = event.campaignName || '';
+                      const group = campaignLabel ? campaignGroups.get(campaignLabel) : undefined;
 
                       return (
                         <React.Fragment key={event.id}>
@@ -1870,12 +2047,27 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             isEditing ? 'bg-amber-50/60 ring-1 ring-inset ring-amber-300' :
                             hasWarning ? 'bg-amber-50/40' : ''
                           }`}>
-                            {/* Campaign column — shows badge for named campaigns */}
-                            <td className="px-5 py-3 text-xs max-w-[140px]">
+                            {/* Campaign column — badge doubles as the group-edit control */}
+                            <td className="px-5 py-3 text-xs max-w-[160px]">
                               {campaignLabel ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full" title={campaignLabel}>
-                                  {campaignLabel}
-                                </span>
+                                group?.editable ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); handleEditCampaignStart(campaignLabel); }}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full hover:bg-[#e60000]/20 transition-colors cursor-pointer"
+                                    title={`Edit campaign "${campaignLabel}" (${group.rows.length} event${group.rows.length === 1 ? '' : 's'})`}
+                                  >
+                                    <Pencil size={9} className="shrink-0" />
+                                    {campaignLabel}
+                                  </button>
+                                ) : (
+                                  <span
+                                    className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full"
+                                    title={group?.reason || campaignLabel}
+                                  >
+                                    {campaignLabel}
+                                  </span>
+                                )
                               ) : (
                                 <span className="text-slate-300">—</span>
                               )}

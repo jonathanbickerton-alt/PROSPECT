@@ -812,7 +812,8 @@ export default function App() {
           restoredEvents = evtRaw.map(r => ({
             id:               String(r.ID ?? Math.random().toString(36).substr(2, 9)),
             name:             String(r.Name ?? ''),
-            campaignName:     String(r.Campaign_Name ?? ''),
+            // Legacy fallback: pre-campaign saves used Name as the grouping label
+            campaignName:     String(r.Campaign_Name || r.Name || ''),
             scenario:         r.Scenario,
             segment:          r.Segment,
             product:          r.Product,
@@ -1548,7 +1549,8 @@ export default function App() {
             return {
               id: Math.random().toString(36).substr(2, 9),
               name: String(r['Name'] || ''),
-              campaignName: String(r['Campaign_Name'] || ''),
+              // Legacy fallback: pre-campaign saves used Name as the grouping label
+              campaignName: String(r['Campaign_Name'] || r['Name'] || ''),
               scenario: scen,
               segment: String(r['Segment'] || 'All'),
               product: String(r['Product'] || 'All'),
