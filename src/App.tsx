@@ -1405,10 +1405,11 @@ export default function App() {
     );
 
   /** Build a ViewFilter from a CohortKey (for syncing tab filter bars after generation) */
-  const cohortToFilter = (c: { segment: string; product: string; productL2?: string; channel: string; channelL2?: string }): ViewFilter => ({
+  const cohortToFilter = (c: { segment: string; product: string; productL2?: string; channel: string; channelL2?: string; tariffL1?: string; tariffL2?: string }): ViewFilter => ({
     segment: c.segment,
     product: { l1: c.product === 'All' ? null : c.product, l2: c.productL2 && c.productL2 !== 'All' ? c.productL2 : null },
     channel: { l1: c.channel === 'All' ? null : c.channel, l2: c.channelL2 && c.channelL2 !== 'All' ? c.channelL2 : null },
+    tariff: { l1: c.tariffL1 && c.tariffL1 !== 'All' ? c.tariffL1 : null, l2: c.tariffL2 && c.tariffL2 !== 'All' ? c.tariffL2 : null },
   });
 
   /** Distinct segment values from the uploaded dataset. */
@@ -2079,6 +2080,8 @@ export default function App() {
         if (wiProductL2Col && productL2Value) allIBRO = allIBRO.filter(r => String(r[wiProductL2Col]) === productL2Value);
         if (wiChannelCol && channelValue !== 'All (Aggregated)') allIBRO = allIBRO.filter(r => String(r[wiChannelCol]) === channelValue);
         if (wiChannelL2Col && channelL2Value) allIBRO = allIBRO.filter(r => String(r[wiChannelL2Col]) === channelL2Value);
+      if (wiTariffL1Col && tariffValue && tariffValue !== 'All (Aggregated)') allIBRO = allIBRO.filter(r => String(r[wiTariffL1Col]) === tariffValue);
+      if (wiTariffL2Col && tariffL2Value) allIBRO = allIBRO.filter(r => String(r[wiTariffL2Col]) === tariffL2Value);
 
         const ibroMap = new Map<number, AggregatedIBRORow>();
         allIBRO.forEach(row => {
@@ -2140,6 +2143,8 @@ export default function App() {
             productL2: productL2Value || 'All',
             channel:   channelValue === 'All (Aggregated)' ? 'All' : channelValue,
             channelL2: channelL2Value || 'All',
+            tariffL1:  tariffValue === 'All (Aggregated)' ? 'All' : (tariffValue || 'All'),
+            tariffL2:  tariffL2Value || 'All',
             scenario: stdScenario,
           },
           seedBase,
@@ -2150,7 +2155,7 @@ export default function App() {
           selectedForecastModel,
         );
         if (bf) {
-          const fKey = makeForecastKey(bf.cohort.segment, bf.cohort.product, bf.cohort.productL2, bf.cohort.channel, bf.cohort.channelL2);
+          const fKey = makeForecastKey(bf.cohort.segment, bf.cohort.product, bf.cohort.productL2, bf.cohort.channel, bf.cohort.channelL2, bf.cohort.tariffL1, bf.cohort.tariffL2);
           setForecastStore(prev => new Map(prev).set(fKey, bf));
           setBaseForecast(bf);
           setForecastUpdatedAt(format(new Date(), 'dd MMM yyyy, HH:mm'));
@@ -2235,6 +2240,8 @@ export default function App() {
       if (wiProductL2Col && productL2Value) allIBRO = allIBRO.filter(r => String(r[wiProductL2Col]) === productL2Value);
       if (wiChannelCol && channelValue !== 'All (Aggregated)') allIBRO = allIBRO.filter(r => String(r[wiChannelCol]) === channelValue);
       if (wiChannelL2Col && channelL2Value) allIBRO = allIBRO.filter(r => String(r[wiChannelL2Col]) === channelL2Value);
+      if (wiTariffL1Col && tariffValue && tariffValue !== 'All (Aggregated)') allIBRO = allIBRO.filter(r => String(r[wiTariffL1Col]) === tariffValue);
+      if (wiTariffL2Col && tariffL2Value) allIBRO = allIBRO.filter(r => String(r[wiTariffL2Col]) === tariffL2Value);
 
       const ibroMap = new Map<number, AggregatedIBRORow>();
       // First pass: aggregate volume metrics
@@ -2313,7 +2320,7 @@ export default function App() {
       );
       if (bf) {
         console.log('[generateStandardForecast] modelUsed written to ForecastContext:', bf.modelUsed);
-        const fKey = makeForecastKey(bf.cohort.segment, bf.cohort.product, bf.cohort.productL2, bf.cohort.channel, bf.cohort.channelL2);
+        const fKey = makeForecastKey(bf.cohort.segment, bf.cohort.product, bf.cohort.productL2, bf.cohort.channel, bf.cohort.channelL2, bf.cohort.tariffL1, bf.cohort.tariffL2);
         setForecastStore(prev => new Map(prev).set(fKey, bf));
         setBaseForecast(bf);
         setForecastUpdatedAt(format(new Date(), 'dd MMM yyyy, HH:mm'));
@@ -2511,7 +2518,7 @@ export default function App() {
       }
     }
 
-    const fKeyChallenger = makeForecastKey(bf.cohort.segment, bf.cohort.product, bf.cohort.productL2, bf.cohort.channel, bf.cohort.channelL2);
+    const fKeyChallenger = makeForecastKey(bf.cohort.segment, bf.cohort.product, bf.cohort.productL2, bf.cohort.channel, bf.cohort.channelL2, bf.cohort.tariffL1, bf.cohort.tariffL2);
     setForecastStore(prev => new Map(prev).set(fKeyChallenger, bf));
     setBaseForecast(bf);
     setForecastUpdatedAt(format(new Date(), 'dd MMM yyyy, HH:mm'));
@@ -3325,7 +3332,7 @@ export default function App() {
     // ── O(1) path: use pre-aggregated map when available (bulk generation) ──
     // Map key = seg|prod|prodL2|chan|chanL2. Only works for specific (non-All)
     // dimension values; 'All' cohorts fall through to the O(N) scan below.
-    const cohortMapKey = `${cohort.segment}|${cohort.product}|${cohort.productL2 || 'All'}|${cohort.channel || 'All'}|${cohort.channelL2 || 'All'}`;
+    const cohortMapKey = `${cohort.segment}|${cohort.product}|${cohort.productL2 || 'All'}|${cohort.channel || 'All'}|${cohort.channelL2 || 'All'}|${cohort.tariffL1 || 'All'}|${cohort.tariffL2 || 'All'}`;
     const preAggBucket: PreAggRow[] | undefined = cohortDataMap?.get(cohortMapKey);
 
     let processedData: Array<Record<string, any> & { _parsedDate: Date }>;
@@ -3355,6 +3362,12 @@ export default function App() {
       }
       if (wiChannelL2Col && cohort.channelL2 && cohort.channelL2 !== 'All') {
         processedData = processedData.filter(row => String(row[wiChannelL2Col]) === cohort.channelL2);
+      }
+      if (wiTariffL1Col && cohort.tariffL1 && cohort.tariffL1 !== 'All') {
+        processedData = processedData.filter(row => String(row[wiTariffL1Col]) === cohort.tariffL1);
+      }
+      if (wiTariffL2Col && cohort.tariffL2 && cohort.tariffL2 !== 'All') {
+        processedData = processedData.filter(row => String(row[wiTariffL2Col]) === cohort.tariffL2);
       }
     }
 

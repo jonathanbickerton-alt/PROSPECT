@@ -16,6 +16,8 @@ interface CohortEntry {
   productL2?: string;
   channel: string;
   channelL2?: string;
+  tariffL1?: string;
+  tariffL2?: string;
   scenario: string;
   forecastType: string;
   hasForecast: boolean;
@@ -56,7 +58,10 @@ function cohortLabel(c: CohortEntry): string {
   const chanLabel = c.channel && c.channel !== 'All'
     ? (c.channelL2 && c.channelL2 !== 'All' ? `${c.channel} · ${c.channelL2}` : c.channel)
     : null;
-  return [c.segment !== 'All' ? c.segment : null, prodLabel, chanLabel]
+  const tariffLabel = c.tariffL1 && c.tariffL1 !== 'All'
+    ? (c.tariffL2 && c.tariffL2 !== 'All' ? `${c.tariffL1} · ${c.tariffL2}` : c.tariffL1)
+    : null;
+  return [c.segment !== 'All' ? c.segment : null, prodLabel, chanLabel, tariffLabel]
     .filter(Boolean)
     .join(' · ') || 'All cohorts';
 }
