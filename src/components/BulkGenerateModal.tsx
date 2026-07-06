@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { CheckCircle2, Zap, X, AlertTriangle, Loader2 } from 'lucide-react';
+import type { ForecastModel } from '../types/forecast';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -30,6 +31,8 @@ export interface BulkGenerateModalProps {
   missingCount: number;
   /** HW parameters that will be used for all generated forecasts */
   params: ForecastParams;
+  /** Currently selected forecast model — shown as the "use for all" option */
+  currentModel: ForecastModel;
   /** Live progress from App.tsx — current / total cohorts processed so far */
   generationProgress?: { current: number; total: number };
   /**
@@ -37,7 +40,7 @@ export interface BulkGenerateModalProps {
    *   generated — forecasts successfully written
    *   failed    — combos skipped due to insufficient data
    */
-  onConfirm: (opts: { name: string; comment: string }) => Promise<{ generated: number; failed: number }>;
+  onConfirm: (opts: { name: string; comment: string; autoModel: boolean; autoConfidence: boolean }) => Promise<{ generated: number; failed: number }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -52,6 +55,7 @@ export function BulkGenerateModal({
   sourceCohort,
   missingCount,
   params,
+  currentModel,
   generationProgress,
   onConfirm,
 }: BulkGenerateModalProps) {
@@ -59,6 +63,8 @@ export function BulkGenerateModal({
   const [summary, setSummary] = useState<{ generated: number; failed: number } | null>(null);
   const [runName, setRunName] = useState('');
   const [runComment, setRunComment] = useState('');
+  const [autoModel, setAutoModel] = useState(true);
+  const [autoConfidence, setAutoConfidence] = useState(true);
 
   if (!isOpen) return null;
 
@@ -68,13 +74,15 @@ export function BulkGenerateModal({
     setSummary(null);
     setRunName('');
     setRunComment('');
+    setAutoModel(true);
+    setAutoConfidence(true);
     onClose();
   };
 
   const handleConfirm = async () => {
     setPhase('generating');
     try {
-      const result = await onConfirm({ name: runName.trim(), comment: runComment.trim() });
+      const result = await onConfirm({ name: runName.trim(), comment: runComment.trim(), autoModel, autoConfidence });
       setSummary(result);
       setPhase('complete');
     } catch {
@@ -96,13 +104,13 @@ export function BulkGenerateModal({
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={phase === 'generating' ? undefined : handleClose} />
 
       {/* Modal card */}
-      <div className="relative w-full max-w-lg mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden">
+      <div className="relative w-full max-w-lg mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
 
         {/* ── Phase: Confirm ── */}
         {phase === 'confirm' && (
           <>
             {/* Header */}
-            <div className="flex items-start justify-between px-6 pt-6 pb-4">
+            <div className="flex items-start justify-between px-6 pt-6 pb-4 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-[#e60000]/10 flex items-center justify-center shrink-0">
                   <Zap size={20} className="text-[#e60000]" />
@@ -119,6 +127,9 @@ export function BulkGenerateModal({
               </button>
             </div>
 
+            {/* Scrollable body */}
+            <div className="flex-1 overflow-y-auto">
+
             {/* Source cohort pill */}
             {cohortStr && (
               <div className="px-6 pb-3">
@@ -130,6 +141,54 @@ export function BulkGenerateModal({
               </div>
             )}
 
+            {/* Model strategy */}
+            <div className="mx-6 mb-4">
+              <p className="text-xs font-semibold text-slate-700 mb-2">Forecast Model</p>
+              <div className="space-y-2">
+                {([
+                  { auto: true,  label: 'Auto-select best model per cohort', desc: 'Analyses each cohort\'s history independently — volatile, trending, and seasonal cohorts each get the most appropriate model' },
+                  { auto: false, label: `Use ${currentModel} for all cohorts`, desc: null },
+                ] as const).map(opt => (
+                  <label key={String(opt.auto)} className={`flex items-start gap-3 cursor-pointer rounded-lg px-3 py-2 border transition-colors ${autoModel === opt.auto ? 'bg-[#e60000]/5 border-[#e60000]/20' : 'border-slate-100 hover:border-slate-200'}`}>
+                    <input
+                      type="radio"
+                      checked={autoModel === opt.auto}
+                      onChange={() => setAutoModel(opt.auto)}
+                      className="mt-0.5 accent-[#e60000] shrink-0"
+                    />
+                    <div>
+                      <span className={`text-xs font-medium ${autoModel === opt.auto ? 'text-slate-900' : 'text-slate-600'}`}>{opt.label}</span>
+                      {opt.desc && <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">{opt.desc}</p>}
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Confidence strategy */}
+            <div className="mx-6 mb-5">
+              <p className="text-xs font-semibold text-slate-700 mb-2">Confidence Band Width</p>
+              <div className="space-y-2">
+                {([
+                  { auto: true,  label: 'Auto-configure confidence per cohort', desc: 'Sets band width based on each cohort\'s volatility — stable cohorts get tighter bands, uncertain ones get wider' },
+                  { auto: false, label: 'Use current settings for all cohorts', desc: null },
+                ] as const).map(opt => (
+                  <label key={String(opt.auto)} className={`flex items-start gap-3 cursor-pointer rounded-lg px-3 py-2 border transition-colors ${autoConfidence === opt.auto ? 'bg-[#e60000]/5 border-[#e60000]/20' : 'border-slate-100 hover:border-slate-200'}`}>
+                    <input
+                      type="radio"
+                      checked={autoConfidence === opt.auto}
+                      onChange={() => setAutoConfidence(opt.auto)}
+                      className="mt-0.5 accent-[#e60000] shrink-0"
+                    />
+                    <div>
+                      <span className={`text-xs font-medium ${autoConfidence === opt.auto ? 'text-slate-900' : 'text-slate-600'}`}>{opt.label}</span>
+                      {opt.desc && <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">{opt.desc}</p>}
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+
             {/* Parameters preview */}
             <div className="mx-6 mb-5 border border-slate-100 rounded-xl overflow-hidden">
               <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100">
@@ -139,15 +198,15 @@ export function BulkGenerateModal({
               </div>
               <div className="divide-y divide-slate-50">
                 {[
-                  { label: 'Algorithm', value: 'Exponential smoothing (see model selector)' },
-                  { label: 'Pre-Horizon z-score', value: `${params.preHorizonUncertainty}` },
-                  { label: 'Post-Horizon Band Multiplier', value: `${params.postHorizonExpansionRate}×` },
-                  { label: 'Confidence Horizon', value: `${params.confidenceHorizon} month${params.confidenceHorizon !== 1 ? 's' : ''}` },
+                  { label: 'Algorithm', value: autoModel ? 'Auto-selected per cohort' : currentModel },
+                  { label: 'Pre-Horizon z-score', value: autoConfidence ? 'Auto-configured per cohort' : `${params.preHorizonUncertainty}` },
+                  { label: 'Post-Horizon Band Multiplier', value: autoConfidence ? 'Auto-configured per cohort' : `${params.postHorizonExpansionRate}×` },
+                  { label: 'Confidence Horizon', value: autoConfidence ? 'Auto-configured per cohort' : `${params.confidenceHorizon} month${params.confidenceHorizon !== 1 ? 's' : ''}` },
                   { label: 'Forecast Length', value: `${params.forecastLength} months` },
                 ].map(row => (
                   <div key={row.label} className="flex items-center justify-between px-4 py-2 text-xs">
                     <span className="text-slate-500">{row.label}</span>
-                    <span className="font-medium text-slate-800">{row.value}</span>
+                    <span className={`font-medium ${row.value.startsWith('Auto') ? 'text-[#e60000]' : 'text-slate-800'}`}>{row.value}</span>
                   </div>
                 ))}
               </div>
@@ -190,8 +249,10 @@ export function BulkGenerateModal({
               </span>
             </div>
 
+            </div>{/* end scrollable body */}
+
             {/* Actions */}
-            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-slate-50 border-t border-slate-100">
+            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-slate-50 border-t border-slate-100 shrink-0">
               <button
                 onClick={handleClose}
                 className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"

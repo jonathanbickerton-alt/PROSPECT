@@ -29,6 +29,8 @@ interface ReApplyOptions {
   preHorizonUncertainty: number;
   postHorizonExpansionRate: number;
   confidenceHorizon: number;
+  autoModel?: boolean;
+  autoConfidence?: boolean;
 }
 
 export interface ManageBulkDrawerProps {
@@ -76,7 +78,7 @@ function fmtTimestamp(iso: string): string {
 
 type Phase = 'select' | 'settings' | 'generating' | 'done';
 
-const MODELS: ForecastModel[] = ['Holt Linear', 'Damped Trend', 'Holt-Winters'];
+const MODELS: ForecastModel[] = ['Holt Linear', 'Damped Trend', 'Holt-Winters', 'Simple Exponential Smoothing'];
 
 export function ManageBulkDrawer({
   isOpen,
@@ -167,6 +169,8 @@ export function ManageBulkDrawer({
         preHorizonUncertainty: preUnc,
         postHorizonExpansionRate: postExp,
         confidenceHorizon: confHor,
+        autoModel: false,
+        autoConfidence: false,
       });
       setResult(res);
     } catch {

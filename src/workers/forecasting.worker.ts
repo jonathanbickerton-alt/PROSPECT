@@ -9,7 +9,7 @@
  * processes its assigned cohorts independently.
  */
 
-import { buildCohortDataMap, calculateHoltWinters, calculateBaseForecast } from '../utils/forecasting';
+import { buildCohortDataMap, calculateHoltWinters, calculateBaseForecast, analyzeAndRecommendModel, analyzeAndRecommendConfidence } from '../utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow } from '../utils/forecasting';
 import type { BaseForecast, ForecastModel } from '../types/forecast';
 
@@ -57,6 +57,8 @@ export interface WorkerConfig {
   runPostExp: number;
   runConfHor: number;
   runModel: ForecastModel;
+  autoModel: boolean;
+  autoConfidence: boolean;
 }
 
 export interface WorkerInMessage {
@@ -93,6 +95,7 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
     wiInflowVal, wiOutflowVal, wiBaseVal, wiRetentionVal,
     wiArpuCol, wiRevenueCol,
     genLength, runPreUnc, runPostExp, runConfHor, runModel,
+    autoModel, autoConfidence,
   } = config;
 
   // Rebuild the cohort data map from the pre-filtered row slice.
@@ -180,14 +183,30 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
     const aggregatedData = Array.from(aggregatedDataMap.values())
       .sort((a, b) => a._parsedDate.getTime() - b._parsedDate.getTime());
 
+    const cohortValues = aggregatedData.map(r => Number(r[wiValueCol]) || 0);
+    const calStart = aggregatedData.length > 0 ? aggregatedData[0]._parsedDate.getMonth() : 0;
+
+    const cohortModel = autoModel
+      ? analyzeAndRecommendModel(cohortValues, calStart).recommendedModel
+      : runModel;
+
+    let cohortPreUnc = runPreUnc, cohortPostExp = runPostExp, cohortConfHor = runConfHor;
+    if (autoConfidence) {
+      const conf = analyzeAndRecommendConfidence(cohortValues, calStart);
+      cohortPreUnc  = conf.preHorizonZ;
+      cohortPostExp = conf.postHorizonMultiplier;
+      cohortConfHor = conf.confidenceHorizon;
+    }
+
     const newForecastData = calculateHoltWinters(
       aggregatedData,
       wiDateCol,
       wiValueCol,
       genLength,
-      runPreUnc,
-      runPostExp,
-      runConfHor,
+      cohortPreUnc,
+      cohortPostExp,
+      cohortConfHor,
+      cohortModel,
     );
 
     if (!newForecastData) {
@@ -204,15 +223,15 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
         'Optimistic': null,
         'Pessimistic': null,
         Type: 'Historical',
-        'Pre-Horizon Uncertainty %': runPreUnc,
-        'Post-Horizon Expansion Rate %': runPostExp,
+        'Pre-Horizon Uncertainty %': cohortPreUnc,
+        'Post-Horizon Expansion Rate %': cohortPostExp,
       };
     });
 
     const forecastWithTrace = newForecastData.map(r => ({
       ...r,
-      'Pre-Horizon Uncertainty %': runPreUnc,
-      'Post-Horizon Expansion Rate %': runPostExp,
+      'Pre-Horizon Uncertainty %': cohortPreUnc,
+      'Post-Horizon Expansion Rate %': cohortPostExp,
     }));
 
     newForecasts[cohort.id] = [...historicalData, ...forecastWithTrace];
@@ -331,15 +350,30 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
         ? (baseReadings.get(Math.max(...baseReadings.keys())) ?? 0)
         : 0;
 
+      const ibroValues = ibroArr.map(r => r.inflow);
+      const ibroCalStart = ibroArr.length > 0 ? ibroArr[0]._parsedDate.getMonth() : 0;
+
+      const ibroCohortModel = autoModel
+        ? analyzeAndRecommendModel(ibroValues, ibroCalStart).recommendedModel
+        : runModel;
+
+      let ibroPreUnc = runPreUnc, ibroPostExp = runPostExp, ibroConfHor = runConfHor;
+      if (autoConfidence) {
+        const conf = analyzeAndRecommendConfidence(ibroValues, ibroCalStart);
+        ibroPreUnc  = conf.preHorizonZ;
+        ibroPostExp = conf.postHorizonMultiplier;
+        ibroConfHor = conf.confidenceHorizon;
+      }
+
       const bf = calculateBaseForecast(
         ibroArr,
         { segment: seg, product: prod, productL2: prodL2, channel: chan, channelL2: chanL2, scenario: 'Base Case' },
         seedBase,
         genLength,
-        runPreUnc,
-        runPostExp,
-        runConfHor,
-        runModel,
+        ibroPreUnc,
+        ibroPostExp,
+        ibroConfHor,
+        ibroCohortModel,
       );
 
       if (bf) {
