@@ -2054,15 +2054,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                   <button
                                     type="button"
                                     onClick={(e) => { e.stopPropagation(); handleEditCampaignStart(campaignLabel); }}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full hover:bg-[#e60000]/20 transition-colors cursor-pointer"
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full hover:bg-[#e60000]/15 transition-colors cursor-pointer"
                                     title={`Edit campaign "${campaignLabel}" (${group.rows.length} event${group.rows.length === 1 ? '' : 's'})`}
                                   >
-                                    <Pencil size={9} className="shrink-0" />
+                                    <Pencil size={11} className="shrink-0" />
                                     {campaignLabel}
                                   </button>
                                 ) : (
                                   <span
-                                    className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full"
+                                    className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full opacity-60 cursor-not-allowed"
                                     title={group?.reason || campaignLabel}
                                   >
                                     {campaignLabel}
