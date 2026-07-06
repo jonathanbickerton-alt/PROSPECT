@@ -143,6 +143,8 @@ export default function App() {
   const [wiProductL2Col, setWiProductL2Col] = useState('');
   const [wiChannelCol, setWiChannelCol] = useState('');
   const [wiChannelL2Col, setWiChannelL2Col] = useState('');
+  const [wiTariffL1Col, setWiTariffL1Col] = useState('');
+  const [wiTariffL2Col, setWiTariffL2Col] = useState('');
   const [showMappingMenu, setShowMappingMenu] = useState(false);
 
   // Missing State Variables
@@ -418,6 +420,8 @@ export default function App() {
         Product_L2:  bf.cohort.productL2 ?? 'All',
         Channel:     bf.cohort.channel,
         Channel_L2:  bf.cohort.channelL2 ?? 'All',
+        Tariff_L1:   bf.cohort.tariffL1 ?? 'All',
+        Tariff_L2:   bf.cohort.tariffL2 ?? 'All',
         Scenario:    bf.cohort.scenario,
         Model_Used:  bf.modelUsed ?? 'Holt Linear',
         Seed_Base_Volume:      bf.seedBaseVolume,
@@ -700,6 +704,8 @@ export default function App() {
                   productL2: String(first.Product_L2 ?? 'All'),
                   channel:   String(first.Channel    ?? 'All'),
                   channelL2: String(first.Channel_L2 ?? 'All'),
+                  tariffL1:  String(first.Tariff_L1  ?? 'All'),
+                  tariffL2:  String(first.Tariff_L2  ?? 'All'),
                   scenario:  String(first.Scenario   ?? 'Standard Forecast'),
                 },
                 seedBaseVolume:        Number(first.Seed_Base_Volume       ?? 0),
@@ -726,7 +732,13 @@ export default function App() {
               if (first.Fitted_Params_JSON) {
                 try { bf.fittedParams = JSON.parse(String(first.Fitted_Params_JSON)); } catch {}
               }
-              restoredStore.set(storeKey, bf);
+              // Rebuild the store key from the restored dims so old 5-part saves
+              // (no Tariff columns) are normalised to the current 7-part format.
+              const normKey = makeForecastKey(
+                bf.cohort.segment, bf.cohort.product, bf.cohort.productL2,
+                bf.cohort.channel, bf.cohort.channelL2, bf.cohort.tariffL1, bf.cohort.tariffL2,
+              );
+              restoredStore.set(normKey, bf);
               if (first.Is_Active === 'Yes') activeBf = bf;
 
               if (first.Generated_At) {
@@ -764,6 +776,8 @@ export default function App() {
                   productL2: String(first.Product_L2 ?? 'All'),
                   channel:   String(first.Channel    ?? 'All'),
                   channelL2: String(first.Channel_L2 ?? 'All'),
+                  tariffL1:  String(first.Tariff_L1  ?? 'All'),
+                  tariffL2:  String(first.Tariff_L2  ?? 'All'),
                   scenario:  String(first.Scenario   ?? 'Standard Forecast'),
                 },
                 seedBaseVolume:        Number(first.Seed_Base_Volume       ?? 0),
@@ -1320,6 +1334,10 @@ export default function App() {
       if (!wiProductL2Col) setWiProductL2Col(match(['product_l2', 'product level 2', 'productlevel2', 'product_sub', 'productsub']) || '');
       if (!wiChannelCol) setWiChannelCol(match(['channel_l1', 'channel level 1', 'channellevel1', 'channel', 'source', 'platform']) || '');
       if (!wiChannelL2Col) setWiChannelL2Col(match(['channel_l2', 'channel level 2', 'channellevel2', 'channel_sub', 'channelsub']) || '');
+      // Tariff (Phase 2a) — real data column is `tariff_tier_l1/l2`; also match `tariff_l1` and spaced variants.
+      // Specific L1/L2 patterns only (no bare 'tariff') so L1 and L2 never cross-match.
+      if (!wiTariffL1Col) setWiTariffL1Col(match(['tariff_tier_l1', 'tariff tier l1', 'tariff_l1', 'tariff level 1', 'tarifflevel1']) || '');
+      if (!wiTariffL2Col) setWiTariffL2Col(match(['tariff_tier_l2', 'tariff tier l2', 'tariff_l2', 'tariff level 2', 'tarifflevel2']) || '');
       if (!dataTypeCol) setDataTypeCol(match(['datatype', 'isforecast', 'type', 'status']) || '');
     }
   }, [data, columns]);
@@ -1353,8 +1371,13 @@ export default function App() {
   // ---------------------------------------------------------------------------
 
   /**
-   * Stable 5-part key for a cohort — used by forecastStore and per-tab filters.
-   * Format: seg|prodL1|prodL2|chanL1|chanL2
+   * Stable 7-part key for a cohort — used by forecastStore and per-tab filters.
+   * Format: seg|prodL1|prodL2|chanL1|chanL2|tariffL1|tariffL2
+   *
+   * Tariff L1/L2 are APPENDED to the end (Phase 2a) so that every consumer that
+   * reads parts[0..4] positionally keeps working unchanged; only tariff-aware
+   * readers touch parts[5]/parts[6]. Absent tariff (old saves, or data without a
+   * tariff column) defaults to 'All', preserving backward compatibility.
    * 'All' is used for any dimension that is unfiltered.
    */
   const makeForecastKey = (
@@ -1363,7 +1386,9 @@ export default function App() {
     prodL2: string | null | undefined,
     chanL1: string,
     chanL2: string | null | undefined,
-  ) => `${seg}|${prodL1}|${prodL2 || 'All'}|${chanL1}|${chanL2 || 'All'}`;
+    tariffL1?: string | null | undefined,
+    tariffL2?: string | null | undefined,
+  ) => `${seg}|${prodL1}|${prodL2 || 'All'}|${chanL1}|${chanL2 || 'All'}|${tariffL1 || 'All'}|${tariffL2 || 'All'}`;
 
   /** Build a forecast key from a ViewFilter object */
   const filterToKey = (f: ViewFilter) =>
@@ -1373,6 +1398,8 @@ export default function App() {
       f.product.l2,
       f.channel.l1 || 'All',
       f.channel.l2,
+      f.tariff?.l1,
+      f.tariff?.l2,
     );
 
   /** Build a ViewFilter from a CohortKey (for syncing tab filter bars after generation) */
@@ -1434,6 +1461,29 @@ export default function App() {
     for (const children of tree.values()) children.sort();
     return tree;
   }, [data, wiChannelCol, wiChannelL2Col]);
+
+  /**
+   * Tariff hierarchy (Phase 2a): L1 → sorted L2 children.
+   * Data-driven — cardinality is read entirely from the data, never hardcoded.
+   * Used by ViewFilterBar's HierarchicalDropdown as the 4th dimension.
+   */
+  const tariffTree = useMemo<Map<string, string[]>>(() => {
+    if (!wiTariffL1Col) return new Map();
+    const tree = new Map<string, string[]>();
+    data.forEach(r => {
+      const l1 = String(r[wiTariffL1Col] || '').trim();
+      if (!l1 || l1 === 'undefined') return;
+      if (!tree.has(l1)) tree.set(l1, []);
+      if (wiTariffL2Col) {
+        const l2 = String(r[wiTariffL2Col] || '').trim();
+        if (l2 && l2 !== 'undefined' && l2 !== 'All' && !tree.get(l1)!.includes(l2)) {
+          tree.get(l1)!.push(l2);
+        }
+      }
+    });
+    for (const children of tree.values()) children.sort();
+    return tree;
+  }, [data, wiTariffL1Col, wiTariffL2Col]);
 
   /** Handle ViewFilterBar change on Step 2 — loads the matching forecast (if any). */
   const handleStep2FilterChange = useCallback((filter: ViewFilter) => {
@@ -3157,34 +3207,52 @@ export default function App() {
       }
     }
 
+    // Tariff combos (Phase 2a) — data-driven cardinality. When no tariff column
+    // is mapped this stays [{All,All}], so cohort enumeration is unchanged.
+    const tariffCombos: Combo[] = [{ l1: 'All', l2: 'All' }];
+    if (wiTariffL1Col) {
+      for (const [l1, l2s] of tariffTree.entries()) {
+        tariffCombos.push({ l1, l2: 'All' });
+        for (const l2 of l2s) tariffCombos.push({ l1, l2 });
+      }
+      if (tariffCombos.length === 1) {
+        (Array.from(new Set(data.map(r => String(r[wiTariffL1Col])).filter(v => v && v !== 'undefined'))) as string[]).sort()
+          .forEach(l1 => tariffCombos.push({ l1, l2: 'All' }));
+      }
+    }
+
     const scenarios = ['Inflow', 'Outflow', 'Base', 'Retention'];
     const cohorts: any[] = [];
 
     segments.forEach(seg => {
       productCombos.forEach(prod => {
         channelCombos.forEach(chan => {
-          // Standard Forecasts — keyed by the 5-part forecast key + type + scenario
-          scenarios.forEach(scen => {
-            const fKey = makeForecastKey(seg, prod.l1, prod.l2, chan.l1, chan.l2);
-            const stdId = `${fKey}|Standard Forecast|${scen}`;
-            cohorts.push({
-              id: stdId,
-              segment: seg,
-              product: prod.l1,
-              productL2: prod.l2,
-              channel: chan.l1,
-              channelL2: chan.l2,
-              forecastType: 'Standard Forecast',
-              scenario: scen,
-              hasForecast: forecastStore.has(fKey) || !!savedForecasts[stdId],
-              forecastData: savedForecasts[stdId] || null,
+          tariffCombos.forEach(tar => {
+            // Standard Forecasts — keyed by the 7-part forecast key + type + scenario
+            scenarios.forEach(scen => {
+              const fKey = makeForecastKey(seg, prod.l1, prod.l2, chan.l1, chan.l2, tar.l1, tar.l2);
+              const stdId = `${fKey}|Standard Forecast|${scen}`;
+              cohorts.push({
+                id: stdId,
+                segment: seg,
+                product: prod.l1,
+                productL2: prod.l2,
+                channel: chan.l1,
+                channelL2: chan.l2,
+                tariffL1: tar.l1,
+                tariffL2: tar.l2,
+                forecastType: 'Standard Forecast',
+                scenario: scen,
+                hasForecast: forecastStore.has(fKey) || !!savedForecasts[stdId],
+                forecastData: savedForecasts[stdId] || null,
+              });
             });
           });
         });
       });
     });
     return cohorts;
-  }, [data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiMetricCol, productTree, channelTree, forecastStore, savedForecasts]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiMetricCol, productTree, channelTree, tariffTree, forecastStore, savedForecasts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const computeCohortForecastData = useCallback((cohort: any, manualParams?: any, cohortDataMap?: CohortDataMap) => {
     if (cohort.forecastType.startsWith('What-If Analysis')) {
@@ -3388,33 +3456,37 @@ export default function App() {
       wiProductL2Col,
       wiChannelCol,
       wiChannelL2Col,
+      wiTariffL1Col,
+      wiTariffL2Col,
     );
 
     // ── Phase 2: Build IBRO cohort list (needed before workers spawn) ────────
     // Enumerate unique L1×L2 combinations that exist in the data.
     // These produce typed BaseForecast objects consumed by ForecastVsActualsTab.
-    type IbroCohortSpec = { fKey: string; seg: string; prod: string; prodL2: string; chan: string; chanL2: string };
+    type IbroCohortSpec = { fKey: string; seg: string; prod: string; prodL2: string; chan: string; chanL2: string; tariffL1: string; tariffL2: string };
     const ibroCohortArray: IbroCohortSpec[] = [];
 
     if (wiInflowVal && wiOutflowVal && wiRetentionVal && wiDateCol && wiMetricCol && wiValueCol) {
-      type CohortSpec = { seg: string; prod: string; prodL2: string; chan: string; chanL2: string };
+      type CohortSpec = { seg: string; prod: string; prodL2: string; chan: string; chanL2: string; tariffL1: string; tariffL2: string };
       const uniqueCohorts = new Map<string, CohortSpec>();
 
-      if (wiSegmentCol || wiProductCol || wiChannelCol) {
+      if (wiSegmentCol || wiProductCol || wiChannelCol || wiTariffL1Col) {
         data.forEach(row => {
           const seg    = wiSegmentCol   ? String(row[wiSegmentCol]   || 'All').trim() : 'All';
           const prod   = wiProductCol   ? String(row[wiProductCol]   || 'All').trim() : 'All';
           const prodL2 = wiProductL2Col ? String(row[wiProductL2Col] || 'All').trim() : 'All';
           const chan   = wiChannelCol   ? String(row[wiChannelCol]   || 'All').trim() : 'All';
           const chanL2 = wiChannelL2Col ? String(row[wiChannelL2Col] || 'All').trim() : 'All';
-          const k = makeForecastKey(seg, prod, prodL2 !== '' ? prodL2 : 'All', chan, chanL2 !== '' ? chanL2 : 'All');
+          const tarL1  = wiTariffL1Col  ? String(row[wiTariffL1Col]  || 'All').trim() : 'All';
+          const tarL2  = wiTariffL2Col  ? String(row[wiTariffL2Col]  || 'All').trim() : 'All';
+          const k = makeForecastKey(seg, prod, prodL2 !== '' ? prodL2 : 'All', chan, chanL2 !== '' ? chanL2 : 'All', tarL1 !== '' ? tarL1 : 'All', tarL2 !== '' ? tarL2 : 'All');
           if (!uniqueCohorts.has(k)) {
-            uniqueCohorts.set(k, { seg, prod, prodL2: prodL2 || 'All', chan, chanL2: chanL2 || 'All' });
+            uniqueCohorts.set(k, { seg, prod, prodL2: prodL2 || 'All', chan, chanL2: chanL2 || 'All', tariffL1: tarL1 || 'All', tariffL2: tarL2 || 'All' });
           }
         });
       } else {
         const k = makeForecastKey('All', 'All', null, 'All', null);
-        uniqueCohorts.set(k, { seg: 'All', prod: 'All', prodL2: 'All', chan: 'All', chanL2: 'All' });
+        uniqueCohorts.set(k, { seg: 'All', prod: 'All', prodL2: 'All', chan: 'All', chanL2: 'All', tariffL1: 'All', tariffL2: 'All' });
       }
 
       for (const [fKey, spec] of uniqueCohorts.entries()) {
@@ -3433,7 +3505,7 @@ export default function App() {
     const poolSize = Math.min(hardwareCores, 8, Math.max(targets.length, ibroCohortArray.length, 1));
 
     // Distribute standard cohorts and IBRO cohorts across workers round-robin.
-    type StandardCohortSpec = { id: string; segment: string; product: string; productL2?: string; channel?: string; channelL2?: string; scenario: string };
+    type StandardCohortSpec = { id: string; segment: string; product: string; productL2?: string; channel?: string; channelL2?: string; tariffL1?: string; tariffL2?: string; scenario: string };
     const workerStandard: StandardCohortSpec[][] = Array.from({ length: poolSize }, () => []);
     const workerIbro: IbroCohortSpec[][] = Array.from({ length: poolSize }, () => []);
 
@@ -3445,6 +3517,8 @@ export default function App() {
         productL2: c.productL2,
         channel: c.channel,
         channelL2: c.channelL2,
+        tariffL1: c.tariffL1,
+        tariffL2: c.tariffL2,
         scenario: c.scenario,
       });
     });
@@ -3461,6 +3535,7 @@ export default function App() {
       wiDateCol, wiMetricCol, wiValueCol,
       wiSegmentCol, wiProductCol, wiProductL2Col,
       wiChannelCol, wiChannelL2Col,
+      wiTariffL1Col, wiTariffL2Col,
       wiInflowVal: wiInflowVal || '',
       wiOutflowVal: wiOutflowVal || '',
       wiBaseVal: wiBaseVal || '',
@@ -3683,6 +3758,7 @@ export default function App() {
             segments={availableSegments}
             productTree={productTree}
             channelTree={channelTree}
+            tariffTree={tariffTree}
             hasForecast={
               activeView === 'whatif'
                 ? forecastStore.has(filterToKey(step2Filter))
@@ -3849,6 +3925,8 @@ export default function App() {
             wiProductL2Col={wiProductL2Col}
             wiChannelCol={wiChannelCol}
             wiChannelL2Col={wiChannelL2Col}
+            wiTariffL1Col={wiTariffL1Col}
+            wiTariffL2Col={wiTariffL2Col}
             formatNumber={formatNumber}
             setActiveView={setActiveView}
             onAcceptChallengerModel={acceptChallengerModel}

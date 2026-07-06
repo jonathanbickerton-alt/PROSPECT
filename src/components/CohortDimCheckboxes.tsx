@@ -7,6 +7,10 @@ export interface CohortDims {
   channelL1: boolean;
   /** Channel L2 — only meaningful when channelL1 is true */
   channelL2: boolean;
+  /** Tariff L1 (Phase 2a) */
+  tariffL1: boolean;
+  /** Tariff L2 — only meaningful when tariffL1 is true */
+  tariffL2: boolean;
 }
 
 interface Props {
@@ -18,6 +22,10 @@ interface Props {
   wiProductL2Col?: string;
   /** Column name for Channel L2 — controls whether the checkbox is available */
   wiChannelL2Col?: string;
+  /** Column name for Tariff L1 — controls whether the tariff checkboxes are available (Phase 2a) */
+  wiTariffL1Col?: string;
+  /** Column name for Tariff L2 — controls whether the tariff L2 checkbox is available (Phase 2a) */
+  wiTariffL2Col?: string;
   /** When provided, renders a right-aligned count badge. */
   count?: number;
   /** Noun for the count badge, defaults to "cohort". */
@@ -40,6 +48,8 @@ export function CohortDimCheckboxes({
   wiChannelCol,
   wiProductL2Col = '',
   wiChannelL2Col = '',
+  wiTariffL1Col = '',
+  wiTariffL2Col = '',
   count,
   countLabel = 'cohort',
 }: Props) {
@@ -162,6 +172,61 @@ export function CohortDimCheckboxes({
         >
           <input type="checkbox" disabled className="h-3.5 w-3.5" />
           <span className="text-xs font-medium text-slate-500">Channel L2</span>
+          <span className="text-[9px] text-slate-400">(not mapped)</span>
+        </label>
+      )}
+
+      {/* Tariff L1 (Phase 2a) */}
+      {wiTariffL1Col ? (
+        <label className="flex items-center gap-1.5 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={dims.tariffL1}
+            onChange={e => {
+              const checked = e.target.checked;
+              onChange({ ...dims, tariffL1: checked, tariffL2: checked ? dims.tariffL2 : false });
+            }}
+            className="accent-[#e60000] h-3.5 w-3.5"
+          />
+          <span className="text-xs font-medium text-slate-700">Tariff L1</span>
+        </label>
+      ) : (
+        <label className="flex items-center gap-1.5 cursor-not-allowed opacity-40 select-none">
+          <input type="checkbox" disabled className="h-3.5 w-3.5" />
+          <span className="text-xs font-medium text-slate-500">Tariff L1</span>
+          <span className="text-[9px] text-slate-400">(not mapped)</span>
+        </label>
+      )}
+
+      {/* Tariff L2 — enabled when Tariff L1 is checked AND L2 column is mapped */}
+      {wiTariffL2Col ? (
+        <label
+          className={`flex items-center gap-1.5 select-none ${
+            dims.tariffL1 ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed'
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={dims.tariffL2}
+            disabled={!dims.tariffL1}
+            onChange={e => onChange({ ...dims, tariffL2: e.target.checked })}
+            className="accent-[#e60000] h-3.5 w-3.5"
+          />
+          <span className="text-xs font-medium text-slate-700">Tariff L2</span>
+          {!dims.tariffL1 && (
+            <span className="text-[9px] text-slate-400">(requires L1)</span>
+          )}
+        </label>
+      ) : (
+        <label
+          className={`flex items-center gap-1.5 select-none ${
+            dims.tariffL1 && wiTariffL1Col
+              ? 'opacity-40 cursor-not-allowed'
+              : 'opacity-25 cursor-not-allowed'
+          }`}
+        >
+          <input type="checkbox" disabled className="h-3.5 w-3.5" />
+          <span className="text-xs font-medium text-slate-500">Tariff L2</span>
           <span className="text-[9px] text-slate-400">(not mapped)</span>
         </label>
       )}
