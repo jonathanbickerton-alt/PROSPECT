@@ -202,9 +202,72 @@ variances under ~2% should score **80+** on that component. A score of
 
 ---
 
-## 11. Regression checklist (the short version)
+## 11. Market Events — Campaign Workspace (Phase 1: P1/P2/P3)
 
-Every item below was a real bug. Confirm all after any change:
+Turns Market Events from create-only into a managed, named, multi-campaign
+workspace. Applies to the What-If / Market Events tab (`WhatIfTab.tsx`).
+
+### Data model
+- The runtime `MarketEvent` (`src/utils/forecasting.ts`) carries a
+  `campaignName: string` field (empty string = uncategorised). This is the
+  single naming/grouping concept — the legacy `Event Name` input has been
+  removed from the volume/market-events form (Pricing and Yield forms keep
+  their own Event Name fields).
+- Sign convention is unchanged and must round-trip: Outflow
+  `subscriberVolume` (and customer/revenue/arpu) are stored **negated**;
+  Retention is stored **positive**. Any edit path shows absolute values and
+  re-applies `neg()` (= `-Math.abs`) only for Outflow on save.
+
+### P1 — Edit existing market events
+- Each table row has a Pencil (Edit) button. Clicking it loads that event
+  into the form, shows an amber "Editing event" banner, and swaps the Add
+  button for Save Changes / Cancel.
+- Save patches the existing event in place via `updateMarketEvent(id, patch)`
+  — it must NOT create a duplicate. Cancel resets the form and exits edit mode.
+- The row being edited gets an amber ring highlight.
+
+### P2 — Campaign grouping
+- Form has a Campaign Name input. Table has a Campaign column (first column)
+  showing a red-tinted badge for named campaigns, `—` for uncategorised.
+- Table sorts by campaign name, then date.
+
+### P3 — Multiple concurrent campaigns
+- No practical limit on campaigns or events per month.
+- Chart ReferenceLines are deduplicated per month; multiple campaigns in the
+  same month join their labels with ` / `.
+- Campaigns stay distinguishable in the table via the badge column.
+
+### Campaign group edit (P1 completion)
+- When a campaign is a homogeneous volume spread (all rows share
+  scenario + segment + product/L2 + channel/L2 + contractLength, not a
+  multi-month ARPU group, span 1–24 months), its badge becomes a button that
+  reopens the spread form for the whole campaign.
+- The spread is **reverse-engineered** from the stored rows: total volume =
+  sum of abs values; duration = first→last calendar month span; per-month %
+  = each row's share of the total (residual added to month 1); distribution
+  detected as "Even" when every month is within 1 of the mean, else "Custom %".
+- Save Campaign removes ALL rows whose `campaignName` matches the campaign
+  captured at edit start, then appends the regenerated rows. A rename during
+  edit must not orphan or duplicate rows (removal keys off the original name).
+- Heterogeneous / multi-month-ARPU / >24-month campaigns are NOT group-
+  editable: the badge is inert (dimmed, `cursor-not-allowed`, reason in
+  tooltip) and rows stay individually editable.
+
+### Export / import
+- `Campaign_Name` round-trips through all paths: full session export/import,
+  light forecast export, and data-file import.
+- Legacy fallback on import: `campaignName = Campaign_Name || Name || ''`, so
+  old saves (and old spreads that shared a `Name`) group correctly as campaigns.
+- Light export now also carries `Name`, `Product_L2`, `Channel_L2`,
+  `Contract_Length_Months` so a light export → data-file import round-trip
+  does not silently drop those fields.
+
+---
+
+## 12. Regression checklist (the short version)
+
+Every item below was a real bug or a confirmed Phase 1 behaviour. Confirm all
+after any change:
 
 1. ARPU MAPE non-zero for Segment-only and Segment+Channel groupings
 2. Base actuals read from file, not derived, not beyond June 2026
@@ -215,9 +278,13 @@ Every item below was a real bug. Confirm all after any change:
 7. Filters never re-forecast; actuals and forecast filtered at same level
 8. Cohort row click scopes chart only; never filters table or filter bar
 9. Hierarchical Product L1/L2 and Channel L1/L2 filter correctly
-10. Export/import round-trips full state including L2 fields
+10. Export/import round-trips full state including L2 fields and campaignName
 11. Gap detection warning appears for cohorts with missing months
 12. All three models generate without error with per-cohort parameters
+13. Market event per-row edit patches in place (no duplicate) with correct
+    Outflow/Retention sign round-trip
+14. Campaign group edit reverse-engineers the spread and replaces (not
+    duplicates) the campaign's rows; rename during edit is orphan-safe
 
 **Verdict rule:** "SAFE FOR USER TESTING" only if all pass. Otherwise list
 the failures and the cohort/filter combination that exposed each.
