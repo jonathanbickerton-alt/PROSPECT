@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useForecast } from '../context/ForecastContext';
-import { Settings, Filter, Info, Download, LayersIcon, Database, CheckCircle2, AlertCircle, SlidersHorizontal } from 'lucide-react';
+import { Settings, Filter, Info, Download, LayersIcon, Database, CheckCircle2, AlertCircle, SlidersHorizontal, X } from 'lucide-react';
 import type { ForecastModel } from '../types/forecast';
+import { analyzeAndRecommendModel, analyzeAndRecommendConfidence } from '../utils/forecasting';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Line, Brush } from 'recharts';
 import { format, parse, isValid } from 'date-fns';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
@@ -39,8 +40,11 @@ interface StandardForecastTabProps {
   setWiChannelCol: (val: string) => void;
   wiChannelL2Col?: string;
   setWiChannelL2Col?: (val: string) => void;
+  wiTariffL1Col?: string;
+  wiTariffL2Col?: string;
   productTree?: Map<string, string[]>;
   channelTree?: Map<string, string[]>;
+  tariffTree?: Map<string, string[]>;
   segmentValue: string;
   setSegmentValue: (val: string) => void;
   productValue: string;
@@ -51,6 +55,10 @@ interface StandardForecastTabProps {
   setChannelValue: (val: string) => void;
   channelL2Value?: string;
   setChannelL2Value?: (val: string) => void;
+  tariffValue?: string;
+  setTariffValue?: (val: string) => void;
+  tariffL2Value?: string;
+  setTariffL2Value?: (val: string) => void;
   segmentMode: string;
   setSegmentMode: (val: string) => void;
   productMode: string;
@@ -105,8 +113,11 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
   wiChannelCol, setWiChannelCol,
   wiChannelL2Col = '',
   setWiChannelL2Col,
+  wiTariffL1Col = '',
+  wiTariffL2Col = '',
   productTree,
   channelTree,
+  tariffTree,
   segmentValue, setSegmentValue,
   productValue, setProductValue,
   productL2Value = '',
@@ -114,6 +125,10 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
   channelValue, setChannelValue,
   channelL2Value = '',
   setChannelL2Value,
+  tariffValue = '',
+  setTariffValue,
+  tariffL2Value = '',
+  setTariffL2Value,
   stdScenario, setStdScenario,
   selectedForecastModel, setSelectedForecastModel,
   preHorizonUncertainty, setPreHorizonUncertainty,
@@ -136,7 +151,89 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
 }) => {
   const [showDataMappingDrawer, setShowDataMappingDrawer] = useState(false);
   const [stdChartView, setStdChartView] = useState<'volume' | 'value'>('volume');
+  const [dismissedCohortKey, setDismissedCohortKey] = useState<string | null>(null);
+  const [dismissedConfidenceCohortKey, setDismissedConfidenceCohortKey] = useState<string | null>(null);
   const { baseForecast, bulkRuns } = useForecast();
+
+  const currentCohortKey = `${segmentValue}-${productValue}-${channelValue}-${stdScenario}`;
+  const isDismissed = dismissedCohortKey === currentCohortKey;
+  const isConfidenceDismissed = dismissedConfidenceCohortKey === currentCohortKey;
+
+  const actualValuesDetail = useMemo(() => {
+    if (!wiDateCol || !wiMetricCol || !wiValueCol || !data || data.length === 0) return null;
+
+    const targetMetric = stdScenario === 'Inflow' ? wiInflowVal :
+                         stdScenario === 'Outflow' ? wiOutflowVal :
+                         stdScenario === 'Base' ? wiBaseVal : wiRetentionVal;
+
+    if (!targetMetric) return null;
+
+    let filtered = data
+      .map(row => ({ ...row, _parsedDate: new Date(row[wiDateCol]) }))
+      .filter(row => isValid(row._parsedDate) && String(row[wiMetricCol]) === targetMetric);
+
+    if (wiSegmentCol && segmentValue !== 'All (Aggregated)') {
+      filtered = filtered.filter(row => String(row[wiSegmentCol]) === segmentValue);
+    }
+    if (wiProductCol && productValue !== 'All (Aggregated)') {
+      filtered = filtered.filter(row => String(row[wiProductCol]) === productValue);
+    }
+    if (wiProductL2Col && productL2Value) {
+      filtered = filtered.filter(row => String(row[wiProductL2Col]) === productL2Value);
+    }
+    if (wiChannelCol && channelValue !== 'All (Aggregated)') {
+      filtered = filtered.filter(row => String(row[wiChannelCol]) === channelValue);
+    }
+    if (wiChannelL2Col && channelL2Value) {
+      filtered = filtered.filter(row => String(row[wiChannelL2Col]) === channelL2Value);
+    }
+    if (wiTariffL1Col && tariffValue && tariffValue !== 'All (Aggregated)') {
+      filtered = filtered.filter(row => String(row[wiTariffL1Col]) === tariffValue);
+    }
+    if (wiTariffL2Col && tariffL2Value) {
+      filtered = filtered.filter(row => String(row[wiTariffL2Col]) === tariffL2Value);
+    }
+
+    if (filtered.length < 2) return null;
+
+    const aggregatedDataMap = new Map<number, number>();
+    filtered.forEach(row => {
+      const time = row._parsedDate.getTime();
+      const targetVal = Number(row[wiValueCol]) || 0;
+      aggregatedDataMap.set(time, (aggregatedDataMap.get(time) || 0) + targetVal);
+    });
+
+    const sortedActuals = Array.from(aggregatedDataMap.entries())
+      .sort((a, b) => a[0] - b[0]);
+
+    if (sortedActuals.length === 0) return null;
+
+    const calStartMonth = new Date(sortedActuals[0][0]).getMonth();
+    const actualValues = sortedActuals.map(e => e[1]);
+
+    return { actualValues, calStartMonth };
+  }, [
+    data, wiDateCol, wiMetricCol, wiValueCol, stdScenario,
+    wiInflowVal, wiOutflowVal, wiBaseVal, wiRetentionVal,
+    wiSegmentCol, segmentValue,
+    wiProductCol, productValue,
+    wiProductL2Col, productL2Value,
+    wiChannelCol, channelValue,
+    wiChannelL2Col, channelL2Value,
+    wiTariffL1Col, tariffValue,
+    wiTariffL2Col, tariffL2Value
+  ]);
+
+  const modelRecommendation = useMemo(() => {
+    if (!actualValuesDetail) return null;
+    return analyzeAndRecommendModel(actualValuesDetail.actualValues, actualValuesDetail.calStartMonth);
+  }, [actualValuesDetail]);
+
+  const confidenceRecommendation = useMemo(() => {
+    if (!actualValuesDetail) return null;
+    return analyzeAndRecommendConfidence(actualValuesDetail.actualValues, actualValuesDetail.calStartMonth);
+  }, [actualValuesDetail]);
+
 
   const mappingComplete = !!(wiDateCol && wiMetricCol && wiValueCol && wiInflowVal && wiOutflowVal);
 
@@ -199,6 +296,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
     if (model === 'Holt Linear') return 'HL';
     if (model === 'Damped Trend') return 'DT';
     if (model === 'Holt-Winters') return 'HW';
+    if (model === 'Simple Exponential Smoothing') return 'SES';
     return model;
   }
 
@@ -371,6 +469,37 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                       )}
                     </div>
                   )}
+
+                  {/* Tariff dimension (Phase 2a) — only shown when a tariff column is mapped */}
+                  {wiTariffL1Col && (
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-medium text-slate-700">Tariff</label>
+                      {tariffTree && tariffTree.size > 0 ? (
+                        <HierarchicalDropdown
+                          label=""
+                          tree={tariffTree}
+                          value={{
+                            l1: tariffValue && tariffValue !== 'All (Aggregated)' ? tariffValue : null,
+                            l2: tariffL2Value || null,
+                          }}
+                          onChange={(v: HierarchicalSelection) => {
+                            setTariffValue?.(v.l1 ?? 'All (Aggregated)');
+                            setTariffL2Value?.(v.l2 ?? '');
+                          }}
+                          variant="light"
+                          className="w-full"
+                        />
+                      ) : (
+                        <select value={tariffValue} onChange={(e) => setTariffValue?.(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none">
+                          <option value="">-- Select --</option>
+                          <option value="All (Aggregated)">All (Aggregated)</option>
+                          {Array.from(new Set(data.map(r => String(r[wiTariffL1Col])).filter(v => v && v !== 'undefined'))).sort().map(v => (
+                            <option key={v} value={v}>{v}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -390,8 +519,92 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-900 mb-2">Forecast Model</label>
+
+                {/* Model Recommendation Panel */}
+                {modelRecommendation && (
+                  <div className="mb-4">
+                    {!isDismissed ? (
+                      <div className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-2 relative">
+                        <button
+                          type="button"
+                          onClick={() => setDismissedCohortKey(currentCohortKey)}
+                          className="absolute top-2 right-2 p-1 text-slate-400 hover:text-slate-600 rounded transition-colors"
+                          title="Ignore Recommendation"
+                        >
+                          <X size={14} />
+                        </button>
+                        <div className="flex items-center justify-between pr-4">
+                          <span className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-600">Model Advisor</span>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                            modelRecommendation.confidence === 'High' ? 'bg-emerald-100 text-emerald-800' :
+                            modelRecommendation.confidence === 'Medium' ? 'bg-amber-100 text-amber-800' :
+                            'bg-slate-100 text-slate-600'
+                          }`}>
+                            {modelRecommendation.confidence} Confidence
+                          </span>
+                        </div>
+                        
+                        <div className="text-xs text-slate-700">
+                          <span className="font-semibold text-slate-900">Recommended: </span>
+                          <span className="font-bold text-indigo-700">{modelRecommendation.recommendedModel}</span>
+                        </div>
+                        
+                        <p className="text-[11px] leading-relaxed text-slate-650">{modelRecommendation.reason}</p>
+
+                        {/* Advisor parameters breakdown */}
+                        <div className="grid grid-cols-2 gap-x-2 gap-y-1 pt-2 border-t border-indigo-100/80 text-[10px]">
+                          <div>
+                            <span className="text-slate-400">Trend: </span>
+                            <span className="font-semibold text-slate-700">{modelRecommendation.metrics.trendStrengthLabel}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400">Seasonality: </span>
+                            <span className="font-semibold text-slate-700">
+                              {modelRecommendation.metrics.seasonalityLabel === 'Recurring monthly peaks' ? 'Recurring' : 'None'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400">Volatility: </span>
+                            <span className="font-semibold text-slate-700">{modelRecommendation.metrics.volatilityLabel}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400">Best error: </span>
+                            <span className="font-semibold text-slate-700">
+                              {modelRecommendation.metrics.bestModelByFit === 'Simple Exponential Smoothing' ? 'SES' :
+                               modelRecommendation.metrics.bestModelByFit === 'Holt Linear' ? 'HL' :
+                               modelRecommendation.metrics.bestModelByFit === 'Damped Trend' ? 'DT' : 'HW'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {selectedForecastModel !== modelRecommendation.recommendedModel && (
+                          <div className="pt-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedForecastModel(modelRecommendation.recommendedModel)}
+                              className="w-full text-center px-2.5 py-1.5 bg-[#e60000] hover:bg-[#cc0000] text-white rounded-lg text-[10px] font-bold transition-colors shadow-sm"
+                            >
+                              Apply Recommended Model
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setDismissedCohortKey(null)}
+                          className="text-[10px] text-slate-500 hover:text-slate-700 font-semibold underline"
+                        >
+                          Show Model Recommendation
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="space-y-2">
-                  {(['Holt Linear', 'Damped Trend', 'Holt-Winters'] as const).map(m => (
+                  {(['Simple Exponential Smoothing', 'Holt Linear', 'Damped Trend', 'Holt-Winters'] as const).map(m => (
                     <button
                       key={m}
                       type="button"
@@ -404,6 +617,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                     >
                       <div className={`text-sm font-semibold ${selectedForecastModel === m ? 'text-[#e60000]' : 'text-slate-800'}`}>{m}</div>
                       <div className="text-[10px] text-slate-500 mt-0.5 leading-snug">
+                        {m === 'Simple Exponential Smoothing' && 'Level smoothing — α optimised per series'}
                         {m === 'Holt Linear' && 'Level + trend smoothing — α, β optimised per series'}
                         {m === 'Damped Trend' && 'Trend damped toward flat — α, β, φ optimised per series'}
                         {m === 'Holt-Winters' && 'Triple exponential smoothing, multiplicative seasonality — α, β, γ optimised per series'}
@@ -412,9 +626,96 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   ))}
                 </div>
               </div>
+
+              {/* Confidence Settings Recommendation Panel */}
+              {confidenceRecommendation && (
+                <div className="mb-4">
+                  {!isConfidenceDismissed ? (
+                    <div className="p-3 bg-violet-50/50 border border-violet-100 rounded-xl space-y-2 relative">
+                      <button
+                        type="button"
+                        onClick={() => setDismissedConfidenceCohortKey(currentCohortKey)}
+                        className="absolute top-2 right-2 p-1 text-slate-400 hover:text-slate-600 rounded transition-colors"
+                        title="Ignore Recommendation"
+                      >
+                        <X size={14} />
+                      </button>
+                      <div className="flex items-center justify-between pr-4">
+                        <span className="text-[10px] font-extrabold uppercase tracking-widest text-violet-600">Confidence Advisor</span>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                          confidenceRecommendation.strength === 'High' ? 'bg-emerald-100 text-emerald-800' :
+                          confidenceRecommendation.strength === 'Medium' ? 'bg-amber-100 text-amber-800' :
+                          'bg-slate-100 text-slate-600'
+                        }`}>
+                          {confidenceRecommendation.strength} Confidence
+                        </span>
+                      </div>
+                      
+                      <div className="text-xs text-slate-700 font-medium">
+                        <span>Recommended Profile: </span>
+                        <span className="font-bold text-violet-700">{confidenceRecommendation.profile}</span>
+                      </div>
+                      
+                      <p className="text-[11px] leading-relaxed text-slate-600">{confidenceRecommendation.reason}</p>
+
+                      {/* Display suggested settings values */}
+                      <div className="bg-white/80 p-2 rounded-lg border border-violet-100 text-[10px] text-slate-700 space-y-1">
+                        <div className="font-bold text-slate-500 uppercase tracking-widest text-[9px] mb-0.5">Suggested values:</div>
+                        <div className="flex justify-between items-center">
+                          <span>Pre-Horizon z-score:</span>
+                          <span className="font-mono font-bold text-slate-900">{confidenceRecommendation.preHorizonZ.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span>Post-Horizon Band Multiplier:</span>
+                          <span className="font-mono font-bold text-slate-900">{confidenceRecommendation.postHorizonMultiplier.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span>Confidence Horizon (Months):</span>
+                          <span className="font-mono font-bold text-slate-900">{confidenceRecommendation.confidenceHorizon}</span>
+                        </div>
+                      </div>
+
+                      {(preHorizonUncertainty !== confidenceRecommendation.preHorizonZ ||
+                        postHorizonExpansionRate !== confidenceRecommendation.postHorizonMultiplier ||
+                        confidenceHorizon !== confidenceRecommendation.confidenceHorizon) && (
+                        <div className="pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreHorizonUncertainty(confidenceRecommendation.preHorizonZ);
+                              setPostHorizonExpansionRate(confidenceRecommendation.postHorizonMultiplier);
+                              setConfidenceHorizon(confidenceRecommendation.confidenceHorizon);
+                            }}
+                            className="w-full text-center px-2.5 py-1.5 bg-[#e60000] hover:bg-[#cc0000] text-white rounded-lg text-[10px] font-bold transition-colors shadow-sm"
+                          >
+                            Apply Recommended Settings
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setDismissedConfidenceCohortKey(null)}
+                        className="text-[10px] text-slate-500 hover:text-slate-700 font-semibold underline"
+                      >
+                        Show Confidence Recommendation
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div>
                 <div className="flex justify-between mb-1">
-                  <label className="text-xs font-medium text-slate-700">Pre-Horizon z-score</label>
+                  <div className="flex items-center gap-1">
+                    <label className="text-xs font-medium text-slate-700">Pre-Horizon z-score</label>
+                    <span className="relative group cursor-help text-slate-400 hover:text-slate-600 transition-colors">
+                      <Info size={11} />
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-48 text-[10px] text-white bg-slate-700 rounded px-2 py-1 hidden group-hover:block z-50 leading-snug">Controls how wide the optimistic and pessimistic forecast range is before the confidence horizon. Higher values create a wider range.</span>
+                    </span>
+                  </div>
                   <div className="flex items-center gap-2">
                     <input
                       type="number"
@@ -429,7 +730,13 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
               </div>
               <div>
                 <div className="flex justify-between mb-1">
-                  <label className="text-xs font-medium text-slate-700">Post-Horizon Band Multiplier</label>
+                  <div className="flex items-center gap-1">
+                    <label className="text-xs font-medium text-slate-700">Post-Horizon Band Multiplier</label>
+                    <span className="relative group cursor-help text-slate-400 hover:text-slate-600 transition-colors">
+                      <Info size={11} />
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-48 text-[10px] text-white bg-slate-700 rounded px-2 py-1 hidden group-hover:block z-50 leading-snug">Controls how much wider the forecast range becomes after the confidence horizon. Higher values show more uncertainty further into the future.</span>
+                    </span>
+                  </div>
                   <div className="flex items-center gap-2">
                     <input
                       type="number"
@@ -444,7 +751,13 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
               </div>
               <div>
                 <div className="flex justify-between mb-1">
-                  <label className="text-xs font-medium text-slate-700">Confidence Horizon (Months)</label>
+                  <div className="flex items-center gap-1">
+                    <label className="text-xs font-medium text-slate-700">Confidence Horizon (Months)</label>
+                    <span className="relative group cursor-help text-slate-400 hover:text-slate-600 transition-colors">
+                      <Info size={11} />
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-48 text-[10px] text-white bg-slate-700 rounded px-2 py-1 hidden group-hover:block z-50 leading-snug">Controls how many forecast months use the initial forecast range before the post-horizon multiplier is applied.</span>
+                    </span>
+                  </div>
                   <span className="text-xs font-semibold text-slate-600">{confidenceHorizon}</span>
                 </div>
                 <input type="range" min="0" max="6" value={confidenceHorizon} onChange={(e) => setConfidenceHorizon(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-500" />
@@ -719,7 +1032,9 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                           <tr key={series}>
                             <td className="py-2 pr-6 font-medium text-slate-700 capitalize">{series}</td>
                             <td className="py-2 px-4 text-center font-mono text-slate-800">{p.alpha.toFixed(2)}</td>
-                            <td className="py-2 px-4 text-center font-mono text-slate-800">{p.beta.toFixed(2)}</td>
+                            <td className="py-2 px-4 text-center font-mono text-slate-800">
+                              {baseForecast.modelUsed === 'Simple Exponential Smoothing' ? '—' : p.beta.toFixed(2)}
+                            </td>
                             {baseForecast.modelUsed === 'Damped Trend' && (
                               <td className="py-2 px-4 text-center font-mono text-slate-800">{(p.phi ?? 0.85).toFixed(2)}</td>
                             )}

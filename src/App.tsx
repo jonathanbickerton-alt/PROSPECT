@@ -158,6 +158,8 @@ export default function App() {
   const [productL2Value, setProductL2Value] = useState('');
   const [channelValue, setChannelValue] = useState('All (Aggregated)');
   const [channelL2Value, setChannelL2Value] = useState('');
+  const [tariffValue, setTariffValue] = useState('All (Aggregated)');
+  const [tariffL2Value, setTariffL2Value] = useState('');
   const [stdForecastLength] = useState(24);
 
   // Standard Forecast State
@@ -1707,6 +1709,14 @@ export default function App() {
       }
       if (wiChannelL2Col && channelL2Value) {
         processedData = processedData.filter(row => String(row[wiChannelL2Col]) === channelL2Value);
+      }
+    }
+
+    // Tariff (Phase 2a) — filter-only scoping for the single-cohort preview.
+    if (wiTariffL1Col && tariffValue && tariffValue !== 'All (Aggregated)') {
+      processedData = processedData.filter(row => String(row[wiTariffL1Col]) === tariffValue);
+      if (wiTariffL2Col && tariffL2Value) {
+        processedData = processedData.filter(row => String(row[wiTariffL2Col]) === tariffL2Value);
       }
     }
 
@@ -3819,8 +3829,11 @@ export default function App() {
             setWiChannelCol={setWiChannelCol}
             wiChannelL2Col={wiChannelL2Col}
             setWiChannelL2Col={setWiChannelL2Col}
+            wiTariffL1Col={wiTariffL1Col}
+            wiTariffL2Col={wiTariffL2Col}
             productTree={productTree}
             channelTree={channelTree}
+            tariffTree={tariffTree}
             segmentValue={segmentValue}
             setSegmentValue={setSegmentValue}
             productValue={productValue}
@@ -3831,6 +3844,10 @@ export default function App() {
             setChannelValue={setChannelValue}
             channelL2Value={channelL2Value}
             setChannelL2Value={setChannelL2Value}
+            tariffValue={tariffValue}
+            setTariffValue={setTariffValue}
+            tariffL2Value={tariffL2Value}
+            setTariffL2Value={setTariffL2Value}
             segmentMode={segmentMode}
             setSegmentMode={setSegmentMode}
             productMode={productMode}
@@ -3875,12 +3892,15 @@ export default function App() {
             wiProductL2Col={wiProductL2Col}
             wiChannelCol={wiChannelCol}
             wiChannelL2Col={wiChannelL2Col}
+            wiTariffL1Col={wiTariffL1Col}
+            wiTariffL2Col={wiTariffL2Col}
             wiMetricCol={wiMetricCol}
             wiInflowVal={wiInflowVal}
             wiRetentionVal={wiRetentionVal}
             wiArpuCol={wiArpuCol}
             productTree={productTree}
             channelTree={channelTree}
+            tariffTree={tariffTree}
             downloadExcel={downloadExcel}
             formatNumber={formatNumber}
             newEvent={newEvent}
@@ -3969,10 +3989,11 @@ export default function App() {
         )}
         
         {activeView === 'compare' && (
-          <ScenarioCompareTab 
+          <ScenarioCompareTab
             globalSegments={availableSegments.filter(s => s !== 'All')}
             globalProductTree={productTree}
             globalChannelTree={channelTree}
+            globalTariffTree={tariffTree}
           />
         )}
       </main>
