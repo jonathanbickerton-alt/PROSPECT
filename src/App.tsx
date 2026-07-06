@@ -405,7 +405,7 @@ export default function App() {
     const bfRows: Record<string, any>[] = [];
 
     const activeForecastKey = baseForecast
-      ? makeForecastKey(baseForecast.cohort.segment, baseForecast.cohort.product, baseForecast.cohort.productL2, baseForecast.cohort.channel, baseForecast.cohort.channelL2)
+      ? makeForecastKey(baseForecast.cohort.segment, baseForecast.cohort.product, baseForecast.cohort.productL2, baseForecast.cohort.channel, baseForecast.cohort.channelL2, baseForecast.cohort.tariffL1, baseForecast.cohort.tariffL2)
       : null;
 
     forecastStore.forEach((bf, storeKey) => {
@@ -795,7 +795,7 @@ export default function App() {
                   arpu:      { mean: Number(r.ARPU_Mean       ?? 0), optimistic: Number(r.ARPU_Optimistic       ?? 0), pessimistic: Number(r.ARPU_Pessimistic       ?? 0) },
                 })),
               };
-              const fKeyImport = makeForecastKey(restoredBf.cohort.segment, restoredBf.cohort.product, restoredBf.cohort.productL2, restoredBf.cohort.channel, restoredBf.cohort.channelL2);
+              const fKeyImport = makeForecastKey(restoredBf.cohort.segment, restoredBf.cohort.product, restoredBf.cohort.productL2, restoredBf.cohort.channel, restoredBf.cohort.channelL2, restoredBf.cohort.tariffL1, restoredBf.cohort.tariffL2);
               setForecastStore(prev => new Map(prev).set(fKeyImport, restoredBf));
               setBaseForecast(restoredBf);
               setForecastUpdatedAt(new Date().toISOString());
@@ -2216,7 +2216,12 @@ export default function App() {
     const prodL2Key = productL2Value || 'All';
     const chanKey = channelValue === 'All (Aggregated)' ? 'All' : channelValue;
     const chanL2Key = channelL2Value || 'All';
-    const manualCohortId = `${segKey}|${prodKey}|${prodL2Key}|${chanKey}|${chanL2Key}|Standard Forecast|${stdScenario}`;
+    const tarKey = tariffValue === 'All (Aggregated)' ? 'All' : (tariffValue || 'All');
+    const tarL2Key = tariffL2Value || 'All';
+    // Use the 7-part key + type + scenario so this id matches allCohorts' stdId
+    // (which is built from the 7-part makeForecastKey) — keeps savedForecasts and
+    // the hasForecast badge aligned for tariff-scoped manual generations.
+    const manualCohortId = `${makeForecastKey(segKey, prodKey, prodL2Key, chanKey, chanL2Key, tarKey, tarL2Key)}|Standard Forecast|${stdScenario}`;
     setSavedForecasts(prev => ({ ...prev, [manualCohortId]: [...historicalData, ...forecastWithTrace] }));
     const newEntry = { cohortId: manualCohortId, timestamp: new Date().toISOString(), modelUsed: selectedForecastModel };
     setCohortGenLog(prev => {
@@ -2309,6 +2314,8 @@ export default function App() {
           productL2: productL2Value || 'All',
           channel:   channelValue === 'All (Aggregated)' ? 'All' : channelValue,
           channelL2: channelL2Value || 'All',
+          tariffL1:  tariffValue === 'All (Aggregated)' ? 'All' : (tariffValue || 'All'),
+          tariffL2:  tariffL2Value || 'All',
           scenario: stdScenario,
         },
         seedBase,
@@ -2339,6 +2346,8 @@ export default function App() {
               && (!wiSegmentCol || segmentValue === 'All (Aggregated)' || String(row[wiSegmentCol]) === segmentValue)
               && (!wiProductCol || productValue === 'All (Aggregated)' || String(row[wiProductCol]) === productValue)
               && (!wiProductL2Col || !productL2Value || String(row[wiProductL2Col]) === productL2Value)
+              && (!wiTariffL1Col || !tariffValue || tariffValue === 'All (Aggregated)' || String(row[wiTariffL1Col]) === tariffValue)
+              && (!wiTariffL2Col || !tariffL2Value || String(row[wiTariffL2Col]) === tariffL2Value)
             );
           const aggIBROmap = new Map<number, AggregatedIBRORow>();
           aggIBRO.forEach(row => {
@@ -2407,7 +2416,7 @@ export default function App() {
             selectedForecastModel,
           );
           if (aggBf) {
-            const aggFKey = makeForecastKey(aggBf.cohort.segment, aggBf.cohort.product, aggBf.cohort.productL2, aggBf.cohort.channel, aggBf.cohort.channelL2);
+            const aggFKey = makeForecastKey(aggBf.cohort.segment, aggBf.cohort.product, aggBf.cohort.productL2, aggBf.cohort.channel, aggBf.cohort.channelL2, aggBf.cohort.tariffL1, aggBf.cohort.tariffL2);
             setForecastStore(prev => new Map(prev).set(aggFKey, aggBf));
           }
         }
@@ -2443,6 +2452,8 @@ export default function App() {
     if (wiProductL2Col && cohort.productL2 && cohort.productL2 !== 'All') allIBRO = allIBRO.filter(r => String(r[wiProductL2Col]).trim() === cohort.productL2);
     if (wiChannelCol && chanKey !== 'All') allIBRO = allIBRO.filter(r => String(r[wiChannelCol]).trim() === chanKey);
     if (wiChannelL2Col && cohort.channelL2 && cohort.channelL2 !== 'All') allIBRO = allIBRO.filter(r => String(r[wiChannelL2Col]).trim() === cohort.channelL2);
+    if (wiTariffL1Col && cohort.tariffL1 && cohort.tariffL1 !== 'All') allIBRO = allIBRO.filter(r => String(r[wiTariffL1Col]).trim() === cohort.tariffL1);
+    if (wiTariffL2Col && cohort.tariffL2 && cohort.tariffL2 !== 'All') allIBRO = allIBRO.filter(r => String(r[wiTariffL2Col]).trim() === cohort.tariffL2);
 
     const ibroMap = new Map<number, AggregatedIBRORow>();
     allIBRO.forEach(row => {
@@ -2560,6 +2571,8 @@ export default function App() {
     if (wiProductL2Col && cohort.productL2 && cohort.productL2 !== 'All') allIBRO = allIBRO.filter(r => String(r[wiProductL2Col]).trim() === cohort.productL2);
     if (wiChannelCol && cohort.channel !== 'All') allIBRO = allIBRO.filter(r => String(r[wiChannelCol]).trim() === cohort.channel);
     if (wiChannelL2Col && cohort.channelL2 && cohort.channelL2 !== 'All') allIBRO = allIBRO.filter(r => String(r[wiChannelL2Col]).trim() === cohort.channelL2);
+    if (wiTariffL1Col && cohort.tariffL1 && cohort.tariffL1 !== 'All') allIBRO = allIBRO.filter(r => String(r[wiTariffL1Col]).trim() === cohort.tariffL1);
+    if (wiTariffL2Col && cohort.tariffL2 && cohort.tariffL2 !== 'All') allIBRO = allIBRO.filter(r => String(r[wiTariffL2Col]).trim() === cohort.tariffL2);
 
     const ibroMap = new Map<number, AggregatedIBRORow>();
     allIBRO.forEach(row => {
@@ -2610,7 +2623,7 @@ export default function App() {
       .sort((a, b) => a._parsedDate.getTime() - b._parsedDate.getTime());
 
     const seedBase = (() => {
-      const existingBf = forecastStore.get(makeForecastKey(cohort.segment, cohort.product, cohort.productL2, cohort.channel, cohort.channelL2));
+      const existingBf = forecastStore.get(makeForecastKey(cohort.segment, cohort.product, cohort.productL2, cohort.channel, cohort.channelL2, cohort.tariffL1, cohort.tariffL2));
       return existingBf?.seedBaseVolume ?? baseForecast?.seedBaseVolume ?? 0;
     })();
 
@@ -2640,7 +2653,7 @@ export default function App() {
         finalBf = { ...bf, months: [...baseForecast.months.slice(0, spliceIdx), ...bf.months.slice(spliceIdx)] };
       }
     }
-    const fKey = makeForecastKey(finalBf.cohort.segment, finalBf.cohort.product, finalBf.cohort.productL2, finalBf.cohort.channel, finalBf.cohort.channelL2);
+    const fKey = makeForecastKey(finalBf.cohort.segment, finalBf.cohort.product, finalBf.cohort.productL2, finalBf.cohort.channel, finalBf.cohort.channelL2, finalBf.cohort.tariffL1, finalBf.cohort.tariffL2);
     setForecastStore(prev => new Map(prev).set(fKey, finalBf));
     setBaseForecast(finalBf);
     setForecastUpdatedAt(format(new Date(), 'dd MMM yyyy, HH:mm'));
@@ -2678,6 +2691,8 @@ export default function App() {
       if (wiSegmentCol && segKey !== 'All') allIBRO = allIBRO.filter(r => String(r[wiSegmentCol]) === segKey);
       if (wiProductCol && prodKey !== 'All') allIBRO = allIBRO.filter(r => String(r[wiProductCol]) === prodKey);
       if (wiChannelCol && chanKey !== 'All') allIBRO = allIBRO.filter(r => String(r[wiChannelCol]) === chanKey);
+      if (wiTariffL1Col && cohort.tariffL1 && cohort.tariffL1 !== 'All') allIBRO = allIBRO.filter(r => String(r[wiTariffL1Col]) === cohort.tariffL1);
+      if (wiTariffL2Col && cohort.tariffL2 && cohort.tariffL2 !== 'All') allIBRO = allIBRO.filter(r => String(r[wiTariffL2Col]) === cohort.tariffL2);
 
       const ibroMap = new Map<number, AggregatedIBRORow>();
       allIBRO.forEach(row => {
@@ -2762,7 +2777,7 @@ export default function App() {
       }
 
       if (lastBf !== baseForecast) {
-        const fKeyAll = makeForecastKey(lastBf.cohort.segment, lastBf.cohort.product, lastBf.cohort.productL2, lastBf.cohort.channel, lastBf.cohort.channelL2);
+        const fKeyAll = makeForecastKey(lastBf.cohort.segment, lastBf.cohort.product, lastBf.cohort.productL2, lastBf.cohort.channel, lastBf.cohort.channelL2, lastBf.cohort.tariffL1, lastBf.cohort.tariffL2);
         setForecastStore(prev => new Map(prev).set(fKeyAll, lastBf));
         setBaseForecast(lastBf);
         setForecastUpdatedAt(format(new Date(), 'dd MMM yyyy, HH:mm'));
