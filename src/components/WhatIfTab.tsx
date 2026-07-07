@@ -180,6 +180,19 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     return t;
   }, [fullTariffTree, selectedTariffs]);
 
+  // If a targeted tariff leaves the selected set, clear it from the draft event
+  // forms so a now-hidden dropdown can't silently save a deselected tariff scope.
+  useEffect(() => {
+    if (newEvent.tariffL1 && newEvent.tariffL1 !== 'All' && !selectedTariffs.includes(newEvent.tariffL1)) {
+      setNewEvent({ ...newEvent, tariffL1: 'All', tariffL2: 'All' });
+    }
+  }, [selectedTariffs]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (newPricingEvent.tariffL1 && newPricingEvent.tariffL1 !== 'All' && !selectedTariffs.includes(newPricingEvent.tariffL1)) {
+      setNewPricingEvent({ ...newPricingEvent, tariffL1: 'All', tariffL2: 'All' });
+    }
+  }, [selectedTariffs]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Tab state ─────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<'volume' | 'value' | 'pricing'>('volume');
 
@@ -2721,6 +2734,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       <th className="px-4 py-3 font-semibold">Product</th>
                       <th className="px-4 py-3 font-semibold">Tariff Tier</th>
                       <th className="px-4 py-3 font-semibold">Channel</th>
+                      {wiTariffL1Col && <th className="px-4 py-3 font-semibold">Tariff</th>}
                       <th className="px-4 py-3 font-semibold text-right">Mode</th>
                       <th className="px-4 py-3 font-semibold text-right">Amount</th>
                       <th className="px-4 py-3 font-semibold">Target</th>
@@ -2734,7 +2748,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   <tbody className="divide-y divide-slate-100">
                     {pricingEvents.length === 0 ? (
                       <tr>
-                        <td colSpan={13} className="px-5 py-8 text-center text-slate-400 italic">
+                        <td colSpan={wiTariffL1Col ? 14 : 13} className="px-5 py-8 text-center text-slate-400 italic">
                           No pricing events yet. Use the form above to apply ARPU deltas — changes layer on top of Yield Events in real time.
                         </td>
                       </tr>
@@ -2758,6 +2772,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               <td className="px-4 py-2.5 text-slate-600">
                                 {pe.channelL1}{pe.channelL2 && pe.channelL2 !== 'All' ? ` / ${pe.channelL2}` : ''}
                               </td>
+                              {wiTariffL1Col && (
+                                <td className="px-4 py-2.5 text-slate-600">
+                                  {pe.tariffL1 && pe.tariffL1 !== 'All'
+                                    ? `${pe.tariffL1}${pe.tariffL2 && pe.tariffL2 !== 'All' ? ` / ${pe.tariffL2}` : ''}`
+                                    : <span className="text-slate-300">All</span>}
+                                </td>
+                              )}
                               <td className="px-4 py-2.5 text-right">
                                 <span className="inline-block px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-semibold">
                                   {pe.inputMode === 'percentage' ? '%' : '€'}
