@@ -216,6 +216,8 @@ export default function App() {
       productL2: newEvent.productL2 || 'All',
       channel: newEvent.channel || 'All',
       channelL2: newEvent.channelL2 || 'All',
+      tariffL1: newEvent.tariffL1 || 'All',
+      tariffL2: newEvent.tariffL2 || 'All',
       date: newEvent.date,
       subscriberVolume: neg(newEvent.subscriberVolume || 0),
       customerVolume:   neg(newEvent.customerVolume   || 0),
@@ -234,6 +236,8 @@ export default function App() {
       productL2: 'All',
       channel: 'All',
       channelL2: 'All',
+      tariffL1: 'All',
+      tariffL2: 'All',
       date: format(new Date(), 'yyyy-MM'),
       subscriberVolume: 0,
       customerVolume: 0,
@@ -1244,6 +1248,8 @@ export default function App() {
     productL2: 'All',
     channel: 'All',
     channelL2: 'All',
+    tariffL1: 'All',
+    tariffL2: 'All',
     date: format(new Date(), 'yyyy-MM'),
     subscriberVolume: 0,
     customerVolume: 0,
@@ -1254,6 +1260,10 @@ export default function App() {
     comment: '',
     contractLength: 24,
   });
+
+  // Selected tariffs for scenario work (Phase 2b) — none selected by default.
+  // Constrains tariff targeting dropdowns and the tariff mix axis; persisted in export.
+  const [selectedTariffs, setSelectedTariffs] = useState<string[]>([]);
 
   // Yield Events state
   const [yieldEvents, setYieldEvents] = useState<YieldEvent[]>([]);
@@ -3947,6 +3957,8 @@ export default function App() {
             productTree={productTree}
             channelTree={channelTree}
             tariffTree={tariffTree}
+            selectedTariffs={selectedTariffs}
+            setSelectedTariffs={setSelectedTariffs}
             downloadExcel={downloadExcel}
             formatNumber={formatNumber}
             newEvent={newEvent}
