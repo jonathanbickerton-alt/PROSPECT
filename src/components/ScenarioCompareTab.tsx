@@ -12,16 +12,18 @@ interface ScenarioCompareTabProps {
   globalSegments?: string[];
   globalProductTree?: Map<string, string[]>;
   globalChannelTree?: Map<string, string[]>;
+  globalTariffTree?: Map<string, string[]>;
 }
 
-export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSegments = [], globalProductTree = new Map(), globalChannelTree = new Map() }) => {
+export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSegments = [], globalProductTree = new Map(), globalChannelTree = new Map(), globalTariffTree = new Map() }) => {
   const [parsedSessions, setParsedSessions] = useState<ParsedSession[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [warningMsg, setWarningMsg] = useState<string | null>(null);
-  
+
   const [viewSegment, setViewSegment] = useState<string>('All');
   const [viewProduct, setViewProduct] = useState<HierarchicalSelection>({l1: null, l2: null});
   const [viewChannel, setViewChannel] = useState<HierarchicalSelection>({l1: null, l2: null});
+  const [viewTariff, setViewTariff] = useState<HierarchicalSelection>({l1: null, l2: null});
 
   const [dimSource, setDimSource] = useState<'events' | 'baseline'>('events');
 
@@ -114,6 +116,7 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
     const segs = new Set<string>();
     const productTree = new Map<string, Set<string>>();
     const channelTree = new Map<string, Set<string>>();
+    const tariffTree = new Map<string, Set<string>>();
 
     const hasNoEvents = parsedSessions.every(s => s.marketEvents.length === 0);
 
@@ -136,6 +139,13 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
             channelTree.get(r.Channel)!.add(r.Channel_L2);
           }
         }
+
+        if (r.Tariff_L1 && r.Tariff_L1 !== 'All') {
+          if (!tariffTree.has(r.Tariff_L1)) tariffTree.set(r.Tariff_L1, new Set());
+          if (r.Tariff_L2 && r.Tariff_L2 !== 'All') {
+            tariffTree.get(r.Tariff_L1)!.add(r.Tariff_L2);
+          }
+        }
       });
     });
 
@@ -149,24 +159,34 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
         if (!channelTree.has(l1)) channelTree.set(l1, new Set());
         l2s.forEach(l2 => channelTree.get(l1)!.add(l2));
       });
+      globalTariffTree.forEach((l2s, l1) => {
+        if (!tariffTree.has(l1)) tariffTree.set(l1, new Set());
+        l2s.forEach(l2 => tariffTree.get(l1)!.add(l2));
+      });
     }
 
     const pTree = new Map<string, string[]>();
     for (const [l1, l2s] of productTree.entries()) {
       pTree.set(l1, Array.from(l2s).sort());
     }
-    
+
     const cTree = new Map<string, string[]>();
     for (const [l1, l2s] of channelTree.entries()) {
       cTree.set(l1, Array.from(l2s).sort());
     }
 
+    const tTree = new Map<string, string[]>();
+    for (const [l1, l2s] of tariffTree.entries()) {
+      tTree.set(l1, Array.from(l2s).sort());
+    }
+
     return {
       segments: Array.from(segs).sort(),
       productTree: pTree,
-      channelTree: cTree
+      channelTree: cTree,
+      tariffTree: tTree
     };
-  }, [parsedSessions, dimSource, globalSegments, globalProductTree, globalChannelTree]);
+  }, [parsedSessions, dimSource, globalSegments, globalProductTree, globalChannelTree, globalTariffTree]);
 
   // Compute computed data
   const chartData = useMemo(() => {
@@ -176,7 +196,7 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
       if (!activeScenarios[session.fileName]) return null;
       return {
         fileName: session.fileName,
-        data: computeScenarioForFilter(session, viewSegment, viewProduct, viewChannel)
+        data: computeScenarioForFilter(session, viewSegment, viewProduct, viewChannel, viewTariff)
       };
     }).filter(Boolean);
 
@@ -205,7 +225,7 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
       });
     });
     return Array.from(monthMap.values()).sort((a, b) => a.month.localeCompare(b.month));
-  }, [parsedSessions, viewSegment, viewProduct, viewChannel, activeScenarios, showBaseline]);
+  }, [parsedSessions, viewSegment, viewProduct, viewChannel, viewTariff, activeScenarios, showBaseline]);
 
   const COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b'];
 
@@ -276,7 +296,16 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
                   onChange={setViewChannel}
                   variant="light"
                 />
-                
+                {dims.tariffTree.size > 0 && (
+                  <HierarchicalDropdown
+                    label="Tariff"
+                    tree={dims.tariffTree}
+                    value={viewTariff}
+                    onChange={setViewTariff}
+                    variant="light"
+                  />
+                )}
+
                 <div className="ml-auto flex flex-col gap-2 items-end">
                   <div className="flex items-center gap-2">
                     <input type="checkbox" id="sc_bl" checked={showBaseline} onChange={e => setShowBaseline(e.target.checked)} className="rounded border-slate-300 text-[#e60000] focus:ring-[#e60000]" />

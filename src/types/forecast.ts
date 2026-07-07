@@ -74,6 +74,10 @@ export interface CohortKey {
   channel: string;
   /** Channel hierarchy level 2 (e.g. 'Dealer'). 'All' or absent = no L2 filter. */
   channelL2?: string;
+  /** Tariff hierarchy level 1 (e.g. 'RED L'). 'All' or absent = no tariff filter. (Phase 2a) */
+  tariffL1?: string;
+  /** Tariff hierarchy level 2 (e.g. 'SIM-only'). 'All' or absent = no L2 filter. (Phase 2a) */
+  tariffL2?: string;
   scenario: string; // e.g. "Base", "Optimistic", "Pessimistic" — IBRO_Scenario_Type
 }
 

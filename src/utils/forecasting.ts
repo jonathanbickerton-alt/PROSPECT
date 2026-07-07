@@ -11,6 +11,10 @@ export interface MarketEvent {
   channel: string;
   /** L2 channel sub-category — 'All' or absent means apply to all L2 within the L1 channel */
   channelL2?: string;
+  /** Tariff L1 — 'All' or absent means apply to all tariffs (Phase 2a) */
+  tariffL1?: string;
+  /** Tariff L2 — 'All' or absent means apply to all L2 within the L1 tariff (Phase 2a) */
+  tariffL2?: string;
   date: string; // yyyy-MM
   subscriberVolume: number;
   customerVolume: number;
@@ -857,6 +861,8 @@ export function buildCohortDataMap(
   wiProductL2Col: string,
   wiChannelCol: string,
   wiChannelL2Col: string,
+  wiTariffL1Col: string = '',
+  wiTariffL2Col: string = '',
 ): CohortDataMap {
   const map: CohortDataMap = new Map();
   for (const row of data) {
@@ -867,7 +873,9 @@ export function buildCohortDataMap(
     const prodL2 = wiProductL2Col ? (String(row[wiProductL2Col] || '').trim() || 'All') : 'All';
     const chan   = wiChannelCol   ? String(row[wiChannelCol]   || 'All').trim() : 'All';
     const chanL2 = wiChannelL2Col ? (String(row[wiChannelL2Col] || '').trim() || 'All') : 'All';
-    const key = `${seg}|${prod}|${prodL2}|${chan}|${chanL2}`;
+    const tarL1  = wiTariffL1Col  ? (String(row[wiTariffL1Col]  || '').trim() || 'All') : 'All';
+    const tarL2  = wiTariffL2Col  ? (String(row[wiTariffL2Col]  || '').trim() || 'All') : 'All';
+    const key = `${seg}|${prod}|${prodL2}|${chan}|${chanL2}|${tarL1}|${tarL2}`;
     const enriched: PreAggRow = { ...row, _parsedDate: d };
     const bucket = map.get(key);
     if (bucket) bucket.push(enriched);

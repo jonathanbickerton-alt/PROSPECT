@@ -24,6 +24,8 @@ export interface StandardCohortSpec {
   productL2?: string;
   channel?: string;
   channelL2?: string;
+  tariffL1?: string;
+  tariffL2?: string;
   /** 'Inflow' | 'Outflow' | 'Base' | 'Retention' */
   scenario: string;
 }
@@ -35,6 +37,8 @@ export interface IbroCohortSpec {
   prodL2: string;
   chan: string;
   chanL2: string;
+  tariffL1?: string;
+  tariffL2?: string;
 }
 
 export interface WorkerConfig {
@@ -46,6 +50,8 @@ export interface WorkerConfig {
   wiProductL2Col: string;
   wiChannelCol: string;
   wiChannelL2Col: string;
+  wiTariffL1Col: string;
+  wiTariffL2Col: string;
   wiInflowVal: string;
   wiOutflowVal: string;
   wiBaseVal: string;
@@ -92,6 +98,7 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
     wiDateCol, wiMetricCol, wiValueCol,
     wiSegmentCol, wiProductCol, wiProductL2Col,
     wiChannelCol, wiChannelL2Col,
+    wiTariffL1Col, wiTariffL2Col,
     wiInflowVal, wiOutflowVal, wiBaseVal, wiRetentionVal,
     wiArpuCol, wiRevenueCol,
     genLength, runPreUnc, runPostExp, runConfHor, runModel,
@@ -109,6 +116,8 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
     wiProductL2Col,
     wiChannelCol,
     wiChannelL2Col,
+    wiTariffL1Col,
+    wiTariffL2Col,
   );
 
   const newForecasts: Record<string, unknown[]> = {};
@@ -129,7 +138,7 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
       continue;
     }
 
-    const cohortMapKey = `${cohort.segment}|${cohort.product}|${cohort.productL2 || 'All'}|${cohort.channel || 'All'}|${cohort.channelL2 || 'All'}`;
+    const cohortMapKey = `${cohort.segment}|${cohort.product}|${cohort.productL2 || 'All'}|${cohort.channel || 'All'}|${cohort.channelL2 || 'All'}|${cohort.tariffL1 || 'All'}|${cohort.tariffL2 || 'All'}`;
     const preAggBucket = cohortDataMap.get(cohortMapKey);
 
     // O(1) path: exact key hit (specific-dimension cohorts).
@@ -159,6 +168,12 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
       }
       if (wiChannelL2Col && cohort.channelL2 && cohort.channelL2 !== 'All') {
         processedData = processedData.filter(row => String(row[wiChannelL2Col]) === cohort.channelL2);
+      }
+      if (wiTariffL1Col && cohort.tariffL1 && cohort.tariffL1 !== 'All') {
+        processedData = processedData.filter(row => String(row[wiTariffL1Col]) === cohort.tariffL1);
+      }
+      if (wiTariffL2Col && cohort.tariffL2 && cohort.tariffL2 !== 'All') {
+        processedData = processedData.filter(row => String(row[wiTariffL2Col]) === cohort.tariffL2);
       }
     }
 
@@ -243,7 +258,7 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
   const newTypedForecasts: Array<[string, BaseForecast]> = [];
 
   if (wiInflowVal && wiOutflowVal && wiRetentionVal && wiDateCol && wiMetricCol && wiValueCol) {
-    for (const { fKey, seg, prod, prodL2, chan, chanL2 } of ibroCohorts) {
+    for (const { fKey, seg, prod, prodL2, chan, chanL2, tariffL1, tariffL2 } of ibroCohorts) {
       // O(1) exact hit for specific-dimension cohorts.
       // O(N) fallback for aggregate ('All') keys that have no single map entry
       // (e.g. Corporate|Mobile Voice|All|All|All spans multiple channel buckets).
@@ -256,6 +271,8 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
           if (wiProductL2Col && prodL2 !== 'All' && String(row[wiProductL2Col]) !== prodL2) return false;
           if (wiChannelCol  && chan  !== 'All' && String(row[wiChannelCol])   !== chan)  return false;
           if (wiChannelL2Col && chanL2 !== 'All' && String(row[wiChannelL2Col]) !== chanL2) return false;
+          if (wiTariffL1Col && tariffL1 && tariffL1 !== 'All' && String(row[wiTariffL1Col]) !== tariffL1) return false;
+          if (wiTariffL2Col && tariffL2 && tariffL2 !== 'All' && String(row[wiTariffL2Col]) !== tariffL2) return false;
           return true;
         });
       })();
@@ -367,7 +384,7 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
 
       const bf = calculateBaseForecast(
         ibroArr,
-        { segment: seg, product: prod, productL2: prodL2, channel: chan, channelL2: chanL2, scenario: 'Base Case' },
+        { segment: seg, product: prod, productL2: prodL2, channel: chan, channelL2: chanL2, tariffL1, tariffL2, scenario: 'Base Case' },
         seedBase,
         genLength,
         ibroPreUnc,

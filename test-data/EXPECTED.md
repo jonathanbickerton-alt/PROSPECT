@@ -36,6 +36,27 @@ Mobile Voice (+ `All`)
 
 **Channel L1:** Direct, Indirect (+ `All`)
 
+**Tariff L1 (Phase 2a):** RED S, RED M, RED L, RED XL, RED ULTD (+ `All`) —
+5 confirmed values in the synthetic tariff file. **Cardinality is data-driven —
+never hardcoded**; real data may hold 10–15 tariffs.
+
+**Tariff L2 (Phase 2a):** SIM-only, With handset (+ `All`) — 2 confirmed values.
+Hierarchical child of Tariff L1, mirroring Product L1/L2 and Channel L1/L2.
+
+- **Tariff test file:** `test-data/VBU_IBRO_Synthetic_ForecastTest_TariffHierarchy_Jan2023_Jun2026.xlsx`
+  (fact sheet `Fact_IBRO`, 90,720 rows; QC sheets `QC_TariffL1_Distribution`,
+  `QC_TariffL2_Distribution`, `QC_Tariff_ARPU` give expected distributions).
+- **Tariff columns:** `tariff_tier_l1` / `tariff_tier_l2` (note: NOT `Tariff_L1`).
+  This file also uses `Product_L2_Value_Tier` and `Channel_Level_1/2`.
+- **Cohort key (Phase 2a):** now 7-part —
+  `Segment|ProductL1|ProductL2|ChannelL1|ChannelL2|TariffL1|TariffL2`. Tariff is
+  APPENDED; old 5-part saves normalise to `All` on import. Absent tariff column ⇒
+  `All` everywhere ⇒ keys are 7-part with `All|All` and behaviour is unchanged.
+- Tariff appears as a 4th hierarchical dropdown in the Viewing bar, Step 1
+  (Standard Forecast), Step 2 (What-If) and Scenario Compare, and as Tariff L1/L2
+  checkboxes in the Historical Accuracy Group-by row — all shown ONLY when a
+  tariff column is mapped.
+
 **Channel L2:** sub-channels of Channel L1 (+ `All`) — 9 confirmed values:
 - Under **Direct** (5): `Field / Regional Sales`, `Inside Sales`,
   `Call Centre / Tele-sales`, `Strategic / Global Accounts`, `Digital Direct`

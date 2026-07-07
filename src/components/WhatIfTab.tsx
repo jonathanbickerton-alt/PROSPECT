@@ -35,6 +35,11 @@ interface WhatIfTabProps {
   productTree: Map<string, string[]>;
   /** L1 → L2 children map for Channel hierarchy */
   channelTree: Map<string, string[]>;
+  /** L1 → L2 children map for Tariff hierarchy (Phase 2a) */
+  tariffTree?: Map<string, string[]>;
+  /** Column names for Tariff L1/L2 (Phase 2a) */
+  wiTariffL1Col?: string;
+  wiTariffL2Col?: string;
   newEvent: Partial<MarketEvent>;
   setNewEvent: (e: Partial<MarketEvent>) => void;
   marketEvents: MarketEvent[];
@@ -109,6 +114,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   wiArpuCol = '',
   productTree,
   channelTree,
+  tariffTree,
+  wiTariffL1Col = '',
+  wiTariffL2Col = '',
   newEvent,
   setNewEvent,
   marketEvents,
@@ -149,6 +157,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const [viewSegment, setViewSegment] = useState('All');
   const [viewProduct, setViewProduct] = useState<HierarchicalSelection>({ l1: null, l2: null });
   const [viewChannel, setViewChannel] = useState<HierarchicalSelection>({ l1: null, l2: null });
+  const [viewTariff, setViewTariff] = useState<HierarchicalSelection>({ l1: null, l2: null });
   // 'All' means all KPIs visible; a specific scenario pre-selects that KPI.
   const [viewScenario, setViewScenario] = useState('All');
 
@@ -197,7 +206,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // Keeps the page-level VIEW dropdowns aligned with the global VIEWING bar.
   useEffect(() => {
     if (!baseForecast) return;
-    const { segment, product, productL2, channel, channelL2 } = baseForecast.cohort;
+    const { segment, product, productL2, channel, channelL2, tariffL1, tariffL2 } = baseForecast.cohort;
     setViewSegment(segment !== 'All' ? segment : 'All');
     setViewProduct({
       l1: product !== 'All' ? product : null,
@@ -206,6 +215,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setViewChannel({
       l1: channel !== 'All' ? channel : null,
       l2: channelL2 && channelL2 !== 'All' ? channelL2 : null,
+    });
+    setViewTariff({
+      l1: tariffL1 && tariffL1 !== 'All' ? tariffL1 : null,
+      l2: tariffL2 && tariffL2 !== 'All' ? tariffL2 : null,
     });
   }, [baseForecast]);
 
@@ -411,6 +424,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const vprodL2 = vprod.l2;   // null = All L2 within L1
     const vchanL1 = vchan.l1;
     const vchanL2 = vchan.l2;
+    const vtarL1 = viewTariff.l1;  // null = All (Phase 2a; event tariff targeting arrives in 2b)
+    const vtarL2 = viewTariff.l2;
 
     // ---------------------------------------------------------------------------
     // Pass 1 — apply market events to each forecast month.
@@ -432,7 +447,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         const prodL2Match = !e.productL2 || e.productL2 === 'All' || !vprodL2 || e.productL2 === vprodL2;
         const chanL1Match = e.channel === 'All' || !vchanL1 || e.channel === vchanL1;
         const chanL2Match = !e.channelL2 || e.channelL2 === 'All' || !vchanL2 || e.channelL2 === vchanL2;
-        return segMatch && prodL1Match && prodL2Match && chanL1Match && chanL2Match;
+        const tarL1Match = !e.tariffL1 || e.tariffL1 === 'All' || !vtarL1 || e.tariffL1 === vtarL1;
+        const tarL2Match = !e.tariffL2 || e.tariffL2 === 'All' || !vtarL2 || e.tariffL2 === vtarL2;
+        return segMatch && prodL1Match && prodL2Match && chanL1Match && chanL2Match && tarL1Match && tarL2Match;
       });
 
       let adjInflow = month.inflow.mean;
@@ -824,7 +841,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     });
 
     return { chartData: rows, adjustedMonths: computed };
-  }, [baseForecast, marketEvents, yieldEvents, pricingEvents, viewSegment, viewProduct, viewChannel]);
+  }, [baseForecast, marketEvents, yieldEvents, pricingEvents, viewSegment, viewProduct, viewChannel, viewTariff]);
 
   // ── Custom chart tooltip — shows KPI values + any event names for that month ─
   const renderTooltip = useCallback(({ active, payload, label }: any) => {
@@ -1369,6 +1386,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             />
           )}
 
+          {wiTariffL1Col && tariffTree && tariffTree.size > 0 && (
+            <HierarchicalDropdown
+              label="Tariff"
+              tree={tariffTree}
+              value={viewTariff}
+              onChange={setViewTariff}
+              variant="light"
+            />
+          )}
+
           <div className="flex items-center gap-1.5">
             <label className="text-xs text-slate-500 shrink-0">IBRO Scenario</label>
             <select
@@ -1385,9 +1412,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             </select>
           </div>
 
-          {(viewSegment !== 'All' || viewProduct.l1 !== null || viewChannel.l1 !== null || viewScenario !== 'All') && (
+          {(viewSegment !== 'All' || viewProduct.l1 !== null || viewChannel.l1 !== null || viewTariff.l1 !== null || viewScenario !== 'All') && (
             <button
-              onClick={() => { setViewSegment('All'); setViewProduct({ l1: null, l2: null }); setViewChannel({ l1: null, l2: null }); setViewScenario('All'); }}
+              onClick={() => { setViewSegment('All'); setViewProduct({ l1: null, l2: null }); setViewChannel({ l1: null, l2: null }); setViewTariff({ l1: null, l2: null }); setViewScenario('All'); }}
               className="text-[10px] text-slate-400 hover:text-rose-500 underline underline-offset-2 transition-colors"
             >
               Reset

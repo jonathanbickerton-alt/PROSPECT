@@ -36,6 +36,10 @@ interface ForecastVsActualsTabProps {
   wiChannelCol: string;
   /** Column name for Channel L2 — optional, used for L2-aware filtering */
   wiChannelL2Col?: string;
+  /** Column name for Tariff L1 — optional (Phase 2a) */
+  wiTariffL1Col?: string;
+  /** Column name for Tariff L2 — optional (Phase 2a) */
+  wiTariffL2Col?: string;
   formatNumber: (v: any) => string;
   setActiveView: (v: string) => void;
   onAcceptChallengerModel: (model: ForecastModel, switchoverMonth: string | null) => void;
@@ -367,12 +371,18 @@ function computeForecastMape(
 // Scope-matching helpers — keep baseline and actuals at the same cohort scope
 // ---------------------------------------------------------------------------
 
-/** True if 5-part scope `a` strictly contains scope `b` (i.e. `a` is broader). */
+/** True if 7-part scope `a` strictly contains scope `b` (i.e. `a` is broader).
+ *  Positions: seg|prod|prodL2|chan|chanL2|tariffL1|tariffL2. Missing positions
+ *  (old 5-part keys) read as undefined and compare equal, so this stays correct
+ *  for tariff-free data while preventing a tariff=All parent from double-counting
+ *  against tariff-specific children. */
 function scopeContains(a: string[], b: string[]): boolean {
   let broader = false;
-  for (let i = 0; i < 5; i++) {
-    if (a[i] === b[i]) continue;
-    if (a[i] === 'All') { broader = true; continue; }
+  for (let i = 0; i < 7; i++) {
+    const av = a[i] ?? 'All';
+    const bv = b[i] ?? 'All';
+    if (av === bv) continue;
+    if (av === 'All') { broader = true; continue; }
     return false;
   }
   return broader;
@@ -399,7 +409,9 @@ function cohortMatchesFilter(cohort: BaseForecast['cohort'], filter: ViewFilter)
     && cohort.product === (filter.product.l1 ?? 'All')
     && (cohort.productL2 ?? 'All') === (filter.product.l2 ?? 'All')
     && cohort.channel === (filter.channel.l1 ?? 'All')
-    && (cohort.channelL2 ?? 'All') === (filter.channel.l2 ?? 'All');
+    && (cohort.channelL2 ?? 'All') === (filter.channel.l2 ?? 'All')
+    && (cohort.tariffL1 ?? 'All') === (filter.tariff?.l1 ?? 'All')
+    && (cohort.tariffL2 ?? 'All') === (filter.tariff?.l2 ?? 'All');
 }
 
 // ---------------------------------------------------------------------------
@@ -446,7 +458,7 @@ type ComponentDetail = {
 
 type CohortAccuracyRow = {
   cohortKey: string;
-  seg: string; prod: string; prodL2: string; chan: string; chanL2: string;
+  seg: string; prod: string; prodL2: string; chan: string; chanL2: string; tariffL1: string; tariffL2: string;
   label: string;
   // Kept for AutoML Challenger threshold filter (avgMape > 5%)
   inflowMape: number | null;
@@ -535,27 +547,31 @@ function buildCohortAccuracy(
   adjustedMeanMap?: AdjustedMeanMap,
 ): CohortAccuracyRow[] {
   const merged = new Map<string, Map<string, CohortMonthEntry>>();
-  const firstDims = new Map<string, { seg: string; prod: string; prodL2: string; chan: string; chanL2: string }>();
+  const firstDims = new Map<string, { seg: string; prod: string; prodL2: string; chan: string; chanL2: string; tariffL1: string; tariffL2: string }>();
 
   for (const [rawKey, rawMonthMap] of cohortActualsMap.entries()) {
     const parts = rawKey.split('|');
-    // 5-part key: seg|prod|prodL2|chan|chanL2
+    // 7-part key: seg|prod|prodL2|chan|chanL2|tariffL1|tariffL2
     const seg    = parts[0] || '';
     const prod   = parts[1] || '';
     const prodL2 = parts[2] || 'All';
     const chan    = parts[3] || '';
     const chanL2  = parts[4] || 'All';
+    const tariffL1 = parts[5] || 'All';
+    const tariffL2 = parts[6] || 'All';
 
     const keyParts = [seg];
     if (dims.product)   keyParts.push(prod);
     if (dims.productL2) keyParts.push(prodL2);
     if (dims.channelL1) keyParts.push(chan);
     if (dims.channelL2) keyParts.push(chanL2);
+    if (dims.tariffL1)  keyParts.push(tariffL1);
+    if (dims.tariffL2)  keyParts.push(tariffL2);
     const activeKey = keyParts.join('|');
 
     if (!merged.has(activeKey)) {
       merged.set(activeKey, new Map());
-      firstDims.set(activeKey, { seg, prod, prodL2, chan, chanL2 });
+      firstDims.set(activeKey, { seg, prod, prodL2, chan, chanL2, tariffL1, tariffL2 });
     }
     const mergedMonths = merged.get(activeKey)!;
 
@@ -606,6 +622,8 @@ function buildCohortAccuracy(
       dims.productL2 ? d.prodL2 : 'All',
       dims.channelL1 ? d.chan    : 'All',
       dims.channelL2 ? d.chanL2  : 'All',
+      dims.tariffL1  ? d.tariffL1 : 'All',
+      dims.tariffL2  ? d.tariffL2 : 'All',
     ].join('|');
     const cohortSrcEarly = forecastStore.get(cohortFcLookupKeyEarly) ?? null;
     type BFEarly = import('../types/forecast').BaseForecast;
@@ -619,6 +637,8 @@ function buildCohortAccuracy(
         if (dims.productL2 && d.prodL2 !== 'All' && p[2] !== d.prodL2) continue;
         if (dims.channelL1 && d.chan   !== 'All' && p[3] !== d.chan)    continue;
         if (dims.channelL2 && d.chanL2 !== 'All' && p[4] !== d.chanL2) continue;
+        if (dims.tariffL1  && d.tariffL1 !== 'All' && p[5] !== d.tariffL1) continue;
+        if (dims.tariffL2  && d.tariffL2 !== 'All' && p[6] !== d.tariffL2) continue;
         candidates.push(bf);
       }
       // When productL2 is not a GROUP-BY dimension the store may contain both
@@ -674,7 +694,7 @@ function buildCohortAccuracy(
       if (!matchingBfs.length) return monthMap;
       const scoped = new Map<string, CohortMonthEntry>();
       for (const [key, rawMonthMap] of cohortActualsMap.entries()) {
-        const [kSeg, kProd, kProdL2, kChan, kChanL2] = key.split('|');
+        const [kSeg, kProd, kProdL2, kChan, kChanL2, kTariffL1, kTariffL2] = key.split('|');
         if (kSeg !== d.seg) continue;
         const covered = matchingBfs.some(bf => {
           const c = bf.cohort;
@@ -682,6 +702,8 @@ function buildCohortAccuracy(
           if (c.productL2 && c.productL2 !== 'All' && c.productL2 !== kProdL2) return false;
           if (c.channel  !== 'All' && c.channel  !== kChan)   return false;
           if (c.channelL2 && c.channelL2 !== 'All' && c.channelL2 !== kChanL2) return false;
+          if (c.tariffL1 && c.tariffL1 !== 'All' && c.tariffL1 !== kTariffL1) return false;
+          if (c.tariffL2 && c.tariffL2 !== 'All' && c.tariffL2 !== kTariffL2) return false;
           return true;
         });
         if (!covered) continue;
@@ -1310,10 +1332,12 @@ function buildCohortAccuracy(
     if (dims.productL2) labelParts.push(d.prodL2);
     if (dims.channelL1) labelParts.push(d.chan);
     if (dims.channelL2) labelParts.push(d.chanL2);
+    if (dims.tariffL1)  labelParts.push(d.tariffL1);
+    if (dims.tariffL2)  labelParts.push(d.tariffL2);
 
     return {
       cohortKey: activeKey,
-      seg: d.seg, prod: d.prod, prodL2: d.prodL2, chan: d.chan, chanL2: d.chanL2,
+      seg: d.seg, prod: d.prod, prodL2: d.prodL2, chan: d.chan, chanL2: d.chanL2, tariffL1: d.tariffL1, tariffL2: d.tariffL2,
       label: labelParts.join(' · '),
       inflowMape, outflowMape, retentionMape, avgMape,
       inflowScore, outflowScore, retentionScore, baseScore,
@@ -1353,6 +1377,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   data, wiDateCol, wiMetricCol, wiValueCol,
   wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal,
   wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiProductL2Col = '', wiChannelCol, wiChannelL2Col = '',
+  wiTariffL1Col = '', wiTariffL2Col = '',
   formatNumber, setActiveView, onAcceptChallengerModel, onAcceptAllChallengerModels,
   onRunChallengerForecast, onAcceptPreviewForecast,
   handleImportActualsFile, onRemoveActuals, onRequestExport,
@@ -1402,9 +1427,9 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
 
   // Dimension selectors — each sub-view owns its own independent selection so
   // changing grouping in one tab does not disturb the other.
-  const [cohortDims, setCohortDims] = useState<CohortDims>({ product: false, productL2: false, channelL1: false, channelL2: false });
+  const [cohortDims, setCohortDims] = useState<CohortDims>({ product: false, productL2: false, channelL1: false, channelL2: false, tariffL1: false, tariffL2: false });
   const [cohortSearch, setCohortSearch] = useState('');
-  const [challengerDims, setChallengerDims] = useState<CohortDims>({ product: false, productL2: false, channelL1: false, channelL2: false });
+  const [challengerDims, setChallengerDims] = useState<CohortDims>({ product: false, productL2: false, channelL1: false, channelL2: false, tariffL1: false, tariffL2: false });
 
   // Challenger list filter state — independent of the dimension selectors above.
   const [challengerSearch,      setChallengerSearch]      = useState('');
@@ -1564,8 +1589,10 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       const prodL2 = wiProductL2Col ? String(row[wiProductL2Col] || 'All').trim()    : 'All';
       const chan    = wiChannelCol  ? String(row[wiChannelCol]   || 'Unknown').trim() : '—';
       const chanL2  = wiChannelL2Col ? String(row[wiChannelL2Col]  || 'All').trim()   : 'All';
-      // Full 5-part key — cohortAccuracy groups dynamically from these entries.
-      const cohortKey = `${seg}|${prod}|${prodL2 || 'All'}|${chan}|${chanL2 || 'All'}`;
+      const tarL1   = wiTariffL1Col ? String(row[wiTariffL1Col]   || 'All').trim()    : 'All';
+      const tarL2   = wiTariffL2Col ? String(row[wiTariffL2Col]   || 'All').trim()    : 'All';
+      // Full 7-part key — cohortAccuracy groups dynamically from these entries.
+      const cohortKey = `${seg}|${prod}|${prodL2 || 'All'}|${chan}|${chanL2 || 'All'}|${tarL1 || 'All'}|${tarL2 || 'All'}`;
 
       if (!map.has(cohortKey)) map.set(cohortKey, new Map());
       const cohortMonthMap = map.get(cohortKey)!;
@@ -1857,6 +1884,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           cohortDims.productL2 ? selectedCohortRow.prodL2 : 'All',
           cohortDims.channelL1 ? selectedCohortRow.chan    : 'All',
           cohortDims.channelL2 ? selectedCohortRow.chanL2  : 'All',
+          cohortDims.tariffL1  ? selectedCohortRow.tariffL1 : 'All',
+          cohortDims.tariffL2  ? selectedCohortRow.tariffL2 : 'All',
         ].join('|')
       : null;
     const cohortSpecificForecast = cohortForecastKey ? (forecastStore.get(cohortForecastKey) ?? null) : null;
@@ -1873,7 +1902,9 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       const prodL2 = activeFilter.product.l2 || 'All';
       const chan    = activeFilter.channel.l1 || 'All';
       const chanL2  = activeFilter.channel.l2 || 'All';
-      return forecastStore.get(`${seg}|${prod}|${prodL2}|${chan}|${chanL2}`) ?? null;
+      const tarL1   = activeFilter.tariff?.l1 || 'All';
+      const tarL2   = activeFilter.tariff?.l2 || 'All';
+      return forecastStore.get(`${seg}|${prod}|${prodL2}|${chan}|${chanL2}|${tarL1}|${tarL2}`) ?? null;
     })();
 
     // Effective specific forecast: cohort selection takes priority over filter lookup.
@@ -1986,6 +2017,12 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       const chanL2 = selectedCohortRow
         ? (cohortDims.channelL2 && selectedCohortRow.chanL2 !== 'All' ? selectedCohortRow.chanL2 : null)
         : (activeFilter?.channel.l2 ?? null);
+      const tarL1  = selectedCohortRow
+        ? (cohortDims.tariffL1 && selectedCohortRow.tariffL1 !== 'All' ? selectedCohortRow.tariffL1 : null)
+        : (activeFilter?.tariff?.l1 ?? null);
+      const tarL2  = selectedCohortRow
+        ? (cohortDims.tariffL2 && selectedCohortRow.tariffL2 !== 'All' ? selectedCohortRow.tariffL2 : null)
+        : (activeFilter?.tariff?.l2 ?? null);
 
       const empty = { specificFcMonthMap: null as null, fcSeedBase: 0, fcLastIn: 0, fcLastOut: 0, _matchFcs: noFcs };
       // Aggregate matching forecasts whenever a scope context exists (cohort row
@@ -2004,6 +2041,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
         if (prodL2 && p[2] !== prodL2) continue;
         if (chan   && p[3] !== chan)    continue;
         if (chanL2 && p[4] !== chanL2) continue;
+        if (tarL1  && p[5] !== tarL1)  continue;
+        if (tarL2  && p[6] !== tarL2)  continue;
         matchEntries.push({ key, bf });
       }
       const matchFcs = dedupeContainedForecasts(matchEntries);
@@ -2086,7 +2125,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       if (specificForecast || !_matchFcs.length || cohortMonthMap) return null;
       const amap = new Map<string, SynActBucket>();
       for (const [key, mMap] of cohortActualsMap.entries()) {
-        const [kSeg, kProd, kProdL2, kChan, kChanL2] = key.split('|');
+        const [kSeg, kProd, kProdL2, kChan, kChanL2, kTariffL1, kTariffL2] = key.split('|');
         // Include this cohortActualsMap entry if it falls within ANY matched forecast's scope
         const matched = _matchFcs.some(bf => {
           const c = bf.cohort;
@@ -2095,6 +2134,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           if (c.productL2 && c.productL2 !== 'All' && c.productL2 !== kProdL2) return false;
           if (c.channel  !== 'All' && c.channel  !== kChan)  return false;
           if (c.channelL2 && c.channelL2 !== 'All' && c.channelL2 !== kChanL2) return false;
+          if (c.tariffL1 && c.tariffL1 !== 'All' && c.tariffL1 !== kTariffL1) return false;
+          if (c.tariffL2 && c.tariffL2 !== 'All' && c.tariffL2 !== kTariffL2) return false;
           return true;
         });
         if (!matched) continue;
@@ -2269,6 +2310,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           cohortDims.productL2 ? selectedCohortRow.prodL2 : 'All',
           cohortDims.channelL1 ? selectedCohortRow.chan    : 'All',
           cohortDims.channelL2 ? selectedCohortRow.chanL2  : 'All',
+          cohortDims.tariffL1  ? selectedCohortRow.tariffL1 : 'All',
+          cohortDims.tariffL2  ? selectedCohortRow.tariffL2 : 'All',
         ].join('|')
       : null;
     const cohortSpecificForecast = cohortForecastKey ? (forecastStore.get(cohortForecastKey) ?? null) : null;
@@ -2279,7 +2322,9 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       const prodL2 = activeFilter.product.l2 || 'All';
       const chan    = activeFilter.channel.l1 || 'All';
       const chanL2  = activeFilter.channel.l2 || 'All';
-      return forecastStore.get(`${seg}|${prod}|${prodL2}|${chan}|${chanL2}`) ?? null;
+      const tarL1   = activeFilter.tariff?.l1 || 'All';
+      const tarL2   = activeFilter.tariff?.l2 || 'All';
+      return forecastStore.get(`${seg}|${prod}|${prodL2}|${chan}|${chanL2}|${tarL1}|${tarL2}`) ?? null;
     })();
     const specificForecast = cohortSpecificForecast ?? filterForecast;
 
@@ -2314,6 +2359,12 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       const chanL2 = selectedCohortRow
         ? (cohortDims.channelL2 && selectedCohortRow.chanL2 !== 'All' ? selectedCohortRow.chanL2 : null)
         : (activeFilter?.channel.l2 ?? null);
+      const tarL1  = selectedCohortRow
+        ? (cohortDims.tariffL1 && selectedCohortRow.tariffL1 !== 'All' ? selectedCohortRow.tariffL1 : null)
+        : (activeFilter?.tariff?.l1 ?? null);
+      const tarL2  = selectedCohortRow
+        ? (cohortDims.tariffL2 && selectedCohortRow.tariffL2 !== 'All' ? selectedCohortRow.tariffL2 : null)
+        : (activeFilter?.tariff?.l2 ?? null);
 
       // Aggregate matching forecasts whenever a scope context exists (cohort
       // row or filter bar). seg === null with activeFilter present means "All
@@ -2329,6 +2380,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           if (prodL2 && p[2] !== prodL2) continue;
           if (chan   && p[3] !== chan)    continue;
           if (chanL2 && p[4] !== chanL2) continue;
+          if (tarL1  && p[5] !== tarL1)  continue;
+          if (tarL2  && p[6] !== tarL2)  continue;
           matchEntries.push({ key, bf });
         }
         const matchFcs = dedupeContainedForecasts(matchEntries);
@@ -2422,7 +2475,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       if (specificForecast || !_matchFcs.length || cohortMonthMap) return null;
       const amap = new Map<string, SynActBucket>();
       for (const [key, mMap] of cohortActualsMap.entries()) {
-        const [kSeg, kProd, kProdL2, kChan, kChanL2] = key.split('|');
+        const [kSeg, kProd, kProdL2, kChan, kChanL2, kTariffL1, kTariffL2] = key.split('|');
         const matched = _matchFcs.some(bf => {
           const c = bf.cohort;
           if (c.segment  !== 'All' && c.segment  !== kSeg)   return false;
@@ -2430,6 +2483,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           if (c.productL2 && c.productL2 !== 'All' && c.productL2 !== kProdL2) return false;
           if (c.channel  !== 'All' && c.channel  !== kChan)  return false;
           if (c.channelL2 && c.channelL2 !== 'All' && c.channelL2 !== kChanL2) return false;
+          if (c.tariffL1 && c.tariffL1 !== 'All' && c.tariffL1 !== kTariffL1) return false;
+          if (c.tariffL2 && c.tariffL2 !== 'All' && c.tariffL2 !== kTariffL2) return false;
           return true;
         });
         if (!matched) continue;
@@ -2976,11 +3031,12 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   // COMPARING chips — only rendered when the user has an explicit activeFilter.
   // These chips double as per-dimension reset buttons (X to clear a single dim).
   // When no activeFilter is set the ViewFilterBar already communicates the scope.
-  type ActiveDim = { label: string; value: string; active: boolean; dim: 'segment' | 'product' | 'channel' };
+  type ActiveDim = { label: string; value: string; active: boolean; dim: 'segment' | 'product' | 'channel' | 'tariff' };
   const activeDims: ActiveDim[] = activeFilter ? ([
     { label: 'Segment', value: activeFilter.segment,                      active: activeFilter.segment !== 'All', dim: 'segment' as const },
     { label: 'Product', value: productDisplayStr(activeFilter.product),   active: !!activeFilter.product.l1,     dim: 'product' as const },
     { label: 'Channel', value: productDisplayStr(activeFilter.channel),   active: !!activeFilter.channel.l1,     dim: 'channel' as const },
+    ...(activeFilter.tariff ? [{ label: 'Tariff', value: productDisplayStr(activeFilter.tariff), active: !!activeFilter.tariff.l1, dim: 'tariff' as const }] : []),
   ] as ActiveDim[]).filter(d => d.value && d.value !== 'Unknown' && d.value !== 'undefined') : [];
   const hasActiveFilterDims = activeDims.some(d => d.active);
 
@@ -3107,6 +3163,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                   if (d.dim === 'segment') next.segment = 'All';
                   else if (d.dim === 'product') next.product = { l1: null, l2: null };
                   else if (d.dim === 'channel') next.channel = { l1: null, l2: null };
+                  else if (d.dim === 'tariff') next.tariff = { l1: null, l2: null };
                   onCohortFilterChange!(next);
                 }}
                 className={`inline-flex items-center gap-1.5 text-xs rounded-full px-3 py-1 border transition-colors ${
@@ -3459,6 +3516,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               wiProductL2Col={wiProductL2Col}
               wiChannelCol={wiChannelCol}
               wiChannelL2Col={wiChannelL2Col}
+              wiTariffL1Col={wiTariffL1Col}
+              wiTariffL2Col={wiTariffL2Col}
               count={cohortAccuracy.length}
             />
 
@@ -3612,11 +3671,15 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                 l1: cohortDims.channelL1 && c.chan   !== 'All' ? c.chan   : null,
                                 l2: cohortDims.channelL2 && c.chanL2 !== 'All' ? c.chanL2 : null,
                               },
+                              tariff: {
+                                l1: cohortDims.tariffL1 && c.tariffL1 !== 'All' ? c.tariffL1 : null,
+                                l2: cohortDims.tariffL2 && c.tariffL2 !== 'All' ? c.tariffL2 : null,
+                              },
                             });
                           } else {
                             setSelectedForecastCohortKey(null);
                             // Reset filter when deselecting
-                            onCohortFilterChange?.({ segment: 'All', product: { l1: null, l2: null }, channel: { l1: null, l2: null } });
+                            onCohortFilterChange?.({ segment: 'All', product: { l1: null, l2: null }, channel: { l1: null, l2: null }, tariff: { l1: null, l2: null } });
                           }
                         }}
                         className={`cursor-pointer transition-colors ${
@@ -3781,6 +3844,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                       className="flex-1 min-w-0 text-[11px] border border-slate-200 rounded-lg px-2 py-1.5 bg-slate-50 outline-none focus:ring-1 focus:ring-indigo-300 focus:border-indigo-300 text-slate-700 cursor-pointer"
                     >
                       <option value="All">All models</option>
+                      <option value="Simple Exponential Smoothing">Simple Exponential Smoothing</option>
                       <option value="Holt Linear">Holt Linear</option>
                       <option value="Damped Trend">Damped Trend</option>
                       <option value="Holt-Winters">Holt-Winters</option>

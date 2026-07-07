@@ -1,12 +1,14 @@
 import { format, addMonths, parse } from 'date-fns';
 
-export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod: any, vchan: any) {
+export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod: any, vchan: any, vtariff?: any) {
   const { baselineRows, marketEvents, yieldEvents, pricingEvents } = parsedSession;
 
   const vprodL1 = vprod.l1;
   const vprodL2 = vprod.l2;
   const vchanL1 = vchan.l1;
   const vchanL2 = vchan.l2;
+  const vtarL1 = vtariff?.l1 ?? null;   // Phase 2a — null = All tariffs
+  const vtarL2 = vtariff?.l2 ?? null;
 
   // 1. Filter Baseline Rows to matching cohorts
   const matchingBaseline = baselineRows.filter((r: any) => {
@@ -15,6 +17,8 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
     if (vprodL2 && r.Product_L2 !== 'All' && r.Product_L2 !== vprodL2) return false;
     if (vchanL1 && r.Channel !== vchanL1) return false;
     if (vchanL2 && r.Channel_L2 !== 'All' && r.Channel_L2 !== vchanL2) return false;
+    if (vtarL1 && r.Tariff_L1 && r.Tariff_L1 !== 'All' && r.Tariff_L1 !== vtarL1) return false;
+    if (vtarL2 && r.Tariff_L2 && r.Tariff_L2 !== 'All' && r.Tariff_L2 !== vtarL2) return false;
     return true;
   });
 
@@ -105,7 +109,9 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       const prodL2Match = !e.Product_L2 || e.Product_L2 === 'All' || !vprodL2 || e.Product_L2 === vprodL2;
       const chanL1Match = e.Channel === 'All' || !vchanL1 || e.Channel === vchanL1;
       const chanL2Match = !e.Channel_L2 || e.Channel_L2 === 'All' || !vchanL2 || e.Channel_L2 === vchanL2;
-      return segMatch && prodL1Match && prodL2Match && chanL1Match && chanL2Match;
+      const tarL1Match = !e.Tariff_L1 || e.Tariff_L1 === 'All' || !vtarL1 || e.Tariff_L1 === vtarL1;
+      const tarL2Match = !e.Tariff_L2 || e.Tariff_L2 === 'All' || !vtarL2 || e.Tariff_L2 === vtarL2;
+      return segMatch && prodL1Match && prodL2Match && chanL1Match && chanL2Match && tarL1Match && tarL2Match;
     });
 
     let adjInflow = month.inflow.mean;

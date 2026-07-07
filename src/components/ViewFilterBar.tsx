@@ -10,6 +10,9 @@ export interface ViewFilter {
   segment: string;
   product: HierarchicalSelection;
   channel: HierarchicalSelection;
+  /** Tariff dimension (Phase 2a) — optional so existing filter constructions
+   *  remain valid; absent means no tariff filter (treated as All). */
+  tariff?: HierarchicalSelection;
 }
 
 interface ViewFilterBarProps {
@@ -20,6 +23,8 @@ interface ViewFilterBarProps {
   productTree: Map<string, string[]>;
   /** L1 → L2 children map for Channel hierarchy */
   channelTree: Map<string, string[]>;
+  /** L1 → L2 children map for Tariff hierarchy (Phase 2a) */
+  tariffTree?: Map<string, string[]>;
   /** True when the forecastStore has an entry for the current filter selection. */
   hasForecast: boolean;
   /** Navigate to Step 1 to generate a forecast. */
@@ -32,9 +37,11 @@ export function ViewFilterBar({
   segments,
   productTree,
   channelTree,
+  tariffTree,
   hasForecast,
   onGoToStep1,
 }: ViewFilterBarProps) {
+  const tariffSelection: HierarchicalSelection = filter.tariff ?? { l1: null, l2: null };
   const selectCls =
     'appearance-none bg-slate-700 hover:bg-slate-600 text-slate-100 text-xs px-2.5 py-1 pr-6 rounded border border-slate-600 focus:outline-none focus:border-slate-400 cursor-pointer transition-colors';
 
@@ -86,6 +93,16 @@ export function ViewFilterBar({
           tree={channelTree}
           value={filter.channel}
           onChange={c => onChange({ ...filter, channel: c })}
+        />
+      )}
+
+      {/* Tariff — hierarchical tree dropdown (Phase 2a); only shown when tariff data exists */}
+      {tariffTree && tariffTree.size > 0 && (
+        <HierarchicalDropdown
+          label="Tariff"
+          tree={tariffTree}
+          value={tariffSelection}
+          onChange={t => onChange({ ...filter, tariff: t })}
         />
       )}
 
