@@ -194,6 +194,10 @@ export interface PricingEvent {
   productL2: string;
   channelL1: string;
   channelL2: string;
+  /** Tariff L1 — 'All' or absent = no tariff filter (Phase 2b targeting) */
+  tariffL1?: string;
+  /** Tariff L2 — 'All' or absent = no L2 filter (Phase 2b targeting) */
+  tariffL2?: string;
   /** First affected month (yyyy-MM) */
   month: string;
   /** Whether amount is a % change or an absolute € delta */

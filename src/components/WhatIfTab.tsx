@@ -784,7 +784,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           const pl2Ok  = pe.productL2 === 'All' || !vprodL2              || pe.productL2 === vprodL2;
           const ch1Ok  = pe.channelL1 === 'All' || !vchanL1              || pe.channelL1 === vchanL1;
           const ch2Ok  = pe.channelL2 === 'All' || !vchanL2              || pe.channelL2 === vchanL2;
-          if (!segOk || !prodOk || !pl2Ok || !ch1Ok || !ch2Ok) return false;
+          const tar1Ok = !pe.tariffL1 || pe.tariffL1 === 'All' || !vtarL1 || pe.tariffL1 === vtarL1;
+          const tar2Ok = !pe.tariffL2 || pe.tariffL2 === 'All' || !vtarL2 || pe.tariffL2 === vtarL2;
+          if (!segOk || !prodOk || !pl2Ok || !ch1Ok || !ch2Ok || !tar1Ok || !tar2Ok) return false;
           if (pe.duration === 'one-off') return pe.month === m.month;
           return pe.month <= m.month;
         })
@@ -918,6 +920,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       productL2: newPricingEvent.productL2 ?? 'All',
       channelL1: newPricingEvent.channelL1 ?? 'All',
       channelL2: newPricingEvent.channelL2 ?? 'All',
+      tariffL1:  newPricingEvent.tariffL1  ?? 'All',
+      tariffL2:  newPricingEvent.tariffL2  ?? 'All',
       month:     newPricingEvent.month,
       inputMode: newPricingEvent.inputMode ?? 'percentage',
       amount:    newPricingEvent.amount,
@@ -2466,6 +2470,29 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         <option value="All">All Channels</option>
                         {yChannelL1Options.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
+                    </div>
+                  )}
+
+                  {/* Tariff targeting (Phase 2b P7) — composes with Product/Channel;
+                      only shown when a tariff column is mapped AND tariffs are selected. */}
+                  {wiTariffL1Col && targetTariffTree.size > 0 && (
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">Tariff</label>
+                      <HierarchicalDropdown
+                        label=""
+                        tree={targetTariffTree}
+                        value={{
+                          l1: newPricingEvent.tariffL1 && newPricingEvent.tariffL1 !== 'All' ? newPricingEvent.tariffL1 : null,
+                          l2: newPricingEvent.tariffL2 && newPricingEvent.tariffL2 !== 'All' ? newPricingEvent.tariffL2 : null,
+                        }}
+                        onChange={(v: HierarchicalSelection) => setNewPricingEvent({
+                          ...newPricingEvent,
+                          tariffL1: v.l1 ?? 'All',
+                          tariffL2: v.l2 ?? 'All',
+                        })}
+                        variant="light"
+                        className="w-full"
+                      />
                     </div>
                   )}
 
