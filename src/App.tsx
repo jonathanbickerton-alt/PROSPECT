@@ -3526,18 +3526,23 @@ export default function App() {
     autoModel?: boolean;
     autoConfidence?: boolean;
   }): Promise<{ generated: number; failed: number }> => {
-    const targets = options?.cohortIds
-      ? allCohorts.filter(c => options.cohortIds!.includes(c.id))
-      : allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast');
+    // Show a "preparing" state and yield to the event loop so React can paint the
+    // generating panel BEFORE the synchronous pre-flight (cohort enumeration +
+    // data-map build + worker payload clone). Without this the main thread is
+    // blocked for that whole phase and the modal appears frozen at 0%.
+    setGenerationProgress({ current: 0, total: 0 });
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
 
     let generated = 0;
     let failed = 0;
+    let empty = 0;
     const newForecasts: Record<string, any> = {};
     const generatedIds: string[] = [];
 
     // ── Phase 1: Pre-Aggregation ─────────────────────────────────────────────
     // Single O(N) pass over data builds a Map<cohortKey, rows[]>.
     // All per-cohort filter chains inside the loop become O(1) .get() lookups.
+    // Built BEFORE target selection so we can enumerate only populated cohorts.
     const cohortDataMap: CohortDataMap = buildCohortDataMap(
       data,
       wiDateCol,
@@ -3549,6 +3554,39 @@ export default function App() {
       wiTariffL1Col,
       wiTariffL2Col,
     );
+
+    // Enumerate only cohorts that actually exist in the data. Tariff is often
+    // collinear with product/channel (each Segment×Product×Channel combo sells a
+    // single tariff), so the full cross-product enumerates ~10× the real leaves —
+    // inflating the "all missing" set from ~5k to ~80k, most of which are empty
+    // combinations (a base combo × a tariff it never sells, or an aggregate slice
+    // with no rows) that were forecast-skipped as "insufficient data" and stalled
+    // the UI at 0% during pre-flight.
+    //
+    // Build the set of cohorts that genuinely have data as the union of each
+    // populated leaf's hierarchical parents (seg: All/self; prod: All|All →
+    // l1|All → l1|l2; channel and tariff likewise) — exactly the combos the
+    // enumeration produces. This keeps EVERY data-spanning aggregate (they are
+    // parents of populated leaves, resolved via the worker's O(N) fallback) and
+    // drops only genuinely-empty combinations. Keys off cohortDataMap presence,
+    // never selectedTariffs (bulk generation always covers all data-present tariffs).
+    const populatedCohortKeys = new Set<string>();
+    for (const dk of cohortDataMap.keys()) {
+      const [seg, p1, p2, c1, c2, t1, t2] = dk.split('|');
+      const segS: string[] = ['All', seg];
+      const prodS: [string, string][] = [['All', 'All'], [p1, 'All'], [p1, p2]];
+      const chanS: [string, string][] = [['All', 'All'], [c1, 'All'], [c1, c2]];
+      const tarS:  [string, string][] = [['All', 'All'], [t1, 'All'], [t1, t2]];
+      for (const s of segS) for (const p of prodS) for (const c of chanS) for (const t of tarS) {
+        populatedCohortKeys.add(makeForecastKey(s, p[0], p[1], c[0], c[1], t[0], t[1]));
+      }
+    }
+    const cohortHasData = (c: any): boolean =>
+      populatedCohortKeys.has(makeForecastKey(c.segment, c.product, c.productL2, c.channel, c.channelL2, c.tariffL1, c.tariffL2));
+
+    const targets = options?.cohortIds
+      ? allCohorts.filter(c => options.cohortIds!.includes(c.id))
+      : allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast' && cohortHasData(c));
 
     // ── Phase 2: Build IBRO cohort list (needed before workers spawn) ────────
     // Enumerate unique L1×L2 combinations that exist in the data.
@@ -3659,18 +3697,21 @@ export default function App() {
               newTypedForecasts: Array<[string, BaseForecast]>;
               generated: number;
               failed: number;
+              empty?: number;
             };
             Object.assign(newForecasts, result.newForecasts);
             generatedIds.push(...result.generatedIds);
             generated += result.generated;
             failed    += result.failed;
+            empty     += result.empty ?? 0;
             for (const [k, v] of result.newTypedForecasts) {
               console.log(`[generateAllMissingForecasts] BaseForecast built for store key: ${k}`);
               newTypedForecasts.set(k, v);
             }
             setGenerationProgress(prev => ({
               ...prev,
-              current: prev.current + result.generated + result.failed,
+              // advance for every processed cohort (generated + insufficient + empty)
+              current: prev.current + result.generated + result.failed + (result.empty ?? 0),
             }));
             worker.terminate();
             resolve();

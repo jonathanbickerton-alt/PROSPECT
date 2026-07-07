@@ -321,7 +321,7 @@ function BulkGeneratingPanel({ progress }: { progress?: { current: number; total
           </>
         ) : (
           <p className="text-sm text-slate-500">
-            Running forecasts for each combination. This may take a few seconds.
+            Preparing cohorts — enumerating the combinations that have data…
           </p>
         )}
       </div>

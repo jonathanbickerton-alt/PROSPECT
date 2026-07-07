@@ -84,7 +84,12 @@ export interface WorkerOutMessage {
   /** Serialised as [key, BaseForecast][] because Map cannot cross postMessage boundary */
   newTypedForecasts: Array<[string, BaseForecast]>;
   generated: number;
+  /** Cohorts that could not be forecast because they had exactly 1 data point
+   *  (a genuine data-quality warning). */
   failed: number;
+  /** Cohorts skipped because they had 0 matching rows (expected — an aggregate
+   *  slice with no data; not surfaced as a failure). */
+  empty: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +129,7 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
   const generatedIds: string[] = [];
   let generated = 0;
   let failed = 0;
+  let empty = 0;
 
   // ── Standard cohorts: per-metric Holt-Winters ────────────────────────────
   for (const cohort of standardCohorts) {
@@ -178,7 +184,8 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
     }
 
     if (processedData.length < 2) {
-      failed++;
+      // 0 rows = expected empty slice (not a failure); 1 row = genuine insufficient data.
+      if (processedData.length === 0) empty++; else failed++;
       continue;
     }
 
@@ -406,6 +413,7 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
     newTypedForecasts,
     generated,
     failed,
+    empty,
   };
 
   self.postMessage(result);
