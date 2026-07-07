@@ -36,6 +36,13 @@ Mobile Voice (+ `All`)
 
 **Channel L1:** Direct, Indirect (+ `All`)
 
+**Channel L2:** sub-channels of Channel L1 (+ `All`) — 9 confirmed values:
+- Under **Direct** (5): `Field / Regional Sales`, `Inside Sales`,
+  `Call Centre / Tele-sales`, `Strategic / Global Accounts`, `Digital Direct`
+- Under **Indirect** (4): `Partner / Reseller`, `Distributor`,
+  `Alliance / Strategic Partner`, `Wholesale / Agent`
+- No `All` row exists in the raw data — `All` is a UI/key placeholder only
+
 **Tariff L1 (Phase 2a):** RED S, RED M, RED L, RED XL, RED ULTD (+ `All`) —
 5 confirmed values in the synthetic tariff file. **Cardinality is data-driven —
 never hardcoded**; real data may hold 10–15 tariffs.
@@ -56,13 +63,12 @@ Hierarchical child of Tariff L1, mirroring Product L1/L2 and Channel L1/L2.
   (Standard Forecast), Step 2 (What-If) and Scenario Compare, and as Tariff L1/L2
   checkboxes in the Historical Accuracy Group-by row — all shown ONLY when a
   tariff column is mapped.
-
-**Channel L2:** sub-channels of Channel L1 (+ `All`) — 9 confirmed values:
-- Under **Direct** (5): `Field / Regional Sales`, `Inside Sales`,
-  `Call Centre / Tele-sales`, `Strategic / Global Accounts`, `Digital Direct`
-- Under **Indirect** (4): `Partner / Reseller`, `Distributor`,
-  `Alliance / Strategic Partner`, `Wholesale / Agent`
-- No `All` row exists in the raw data — `All` is a UI/key placeholder only
+- **Tariff cohorts must forecast and score exactly like Product/Channel cohorts.**
+  A tariff-level cohort (e.g. Corporate · RED L · SIM-only) runs the full
+  parse → key → forecast → MAPE/score → export path identically. Its ARPU sits in
+  the correct product band and its MAPE/accuracy scores populate for tariff
+  groupings just as they do for Product/Channel — never blank or zero purely
+  because tariff is the grouping dimension.
 
 **Hierarchy rules:**
 - Selecting a Product L1 includes all its Product L2 children
@@ -306,6 +312,10 @@ after any change:
     Outflow/Retention sign round-trip
 14. Campaign group edit reverse-engineers the spread and replaces (not
     duplicates) the campaign's rows; rename during edit is orphan-safe
+15. Tariff-level ARPU and MAPE populate for tariff groupings: with Tariff L1/L2
+    Group-by enabled, ARPU MAPE is non-zero and accuracy scores populate (in-band
+    cohorts 80+) at tariff level, mirroring Product/Channel. With tariff off (no
+    column mapped) all existing scores are byte-identical to pre-tariff.
 
 **Verdict rule:** "SAFE FOR USER TESTING" only if all pass. Otherwise list
 the failures and the cohort/filter combination that exposed each.
