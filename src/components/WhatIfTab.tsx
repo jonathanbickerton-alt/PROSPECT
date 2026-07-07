@@ -1682,6 +1682,64 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           ))}
         </div>
 
+        {/* ── Tariff scoping control (Phase 2b) — pick the tariffs to plan with.
+            None selected by default; constrains tariff targeting AND the tariff
+            mix axis. Only shown when a tariff column is mapped. ─────────────── */}
+        {wiTariffL1Col && fullTariffTree.size > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+            <div className="flex items-start justify-between gap-4 mb-3">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700">Tariffs in scope</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Select the tariffs you want to plan with — tariff targeting and the tariff mix axis use only these.
+                </p>
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSelectedTariffs?.(Array.from(fullTariffTree.keys()))}
+                  className="text-xs font-medium text-slate-600 border border-slate-200 rounded-lg px-2.5 py-1 hover:bg-slate-50 transition-colors"
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTariffs?.([])}
+                  disabled={selectedTariffs.length === 0}
+                  className="text-xs font-medium text-slate-500 border border-slate-200 rounded-lg px-2.5 py-1 hover:bg-slate-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {Array.from(fullTariffTree.keys()).map(t => {
+                const on = selectedTariffs.includes(t);
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setSelectedTariffs?.(on ? selectedTariffs.filter(x => x !== t) : [...selectedTariffs, t])}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                      on
+                        ? 'bg-[#e60000] text-white border-[#e60000]'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${on ? 'bg-white' : 'bg-slate-300'}`} />
+                    {t}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedTariffs.length === 0 && (
+              <p className="mt-3 text-xs text-amber-600 font-medium">
+                No tariffs selected — tariff targeting and the tariff mix axis stay hidden until you select at least one.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* ── VOLUME TAB — Market Events form + table + Stock-and-Flow ─────── */}
         {activeTab === 'volume' && (<>
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">

@@ -603,6 +603,12 @@ export default function App() {
       'Pricing_Events',
     );
 
+    // ── Sheet 8b: Tariff_Selection (Phase 2b) — the tariffs in scope ──────────
+    const tariffSelRows = selectedTariffs.length
+      ? selectedTariffs.map(t => ({ Tariff_L1: t }))
+      : [{ Note: 'No tariffs selected' }];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tariffSelRows), 'Tariff_Selection');
+
     // ── Sheet 9: Metadata ─────────────────────────────────────────────────────
     const forecastMonths = baseForecast?.months ?? [];
     const metaRows = [
@@ -615,6 +621,7 @@ export default function App() {
       { Field: 'Market_Events',          Value: marketEvents.length },
       { Field: 'Yield_Events',           Value: yieldEvents.length },
       { Field: 'Pricing_Events',         Value: pricingEvents.length },
+      { Field: 'Selected_Tariffs',       Value: selectedTariffs.length },
       { Field: 'Bulk_Runs',              Value: bulkRuns.length },
       { Field: 'Model_Switches',         Value: modelAcceptanceLog.length },
       { Field: 'Pre_Horizon_Uncertainty_Pct',       Value: preHorizonUncertainty },
@@ -904,6 +911,15 @@ export default function App() {
               comment:          String(r.Comment ?? ''),
             })));
           }
+        }
+
+        // ── Tariff Selection (Phase 2b) ───────────────────────────────────────
+        if (wb.SheetNames.includes('Tariff_Selection')) {
+          const tsRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Tariff_Selection']);
+          const restored = tsRaw
+            .filter(r => !r.Note && r.Tariff_L1 != null && String(r.Tariff_L1).trim() !== '')
+            .map(r => String(r.Tariff_L1).trim());
+          setSelectedTariffs(restored);
         }
 
         // ── Adjusted Forecasts ────────────────────────────────────────────────
