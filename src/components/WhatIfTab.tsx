@@ -248,13 +248,23 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // forecast's per-scenario ARPU for the selected yield event month.
   const [yieldArpuMode, setYieldArpuMode] = useState<'historical' | 'forecast'>('historical');
 
+  // Mix dimension selector (Phase 2b P6): the yield mix is distributed across
+  // either the Value axis (Product L2 tiers) or the Tariff axis (selected tariffs).
+  // Independent axes — never a value×tariff matrix; the user picks one per event.
+  const [mixAxis, setMixAxis] = useState<'value' | 'tariff'>('value');
+
   // Derive Product L2 options + their base ARPUs from data whenever the
   // newYieldEvent selectors change.
   // When yieldArpuMode === 'forecast', tier ARPUs are scaled so their
   // volume-weighted blend equals the forecast's per-scenario ARPU for the
   // selected month — preserving relative tier relativities.
   const yieldTierData = useMemo<{ tier: string; baseArpu: number; historicalArpu: number }[]>(() => {
-    if (!wiProductL2Col || !wiArpuCol || !wiMetricCol) return [];
+    // Choose the bucketing dimension by axis: Value → Product L2 tiers,
+    // Tariff → the user's selected tariffs (Phase 2b). The rest of the
+    // derivation (per-bucket ARPU, forecast scaling) is identical either way.
+    const groupCol = mixAxis === 'tariff' ? wiTariffL1Col : wiProductL2Col;
+    if (!groupCol || !wiArpuCol || !wiMetricCol) return [];
+    if (mixAxis === 'tariff' && selectedTariffs.length === 0) return [];
     const { segment, product, channelL1, channelL2, ibro, month } = newYieldEvent;
     const ibroVal = ibro === 'Inflow' ? wiInflowVal : wiRetentionVal;
 
@@ -267,11 +277,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       return true;
     });
 
-    // Group by Product L2 → average ARPU (historical baseline)
+    // Group by the axis dimension → average ARPU (historical baseline).
+    // On the tariff axis, keep only the user's selected tariffs.
     const tierMap = new Map<string, number[]>();
     filtered.forEach(row => {
-      const tier = String(row[wiProductL2Col] ?? '');
+      const tier = String(row[groupCol] ?? '');
       if (!tier || tier === 'undefined') return;
+      if (mixAxis === 'tariff' && !selectedTariffs.includes(tier)) return;
       const arpu = Number(row[wiArpuCol]);
       if (!isFinite(arpu)) return;
       if (!tierMap.has(tier)) tierMap.set(tier, []);
@@ -310,7 +322,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     }
 
     return historicalTiers.map(t => ({ ...t, baseArpu: t.historicalArpu }));
-  }, [data, wiProductL2Col, wiArpuCol, wiMetricCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col, wiInflowVal, wiRetentionVal, newYieldEvent.segment, newYieldEvent.product, newYieldEvent.channelL1, newYieldEvent.channelL2, newYieldEvent.ibro, newYieldEvent.month, yieldArpuMode, baseForecast]);
+  }, [data, mixAxis, wiTariffL1Col, selectedTariffs, wiProductL2Col, wiArpuCol, wiMetricCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col, wiInflowVal, wiRetentionVal, newYieldEvent.segment, newYieldEvent.product, newYieldEvent.channelL1, newYieldEvent.channelL2, newYieldEvent.ibro, newYieldEvent.month, yieldArpuMode, baseForecast]);
+
+  // Which mix axes are usable (Phase 2b). Value availability comes from the
+  // already-computed productTree (O(1), no data scan) — "value null/All" means
+  // no Product L2 tiers exist. Tariff needs a mapped column + selected tariffs.
+  const valueAxisAvailable = !!wiProductL2Col && Array.from(productTree.values()).some((a: string[]) => a.length > 0);
+  const tariffAxisAvailable = !!wiTariffL1Col && selectedTariffs.length > 0;
+
+  // Conditional default: prefer Value; fall back to Tariff only when Value has no
+  // usable buckets and tariffs are selected. Only switches AWAY from an unusable
+  // axis, so a deliberate manual toggle to a usable axis is never undone.
+  useEffect(() => {
+    if (mixAxis === 'value' && !valueAxisAvailable && tariffAxisAvailable) setMixAxis('tariff');
+    else if (mixAxis === 'tariff' && !tariffAxisAvailable && valueAxisAvailable) setMixAxis('value');
+  }, [mixAxis, valueAxisAvailable, tariffAxisAvailable]);
 
   // Seed draftMix with equal weights whenever tiers change
   useEffect(() => {
@@ -408,6 +434,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       channelL1: newYieldEvent.channelL1 ?? 'All',
       channelL2: newYieldEvent.channelL2 ?? 'All',
       month: newYieldEvent.month,
+      mixAxis,
       tariffMix: { ...draftMix },
       tariffBaseArpu,
       rollForward: newYieldEvent.rollForward ?? false,
@@ -2904,19 +2931,43 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   </div>
                 </div>
 
+                {/* Mix dimension selector (Phase 2b P6) — distribute the mix across the
+                    Value axis (Product L2 tiers) or the Tariff axis (selected tariffs).
+                    Independent axes, never a matrix. Only shown when tariffs are selected. */}
+                {tariffAxisAvailable && (
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className="text-xs text-slate-500">Distribute mix across</span>
+                    <div className="flex bg-slate-100 p-0.5 rounded-lg">
+                      <button
+                        type="button"
+                        onClick={() => setMixAxis('value')}
+                        disabled={!valueAxisAvailable}
+                        className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed ${mixAxis === 'value' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                      >Value</button>
+                      <button
+                        type="button"
+                        onClick={() => setMixAxis('tariff')}
+                        className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all ${mixAxis === 'tariff' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                      >Tariff</button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Sliders */}
                 {yieldTierData.length === 0 ? (
                   <div className="py-6 text-center text-sm text-slate-400 border border-dashed border-slate-200 rounded-xl">
-                    {wiProductL2Col
-                      ? 'Select dimensions above to load tariff tier data'
-                      : 'Map a Product L2 column in Data Mapping to enable tariff sliders'}
+                    {mixAxis === 'tariff'
+                      ? 'Select dimensions above to load tariff mix data (or select tariffs in "Tariffs in scope")'
+                      : wiProductL2Col
+                        ? 'Select dimensions above to load value tier data'
+                        : 'Map a Product L2 column in Data Mapping to enable value mix sliders'}
                   </div>
                 ) : (
                   <div className="mb-5">
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        Tariff Mix (Product L2)
-                        <span className="ml-2 normal-case font-normal text-slate-400">— {yieldTierData.length} tier{yieldTierData.length !== 1 ? 's' : ''}</span>
+                        {mixAxis === 'tariff' ? 'Tariff Mix' : 'Value Mix (Product L2)'}
+                        <span className="ml-2 normal-case font-normal text-slate-400">— {yieldTierData.length} {mixAxis === 'tariff' ? 'tariff' : 'tier'}{yieldTierData.length !== 1 ? 's' : ''}</span>
                       </span>
                       <div className="flex items-center gap-3">
                         <div className="flex bg-slate-100 p-0.5 rounded-lg">
@@ -2947,7 +2998,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                     {/* Compact header row */}
                     <div className="grid gap-x-3 mb-1 pr-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider" style={{ gridTemplateColumns: 'minmax(80px,180px) 1fr 52px 90px 80px' }}>
-                      <span>Tier</span>
+                      <span>{mixAxis === 'tariff' ? 'Tariff' : 'Tier'}</span>
                       <span />
                       <span className="text-right">Mix %</span>
                       <span className="text-right">Base ARPU</span>
