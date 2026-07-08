@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { ChevronDown, Search, Check } from 'lucide-react';
+import { ChevronDown, Search } from 'lucide-react';
 
 interface MultiSelectDropdownProps {
   /** Displayed label above the trigger button */
@@ -89,7 +89,7 @@ export function MultiSelectDropdown({
       {open && (
         <div
           ref={panelRef}
-          className="absolute z-50 mt-1 w-full min-w-[220px] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden"
+          className="absolute z-50 mt-1 w-full min-w-[220px] bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
         >
           {/* Search */}
           <div className="p-2 border-b border-slate-100">
@@ -134,19 +134,18 @@ export function MultiSelectDropdown({
               filtered.map(opt => {
                 const on = selected.includes(opt);
                 return (
-                  <button
+                  <label
                     key={opt}
-                    type="button"
-                    onClick={() => toggle(opt)}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-slate-50 transition-colors"
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-slate-50 transition-colors cursor-pointer select-none"
                   >
-                    <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
-                      on ? 'bg-[#e60000] border-[#e60000]' : 'border-slate-300 bg-white'
-                    }`}>
-                      {on && <Check size={11} className="text-white" strokeWidth={3} />}
-                    </span>
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => toggle(opt)}
+                      className="accent-[#e60000] h-4 w-4 shrink-0"
+                    />
                     <span className="truncate text-slate-700">{opt}</span>
-                  </button>
+                  </label>
                 );
               })
             )}
