@@ -26,6 +26,9 @@ interface OverallForecastTabProps {
   setSavedForecasts: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   savedForecasts: Record<string, any>;
   computeCohortForecastData: (cohort: Cohort) => any;
+  /** True if a cohort has data — used to skip genuinely-empty combinations when
+   *  generating missing forecasts (avoids the tariff cross-product explosion). */
+  cohortHasData?: (cohort: Cohort) => boolean;
   setGeneratingCohort: (cohort: Cohort | null) => void;
   setViewingCohort: (cohort: Cohort | null) => void;
   isGeneratingMissing: boolean;
@@ -50,6 +53,7 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
   setSavedForecasts,
   savedForecasts,
   computeCohortForecastData,
+  cohortHasData,
   setGeneratingCohort,
   setViewingCohort,
   isGeneratingMissing,
@@ -139,7 +143,9 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
             </button>
             <button 
               onClick={async () => {
-                const missing = allCohorts.filter(c => !c.hasForecast);
+                // Skip genuinely-empty combinations (tariff is collinear with
+                // product/channel, so the cross-product is ~10× the real leaves).
+                const missing = allCohorts.filter(c => !c.hasForecast && (!cohortHasData || cohortHasData(c)));
                 if (missing.length === 0) return;
                 
                 setIsGeneratingMissing(true);

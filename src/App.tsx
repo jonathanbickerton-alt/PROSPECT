@@ -3338,6 +3338,36 @@ export default function App() {
     return cohorts;
   }, [data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiMetricCol, productTree, channelTree, tariffTree, forecastStore, savedForecasts]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Set of cohort keys that genuinely have data — the union of each populated
+  // leaf's hierarchical parents. Shared by bulk generation, the "missing" prompt
+  // trigger, and the missingCount on the modal so all three agree on the real
+  // populated cohort count (not the inflated cross-product, which tariff blows up
+  // ~10× because tariff is collinear with product/channel). Data-driven; never
+  // keyed off the user's tariff selection.
+  const populatedCohortKeys = useMemo(() => {
+    const set = new Set<string>();
+    if (!data.length || !wiDateCol) return set;
+    const dm = buildCohortDataMap(data, wiDateCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col);
+    for (const dk of dm.keys()) {
+      const [seg, p1, p2, c1, c2, t1, t2] = dk.split('|');
+      const segS: string[] = ['All', seg];
+      const prodS: [string, string][] = [['All', 'All'], [p1, 'All'], [p1, p2]];
+      const chanS: [string, string][] = [['All', 'All'], [c1, 'All'], [c1, c2]];
+      const tarS:  [string, string][] = [['All', 'All'], [t1, 'All'], [t1, t2]];
+      for (const s of segS) for (const p of prodS) for (const c of chanS) for (const t of tarS) {
+        set.add(makeForecastKey(s, p[0], p[1], c[0], c[1], t[0], t[1]));
+      }
+    }
+    return set;
+  }, [data, wiDateCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col]);
+
+  // True if a cohort has data. Empty set (no data mapped yet) ⇒ don't filter.
+  const cohortHasData = useCallback(
+    (c: any): boolean => populatedCohortKeys.size === 0
+      || populatedCohortKeys.has(makeForecastKey(c.segment, c.product, c.productL2, c.channel, c.channelL2, c.tariffL1, c.tariffL2)),
+    [populatedCohortKeys],
+  );
+
   const computeCohortForecastData = useCallback((cohort: any, manualParams?: any, cohortDataMap?: CohortDataMap) => {
     if (cohort.forecastType.startsWith('What-If Analysis')) {
       const scenarioMatch = cohort.forecastType.match(/\(([^)]+)\)/);
@@ -3555,35 +3585,11 @@ export default function App() {
       wiTariffL2Col,
     );
 
-    // Enumerate only cohorts that actually exist in the data. Tariff is often
-    // collinear with product/channel (each Segment×Product×Channel combo sells a
-    // single tariff), so the full cross-product enumerates ~10× the real leaves —
-    // inflating the "all missing" set from ~5k to ~80k, most of which are empty
-    // combinations (a base combo × a tariff it never sells, or an aggregate slice
-    // with no rows) that were forecast-skipped as "insufficient data" and stalled
-    // the UI at 0% during pre-flight.
-    //
-    // Build the set of cohorts that genuinely have data as the union of each
-    // populated leaf's hierarchical parents (seg: All/self; prod: All|All →
-    // l1|All → l1|l2; channel and tariff likewise) — exactly the combos the
-    // enumeration produces. This keeps EVERY data-spanning aggregate (they are
-    // parents of populated leaves, resolved via the worker's O(N) fallback) and
-    // drops only genuinely-empty combinations. Keys off cohortDataMap presence,
-    // never selectedTariffs (bulk generation always covers all data-present tariffs).
-    const populatedCohortKeys = new Set<string>();
-    for (const dk of cohortDataMap.keys()) {
-      const [seg, p1, p2, c1, c2, t1, t2] = dk.split('|');
-      const segS: string[] = ['All', seg];
-      const prodS: [string, string][] = [['All', 'All'], [p1, 'All'], [p1, p2]];
-      const chanS: [string, string][] = [['All', 'All'], [c1, 'All'], [c1, c2]];
-      const tarS:  [string, string][] = [['All', 'All'], [t1, 'All'], [t1, t2]];
-      for (const s of segS) for (const p of prodS) for (const c of chanS) for (const t of tarS) {
-        populatedCohortKeys.add(makeForecastKey(s, p[0], p[1], c[0], c[1], t[0], t[1]));
-      }
-    }
-    const cohortHasData = (c: any): boolean =>
-      populatedCohortKeys.has(makeForecastKey(c.segment, c.product, c.productL2, c.channel, c.channelL2, c.tariffL1, c.tariffL2));
-
+    // Enumerate only cohorts that actually exist in the data — see the shared
+    // populatedCohortKeys / cohortHasData defined above (used here AND by the
+    // missing-count prompt so they agree). Keeps every data-spanning aggregate
+    // (resolved via the worker's O(N) fallback), drops only genuinely-empty
+    // combinations, and never keys off the user's tariff selection.
     const targets = options?.cohortIds
       ? allCohorts.filter(c => options.cohortIds!.includes(c.id))
       : allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast' && cohortHasData(c));
@@ -3771,13 +3777,13 @@ export default function App() {
     setBulkRuns(prev => [...prev, record]);
 
     return { generated, failed };
-  }, [allCohorts, computeCohortForecastData, selectedForecastModel, genPreHorizonUncertainty, genPostHorizonExpansionRate, confidenceHorizon, genLength, data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [allCohorts, cohortHasData, computeCohortForecastData, selectedForecastModel, genPreHorizonUncertainty, genPostHorizonExpansionRate, confidenceHorizon, genLength, data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // After a single-combo forecast is saved, check whether there are remaining combinations
   // without a forecast and show the bulk-generate prompt if so.
   useEffect(() => {
     if (triggerBulkCheck === 0) return;
-    const missing = allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast');
+    const missing = allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast' && cohortHasData(c));
     if (missing.length > 0) {
       setShowBulkGeneratePrompt(true);
     }
@@ -4102,6 +4108,7 @@ export default function App() {
             setSavedForecasts={setSavedForecasts}
             savedForecasts={savedForecasts}
             computeCohortForecastData={computeCohortForecastData}
+            cohortHasData={cohortHasData}
             setGeneratingCohort={setGeneratingCohort}
             setViewingCohort={setViewingCohort}
             isGeneratingMissing={isGeneratingMissing}
@@ -4162,7 +4169,7 @@ export default function App() {
         isOpen={showBulkGeneratePrompt}
         onClose={() => setShowBulkGeneratePrompt(false)}
         sourceCohort={bulkSourceCohort}
-        missingCount={allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast').length}
+        missingCount={allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast' && cohortHasData(c)).length}
         params={{
           preHorizonUncertainty,
           postHorizonExpansionRate,
