@@ -10,6 +10,7 @@ import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, Pr
 import type { MarketEvent } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
+import { MultiSelectDropdown } from './MultiSelectDropdown';
 
 // ---------------------------------------------------------------------------
 // Props — only what this step actually needs
@@ -1731,50 +1732,22 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             mix axis. Only shown when a tariff column is mapped. ─────────────── */}
         {wiTariffL1Col && fullTariffTree.size > 0 && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-            <div className="flex items-start justify-between gap-4 mb-3">
-              <div>
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
                 <h3 className="text-sm font-semibold text-slate-700">Tariffs in scope</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Select the tariffs you want to plan with — tariff targeting and the tariff mix axis use only these.
                 </p>
               </div>
-              <div className="flex gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setSelectedTariffs?.(Array.from(fullTariffTree.keys()))}
-                  className="text-xs font-medium text-slate-600 border border-slate-200 rounded-lg px-2.5 py-1 hover:bg-slate-50 transition-colors"
-                >
-                  Select all
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedTariffs?.([])}
-                  disabled={selectedTariffs.length === 0}
-                  className="text-xs font-medium text-slate-500 border border-slate-200 rounded-lg px-2.5 py-1 hover:bg-slate-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Clear
-                </button>
+              <div className="w-64 shrink-0">
+                <MultiSelectDropdown
+                  options={Array.from(fullTariffTree.keys())}
+                  selected={selectedTariffs}
+                  onChange={next => setSelectedTariffs?.(next)}
+                  placeholder="Select tariffs…"
+                  noun="tariff"
+                />
               </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {Array.from(fullTariffTree.keys()).map(t => {
-                const on = selectedTariffs.includes(t);
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setSelectedTariffs?.(on ? selectedTariffs.filter(x => x !== t) : [...selectedTariffs, t])}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                      on
-                        ? 'bg-[#e60000] text-white border-[#e60000]'
-                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    <span className={`w-2 h-2 rounded-full ${on ? 'bg-white' : 'bg-slate-300'}`} />
-                    {t}
-                  </button>
-                );
-              })}
             </div>
             {selectedTariffs.length === 0 && (
               <p className="mt-3 text-xs text-amber-600 font-medium">
@@ -2467,7 +2440,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                   {/* Product L2 */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Tariff Tier (L2)</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Product L2</label>
                     <select
                       value={newPricingEvent.productL2 ?? 'All'}
                       onChange={e => setNewPricingEvent({ ...newPricingEvent, productL2: e.target.value })}
@@ -2732,7 +2705,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       <th className="px-4 py-3 font-semibold">Month</th>
                       <th className="px-4 py-3 font-semibold">Segment</th>
                       <th className="px-4 py-3 font-semibold">Product</th>
-                      <th className="px-4 py-3 font-semibold">Tariff Tier</th>
+                      <th className="px-4 py-3 font-semibold">Product L2</th>
                       <th className="px-4 py-3 font-semibold">Channel</th>
                       {wiTariffL1Col && <th className="px-4 py-3 font-semibold">Tariff</th>}
                       <th className="px-4 py-3 font-semibold text-right">Mode</th>
