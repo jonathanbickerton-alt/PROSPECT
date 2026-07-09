@@ -73,10 +73,10 @@ Hierarchical child of Tariff L1, mirroring Product L1/L2 and Channel L1/L2.
 **Hierarchy rules:**
 - Selecting a Product L1 includes all its Product L2 children
 - Selecting a Product L2 narrows to that specific sub-category
-- Same logic for Channel L1 / Channel L2
-- Cohort store key format includes L2 placeholders, e.g.
-  `Segment|ProductL1|ProductL2|ChannelL1|ChannelL2` with `All` where a
-  level is not specified — confirmed in `src/App.tsx:1342-1348` (`makeForecastKey`)
+- Same logic for Channel L1 / Channel L2, and Tariff L1 / Tariff L2
+- Cohort store key format is the 7-part appended key (see §2 above), e.g.
+  `Segment|ProductL1|ProductL2|ChannelL1|ChannelL2|TariffL1|TariffL2` with `All`
+  where a level is not specified — confirmed in `src/App.tsx:1425` (`makeForecastKey`)
 
 ---
 
@@ -309,20 +309,36 @@ ONLY when a tariff column is mapped; tariff-free files are unchanged.
   data-file import) and Pricing_Events export/import, and Scenario Compare.
 
 ### Tariff selection / scoping control
-- "Tariffs in scope" control on the What-If tab: **none selected by default**;
-  the user is prompted to select. Multi-select toggle chips + Select all / Clear.
-- Deselected tariffs are excluded from the tariff mix axis AND the targeting
-  dropdowns. Selection persists in export (`Tariff_Selection` sheet).
+- "Tariffs in scope" control on the What-If tab (`MultiSelectDropdown.tsx`):
+  **none selected by default**; the user is prompted to select. A single
+  compact trigger opens a searchable popover (search box + native
+  `accent-[#e60000]` checkbox list + Select all / Clear) — this replaced an
+  earlier chip-toggle row for aesthetic consistency with the rest of the app.
+- Deselected tariffs are excluded from BOTH the tariff mix axis buckets
+  (`yieldTierData`) AND the P7 targeting dropdowns (`targetTariffTree`).
+  Deselecting a tariff already used in a draft event/mix clears it from that
+  draft rather than silently keeping a stale hidden selection.
+- Mix percentages always re-sum to exactly 100% after a deselection changes
+  the bucket set — `draftMix` re-seeds to equal weights whenever the tariff
+  axis's tier list changes (same mechanism as the Value axis).
+- Selection persists in export (`Tariff_Selection` sheet + a `Selected_Tariffs`
+  metadata count) and restores on import (optional sheet — old saves unaffected).
 - **This selection constrains the MIX/scenario layer only.** Bulk model/confidence
   generation still enumerates ALL data-present tariffs — `allCohorts`,
-  `generateAllMissingForecasts`, the worker split, and `missingCount` must NOT
-  reference `selectedTariffs`. Phase 2a cohort completeness stays intact.
+  `generateAllMissingForecasts`, the worker split, `missingCount`, and the
+  bulk-prompt trigger must NOT reference `selectedTariffs`. Phase 2a/bulk-gen
+  cohort completeness stays intact (see item 19).
 
 ### P6/P5 — Mix dimension selector
-- The yield mix control is a dimension selector: **Value axis** (Product L2 tiers)
-  or **Tariff axis** (one bucket per SELECTED tariff, dynamic count).
+- The yield mix control is a dimension selector: **Value axis** (Product L2
+  tiers — data-driven, not hardcoded; 3 in the synthetic file: Low/Medium/High
+  Value) or **Tariff axis** (one bucket per SELECTED tariff, dynamic count —
+  up to 5 in the synthetic file: RED S/M/L/XL/ULTD).
 - Percentages validate to 100% on whichever axis is active (reuses draftMix +
-  slider auto-rebalance). NO tariff×value matrix is created.
+  slider auto-rebalance) — including immediately after a tariff is
+  deselected while the Tariff axis is active. NO tariff×value matrix is
+  created — draftMix is always a single flat `Record<string, number>` over
+  one axis at a time, never a cross-product of both.
 - Conditional default axis: prefer Value; fall back to Tariff only when Value has
   no usable buckets (null/All) AND tariffs are selected; else empty state. Manual
   axis toggles are respected (only auto-switches away from an unusable axis).
@@ -360,12 +376,21 @@ after any change:
     Group-by enabled, ARPU MAPE is non-zero and accuracy scores populate (in-band
     cohorts 80+) at tariff level, mirroring Product/Channel. With tariff off (no
     column mapped) all existing scores are byte-identical to pre-tariff.
-16. Tariff selection constrains scenario/mix ONLY — bulk generation still
+16. Tariff selection control: none selected by default; searchable multi-select
+    dropdown with Select all / Clear; deselecting a tariff removes it from BOTH
+    the tariff mix buckets and the targeting dropdowns (and clears it from any
+    draft event/mix already using it); remaining mix percentages re-sum to
+    exactly 100%; selection round-trips via the `Tariff_Selection` sheet.
+16b. Tariff selection constrains scenario/mix ONLY — bulk generation still
     enumerates all data-present tariffs; `selectedTariffs` never appears in
-    allCohorts / generateAllMissingForecasts / worker / missingCount.
-17. Mix dimension selector: Value axis unchanged (value path byte-identical);
-    Tariff axis renders one bucket per selected tariff; percentages total 100% on
-    the active axis; no tariff×value matrix. mixAxis round-trips in export.
+    allCohorts / generateAllMissingForecasts / worker / missingCount / the
+    bulk-prompt trigger.
+17. Mix dimension selector: Value axis unchanged (value path byte-identical),
+    one bucket per Product L2 tier (data-driven, 3 in the synthetic file);
+    Tariff axis renders one bucket per selected tariff (dynamic, up to 5 in the
+    synthetic file); percentages total 100% on the active axis at all times,
+    including right after a deselection; no tariff×value matrix. mixAxis
+    round-trips in export.
 18. Tariff-targeted volume/pricing events compose with Product/Channel (P/C left
     All), flow into the adjusted forecast, and round-trip export/import + Compare.
 19. Bulk generation enumerates only cohorts that have data. Tariff is collinear
