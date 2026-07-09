@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useForecast } from '../context/ForecastContext';
-import { Settings, Filter, Info, Download, LayersIcon, Database, CheckCircle2, AlertCircle, SlidersHorizontal, X } from 'lucide-react';
+import { Settings, Filter, Info, Download, LayersIcon, Database, CheckCircle2, AlertCircle, SlidersHorizontal, X, ChevronDown } from 'lucide-react';
 import type { ForecastModel } from '../types/forecast';
 import { analyzeAndRecommendModel, analyzeAndRecommendConfidence } from '../utils/forecasting';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Line, Brush } from 'recharts';
@@ -153,6 +153,12 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
   const [stdChartView, setStdChartView] = useState<'volume' | 'value'>('volume');
   const [dismissedCohortKey, setDismissedCohortKey] = useState<string | null>(null);
   const [dismissedConfidenceCohortKey, setDismissedConfidenceCohortKey] = useState<string | null>(null);
+  // Phase 3 P8 — Fitted Model Parameters ("the pyramid") is a technical diagnostic;
+  // hidden by default so the business-facing UI stays uncluttered, retrievable via
+  // this toggle. Model Advisor / Confidence Advisor and the two amber warnings
+  // (missing months, seasonal fallback) are explicitly OUT of scope for this toggle
+  // and remain always-visible.
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
   const { baseForecast, bulkRuns } = useForecast();
 
   const currentCohortKey = `${segmentValue}-${productValue}-${channelValue}-${stdScenario}`;
@@ -1016,13 +1022,25 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
               </div>
             )}
 
-            {/* Fitted Model Parameters */}
+            {/* Fitted Model Parameters — technical diagnostic, hidden by default (Phase 3 P8) */}
             {baseForecast?.fittedParams && (
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <h3 className="text-base font-semibold text-slate-900 mb-1 flex items-center gap-2">
-                  <SlidersHorizontal size={15} className="text-[#e60000]" />
-                  Fitted Model Parameters
-                </h3>
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setShowTechnicalDetails(v => !v)}
+                  className="w-full flex items-center justify-between gap-2 px-6 py-4 text-left"
+                >
+                  <span className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                    <SlidersHorizontal size={15} className="text-[#e60000]" />
+                    Fitted Model Parameters
+                  </span>
+                  <span className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors">
+                    {showTechnicalDetails ? 'Hide technical details' : 'Show technical details'}
+                    <ChevronDown size={14} className={`transition-transform ${showTechnicalDetails ? 'rotate-180' : ''}`} />
+                  </span>
+                </button>
+              {showTechnicalDetails && (
+              <div className="px-6 pb-6">
                 <p className="text-[11px] text-slate-400 mb-4">
                   Parameters chosen independently per series by MSE grid search on in-sample one-step-ahead fitted values.
                   For Holt-Winters, σ is the relative residual SD used for proportional bands; for other models it is the absolute residual SD.
@@ -1077,6 +1095,8 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                     </tbody>
                   </table>
                 </div>
+              </div>
+              )}
               </div>
             )}
 
