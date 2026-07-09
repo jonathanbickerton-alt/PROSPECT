@@ -1028,15 +1028,15 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowTechnicalDetails(v => !v)}
-                  className="w-full flex items-center justify-between gap-2 px-6 py-4 text-left"
+                  className="w-full flex items-center justify-between gap-2 px-6 py-4 text-left rounded-2xl hover:bg-slate-50 transition-colors"
                 >
                   <span className="text-base font-semibold text-slate-900 flex items-center gap-2">
                     <SlidersHorizontal size={15} className="text-[#e60000]" />
                     Fitted Model Parameters
                   </span>
-                  <span className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors">
+                  <span className="flex items-center gap-1 text-xs font-medium text-slate-500">
                     {showTechnicalDetails ? 'Hide technical details' : 'Show technical details'}
-                    <ChevronDown size={14} className={`transition-transform ${showTechnicalDetails ? 'rotate-180' : ''}`} />
+                    <ChevronDown size={14} className={`text-slate-400 transition-transform ${showTechnicalDetails ? 'rotate-180' : ''}`} />
                   </span>
                 </button>
               {showTechnicalDetails && (
