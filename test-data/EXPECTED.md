@@ -291,9 +291,53 @@ workspace. Applies to the What-If / Market Events tab (`WhatIfTab.tsx`).
 
 ---
 
-## 12. Regression checklist (the short version)
+## 12. Tariff Scenarios (Phase 2b: P7 targeting + selection control + mix axis)
 
-Every item below was a real bug or a confirmed Phase 1 behaviour. Confirm all
+Uses tariff (from Phase 2a) for scenario work. All tariff scenario UI is shown
+ONLY when a tariff column is mapped; tariff-free files are unchanged.
+
+### P7 — Tariff targeting for events (volume + pricing)
+- Tariff is an ADDITIONAL dropdown that COMPOSES with Product/Channel — it does
+  not replace them. Leave Product and Channel as `All` and pick a tariff to target
+  "all RED L customers regardless of product/channel".
+- Volume market events and pricing events both carry optional `tariffL1/tariffL2`
+  and expose a Tariff dropdown; a targeted event's impact flows into the adjusted
+  forecast (matcher already compares event tariff vs the view).
+- The targeting dropdown offers ONLY the user's selected tariffs (see below).
+- Events table shows a Tariff column when a tariff column is mapped.
+- `Tariff_L1/L2` round-trip through Market_Events (full + light export/import,
+  data-file import) and Pricing_Events export/import, and Scenario Compare.
+
+### Tariff selection / scoping control
+- "Tariffs in scope" control on the What-If tab: **none selected by default**;
+  the user is prompted to select. Multi-select toggle chips + Select all / Clear.
+- Deselected tariffs are excluded from the tariff mix axis AND the targeting
+  dropdowns. Selection persists in export (`Tariff_Selection` sheet).
+- **This selection constrains the MIX/scenario layer only.** Bulk model/confidence
+  generation still enumerates ALL data-present tariffs — `allCohorts`,
+  `generateAllMissingForecasts`, the worker split, and `missingCount` must NOT
+  reference `selectedTariffs`. Phase 2a cohort completeness stays intact.
+
+### P6/P5 — Mix dimension selector
+- The yield mix control is a dimension selector: **Value axis** (Product L2 tiers)
+  or **Tariff axis** (one bucket per SELECTED tariff, dynamic count).
+- Percentages validate to 100% on whichever axis is active (reuses draftMix +
+  slider auto-rebalance). NO tariff×value matrix is created.
+- Conditional default axis: prefer Value; fall back to Tariff only when Value has
+  no usable buckets (null/All) AND tariffs are selected; else empty state. Manual
+  axis toggles are respected (only auto-switches away from an unusable axis).
+- The apply-pass is axis-agnostic (mix expressed as a ratio vs equal-weight
+  baseline, anchored to forecast ARPU) — the value path is byte-identical to
+  before. `mixAxis` round-trips in Yield_Events export/import.
+- Naming: the existing YieldEvent fields `tariffMix`/`tariffBaseArpu`/
+  `Tariff_Mix_JSON` are the VALUE mix (legacy naming); the `mixAxis` discriminator
+  distinguishes value vs tariff — do not assume the field name means tariff.
+
+---
+
+## 13. Regression checklist (the short version)
+
+Every item below was a real bug or a confirmed Phase 1/2 behaviour. Confirm all
 after any change:
 
 1. ARPU MAPE non-zero for Segment-only and Segment+Channel groupings
@@ -316,6 +360,14 @@ after any change:
     Group-by enabled, ARPU MAPE is non-zero and accuracy scores populate (in-band
     cohorts 80+) at tariff level, mirroring Product/Channel. With tariff off (no
     column mapped) all existing scores are byte-identical to pre-tariff.
+16. Tariff selection constrains scenario/mix ONLY — bulk generation still
+    enumerates all data-present tariffs; `selectedTariffs` never appears in
+    allCohorts / generateAllMissingForecasts / worker / missingCount.
+17. Mix dimension selector: Value axis unchanged (value path byte-identical);
+    Tariff axis renders one bucket per selected tariff; percentages total 100% on
+    the active axis; no tariff×value matrix. mixAxis round-trips in export.
+18. Tariff-targeted volume/pricing events compose with Product/Channel (P/C left
+    All), flow into the adjusted forecast, and round-trip export/import + Compare.
 
 **Verdict rule:** "SAFE FOR USER TESTING" only if all pass. Otherwise list
 the failures and the cohort/filter combination that exposed each.

@@ -297,7 +297,9 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       const prodOk = e.Product === 'All' || !vprodL1 || e.Product === vprodL1;
       const ch1Ok = e.Channel_L1 === 'All' || !vchanL1 || e.Channel_L1 === vchanL1;
       const ch2Ok = e.Channel_L2 === 'All' || !vchanL2 || e.Channel_L2 === vchanL2;
-      if (!segOk || !prodOk || !ch1Ok || !ch2Ok) return false;
+      const tar1Ok = !e.Tariff_L1 || e.Tariff_L1 === 'All' || !vtarL1 || e.Tariff_L1 === vtarL1;
+      const tar2Ok = !e.Tariff_L2 || e.Tariff_L2 === 'All' || !vtarL2 || e.Tariff_L2 === vtarL2;
+      if (!segOk || !prodOk || !ch1Ok || !ch2Ok || !tar1Ok || !tar2Ok) return false;
       
       const startMs = parse(e.Month, 'yyyy-MM', new Date()).getTime();
       const currMs = parse(m.month, 'yyyy-MM', new Date()).getTime();

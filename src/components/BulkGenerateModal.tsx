@@ -305,7 +305,7 @@ function BulkGeneratingPanel({ progress }: { progress?: { current: number; total
         <Loader2 size={26} className="text-[#e60000] animate-spin" />
       </div>
       <div className="w-full max-w-xs">
-        <h3 className="text-base font-semibold text-slate-900 mb-1">Generating forecasts…</h3>
+        <h3 className="text-base font-semibold text-slate-900 mb-1">{showBar ? 'Generating forecasts…' : 'Preparing forecasts…'}</h3>
         {showBar ? (
           <>
             <p className="text-sm text-slate-500 mb-3">
@@ -321,7 +321,7 @@ function BulkGeneratingPanel({ progress }: { progress?: { current: number; total
           </>
         ) : (
           <p className="text-sm text-slate-500">
-            Running forecasts for each combination. This may take a few seconds.
+            Preparing cohorts — enumerating the combinations that have data…
           </p>
         )}
       </div>

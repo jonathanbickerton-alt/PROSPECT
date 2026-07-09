@@ -216,6 +216,8 @@ export default function App() {
       productL2: newEvent.productL2 || 'All',
       channel: newEvent.channel || 'All',
       channelL2: newEvent.channelL2 || 'All',
+      tariffL1: newEvent.tariffL1 || 'All',
+      tariffL2: newEvent.tariffL2 || 'All',
       date: newEvent.date,
       subscriberVolume: neg(newEvent.subscriberVolume || 0),
       customerVolume:   neg(newEvent.customerVolume   || 0),
@@ -234,6 +236,8 @@ export default function App() {
       productL2: 'All',
       channel: 'All',
       channelL2: 'All',
+      tariffL1: 'All',
+      tariffL2: 'All',
       date: format(new Date(), 'yyyy-MM'),
       subscriberVolume: 0,
       customerVolume: 0,
@@ -473,6 +477,8 @@ export default function App() {
       Product_L2: e.productL2 ?? 'All',
       Channel: e.channel,
       Channel_L2: e.channelL2 ?? 'All',
+      Tariff_L1: e.tariffL1 ?? 'All',
+      Tariff_L2: e.tariffL2 ?? 'All',
       Start_Month: e.date,
       Subscriber_Volume: e.subscriberVolume,
       Customer_Volume: e.customerVolume,
@@ -563,6 +569,7 @@ export default function App() {
       Channel_L2: e.channelL2,
       Month: e.month,
       Roll_Forward: e.rollForward ? 'Yes' : 'No',
+      Mix_Axis: e.mixAxis ?? 'value',
       Tariff_Mix_JSON: JSON.stringify(e.tariffMix),
       Tariff_Base_ARPU_JSON: JSON.stringify(e.tariffBaseArpu),
       Comment: e.comment ?? '',
@@ -582,6 +589,8 @@ export default function App() {
       Product_L2: e.productL2,
       Channel_L1: e.channelL1,
       Channel_L2: e.channelL2,
+      Tariff_L1: e.tariffL1 ?? 'All',
+      Tariff_L2: e.tariffL2 ?? 'All',
       Month: e.month,
       Input_Mode: e.inputMode,
       Amount: e.amount,
@@ -597,6 +606,12 @@ export default function App() {
       'Pricing_Events',
     );
 
+    // ── Sheet 8b: Tariff_Selection (Phase 2b) — the tariffs in scope ──────────
+    const tariffSelRows = selectedTariffs.length
+      ? selectedTariffs.map(t => ({ Tariff_L1: t }))
+      : [{ Note: 'No tariffs selected' }];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tariffSelRows), 'Tariff_Selection');
+
     // ── Sheet 9: Metadata ─────────────────────────────────────────────────────
     const forecastMonths = baseForecast?.months ?? [];
     const metaRows = [
@@ -609,6 +624,7 @@ export default function App() {
       { Field: 'Market_Events',          Value: marketEvents.length },
       { Field: 'Yield_Events',           Value: yieldEvents.length },
       { Field: 'Pricing_Events',         Value: pricingEvents.length },
+      { Field: 'Selected_Tariffs',       Value: selectedTariffs.length },
       { Field: 'Bulk_Runs',              Value: bulkRuns.length },
       { Field: 'Model_Switches',         Value: modelAcceptanceLog.length },
       { Field: 'Pre_Horizon_Uncertainty_Pct',       Value: preHorizonUncertainty },
@@ -836,6 +852,8 @@ export default function App() {
             productL2:        String(r.Product_L2 ?? 'All'),
             channel:          r.Channel,
             channelL2:        String(r.Channel_L2 ?? 'All'),
+            tariffL1:         String(r.Tariff_L1 ?? 'All'),
+            tariffL2:         String(r.Tariff_L2 ?? 'All'),
             date:             String(r.Start_Month ?? ''),
             subscriberVolume: Number(r.Subscriber_Volume ?? 0),
             customerVolume:   Number(r.Customer_Volume   ?? 0),
@@ -866,6 +884,7 @@ export default function App() {
                 channelL2:     String(r.Channel_L2 ?? 'All'),
                 month:         String(r.Month ?? ''),
                 rollForward:   r.Roll_Forward === 'Yes',
+                mixAxis:       (r.Mix_Axis === 'tariff' ? 'tariff' : 'value') as 'value' | 'tariff',
                 tariffMix,
                 tariffBaseArpu,
                 comment:       String(r.Comment ?? ''),
@@ -886,6 +905,8 @@ export default function App() {
               productL2:        String(r.Product_L2 ?? 'All'),
               channelL1:        String(r.Channel_L1 ?? 'All'),
               channelL2:        String(r.Channel_L2 ?? 'All'),
+              tariffL1:         String(r.Tariff_L1 ?? 'All'),
+              tariffL2:         String(r.Tariff_L2 ?? 'All'),
               month:            String(r.Month ?? ''),
               inputMode:        (r.Input_Mode ?? 'percentage') as 'percentage' | 'absolute',
               amount:           Number(r.Amount ?? 0),
@@ -896,6 +917,15 @@ export default function App() {
               comment:          String(r.Comment ?? ''),
             })));
           }
+        }
+
+        // ── Tariff Selection (Phase 2b) ───────────────────────────────────────
+        if (wb.SheetNames.includes('Tariff_Selection')) {
+          const tsRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Tariff_Selection']);
+          const restored = tsRaw
+            .filter(r => !r.Note && r.Tariff_L1 != null && String(r.Tariff_L1).trim() !== '')
+            .map(r => String(r.Tariff_L1).trim());
+          setSelectedTariffs(restored);
         }
 
         // ── Adjusted Forecasts ────────────────────────────────────────────────
@@ -1129,6 +1159,8 @@ export default function App() {
         Product_L2: e.productL2 ?? 'All',
         Channel: e.channel,
         Channel_L2: e.channelL2 ?? 'All',
+        Tariff_L1: e.tariffL1 ?? 'All',
+        Tariff_L2: e.tariffL2 ?? 'All',
         Date: e.date,
         Subscriber_Volume: e.subscriberVolume,
         Customer_Volume: e.customerVolume,
@@ -1238,6 +1270,8 @@ export default function App() {
     productL2: 'All',
     channel: 'All',
     channelL2: 'All',
+    tariffL1: 'All',
+    tariffL2: 'All',
     date: format(new Date(), 'yyyy-MM'),
     subscriberVolume: 0,
     customerVolume: 0,
@@ -1248,6 +1282,10 @@ export default function App() {
     comment: '',
     contractLength: 24,
   });
+
+  // Selected tariffs for scenario work (Phase 2b) — none selected by default.
+  // Constrains tariff targeting dropdowns and the tariff mix axis; persisted in export.
+  const [selectedTariffs, setSelectedTariffs] = useState<string[]>([]);
 
   // Yield Events state
   const [yieldEvents, setYieldEvents] = useState<YieldEvent[]>([]);
@@ -1285,6 +1323,8 @@ export default function App() {
     productL2: 'All',
     channelL1: 'All',
     channelL2: 'All',
+    tariffL1: 'All',
+    tariffL2: 'All',
     month: format(new Date(), 'yyyy-MM'),
     inputMode: 'percentage',
     amount: 0,
@@ -1610,6 +1650,8 @@ export default function App() {
               productL2: String(r['Product_L2'] || 'All'),
               channel: String(r['Channel'] || 'All'),
               channelL2: String(r['Channel_L2'] || 'All'),
+              tariffL1: String(r['Tariff_L1'] || 'All'),
+              tariffL2: String(r['Tariff_L2'] || 'All'),
               date: String(r['Date'] || r['Start_Month'] || ''),
               subscriberVolume: neg(Number(r['Subscriber_Volume']) || 0),
               customerVolume:   neg(Number(r['Customer_Volume'])   || 0),
@@ -3296,6 +3338,36 @@ export default function App() {
     return cohorts;
   }, [data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiMetricCol, productTree, channelTree, tariffTree, forecastStore, savedForecasts]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Set of cohort keys that genuinely have data — the union of each populated
+  // leaf's hierarchical parents. Shared by bulk generation, the "missing" prompt
+  // trigger, and the missingCount on the modal so all three agree on the real
+  // populated cohort count (not the inflated cross-product, which tariff blows up
+  // ~10× because tariff is collinear with product/channel). Data-driven; never
+  // keyed off the user's tariff selection.
+  const populatedCohortKeys = useMemo(() => {
+    const set = new Set<string>();
+    if (!data.length || !wiDateCol) return set;
+    const dm = buildCohortDataMap(data, wiDateCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col);
+    for (const dk of dm.keys()) {
+      const [seg, p1, p2, c1, c2, t1, t2] = dk.split('|');
+      const segS: string[] = ['All', seg];
+      const prodS: [string, string][] = [['All', 'All'], [p1, 'All'], [p1, p2]];
+      const chanS: [string, string][] = [['All', 'All'], [c1, 'All'], [c1, c2]];
+      const tarS:  [string, string][] = [['All', 'All'], [t1, 'All'], [t1, t2]];
+      for (const s of segS) for (const p of prodS) for (const c of chanS) for (const t of tarS) {
+        set.add(makeForecastKey(s, p[0], p[1], c[0], c[1], t[0], t[1]));
+      }
+    }
+    return set;
+  }, [data, wiDateCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col]);
+
+  // True if a cohort has data. Empty set (no data mapped yet) ⇒ don't filter.
+  const cohortHasData = useCallback(
+    (c: any): boolean => populatedCohortKeys.size === 0
+      || populatedCohortKeys.has(makeForecastKey(c.segment, c.product, c.productL2, c.channel, c.channelL2, c.tariffL1, c.tariffL2)),
+    [populatedCohortKeys],
+  );
+
   const computeCohortForecastData = useCallback((cohort: any, manualParams?: any, cohortDataMap?: CohortDataMap) => {
     if (cohort.forecastType.startsWith('What-If Analysis')) {
       const scenarioMatch = cohort.forecastType.match(/\(([^)]+)\)/);
@@ -3484,18 +3556,23 @@ export default function App() {
     autoModel?: boolean;
     autoConfidence?: boolean;
   }): Promise<{ generated: number; failed: number }> => {
-    const targets = options?.cohortIds
-      ? allCohorts.filter(c => options.cohortIds!.includes(c.id))
-      : allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast');
+    // Show a "preparing" state and yield to the event loop so React can paint the
+    // generating panel BEFORE the synchronous pre-flight (cohort enumeration +
+    // data-map build + worker payload clone). Without this the main thread is
+    // blocked for that whole phase and the modal appears frozen at 0%.
+    setGenerationProgress({ current: 0, total: 0 });
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
 
     let generated = 0;
     let failed = 0;
+    let empty = 0;
     const newForecasts: Record<string, any> = {};
     const generatedIds: string[] = [];
 
     // ── Phase 1: Pre-Aggregation ─────────────────────────────────────────────
     // Single O(N) pass over data builds a Map<cohortKey, rows[]>.
     // All per-cohort filter chains inside the loop become O(1) .get() lookups.
+    // Built BEFORE target selection so we can enumerate only populated cohorts.
     const cohortDataMap: CohortDataMap = buildCohortDataMap(
       data,
       wiDateCol,
@@ -3507,6 +3584,15 @@ export default function App() {
       wiTariffL1Col,
       wiTariffL2Col,
     );
+
+    // Enumerate only cohorts that actually exist in the data — see the shared
+    // populatedCohortKeys / cohortHasData defined above (used here AND by the
+    // missing-count prompt so they agree). Keeps every data-spanning aggregate
+    // (resolved via the worker's O(N) fallback), drops only genuinely-empty
+    // combinations, and never keys off the user's tariff selection.
+    const targets = options?.cohortIds
+      ? allCohorts.filter(c => options.cohortIds!.includes(c.id))
+      : allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast' && cohortHasData(c));
 
     // ── Phase 2: Build IBRO cohort list (needed before workers spawn) ────────
     // Enumerate unique L1×L2 combinations that exist in the data.
@@ -3617,18 +3703,21 @@ export default function App() {
               newTypedForecasts: Array<[string, BaseForecast]>;
               generated: number;
               failed: number;
+              empty?: number;
             };
             Object.assign(newForecasts, result.newForecasts);
             generatedIds.push(...result.generatedIds);
             generated += result.generated;
             failed    += result.failed;
+            empty     += result.empty ?? 0;
             for (const [k, v] of result.newTypedForecasts) {
               console.log(`[generateAllMissingForecasts] BaseForecast built for store key: ${k}`);
               newTypedForecasts.set(k, v);
             }
             setGenerationProgress(prev => ({
               ...prev,
-              current: prev.current + result.generated + result.failed,
+              // advance for every processed cohort (generated + insufficient + empty)
+              current: prev.current + result.generated + result.failed + (result.empty ?? 0),
             }));
             worker.terminate();
             resolve();
@@ -3688,13 +3777,13 @@ export default function App() {
     setBulkRuns(prev => [...prev, record]);
 
     return { generated, failed };
-  }, [allCohorts, computeCohortForecastData, selectedForecastModel, genPreHorizonUncertainty, genPostHorizonExpansionRate, confidenceHorizon, genLength, data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [allCohorts, cohortHasData, computeCohortForecastData, selectedForecastModel, genPreHorizonUncertainty, genPostHorizonExpansionRate, confidenceHorizon, genLength, data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // After a single-combo forecast is saved, check whether there are remaining combinations
   // without a forecast and show the bulk-generate prompt if so.
   useEffect(() => {
     if (triggerBulkCheck === 0) return;
-    const missing = allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast');
+    const missing = allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast' && cohortHasData(c));
     if (missing.length > 0) {
       setShowBulkGeneratePrompt(true);
     }
@@ -3939,6 +4028,8 @@ export default function App() {
             productTree={productTree}
             channelTree={channelTree}
             tariffTree={tariffTree}
+            selectedTariffs={selectedTariffs}
+            setSelectedTariffs={setSelectedTariffs}
             downloadExcel={downloadExcel}
             formatNumber={formatNumber}
             newEvent={newEvent}
@@ -4017,6 +4108,7 @@ export default function App() {
             setSavedForecasts={setSavedForecasts}
             savedForecasts={savedForecasts}
             computeCohortForecastData={computeCohortForecastData}
+            cohortHasData={cohortHasData}
             setGeneratingCohort={setGeneratingCohort}
             setViewingCohort={setViewingCohort}
             isGeneratingMissing={isGeneratingMissing}
@@ -4077,7 +4169,7 @@ export default function App() {
         isOpen={showBulkGeneratePrompt}
         onClose={() => setShowBulkGeneratePrompt(false)}
         sourceCohort={bulkSourceCohort}
-        missingCount={allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast').length}
+        missingCount={allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast' && cohortHasData(c)).length}
         params={{
           preHorizonUncertainty,
           postHorizonExpansionRate,

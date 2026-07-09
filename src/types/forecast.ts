@@ -194,6 +194,10 @@ export interface PricingEvent {
   productL2: string;
   channelL1: string;
   channelL2: string;
+  /** Tariff L1 — 'All' or absent = no tariff filter (Phase 2b targeting) */
+  tariffL1?: string;
+  /** Tariff L2 — 'All' or absent = no L2 filter (Phase 2b targeting) */
+  tariffL2?: string;
   /** First affected month (yyyy-MM) */
   month: string;
   /** Whether amount is a % change or an absolute € delta */
@@ -244,9 +248,16 @@ export interface YieldEvent {
   channelL2: string;
   /** Activity month in yyyy-MM format */
   month: string;
-  /** productL2 label → mix % (0–100). Must sum to 100. */
+  /**
+   * Which axis the mix is distributed across (Phase 2b). 'value' (default) =
+   * Product L2 tiers; 'tariff' = the user's selected tariffs. Independent axes,
+   * never a matrix. Absent = 'value' for backward compatibility.
+   */
+  mixAxis?: 'value' | 'tariff';
+  /** bucket label → mix % (0–100). Must sum to 100. Buckets are Product L2 tiers
+   *  when mixAxis='value', or tariff L1 values when mixAxis='tariff'. */
   tariffMix: Record<string, number>;
-  /** productL2 label → base ARPU derived from data when the event was added */
+  /** bucket label → base ARPU derived from data when the event was added */
   tariffBaseArpu: Record<string, number>;
   /**
    * When false: applies to this cohort's inflow/retention for `month` only.

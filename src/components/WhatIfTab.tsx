@@ -10,6 +10,7 @@ import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, Pr
 import type { MarketEvent } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
+import { MultiSelectDropdown } from './MultiSelectDropdown';
 
 // ---------------------------------------------------------------------------
 // Props — only what this step actually needs
@@ -40,6 +41,10 @@ interface WhatIfTabProps {
   /** Column names for Tariff L1/L2 (Phase 2a) */
   wiTariffL1Col?: string;
   wiTariffL2Col?: string;
+  /** Tariff L1 values the user has selected for scenario work (Phase 2b). None
+   *  selected by default; constrains tariff targeting and the tariff mix axis. */
+  selectedTariffs?: string[];
+  setSelectedTariffs?: (t: string[]) => void;
   newEvent: Partial<MarketEvent>;
   setNewEvent: (e: Partial<MarketEvent>) => void;
   marketEvents: MarketEvent[];
@@ -117,6 +122,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   tariffTree,
   wiTariffL1Col = '',
   wiTariffL2Col = '',
+  selectedTariffs = [],
+  setSelectedTariffs,
   newEvent,
   setNewEvent,
   marketEvents,
@@ -160,6 +167,32 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const [viewTariff, setViewTariff] = useState<HierarchicalSelection>({ l1: null, l2: null });
   // 'All' means all KPIs visible; a specific scenario pre-selects that KPI.
   const [viewScenario, setViewScenario] = useState('All');
+
+  // Tariff tree constrained to the user's selected tariffs (Phase 2b) — feeds the
+  // P7 targeting dropdowns and the tariff mix axis. Empty selection = no options,
+  // so nothing renders until the user selects tariffs (per the scoping control).
+  const fullTariffTree = tariffTree ?? new Map<string, string[]>();
+  const targetTariffTree = useMemo<Map<string, string[]>>(() => {
+    if (!selectedTariffs.length) return new Map();
+    const t = new Map<string, string[]>();
+    for (const l1 of selectedTariffs) {
+      if (fullTariffTree.has(l1)) t.set(l1, fullTariffTree.get(l1)!);
+    }
+    return t;
+  }, [fullTariffTree, selectedTariffs]);
+
+  // If a targeted tariff leaves the selected set, clear it from the draft event
+  // forms so a now-hidden dropdown can't silently save a deselected tariff scope.
+  useEffect(() => {
+    if (newEvent.tariffL1 && newEvent.tariffL1 !== 'All' && !selectedTariffs.includes(newEvent.tariffL1)) {
+      setNewEvent({ ...newEvent, tariffL1: 'All', tariffL2: 'All' });
+    }
+  }, [selectedTariffs]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (newPricingEvent.tariffL1 && newPricingEvent.tariffL1 !== 'All' && !selectedTariffs.includes(newPricingEvent.tariffL1)) {
+      setNewPricingEvent({ ...newPricingEvent, tariffL1: 'All', tariffL2: 'All' });
+    }
+  }, [selectedTariffs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Tab state ─────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<'volume' | 'value' | 'pricing'>('volume');
@@ -229,13 +262,23 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // forecast's per-scenario ARPU for the selected yield event month.
   const [yieldArpuMode, setYieldArpuMode] = useState<'historical' | 'forecast'>('historical');
 
+  // Mix dimension selector (Phase 2b P6): the yield mix is distributed across
+  // either the Value axis (Product L2 tiers) or the Tariff axis (selected tariffs).
+  // Independent axes — never a value×tariff matrix; the user picks one per event.
+  const [mixAxis, setMixAxis] = useState<'value' | 'tariff'>('value');
+
   // Derive Product L2 options + their base ARPUs from data whenever the
   // newYieldEvent selectors change.
   // When yieldArpuMode === 'forecast', tier ARPUs are scaled so their
   // volume-weighted blend equals the forecast's per-scenario ARPU for the
   // selected month — preserving relative tier relativities.
   const yieldTierData = useMemo<{ tier: string; baseArpu: number; historicalArpu: number }[]>(() => {
-    if (!wiProductL2Col || !wiArpuCol || !wiMetricCol) return [];
+    // Choose the bucketing dimension by axis: Value → Product L2 tiers,
+    // Tariff → the user's selected tariffs (Phase 2b). The rest of the
+    // derivation (per-bucket ARPU, forecast scaling) is identical either way.
+    const groupCol = mixAxis === 'tariff' ? wiTariffL1Col : wiProductL2Col;
+    if (!groupCol || !wiArpuCol || !wiMetricCol) return [];
+    if (mixAxis === 'tariff' && selectedTariffs.length === 0) return [];
     const { segment, product, channelL1, channelL2, ibro, month } = newYieldEvent;
     const ibroVal = ibro === 'Inflow' ? wiInflowVal : wiRetentionVal;
 
@@ -248,11 +291,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       return true;
     });
 
-    // Group by Product L2 → average ARPU (historical baseline)
+    // Group by the axis dimension → average ARPU (historical baseline).
+    // On the tariff axis, keep only the user's selected tariffs.
     const tierMap = new Map<string, number[]>();
     filtered.forEach(row => {
-      const tier = String(row[wiProductL2Col] ?? '');
+      const tier = String(row[groupCol] ?? '');
       if (!tier || tier === 'undefined') return;
+      if (mixAxis === 'tariff' && !selectedTariffs.includes(tier)) return;
       const arpu = Number(row[wiArpuCol]);
       if (!isFinite(arpu)) return;
       if (!tierMap.has(tier)) tierMap.set(tier, []);
@@ -291,7 +336,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     }
 
     return historicalTiers.map(t => ({ ...t, baseArpu: t.historicalArpu }));
-  }, [data, wiProductL2Col, wiArpuCol, wiMetricCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col, wiInflowVal, wiRetentionVal, newYieldEvent.segment, newYieldEvent.product, newYieldEvent.channelL1, newYieldEvent.channelL2, newYieldEvent.ibro, newYieldEvent.month, yieldArpuMode, baseForecast]);
+  }, [data, mixAxis, wiTariffL1Col, selectedTariffs, wiProductL2Col, wiArpuCol, wiMetricCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col, wiInflowVal, wiRetentionVal, newYieldEvent.segment, newYieldEvent.product, newYieldEvent.channelL1, newYieldEvent.channelL2, newYieldEvent.ibro, newYieldEvent.month, yieldArpuMode, baseForecast]);
+
+  // Which mix axes are usable (Phase 2b). Value availability comes from the
+  // already-computed productTree (O(1), no data scan) — "value null/All" means
+  // no Product L2 tiers exist. Tariff needs a mapped column + selected tariffs.
+  const valueAxisAvailable = !!wiProductL2Col && Array.from(productTree.values()).some((a: string[]) => a.length > 0);
+  const tariffAxisAvailable = !!wiTariffL1Col && selectedTariffs.length > 0;
+
+  // Conditional default: prefer Value; fall back to Tariff only when Value has no
+  // usable buckets and tariffs are selected. Only switches AWAY from an unusable
+  // axis, so a deliberate manual toggle to a usable axis is never undone.
+  useEffect(() => {
+    if (mixAxis === 'value' && !valueAxisAvailable && tariffAxisAvailable) setMixAxis('tariff');
+    else if (mixAxis === 'tariff' && !tariffAxisAvailable && valueAxisAvailable) setMixAxis('value');
+  }, [mixAxis, valueAxisAvailable, tariffAxisAvailable]);
 
   // Seed draftMix with equal weights whenever tiers change
   useEffect(() => {
@@ -389,6 +448,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       channelL1: newYieldEvent.channelL1 ?? 'All',
       channelL2: newYieldEvent.channelL2 ?? 'All',
       month: newYieldEvent.month,
+      mixAxis,
       tariffMix: { ...draftMix },
       tariffBaseArpu,
       rollForward: newYieldEvent.rollForward ?? false,
@@ -765,7 +825,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           const pl2Ok  = pe.productL2 === 'All' || !vprodL2              || pe.productL2 === vprodL2;
           const ch1Ok  = pe.channelL1 === 'All' || !vchanL1              || pe.channelL1 === vchanL1;
           const ch2Ok  = pe.channelL2 === 'All' || !vchanL2              || pe.channelL2 === vchanL2;
-          if (!segOk || !prodOk || !pl2Ok || !ch1Ok || !ch2Ok) return false;
+          const tar1Ok = !pe.tariffL1 || pe.tariffL1 === 'All' || !vtarL1 || pe.tariffL1 === vtarL1;
+          const tar2Ok = !pe.tariffL2 || pe.tariffL2 === 'All' || !vtarL2 || pe.tariffL2 === vtarL2;
+          if (!segOk || !prodOk || !pl2Ok || !ch1Ok || !ch2Ok || !tar1Ok || !tar2Ok) return false;
           if (pe.duration === 'one-off') return pe.month === m.month;
           return pe.month <= m.month;
         })
@@ -899,6 +961,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       productL2: newPricingEvent.productL2 ?? 'All',
       channelL1: newPricingEvent.channelL1 ?? 'All',
       channelL2: newPricingEvent.channelL2 ?? 'All',
+      tariffL1:  newPricingEvent.tariffL1  ?? 'All',
+      tariffL2:  newPricingEvent.tariffL2  ?? 'All',
       month:     newPricingEvent.month,
       inputMode: newPricingEvent.inputMode ?? 'percentage',
       amount:    newPricingEvent.amount,
@@ -944,6 +1008,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         productL2:       newEvent.productL2 || 'All',
         channel:         newEvent.channel   || 'All',
         channelL2:       newEvent.channelL2 || 'All',
+        tariffL1:        newEvent.tariffL1  || 'All',
+        tariffL2:        newEvent.tariffL2  || 'All',
         date:            monthStr,
         subscriberVolume: neg(vol),
         customerVolume:   neg(Math.round((newEvent.customerVolume || 0) * fraction)),
@@ -959,7 +1025,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setMarketEvents([...marketEvents, ...events]);
     setNewEvent({
       scenario: 'Inflow', segment: 'All', product: 'All', productL2: 'All',
-      channel: 'All', channelL2: 'All', date: format(new Date(), 'yyyy-MM'),
+      channel: 'All', channelL2: 'All', tariffL1: 'All', tariffL2: 'All', date: format(new Date(), 'yyyy-MM'),
       subscriberVolume: 0, customerVolume: 0, revenue: 0, arpu: 0, name: '', campaignName: '', comment: '', contractLength: 24,
     });
     setSpreadEnabled(false);
@@ -970,7 +1036,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   const BLANK_EVENT: Partial<MarketEvent> = {
     scenario: 'Inflow', segment: 'All', product: 'All', productL2: 'All',
-    channel: 'All', channelL2: 'All', date: format(new Date(), 'yyyy-MM'),
+    channel: 'All', channelL2: 'All', tariffL1: 'All', tariffL2: 'All', date: format(new Date(), 'yyyy-MM'),
     subscriberVolume: 0, customerVolume: 0, revenue: 0, arpu: 0,
     name: '', campaignName: '', comment: '', contractLength: 24,
   };
@@ -986,6 +1052,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       productL2: event.productL2 ?? 'All',
       channel: event.channel,
       channelL2: event.channelL2 ?? 'All',
+      tariffL1: event.tariffL1 ?? 'All',
+      tariffL2: event.tariffL2 ?? 'All',
       date: event.date,
       subscriberVolume: abs(event.subscriberVolume),
       customerVolume: abs(event.customerVolume),
@@ -1022,6 +1090,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         (e.productL2 ?? 'All') === (first.productL2 ?? 'All') &&
         e.channel === first.channel &&
         (e.channelL2 ?? 'All') === (first.channelL2 ?? 'All') &&
+        (e.tariffL1 ?? 'All') === (first.tariffL1 ?? 'All') &&
+        (e.tariffL2 ?? 'All') === (first.tariffL2 ?? 'All') &&
         e.contractLength === first.contractLength
       );
       const d0 = parse(first.date, 'yyyy-MM', new Date());
@@ -1091,6 +1161,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       productL2: first.productL2 ?? 'All',
       channel: first.channel,
       channelL2: first.channelL2 ?? 'All',
+      tariffL1: first.tariffL1 ?? 'All',
+      tariffL2: first.tariffL2 ?? 'All',
       date: first.date,
       subscriberVolume: totalSub,
       customerVolume: totalCust,
@@ -1124,6 +1196,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         productL2: newEvent.productL2 || 'All',
         channel: newEvent.channel || 'All',
         channelL2: newEvent.channelL2 || 'All',
+        tariffL1: newEvent.tariffL1 || 'All',
+        tariffL2: newEvent.tariffL2 || 'All',
         date: newEvent.date,
         subscriberVolume: neg(newEvent.subscriberVolume || 0),
         customerVolume:   neg(newEvent.customerVolume   || 0),
@@ -1151,6 +1225,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           productL2: newEvent.productL2 || 'All',
           channel: newEvent.channel || 'All',
           channelL2: newEvent.channelL2 || 'All',
+          tariffL1: newEvent.tariffL1 || 'All',
+          tariffL2: newEvent.tariffL2 || 'All',
           date: format(addMonths(baseDate, i), 'yyyy-MM'),
           subscriberVolume: neg(Math.round((newEvent.subscriberVolume || 0) * fraction)),
           customerVolume:   neg(Math.round((newEvent.customerVolume   || 0) * fraction)),
@@ -1184,6 +1260,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       productL2: newEvent.productL2 ?? 'All',
       channel: newEvent.channel ?? 'All',
       channelL2: newEvent.channelL2 ?? 'All',
+      tariffL1: newEvent.tariffL1 ?? 'All',
+      tariffL2: newEvent.tariffL2 ?? 'All',
       date: newEvent.date,
       subscriberVolume: neg(newEvent.subscriberVolume ?? 0),
       customerVolume:   neg(newEvent.customerVolume   ?? 0),
@@ -1649,6 +1727,36 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           ))}
         </div>
 
+        {/* ── Tariff scoping control (Phase 2b) — pick the tariffs to plan with.
+            None selected by default; constrains tariff targeting AND the tariff
+            mix axis. Only shown when a tariff column is mapped. ─────────────── */}
+        {wiTariffL1Col && fullTariffTree.size > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-slate-700">Tariffs in scope</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Select the tariffs you want to plan with — tariff targeting and the tariff mix axis use only these.
+                </p>
+              </div>
+              <div className="w-64 shrink-0">
+                <MultiSelectDropdown
+                  options={Array.from(fullTariffTree.keys())}
+                  selected={selectedTariffs}
+                  onChange={next => setSelectedTariffs?.(next)}
+                  placeholder="Select tariffs…"
+                  noun="tariff"
+                />
+              </div>
+            </div>
+            {selectedTariffs.length === 0 && (
+              <p className="mt-3 text-xs text-amber-600 font-medium">
+                No tariffs selected — tariff targeting and the tariff mix axis stay hidden until you select at least one.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* ── VOLUME TAB — Market Events form + table + Stock-and-Flow ─────── */}
         {activeTab === 'volume' && (<>
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
@@ -1746,6 +1854,29 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   </select>
                 )}
               </div>
+              {/* Tariff targeting (Phase 2b P7) — composes with Product/Channel; leave those
+                  as All to target "all RED L customers regardless of product/channel". Only
+                  shown when a tariff column is mapped; options limited to selected tariffs. */}
+              {wiTariffL1Col && targetTariffTree.size > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Tariff</label>
+                  <HierarchicalDropdown
+                    label=""
+                    tree={targetTariffTree}
+                    value={{
+                      l1: newEvent.tariffL1 && newEvent.tariffL1 !== 'All' ? newEvent.tariffL1 : null,
+                      l2: newEvent.tariffL2 && newEvent.tariffL2 !== 'All' ? newEvent.tariffL2 : null,
+                    }}
+                    onChange={(v: HierarchicalSelection) => setNewEvent({
+                      ...newEvent,
+                      tariffL1: v.l1 ?? 'All',
+                      tariffL2: v.l2 ?? 'All',
+                    })}
+                    variant="light"
+                    className="w-full"
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">Month</label>
                 <input
@@ -2012,6 +2143,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   <th className="px-5 py-3 font-semibold">Segment</th>
                   <th className="px-5 py-3 font-semibold">Product</th>
                   <th className="px-5 py-3 font-semibold">Channel</th>
+                  {wiTariffL1Col && <th className="px-5 py-3 font-semibold">Tariff</th>}
                   <th className="px-5 py-3 font-semibold text-right">Inflow Δ</th>
                   <th className="px-5 py-3 font-semibold text-right">Base Δ</th>
                   <th className="px-5 py-3 font-semibold text-right">Retention Δ</th>
@@ -2025,7 +2157,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               <tbody className="divide-y divide-slate-100">
                 {marketEvents.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="px-5 py-8 text-center text-slate-400 italic text-sm">
+                    <td colSpan={wiTariffL1Col ? 14 : 13} className="px-5 py-8 text-center text-slate-400 italic text-sm">
                       No market events yet. Use the form above to add events — they adjust the chart immediately.
                     </td>
                   </tr>
@@ -2107,6 +2239,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             <td className="px-5 py-3 text-slate-600 text-xs">
                               {event.channel || 'All'}{event.channelL2 && event.channelL2 !== 'All' ? ` — ${event.channelL2}` : ''}
                             </td>
+                            {wiTariffL1Col && (
+                              <td className="px-5 py-3 text-slate-600 text-xs">
+                                {event.tariffL1 && event.tariffL1 !== 'All'
+                                  ? `${event.tariffL1}${event.tariffL2 && event.tariffL2 !== 'All' ? ` — ${event.tariffL2}` : ''}`
+                                  : <span className="text-slate-300">All</span>}
+                              </td>
+                            )}
 
                             {/* Inflow Δ — blue; only Inflow events */}
                             <td className={`px-5 py-3 text-right font-semibold text-xs ${inflowDelta !== null ? 'text-blue-600' : 'text-slate-300'}`}>
@@ -2167,7 +2306,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           </tr>
                           {hasWarning && (
                             <tr className="bg-amber-50">
-                              <td colSpan={13} className="px-5 py-2 text-xs text-amber-700 flex items-center gap-2">
+                              <td colSpan={wiTariffL1Col ? 14 : 13} className="px-5 py-2 text-xs text-amber-700 flex items-center gap-2">
                                 <AlertTriangle size={12} className="text-amber-500 shrink-0 inline mr-1" />
                                 Retention volume ({formatNumber(event.subscriberVolume)}) exceeds forecast Outflow for {fmtMonth(event.date)}.
                                 The retained volume will be clamped to the available Outflow — reduce the event volume to avoid over-retention.
@@ -2301,7 +2440,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                   {/* Product L2 */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Tariff Tier (L2)</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Product L2</label>
                     <select
                       value={newPricingEvent.productL2 ?? 'All'}
                       onChange={e => setNewPricingEvent({ ...newPricingEvent, productL2: e.target.value })}
@@ -2344,6 +2483,29 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         <option value="All">All Channels</option>
                         {yChannelL1Options.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
+                    </div>
+                  )}
+
+                  {/* Tariff targeting (Phase 2b P7) — composes with Product/Channel;
+                      only shown when a tariff column is mapped AND tariffs are selected. */}
+                  {wiTariffL1Col && targetTariffTree.size > 0 && (
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">Tariff</label>
+                      <HierarchicalDropdown
+                        label=""
+                        tree={targetTariffTree}
+                        value={{
+                          l1: newPricingEvent.tariffL1 && newPricingEvent.tariffL1 !== 'All' ? newPricingEvent.tariffL1 : null,
+                          l2: newPricingEvent.tariffL2 && newPricingEvent.tariffL2 !== 'All' ? newPricingEvent.tariffL2 : null,
+                        }}
+                        onChange={(v: HierarchicalSelection) => setNewPricingEvent({
+                          ...newPricingEvent,
+                          tariffL1: v.l1 ?? 'All',
+                          tariffL2: v.l2 ?? 'All',
+                        })}
+                        variant="light"
+                        className="w-full"
+                      />
                     </div>
                   )}
 
@@ -2543,8 +2705,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       <th className="px-4 py-3 font-semibold">Month</th>
                       <th className="px-4 py-3 font-semibold">Segment</th>
                       <th className="px-4 py-3 font-semibold">Product</th>
-                      <th className="px-4 py-3 font-semibold">Tariff Tier</th>
+                      <th className="px-4 py-3 font-semibold">Product L2</th>
                       <th className="px-4 py-3 font-semibold">Channel</th>
+                      {wiTariffL1Col && <th className="px-4 py-3 font-semibold">Tariff</th>}
                       <th className="px-4 py-3 font-semibold text-right">Mode</th>
                       <th className="px-4 py-3 font-semibold text-right">Amount</th>
                       <th className="px-4 py-3 font-semibold">Target</th>
@@ -2558,7 +2721,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   <tbody className="divide-y divide-slate-100">
                     {pricingEvents.length === 0 ? (
                       <tr>
-                        <td colSpan={13} className="px-5 py-8 text-center text-slate-400 italic">
+                        <td colSpan={wiTariffL1Col ? 14 : 13} className="px-5 py-8 text-center text-slate-400 italic">
                           No pricing events yet. Use the form above to apply ARPU deltas — changes layer on top of Yield Events in real time.
                         </td>
                       </tr>
@@ -2582,6 +2745,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               <td className="px-4 py-2.5 text-slate-600">
                                 {pe.channelL1}{pe.channelL2 && pe.channelL2 !== 'All' ? ` / ${pe.channelL2}` : ''}
                               </td>
+                              {wiTariffL1Col && (
+                                <td className="px-4 py-2.5 text-slate-600">
+                                  {pe.tariffL1 && pe.tariffL1 !== 'All'
+                                    ? `${pe.tariffL1}${pe.tariffL2 && pe.tariffL2 !== 'All' ? ` / ${pe.tariffL2}` : ''}`
+                                    : <span className="text-slate-300">All</span>}
+                                </td>
+                              )}
                               <td className="px-4 py-2.5 text-right">
                                 <span className="inline-block px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-semibold">
                                   {pe.inputMode === 'percentage' ? '%' : '€'}
@@ -2755,19 +2925,43 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   </div>
                 </div>
 
+                {/* Mix dimension selector (Phase 2b P6) — distribute the mix across the
+                    Value axis (Product L2 tiers) or the Tariff axis (selected tariffs).
+                    Independent axes, never a matrix. Only shown when tariffs are selected. */}
+                {tariffAxisAvailable && (
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className="text-xs text-slate-500">Distribute mix across</span>
+                    <div className="flex bg-slate-100 p-0.5 rounded-lg">
+                      <button
+                        type="button"
+                        onClick={() => setMixAxis('value')}
+                        disabled={!valueAxisAvailable}
+                        className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed ${mixAxis === 'value' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                      >Value</button>
+                      <button
+                        type="button"
+                        onClick={() => setMixAxis('tariff')}
+                        className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all ${mixAxis === 'tariff' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                      >Tariff</button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Sliders */}
                 {yieldTierData.length === 0 ? (
                   <div className="py-6 text-center text-sm text-slate-400 border border-dashed border-slate-200 rounded-xl">
-                    {wiProductL2Col
-                      ? 'Select dimensions above to load tariff tier data'
-                      : 'Map a Product L2 column in Data Mapping to enable tariff sliders'}
+                    {mixAxis === 'tariff'
+                      ? 'Select dimensions above to load tariff mix data (or select tariffs in "Tariffs in scope")'
+                      : wiProductL2Col
+                        ? 'Select dimensions above to load value tier data'
+                        : 'Map a Product L2 column in Data Mapping to enable value mix sliders'}
                   </div>
                 ) : (
                   <div className="mb-5">
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        Tariff Mix (Product L2)
-                        <span className="ml-2 normal-case font-normal text-slate-400">— {yieldTierData.length} tier{yieldTierData.length !== 1 ? 's' : ''}</span>
+                        {mixAxis === 'tariff' ? 'Tariff Mix' : 'Value Mix (Product L2)'}
+                        <span className="ml-2 normal-case font-normal text-slate-400">— {yieldTierData.length} {mixAxis === 'tariff' ? 'tariff' : 'tier'}{yieldTierData.length !== 1 ? 's' : ''}</span>
                       </span>
                       <div className="flex items-center gap-3">
                         <div className="flex bg-slate-100 p-0.5 rounded-lg">
@@ -2798,7 +2992,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                     {/* Compact header row */}
                     <div className="grid gap-x-3 mb-1 pr-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider" style={{ gridTemplateColumns: 'minmax(80px,180px) 1fr 52px 90px 80px' }}>
-                      <span>Tier</span>
+                      <span>{mixAxis === 'tariff' ? 'Tariff' : 'Tier'}</span>
                       <span />
                       <span className="text-right">Mix %</span>
                       <span className="text-right">Base ARPU</span>
