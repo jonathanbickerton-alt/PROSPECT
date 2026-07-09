@@ -8,6 +8,7 @@ import { format, parse, isValid, addMonths, differenceInCalendarMonths } from 'd
 import { useForecast } from '../context/ForecastContext';
 import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent } from '../types/forecast';
 import type { MarketEvent } from '../utils/forecasting';
+import { resolveEventArpuRevenue } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
 import { MultiSelectDropdown } from './MultiSelectDropdown';
@@ -45,6 +46,11 @@ interface WhatIfTabProps {
    *  selected by default; constrains tariff targeting and the tariff mix axis. */
   selectedTariffs?: string[];
   setSelectedTariffs?: (t: string[]) => void;
+  /** Trailing 3-month cohort-average ARPU for the event currently being drafted
+   *  (Phase 3 P4) — null when not applicable (Outflow/ARPU scenario) or no
+   *  matching history. Shown as a placeholder; used to auto-populate ARPU on
+   *  submit if the user leaves the field blank. */
+  cohortAvgArpu?: number | null;
   newEvent: Partial<MarketEvent>;
   setNewEvent: (e: Partial<MarketEvent>) => void;
   marketEvents: MarketEvent[];
@@ -124,6 +130,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   wiTariffL2Col = '',
   selectedTariffs = [],
   setSelectedTariffs,
+  cohortAvgArpu = null,
   newEvent,
   setNewEvent,
   marketEvents,
@@ -1000,6 +1007,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       const fraction = pct / total;
       const monthStr = format(addMonths(baseDate, i), 'yyyy-MM');
       const vol = Math.round((newEvent.subscriberVolume || 0) * fraction);
+      // Phase 3 P4: auto-populate ARPU from the cohort trailing average when the
+      // user left it blank on a volume-only Inflow/Retention spread.
+      const resolved = resolveEventArpuRevenue(vol, newEvent.arpu, Math.round((newEvent.revenue || 0) * fraction), newEvent.scenario, cohortAvgArpu);
       return {
         id: Math.random().toString(36).substr(2, 9),
         scenario:        newEvent.scenario as any,
@@ -1013,8 +1023,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         date:            monthStr,
         subscriberVolume: neg(vol),
         customerVolume:   neg(Math.round((newEvent.customerVolume || 0) * fraction)),
-        revenue:          neg(Math.round((newEvent.revenue        || 0) * fraction)),
-        arpu:             neg(newEvent.arpu || 0),
+        revenue:          neg(resolved.revenue),
+        arpu:             neg(resolved.arpu),
         name:             newEvent.name         || '',
         campaignName:     newEvent.campaignName || '',
         comment:          newEvent.comment      || '',
@@ -1032,7 +1042,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setSpreadMonths(3);
     setSpreadDistType('even');
     setCustomDist([34, 33, 33]);
-  }, [newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, addMarketEvent, setMarketEvents, marketEvents, setNewEvent]);
+  }, [newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, addMarketEvent, setMarketEvents, marketEvents, setNewEvent, cohortAvgArpu]);
 
   const BLANK_EVENT: Partial<MarketEvent> = {
     scenario: 'Inflow', segment: 'All', product: 'All', productL2: 'All',
@@ -1188,6 +1198,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
     let newEvents: MarketEvent[];
     if (!spreadEnabled || newEvent.scenario === 'ARPU') {
+      const resolvedSingle = resolveEventArpuRevenue(newEvent.subscriberVolume || 0, newEvent.arpu, newEvent.revenue, newEvent.scenario, cohortAvgArpu);
       newEvents = [{
         id: Math.random().toString(36).substr(2, 9),
         scenario: newEvent.scenario as MarketEvent['scenario'],
@@ -1201,8 +1212,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         date: newEvent.date,
         subscriberVolume: neg(newEvent.subscriberVolume || 0),
         customerVolume:   neg(newEvent.customerVolume   || 0),
-        revenue:          neg(newEvent.revenue           || 0),
-        arpu:             neg(newEvent.arpu              || 0),
+        revenue:          neg(resolvedSingle.revenue),
+        arpu:             neg(resolvedSingle.arpu),
         name: '',
         campaignName: newEvent.campaignName || '',
         comment: newEvent.comment || '',
@@ -1217,6 +1228,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       const baseDate = parse(newEvent.date, 'yyyy-MM', new Date());
       newEvents = pcts.map((pct, i) => {
         const fraction = pct / total;
+        const vol = Math.round((newEvent.subscriberVolume || 0) * fraction);
+        // Phase 3 P4: auto-populate ARPU from the cohort trailing average when the
+        // user left it blank on a volume-only Inflow/Retention spread.
+        const resolved = resolveEventArpuRevenue(vol, newEvent.arpu, Math.round((newEvent.revenue || 0) * fraction), newEvent.scenario, cohortAvgArpu);
         return {
           id: Math.random().toString(36).substr(2, 9),
           scenario: newEvent.scenario as MarketEvent['scenario'],
@@ -1228,10 +1243,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           tariffL1: newEvent.tariffL1 || 'All',
           tariffL2: newEvent.tariffL2 || 'All',
           date: format(addMonths(baseDate, i), 'yyyy-MM'),
-          subscriberVolume: neg(Math.round((newEvent.subscriberVolume || 0) * fraction)),
+          subscriberVolume: neg(vol),
           customerVolume:   neg(Math.round((newEvent.customerVolume   || 0) * fraction)),
-          revenue:          neg(Math.round((newEvent.revenue           || 0) * fraction)),
-          arpu:             neg(newEvent.arpu || 0),
+          revenue:          neg(resolved.revenue),
+          arpu:             neg(resolved.arpu),
           name: '',
           campaignName: newEvent.campaignName || '',
           comment: newEvent.comment || '',
@@ -1247,12 +1262,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setSpreadMonths(3);
     setSpreadDistType('even');
     setCustomDist([34, 33, 33]);
-  }, [editingCampaign, newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, marketEvents, setMarketEvents, setNewEvent]);
+  }, [editingCampaign, newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, marketEvents, setMarketEvents, setNewEvent, cohortAvgArpu]);
 
   const handleSaveEdit = useCallback(() => {
     if (!editingEventId || !newEvent.date) return;
     const isOutflow = newEvent.scenario === 'Outflow';
     const neg = (v: number) => isOutflow ? -Math.abs(v) : v;
+    // Phase 3 P4: re-resolve ARPU on save too — if the user clears the field back
+    // to blank while editing, they get the cohort placeholder again rather than a
+    // stale explicit value or a diluting zero.
+    const resolved = resolveEventArpuRevenue(newEvent.subscriberVolume ?? 0, newEvent.arpu, newEvent.revenue, newEvent.scenario, cohortAvgArpu);
     updateMarketEvent(editingEventId, {
       scenario: newEvent.scenario as MarketEvent['scenario'],
       segment: newEvent.segment ?? 'All',
@@ -1265,8 +1284,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       date: newEvent.date,
       subscriberVolume: neg(newEvent.subscriberVolume ?? 0),
       customerVolume:   neg(newEvent.customerVolume   ?? 0),
-      revenue:          neg(newEvent.revenue           ?? 0),
-      arpu:             neg(newEvent.arpu              ?? 0),
+      revenue:          neg(resolved.revenue),
+      arpu:             neg(resolved.arpu),
       name: newEvent.name ?? '',
       campaignName: newEvent.campaignName ?? '',
       comment: newEvent.comment ?? '',
@@ -1274,7 +1293,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     });
     setEditingEventId(null);
     setNewEvent(BLANK_EVENT);
-  }, [editingEventId, newEvent, updateMarketEvent, setNewEvent]);
+  }, [editingEventId, newEvent, updateMarketEvent, setNewEvent, cohortAvgArpu]);
 
   const handleCancelEdit = useCallback(() => {
     setEditingEventId(null);
@@ -1925,12 +1944,19 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 <input
                   type="number"
                   value={newEvent.arpu || ''}
+                  placeholder={cohortAvgArpu != null ? cohortAvgArpu.toFixed(2) : undefined}
                   onChange={e => {
                     const arpu = Number(e.target.value);
                     setNewEvent({ ...newEvent, arpu, revenue: (newEvent.subscriberVolume || 0) * arpu });
                   }}
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
+                {/* Phase 3 P4 — visible confirmation of the auto-populate default */}
+                {!newEvent.arpu && cohortAvgArpu != null && (
+                  <p className="mt-1 text-[10px] text-slate-400 leading-snug">
+                    Left blank, uses the cohort's trailing 3-month average: {cohortAvgArpu.toFixed(2)}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">
