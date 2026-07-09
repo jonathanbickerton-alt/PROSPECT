@@ -31,8 +31,18 @@ interface WhatIfTabProps {
   wiInflowVal?: string;
   /** Value in wiMetricCol that identifies Retention rows */
   wiRetentionVal?: string;
-  /** Column that holds per-row ARPU — used to derive per-tier base ARPUs */
+  /** Column that holds per-row ARPU — optional fallback source for deriving
+   *  revenue (arpu × volume) only when no revenue column is mapped. The primary
+   *  per-tier ARPU derivation is sum(Revenue)/sum(Volume) over the user-mapped
+   *  Value and Revenue columns below, never a name-matched "ARPU" column. */
   wiArpuCol?: string;
+  /** Column that holds per-row subscriber volume (as selected in Data Mapping /
+   *  Baseline Forecast generation) — required to derive tier-level ARPU. */
+  wiValueCol?: string;
+  /** Column that holds per-row revenue (as selected in Data Mapping / Baseline
+   *  Forecast generation) — primary source for tier-level ARPU; falls back to
+   *  wiArpuCol × volume when not mapped. */
+  wiRevenueCol?: string;
   /** L1 → L2 children map for Product hierarchy (for local view bar and event form) */
   productTree: Map<string, string[]>;
   /** L1 → L2 children map for Channel hierarchy */
@@ -123,6 +133,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   wiInflowVal = '',
   wiRetentionVal = '',
   wiArpuCol = '',
+  wiValueCol = '',
+  wiRevenueCol = '',
   productTree,
   channelTree,
   tariffTree,
@@ -284,7 +296,17 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // Tariff → the user's selected tariffs (Phase 2b). The rest of the
     // derivation (per-bucket ARPU, forecast scaling) is identical either way.
     const groupCol = mixAxis === 'tariff' ? wiTariffL1Col : wiProductL2Col;
-    if (!groupCol || !wiArpuCol || !wiMetricCol) return [];
+    // Historical per-tier ARPU is sum(Revenue)/sum(Volume) over the columns the
+    // user selected in Data Mapping/Baseline Forecast generation — never a
+    // name-matched "ARPU" column. This mirrors computeCohortTrailingArpu (P4)
+    // and computeWhatIfData's own aggregation, so cohort-average ARPU is derived
+    // the same way everywhere in the app. wiArpuCol, if mapped, is only used to
+    // derive revenue (arpu × volume) on rows where no revenue column is mapped —
+    // never required on its own. A file whose price column is auto-detected as
+    // neither "ARPU" nor "Revenue" (e.g. Avg_Unit_Price_GBP) still works as long
+    // as Volume + Revenue are mapped, which is required for baseline forecasting
+    // anyway.
+    if (!groupCol || !wiMetricCol || !wiValueCol || (!wiRevenueCol && !wiArpuCol)) return [];
     if (mixAxis === 'tariff' && selectedTariffs.length === 0) return [];
     const { segment, product, channelL1, channelL2, ibro, month } = newYieldEvent;
     const ibroVal = ibro === 'Inflow' ? wiInflowVal : wiRetentionVal;
@@ -298,23 +320,28 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       return true;
     });
 
-    // Group by the axis dimension → average ARPU (historical baseline).
+    // Group by the axis dimension → sum(Revenue)/sum(Volume) (historical baseline).
     // On the tariff axis, keep only the user's selected tariffs.
-    const tierMap = new Map<string, number[]>();
+    const tierMap = new Map<string, { vol: number; rev: number }>();
     filtered.forEach(row => {
       const tier = String(row[groupCol] ?? '');
       if (!tier || tier === 'undefined') return;
       if (mixAxis === 'tariff' && !selectedTariffs.includes(tier)) return;
-      const arpu = Number(row[wiArpuCol]);
-      if (!isFinite(arpu)) return;
-      if (!tierMap.has(tier)) tierMap.set(tier, []);
-      tierMap.get(tier)!.push(arpu);
+      const vol = Number(row[wiValueCol]);
+      if (!isFinite(vol)) return;
+      const arpu = wiArpuCol ? Number(row[wiArpuCol]) || 0 : 0;
+      let rev = wiRevenueCol ? Number(row[wiRevenueCol]) || 0 : 0;
+      if (arpu && (!wiRevenueCol || !rev)) rev = vol * arpu;
+      if (!tierMap.has(tier)) tierMap.set(tier, { vol: 0, rev: 0 });
+      const entry = tierMap.get(tier)!;
+      entry.vol += vol;
+      entry.rev += rev;
     });
 
     const historicalTiers = Array.from(tierMap.entries())
-      .map(([tier, arpus]) => ({
+      .map(([tier, { vol, rev }]) => ({
         tier,
-        historicalArpu: arpus.reduce((a, b) => a + b, 0) / arpus.length,
+        historicalArpu: vol > 0 ? rev / vol : 0,
       }))
       .sort((a, b) => {
         // Numeric-range labels like "0-1", "1-2", "10-11" → sort by leading number
@@ -343,7 +370,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     }
 
     return historicalTiers.map(t => ({ ...t, baseArpu: t.historicalArpu }));
-  }, [data, mixAxis, wiTariffL1Col, selectedTariffs, wiProductL2Col, wiArpuCol, wiMetricCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col, wiInflowVal, wiRetentionVal, newYieldEvent.segment, newYieldEvent.product, newYieldEvent.channelL1, newYieldEvent.channelL2, newYieldEvent.ibro, newYieldEvent.month, yieldArpuMode, baseForecast]);
+  }, [data, mixAxis, wiTariffL1Col, selectedTariffs, wiProductL2Col, wiArpuCol, wiValueCol, wiRevenueCol, wiMetricCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col, wiInflowVal, wiRetentionVal, newYieldEvent.segment, newYieldEvent.product, newYieldEvent.channelL1, newYieldEvent.channelL2, newYieldEvent.ibro, newYieldEvent.month, yieldArpuMode, baseForecast]);
 
   // Which mix axes are usable (Phase 2b). Value availability comes from the
   // already-computed productTree (O(1), no data scan) — "value null/All" means
@@ -2976,11 +3003,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 {/* Sliders */}
                 {yieldTierData.length === 0 ? (
                   <div className="py-6 text-center text-sm text-slate-400 border border-dashed border-slate-200 rounded-xl">
-                    {mixAxis === 'tariff'
-                      ? 'Select dimensions above to load tariff mix data (or select tariffs in "Tariffs in scope")'
-                      : wiProductL2Col
-                        ? 'Select dimensions above to load value tier data'
-                        : 'Map a Product L2 column in Data Mapping to enable value mix sliders'}
+                    {(!wiValueCol || (!wiRevenueCol && !wiArpuCol))
+                      ? 'Map a Volume column and a Revenue (or ARPU) column in Data Mapping to enable mix sliders'
+                      : mixAxis === 'tariff'
+                        ? 'Select dimensions above to load tariff mix data (or select tariffs in "Tariffs in scope")'
+                        : wiProductL2Col
+                          ? 'Select dimensions above to load value tier data'
+                          : 'Map a Product L2 column in Data Mapping to enable value mix sliders'}
                   </div>
                 ) : (
                   <div className="mb-5">

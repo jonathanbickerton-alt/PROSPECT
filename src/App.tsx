@@ -4049,6 +4049,8 @@ export default function App() {
             wiInflowVal={wiInflowVal}
             wiRetentionVal={wiRetentionVal}
             wiArpuCol={wiArpuCol}
+            wiValueCol={wiValueCol}
+            wiRevenueCol={wiRevenueCol}
             productTree={productTree}
             channelTree={channelTree}
             tariffTree={tariffTree}
