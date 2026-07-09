@@ -368,6 +368,16 @@ after any change:
     the active axis; no tariff×value matrix. mixAxis round-trips in export.
 18. Tariff-targeted volume/pricing events compose with Product/Channel (P/C left
     All), flow into the adjusted forecast, and round-trip export/import + Compare.
+19. Bulk generation enumerates only cohorts that have data. Tariff is collinear
+    with product/channel in the synthetic data (each combo sells one tariff), so
+    the full cross-product is ~10× the real leaves. The bulk target set, the modal
+    `missingCount`, the bulk-prompt trigger, and OverallForecastTab's "Generate
+    Missing" all filter by `cohortHasData` (the union of each populated leaf's
+    hierarchical parents). Expected on the tariff file: 78,336 → 31,856 standard
+    cohorts (7,964 dimension keys × 4 scenarios); 0 data-bearing cohorts dropped;
+    every data-spanning `All`-aggregate kept (resolved via the worker O(N)
+    fallback). Tariff-free file: no-op (4,896 → 4,896). Worker counts 0-row
+    cohorts as `empty` (silent), 1-row as `failed` (insufficient-data warning).
 
 **Verdict rule:** "SAFE FOR USER TESTING" only if all pass. Otherwise list
 the failures and the cohort/filter combination that exposed each.
