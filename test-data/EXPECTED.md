@@ -463,6 +463,16 @@ mechanics; does not reimplement them.
 - Promo-created events are plain `MarketEvent` rows (`isPromotion: true` is a
   display-only marker for the Promotion tab's own event list) — they also
   appear in the Volume tab's existing table, unchanged.
+- **Edit parity with the other three cards:** the Promotion tab's own table
+  has the same campaign-badge-as-group-edit-trigger and per-row edit button as
+  the Volume tab, reusing the same `campaignGroups` map (and its editable/
+  reason gating) computed generically over all `MarketEvent` rows. Editing
+  restores the mix arm's percentages and axis (`promoMix`/`promoMixAxis`) and
+  the pricing arm's mode/amount (`promoPricingMode`/`promoPricingAmount`) —
+  fields stored purely for edit-restoration; the engine never reads them, only
+  the already-resolved `arpu`/`revenue`. Add, Save Edit, and Save Campaign all
+  route through one shared builder (`buildPromoEvents`) so the mix-blend/
+  pricing-delta/cohort-average resolution logic exists in exactly one place.
 - Round-trips through full session export/import: `Is_Promotion` and
   `Promo_Rebanded` columns added to the `Market_Events` sheet (the lighter
   "Download Forecast" / Import-Actuals round-trip was already partial before
@@ -553,9 +563,16 @@ after any change:
     before the promo in all cases. A plain Retention promo with neither arm
     active behaves exactly like an ordinary Retention event.
 24. Promotion Card events persist through full session export/import
-    (`Is_Promotion`/`Promo_Rebanded` columns on the `Market_Events` sheet).
-    `calculateBaseForecast` and `computeWhatIfData` remain byte-identical to
-    before this phase.
+    (`Is_Promotion`/`Promo_Rebanded`/`Promo_Mix_Axis`/`Promo_Mix_JSON`/
+    `Promo_Pricing_Mode`/`Promo_Pricing_Amount` columns on the `Market_Events`
+    sheet). `calculateBaseForecast` and `computeWhatIfData` remain
+    byte-identical to before this phase.
+25. Promotion Card individual-event edit and campaign group edit work the same
+    way as the Volume tab's: editing restores volume/dims/date/contract length
+    AND the mix arm's percentages/axis and the pricing arm's mode/amount;
+    saving a campaign edit replaces (never duplicates) that campaign's rows;
+    a non-homogeneous or >24-month-span campaign is correctly marked
+    non-editable via the shared `campaignGroups` gating, same as Volume events.
 
 **Verdict rule:** "SAFE FOR USER TESTING" only if all pass. Otherwise list
 the failures and the cohort/filter combination that exposed each.

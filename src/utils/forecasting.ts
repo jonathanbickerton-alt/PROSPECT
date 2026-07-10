@@ -38,6 +38,18 @@ export interface MarketEvent {
    * event (its volume/ARPU flow through the pre-existing mechanism unchanged).
    */
   promoRebanded?: boolean;
+  /**
+   * Phase 4 — Custom Promotion Card: the mix arm's raw inputs, stored purely so
+   * editing a promo can restore the slider selections the user made. Not read
+   * by the adjusted-forecast engine — arpu/revenue already carry the resolved
+   * blend at creation time.
+   */
+  promoMixAxis?: 'value' | 'tariff';
+  promoMix?: Record<string, number>;
+  /** Phase 4 — Custom Promotion Card: the pricing arm's raw inputs, stored for
+   *  the same edit-restoration reason as promoMix above. */
+  promoPricingMode?: 'percentage' | 'absolute';
+  promoPricingAmount?: number;
 }
 
 /** Blended ARPU for a set of mix percentages against their tier ARPUs —
