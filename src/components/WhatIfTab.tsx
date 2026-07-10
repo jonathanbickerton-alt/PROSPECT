@@ -319,6 +319,55 @@ function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
   });
 }
 
+/**
+ * Groups MarketEvent rows by campaignName and flags each group editable/not —
+ * shared by the Volume tab and the Custom Promotion Card so a campaign name
+ * that happens to be reused by BOTH cards can never cause one card's group
+ * edit/save to see (and silently overwrite) the other's rows. Callers must
+ * pre-filter `events` to their own card's rows (e.g. `!e.isPromotion` for
+ * Volume, `e.isPromotion` for Promotion) before calling this.
+ */
+function groupByCampaign(events: MarketEvent[]): Map<string, { rows: MarketEvent[]; editable: boolean; reason: string }> {
+  const groups = new Map<string, { rows: MarketEvent[]; editable: boolean; reason: string }>();
+  events.forEach(e => {
+    if (!e.campaignName) return;
+    if (!groups.has(e.campaignName)) groups.set(e.campaignName, { rows: [], editable: true, reason: '' });
+    groups.get(e.campaignName)!.rows.push(e);
+  });
+  groups.forEach(g => {
+    g.rows.sort((a, b) => a.date.localeCompare(b.date));
+    const first = g.rows[0];
+    const homogeneous = g.rows.every(e =>
+      e.scenario === first.scenario &&
+      e.segment === first.segment &&
+      e.product === first.product &&
+      (e.productL2 ?? 'All') === (first.productL2 ?? 'All') &&
+      e.channel === first.channel &&
+      (e.channelL2 ?? 'All') === (first.channelL2 ?? 'All') &&
+      (e.tariffL1 ?? 'All') === (first.tariffL1 ?? 'All') &&
+      (e.tariffL2 ?? 'All') === (first.tariffL2 ?? 'All') &&
+      e.contractLength === first.contractLength
+    );
+    const d0 = parse(first.date, 'yyyy-MM', new Date());
+    const dN = parse(g.rows[g.rows.length - 1].date, 'yyyy-MM', new Date());
+    const span = isValid(d0) && isValid(dN) ? differenceInCalendarMonths(dN, d0) + 1 : 0;
+    if (!homogeneous) {
+      g.editable = false;
+      g.reason = 'Events in this campaign target different scenarios or cohorts — edit rows individually';
+    } else if (first.scenario === 'ARPU' && g.rows.length > 1) {
+      g.editable = false;
+      g.reason = 'Multi-month ARPU campaigns cannot be edited as a spread — edit rows individually';
+    } else if (span > 24) {
+      g.editable = false;
+      g.reason = 'Campaign spans more than 24 months — edit rows individually';
+    } else if (span < 1) {
+      g.editable = false;
+      g.reason = 'Campaign has an invalid month — edit rows individually';
+    }
+  });
+  return groups;
+}
+
 /** Auto-balancing mix-slider math — shared by the Value tab's tier sliders and
  *  the Custom Promotion Card's mix arm (Phase 4). Clamps the changed tier and
  *  redistributes the remainder across the others proportionally to their
@@ -1413,46 +1462,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // A campaign is group-editable when all its events share scenario + cohort
   // dimensions + contract length (i.e. it is a pure volume spread), the month
   // span fits the spread control (≤24), and it is not a multi-month ARPU group.
-  const campaignGroups = useMemo(() => {
-    const groups = new Map<string, { rows: MarketEvent[]; editable: boolean; reason: string }>();
-    marketEvents.forEach(e => {
-      if (!e.campaignName) return;
-      if (!groups.has(e.campaignName)) groups.set(e.campaignName, { rows: [], editable: true, reason: '' });
-      groups.get(e.campaignName)!.rows.push(e);
-    });
-    groups.forEach(g => {
-      g.rows.sort((a, b) => a.date.localeCompare(b.date));
-      const first = g.rows[0];
-      const homogeneous = g.rows.every(e =>
-        e.scenario === first.scenario &&
-        e.segment === first.segment &&
-        e.product === first.product &&
-        (e.productL2 ?? 'All') === (first.productL2 ?? 'All') &&
-        e.channel === first.channel &&
-        (e.channelL2 ?? 'All') === (first.channelL2 ?? 'All') &&
-        (e.tariffL1 ?? 'All') === (first.tariffL1 ?? 'All') &&
-        (e.tariffL2 ?? 'All') === (first.tariffL2 ?? 'All') &&
-        e.contractLength === first.contractLength
-      );
-      const d0 = parse(first.date, 'yyyy-MM', new Date());
-      const dN = parse(g.rows[g.rows.length - 1].date, 'yyyy-MM', new Date());
-      const span = isValid(d0) && isValid(dN) ? differenceInCalendarMonths(dN, d0) + 1 : 0;
-      if (!homogeneous) {
-        g.editable = false;
-        g.reason = 'Events in this campaign target different scenarios or cohorts — edit rows individually';
-      } else if (first.scenario === 'ARPU' && g.rows.length > 1) {
-        g.editable = false;
-        g.reason = 'Multi-month ARPU campaigns cannot be edited as a spread — edit rows individually';
-      } else if (span > 24) {
-        g.editable = false;
-        g.reason = 'Campaign spans more than 24 months — edit rows individually';
-      } else if (span < 1) {
-        g.editable = false;
-        g.reason = 'Campaign has an invalid month — edit rows individually';
-      }
-    });
-    return groups;
-  }, [marketEvents]);
+  // Scoped to this card's own rows only (excludes Promotion Card events) so a
+  // campaign name reused by both cards can never let one card's group edit/
+  // save see, and silently overwrite, the other's rows.
+  const campaignGroups = useMemo(
+    () => groupByCampaign(marketEvents.filter(e => !e.isPromotion)),
+    [marketEvents],
+  );
+  // Promotion Card's own campaign grouping — mirror image of the above,
+  // scoped to isPromotion rows only. Same campaign name, different card,
+  // never the same group.
+  const promoCampaignGroups = useMemo(
+    () => groupByCampaign(marketEvents.filter(e => e.isPromotion)),
+    [marketEvents],
+  );
 
   const handleEditCampaignStart = useCallback((campaign: string) => {
     const group = campaignGroups.get(campaign);
@@ -1585,7 +1608,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       });
     }
 
-    setMarketEvents([...marketEvents.filter(e => e.campaignName !== editingCampaign), ...newEvents]);
+    // Only replace THIS card's rows for the campaign — a Promotion Card
+    // campaign that happens to share this name is a different group
+    // (promoCampaignGroups) and must never be touched here.
+    setMarketEvents([...marketEvents.filter(e => e.campaignName !== editingCampaign || e.isPromotion), ...newEvents]);
     setEditingCampaign(null);
     setNewEvent(BLANK_EVENT);
     setSpreadEnabled(false);
@@ -1636,8 +1662,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   }, [setNewEvent]);
 
   // ── Custom Promotion Card — edit a single promo event ─────────────────────
-  // Reuses campaignGroups (computed above over all MarketEvent rows, promo or
-  // not) for the same editable/reason gating the Volume tab already applies.
+  // Uses promoCampaignGroups (scoped to this card's own rows) for the same
+  // editable/reason gating the Volume tab applies via its own campaignGroups.
   const handleEditPromoStart = useCallback((event: MarketEvent) => {
     setNewPromo({
       segment: event.segment, product: event.product, productL2: event.productL2 ?? 'All',
@@ -1659,7 +1685,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   }, []);
 
   const handleEditPromoCampaignStart = useCallback((campaign: string) => {
-    const group = campaignGroups.get(campaign);
+    const group = promoCampaignGroups.get(campaign);
     if (!group || !group.editable) return;
     const rows = group.rows;
 
@@ -1707,7 +1733,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoCustomDist(pcts);
     setEditingPromoId(null);
     setEditingPromoCampaign(campaign);
-  }, [campaignGroups, handleEditPromoStart]);
+  }, [promoCampaignGroups, handleEditPromoStart]);
 
   const handleSavePromoEdit = useCallback(() => {
     if (!editingPromoId || !newPromo.date || !newPromo.subscriberVolume) return;
@@ -1734,7 +1760,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
     });
     if (events.length === 0) return;
-    setMarketEvents([...marketEvents.filter(e => e.campaignName !== editingPromoCampaign), ...events]);
+    // Only replace THIS card's rows for the campaign — a Volume-tab campaign
+    // that happens to share this name is a different group (campaignGroups)
+    // and must never be touched here.
+    setMarketEvents([...marketEvents.filter(e => e.campaignName !== editingPromoCampaign || !e.isPromotion), ...events]);
     setEditingPromoCampaign(null);
     resetPromoDraft();
   }, [editingPromoCampaign, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, marketEvents, setMarketEvents, resetPromoDraft]);
@@ -3807,7 +3836,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         const isEditingRow = editingPromoId === e.id
                           || (editingPromoCampaign !== null && e.campaignName === editingPromoCampaign);
                         const campaignLabel = e.campaignName || '';
-                        const group = campaignLabel ? campaignGroups.get(campaignLabel) : undefined;
+                        const group = campaignLabel ? promoCampaignGroups.get(campaignLabel) : undefined;
                         const arms = [e.promoMix ? 'Mix' : null, e.promoPricingAmount !== undefined ? 'Pricing' : null].filter(Boolean).join(' + ');
                         return (
                           <tr key={e.id} className={`border-b border-slate-50 hover:bg-slate-50 transition-colors ${isEditingRow ? 'bg-amber-50/60 ring-1 ring-inset ring-amber-300' : ''}`}>

@@ -465,14 +465,25 @@ mechanics; does not reimplement them.
   appear in the Volume tab's existing table, unchanged.
 - **Edit parity with the other three cards:** the Promotion tab's own table
   has the same campaign-badge-as-group-edit-trigger and per-row edit button as
-  the Volume tab, reusing the same `campaignGroups` map (and its editable/
-  reason gating) computed generically over all `MarketEvent` rows. Editing
-  restores the mix arm's percentages and axis (`promoMix`/`promoMixAxis`) and
-  the pricing arm's mode/amount (`promoPricingMode`/`promoPricingAmount`) —
-  fields stored purely for edit-restoration; the engine never reads them, only
-  the already-resolved `arpu`/`revenue`. Add, Save Edit, and Save Campaign all
-  route through one shared builder (`buildPromoEvents`) so the mix-blend/
-  pricing-delta/cohort-average resolution logic exists in exactly one place.
+  the Volume tab. Editing restores the mix arm's percentages and axis
+  (`promoMix`/`promoMixAxis`) and the pricing arm's mode/amount
+  (`promoPricingMode`/`promoPricingAmount`) — fields stored purely for
+  edit-restoration; the engine never reads them, only the already-resolved
+  `arpu`/`revenue`. Add, Save Edit, and Save Campaign all route through one
+  shared builder (`buildPromoEvents`) so the mix-blend/pricing-delta/
+  cohort-average resolution logic exists in exactly one place.
+- **Campaign-name isolation between cards (fixed after qa-tester flagged it):**
+  campaign names may deliberately be reused across cards (Phase 1's own
+  design — e.g. one real-world campaign = an Inflow promo + a Retention promo
+  sharing a name), so grouping is scoped by card rather than by forbidding
+  reuse. `campaignGroups` (Volume tab) and `promoCampaignGroups` (Promotion
+  Card) are two independent memos built by a shared `groupByCampaign` helper,
+  each pre-filtered to only their own card's rows (`!e.isPromotion` /
+  `e.isPromotion`). The two cards' Save Campaign handlers filter their replace
+  set the same way (`e.campaignName !== X || e.isPromotion` and the mirror
+  image), so a Volume campaign and a Promotion campaign sharing a name are
+  structurally two different groups — editing/saving one can never see, and
+  so can never overwrite, the other's rows, however similar the name.
 - Round-trips through full session export/import: `Is_Promotion` and
   `Promo_Rebanded` columns added to the `Market_Events` sheet (the lighter
   "Download Forecast" / Import-Actuals round-trip was already partial before
@@ -572,7 +583,16 @@ after any change:
     AND the mix arm's percentages/axis and the pricing arm's mode/amount;
     saving a campaign edit replaces (never duplicates) that campaign's rows;
     a non-homogeneous or >24-month-span campaign is correctly marked
-    non-editable via the shared `campaignGroups` gating, same as Volume events.
+    non-editable via `promoCampaignGroups`' gating (mirrors `campaignGroups`),
+    same as Volume events.
+26. A Volume-tab campaign and a Promotion-tab campaign sharing the exact same
+    campaign name never conflict: editing/saving one never removes, edits, or
+    strips promo metadata from the other's rows (`campaignGroups` and
+    `promoCampaignGroups` are pre-filtered by `isPromotion`, and each Save
+    Campaign handler's replace filter only removes its own card's matching
+    rows). Deliberate name-sharing across cards (e.g. a real-world campaign
+    represented as one Inflow promo + one Retention promo, per Phase 1's
+    design) continues to work exactly as intended.
 
 **Verdict rule:** "SAFE FOR USER TESTING" only if all pass. Otherwise list
 the failures and the cohort/filter combination that exposed each.
