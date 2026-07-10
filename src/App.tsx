@@ -491,6 +491,9 @@ export default function App() {
       ARPU: e.arpu,
       Contract_Length_Months: e.contractLength ?? 24,
       Comment: e.comment ?? '',
+      // Phase 4 — Custom Promotion Card
+      Is_Promotion: e.isPromotion ? 'Yes' : 'No',
+      Promo_Rebanded: e.promoRebanded ? 'Yes' : 'No',
     }));
     XLSX.utils.book_append_sheet(
       wb,
@@ -866,6 +869,8 @@ export default function App() {
             arpu:             Number(r.ARPU              ?? 0),
             contractLength:   Number(r.Contract_Length_Months ?? 24),
             comment:          String(r.Comment ?? ''),
+            isPromotion:      r.Is_Promotion === 'Yes',
+            promoRebanded:    r.Promo_Rebanded === 'Yes',
           }));
           setMarketEvents(restoredEvents);
         }
@@ -4038,6 +4043,7 @@ export default function App() {
         {activeView === 'whatif' && (
           <WhatIfTab
             data={data}
+            wiDateCol={wiDateCol}
             wiSegmentCol={wiSegmentCol}
             wiProductCol={wiProductCol}
             wiProductL2Col={wiProductL2Col}

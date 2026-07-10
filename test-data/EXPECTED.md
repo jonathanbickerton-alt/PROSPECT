@@ -406,7 +406,77 @@ uncluttered. Nothing is removed — the table is one click away.
 
 ---
 
-## 14. Regression checklist (the short version)
+## 14. Custom Promotion Card (Phase 4)
+
+A fourth Market Events card for the *combined* case: one promotion, anchored on
+a mandatory volume movement (Acquisition/Inflow or Retention), optionally
+carrying an independent value-mix arm and/or pricing arm — checkboxes, not
+radio buttons; both, either, or neither may be active. Composes existing
+mechanics; does not reimplement them.
+
+- **Volume is mandatory and cannot be deselected.** User picks Acquisition
+  (Inflow) or Retention as the target; a promo affecting both is two cards
+  sharing a campaign name (Phase 1 grouping).
+- **Reuse, not reimplementation:** Phase 2b tariff targeting + selection
+  control (same `HierarchicalDropdown`/`selectedTariffs` scoping), existing
+  ramp/decay (the same percentage-distribution spread mechanism as Volume
+  events), existing IBRO node mechanics (Inflow lag, Retention dual-impact,
+  unchanged), the value-mix control (`computeTierData` — extracted from
+  `yieldTierData` into a shared function so the Value tab and the Promotion
+  Card's mix arm derive tier ARPU identically, sum(Revenue)/sum(Volume), never
+  a name-matched ARPU column), and Phase 3 P4's cohort-weighted trailing-ARPU
+  fallback (`computeCohortTrailingArpu`/`resolveEventArpuRevenue`) when the mix
+  arm isn't used.
+- **Scoping contract — promo volume only, standing base never re-mixed:**
+  - *Acquisition + mix:* the promo's volume is genuinely new incremental
+    subscribers — it becomes its own `EventPool` (same mechanism as any Inflow
+    volume market event) at the mix-blended ARPU. Existing base pool and its
+    ARPU are completely unaffected; total Base stock **grows** by the promo
+    volume.
+  - *Retention + mix:* the promo's volume represents **existing** subscribers
+    being re-contracted onto new terms — it does **not** add to Base stock.
+    A new engine path (`promoRebanded` on `MarketEvent`) carves this volume out
+    of the standing base pool into its own isolated pool at the mix-blended
+    ARPU, in the same month as the event (no T-1 lag, unlike Inflow). A plain
+    Retention promo with *neither* arm active leaves `promoRebanded` unset and
+    behaves exactly like an ordinary Retention event (existing base-pool/
+    `applicableRetentionYield` mechanism, untouched).
+  - **Acceptance check:** identical volume + identical mix inputs must produce
+    *different* outcomes for Acquisition vs Retention — Base stock grows for
+    Acquisition and stays flat for Retention, and the resulting blended ARPU
+    differs (verified against real tariff-file tier ARPUs: Acquisition
+    10.6717 vs Retention 10.7888 on the same 50,000-base / 5,000-promo / Low10-
+    Med20-High70 mix inputs). If they ever come out identical, the two
+    semantics have been conflated — this is the single highest-risk regression
+    for this feature.
+  - **Pricing arm:** a promo price (% or absolute) layered on top of whichever
+    base ARPU was chosen (mix blend, or the P4 cohort-average fallback) —
+    computed once at event-creation time and baked into the stored event's
+    `arpu`/`revenue`, exactly like every other event-construction path. Never
+    shifts base ARPU; for Inflow this needs zero new pool-creation logic (the
+    existing revenue÷volume pool-ARPU derivation already reads the pre-baked
+    value); for Retention it flows through the same new `promoRebanded` pool.
+- **In-UI guidance:** a fixed line under the tab switcher explains when to use
+  Promotion (combined scenario anchored on a volume movement) vs the three
+  single-dimension cards (e.g. a pure base-wide price rise with no volume
+  assumption).
+- Promo-created events are plain `MarketEvent` rows (`isPromotion: true` is a
+  display-only marker for the Promotion tab's own event list) — they also
+  appear in the Volume tab's existing table, unchanged.
+- Round-trips through full session export/import: `Is_Promotion` and
+  `Promo_Rebanded` columns added to the `Market_Events` sheet (the lighter
+  "Download Forecast" / Import-Actuals round-trip was already partial before
+  this phase — it never carried Yield/Pricing events either — and is
+  unaffected, not extended, by this change).
+- Does **not** touch `calculateBaseForecast`, `computeWhatIfData`, or any
+  existing Inflow/Outflow/ARPU event-pool logic; the only new engine code is
+  the additive `promoRebanded` Retention-pool block, inserted before the
+  existing pool-sum-consistency step so it composes with (rather than
+  bypasses) the pre-existing churn/contract-length machinery.
+
+---
+
+## 15. Regression checklist (the short version)
 
 Every item below was a real bug or a confirmed Phase 1/2 behaviour. Confirm all
 after any change:
@@ -470,6 +540,22 @@ after any change:
     "Show technical details" toggle; the Holt-Winters seasonal-fallback warning
     (§5) and the missing-months gap warning (item 11) remain always-visible
     regardless of the toggle's state — neither is affected by collapsing it.
+22. Custom Promotion Card: Volume section always present, cannot be deselected;
+    Value-mix and Pricing are independent checkboxes (both/either/neither valid,
+    never mutually exclusive). Promo scopes to a tariff via the Phase 2b
+    selection control; ramp/decay and IBRO node mechanics behave as they do for
+    existing Volume events.
+23. Acquisition-with-mix and Retention-with-mix produce distinguishably
+    different ARPU outcomes on identical volume/mix inputs (Base stock grows
+    for Acquisition, stays flat for Retention) — if ever identical, the two
+    semantics have been conflated. Mix skew and promo pricing apply to the
+    promo volume only; standing base mix and base ARPU are byte-identical to
+    before the promo in all cases. A plain Retention promo with neither arm
+    active behaves exactly like an ordinary Retention event.
+24. Promotion Card events persist through full session export/import
+    (`Is_Promotion`/`Promo_Rebanded` columns on the `Market_Events` sheet).
+    `calculateBaseForecast` and `computeWhatIfData` remain byte-identical to
+    before this phase.
 
 **Verdict rule:** "SAFE FOR USER TESTING" only if all pass. Otherwise list
 the failures and the cohort/filter combination that exposed each.

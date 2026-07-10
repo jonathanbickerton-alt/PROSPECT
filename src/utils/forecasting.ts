@@ -26,6 +26,26 @@ export interface MarketEvent {
   comment: string;
   /** Months of churn protection for inflow-event subscribers before they enter the at-risk pool. Default 24. */
   contractLength: number;
+  /** Phase 4 — Custom Promotion Card: marks events created via the combined promo
+   *  card. Used only for the card's own event list/table — no effect on calculation. */
+  isPromotion?: boolean;
+  /**
+   * Phase 4 — Custom Promotion Card: true only for a Retention-target promo that
+   * carries a value-mix and/or pricing arm. Signals the adjusted-forecast engine
+   * to isolate this event's volume into its own re-banded pool (fixed at this
+   * event's arpu) instead of blending it into the standing base pool's ARPU — a
+   * Retention promo with neither arm behaves exactly like an ordinary Retention
+   * event (its volume/ARPU flow through the pre-existing mechanism unchanged).
+   */
+  promoRebanded?: boolean;
+}
+
+/** Blended ARPU for a set of mix percentages against their tier ARPUs —
+ *  Σ (mix[tier] / 100 × tierArpu[tier]). Shared by the Value-mix control (Yield
+ *  Events) and the Custom Promotion Card's mix arm so both derive a blended
+ *  ARPU the same way. */
+export function blendTierMix(mix: Record<string, number>, tierArpu: Record<string, number>): number {
+  return Object.keys(mix).reduce((sum, tier) => sum + (mix[tier] / 100) * (tierArpu[tier] ?? 0), 0);
 }
 
 // ---------------------------------------------------------------------------
