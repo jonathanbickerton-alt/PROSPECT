@@ -680,9 +680,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     return computeCohortTrailingArpu(
       { data, wiDateCol, wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col },
       metricValue,
-      { segment: newPromo.segment, product: newPromo.product, channel: newPromo.channel, channelL2: newPromo.channelL2, tariffL1: newPromo.tariffL1, tariffL2: newPromo.tariffL2 },
+      { segment: newPromo.segment, product: newPromo.product, productL2: newPromo.productL2, channel: newPromo.channel, channelL2: newPromo.channelL2, tariffL1: newPromo.tariffL1, tariffL2: newPromo.tariffL2 },
     );
-  }, [data, wiDateCol, wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiInflowVal, wiRetentionVal, promoTarget, newPromo.segment, newPromo.product, newPromo.channel, newPromo.channelL2, newPromo.tariffL1, newPromo.tariffL2]);
+  }, [data, wiDateCol, wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiInflowVal, wiRetentionVal, promoTarget, newPromo.segment, newPromo.product, newPromo.productL2, newPromo.channel, newPromo.channelL2, newPromo.tariffL1, newPromo.tariffL2]);
 
   const resetPromoDraft = useCallback(() => {
     setNewPromo(blankPromo());
@@ -1023,7 +1023,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             !p_eventPools.find(p => p.eventId === e.id) &&
             (e.segment  === 'All' || vseg    === 'All' || e.segment  === vseg) &&
             (e.product  === 'All' || !vprodL1            || e.product  === vprodL1) &&
-            (e.channel  === 'All' || !vchanL1            || e.channel  === vchanL1),
+            (!e.productL2 || e.productL2 === 'All' || !vprodL2 || e.productL2 === vprodL2) &&
+            (e.channel  === 'All' || !vchanL1            || e.channel  === vchanL1) &&
+            (!e.channelL2 || e.channelL2 === 'All' || !vchanL2 || e.channelL2 === vchanL2) &&
+            (!e.tariffL1 || e.tariffL1 === 'All' || !vtarL1 || e.tariffL1 === vtarL1) &&
+            (!e.tariffL2 || e.tariffL2 === 'All' || !vtarL2 || e.tariffL2 === vtarL2),
           )
           .forEach(e => {
             const derivedArpu =
@@ -3580,7 +3584,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             <button
                               type="button"
                               onClick={() => setPromoMixAxis('value')}
-                              className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all ${promoMixAxis === 'value' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                              disabled={!valueAxisAvailable}
+                              className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed ${promoMixAxis === 'value' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                             >Value</button>
                             <button
                               type="button"
