@@ -919,6 +919,113 @@ export const getUniqueCombos = (
   return Array.from(combos.values());
 };
 
+// ---------------------------------------------------------------------------
+// Phase 3 P4 — auto-populate ARPU for volume-only market events
+// ---------------------------------------------------------------------------
+
+export interface TrailingArpuConfig {
+  data: any[];
+  wiDateCol: string;
+  wiMetricCol: string;
+  wiValueCol: string;
+  wiRevenueCol?: string;
+  wiArpuCol?: string;
+  wiSegmentCol?: string;
+  wiProductCol?: string;
+  wiProductL2Col?: string;
+  wiChannelCol?: string;
+  wiChannelL2Col?: string;
+  wiTariffL1Col?: string;
+  wiTariffL2Col?: string;
+}
+
+/**
+ * Trailing 3-month, volume-weighted average ARPU for a cohort slice and one
+ * IBRO metric value — the canonical "cohort average" used to auto-populate a
+ * volume-only market event's ARPU field so it doesn't dilute the blended ARPU
+ * toward zero (Phase 3 P4). Mirrors the row-level revenue derivation already
+ * used by computeWhatIfData's own aggregation: the revenue column if mapped
+ * and non-zero, else volume × per-row ARPU. Dimensions are matched only when
+ * both a column is mapped and a non-'All' value is supplied — omitted/'All'
+ * dims are unfiltered, same convention as the rest of the app.
+ * Returns null when there is no matching history, so callers can leave the
+ * field genuinely blank rather than defaulting to 0.
+ */
+export function computeCohortTrailingArpu(
+  cfg: TrailingArpuConfig,
+  metricValue: string,
+  dims: {
+    segment?: string; product?: string; productL2?: string;
+    channel?: string; channelL2?: string; tariffL1?: string; tariffL2?: string;
+  },
+): number | null {
+  const {
+    data, wiDateCol, wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol,
+    wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
+    wiTariffL1Col, wiTariffL2Col,
+  } = cfg;
+  if (!data?.length || !wiDateCol || !wiMetricCol || !wiValueCol || !metricValue) return null;
+
+  const matches = (col: string | undefined, want: string | undefined, row: any) =>
+    !col || !want || want === 'All' || String(row[col]) === want;
+
+  const byMonth = new Map<number, { vol: number; rev: number }>();
+  for (const row of data) {
+    const d = new Date(row[wiDateCol]);
+    if (isNaN(d.getTime())) continue;
+    if (String(row[wiMetricCol]) !== metricValue) continue;
+    if (!matches(wiSegmentCol, dims.segment, row)) continue;
+    if (!matches(wiProductCol, dims.product, row)) continue;
+    if (!matches(wiProductL2Col, dims.productL2, row)) continue;
+    if (!matches(wiChannelCol, dims.channel, row)) continue;
+    if (!matches(wiChannelL2Col, dims.channelL2, row)) continue;
+    if (!matches(wiTariffL1Col, dims.tariffL1, row)) continue;
+    if (!matches(wiTariffL2Col, dims.tariffL2, row)) continue;
+
+    const val = Number(row[wiValueCol]);
+    if (!isFinite(val)) continue;
+    const arpu = wiArpuCol ? Number(row[wiArpuCol]) || 0 : 0;
+    let rev = wiRevenueCol ? Number(row[wiRevenueCol]) || 0 : 0;
+    if (arpu && (!wiRevenueCol || !rev)) rev = val * arpu;
+
+    const monthKey = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+    if (!byMonth.has(monthKey)) byMonth.set(monthKey, { vol: 0, rev: 0 });
+    const entry = byMonth.get(monthKey)!;
+    entry.vol += val;
+    entry.rev += rev;
+  }
+
+  const months = Array.from(byMonth.entries()).sort((a, b) => a[0] - b[0]).map(([, v]) => v);
+  if (months.length === 0) return null;
+  const lastThree = months.slice(-3);
+  const totalVol = lastThree.reduce((s, m) => s + m.vol, 0);
+  const totalRev = lastThree.reduce((s, m) => s + m.rev, 0);
+  return totalVol > 0 ? totalRev / totalVol : null;
+}
+
+/**
+ * Resolves the ARPU (and matching revenue) to store for a market event. If the
+ * user left ARPU blank on a volume-only Inflow/Retention event, substitutes the
+ * cohort's trailing 3-month average (Phase 3 P4) — the substituted value is
+ * baked into the stored event exactly as if the user had typed it, so it is
+ * visible in the events table and round-trips through export/import like any
+ * other value. Outflow/ARPU-scenario events, or an explicit non-zero ARPU,
+ * pass through unchanged — this never overrides a value the user provided.
+ */
+export function resolveEventArpuRevenue(
+  vol: number,
+  rawArpu: number | undefined,
+  rawRevenue: number | undefined,
+  scenario: string | undefined,
+  cohortAvgArpu: number | null | undefined,
+): { arpu: number; revenue: number } {
+  if (rawArpu) return { arpu: rawArpu, revenue: rawRevenue || 0 };
+  if ((scenario === 'Inflow' || scenario === 'Retention') && cohortAvgArpu && cohortAvgArpu > 0) {
+    return { arpu: cohortAvgArpu, revenue: vol * cohortAvgArpu };
+  }
+  return { arpu: rawArpu || 0, revenue: rawRevenue || 0 };
+}
+
 export interface WhatIfConfig {
   wiDateCol: string;
   wiMetricCol: string;

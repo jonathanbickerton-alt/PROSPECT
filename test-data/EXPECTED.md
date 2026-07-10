@@ -351,7 +351,62 @@ ONLY when a tariff column is mapped; tariff-free files are unchanged.
 
 ---
 
-## 13. Regression checklist (the short version)
+## 13. Scenario Refinements (Phase 3: P4 auto-populate ARPU + P8 simplify diagnostics)
+
+P10 (exclude one-off historical events) is a separate research spike, not part
+of this phase — no build, no regression items here.
+
+### P4 — Auto-populate ARPU for volume-only market events
+Refinement of the existing cohort-average ARPU logic (WhatIfTab's Pass 2 Inflow-
+pool fallback already avoided a hard dilution to zero, but silently, and used
+the forecast's own blended ARPU rather than a historical average). Deterministic
+— a trailing 3-month volume-weighted actuals average — **no AI framing**.
+
+- Only applies to **Inflow** and **Retention** scenario events — the two that
+  create an ARPU-bearing subscriber pool. Outflow and ARPU-scenario events are
+  unaffected; an explicit non-zero ARPU the user typed always wins.
+- The event form's ARPU field shows the computed average as a **placeholder**
+  and an inline hint stating explicitly what will be used if left blank (the
+  "default is visible to the user" acceptance criterion).
+- If the user submits without overwriting it, the placeholder is **baked into
+  the stored event exactly as if typed** — same value in the events table, the
+  ARPU Δ column, chart tooltips, and export/import. No separate "live vs
+  frozen" behaviour; downstream code never needs to know it was auto-populated.
+- Applied at every event-construction site: single add (`addMarketEvent`), the
+  volume spread builder, campaign group-edit save (both single and spread
+  branches), and single-event edit-save — a missed site would silently produce
+  an inconsistent result depending on which path created the event.
+- Does **not** touch `calculateBaseForecast`, the ARPU boundary correction, or
+  `computeWhatIfData`'s own (separate, differently-defined) "All Aggregated"
+  fallback — confined entirely to event-construction time. ARPU MAPE/scoring
+  math for existing cohorts must be byte-identical before and after.
+- **Known, deliberate inconsistency (not a bug):** `computeWhatIfData`'s legacy
+  cross-cohort fallback still uses its own trailing-average definition rather
+  than the new shared helper — left untouched to avoid regression risk in the
+  "All Aggregated" view; a candidate for a future unification, not this phase.
+
+### P8 — Simplify technical model visualisations
+Hides the Fitted Model Parameters table ("the pyramid" — α/β/φ/γ/MSE/σ per
+series) behind a toggle, default collapsed, so the Step 1 business view stays
+uncluttered. Nothing is removed — the table is one click away.
+
+- Local component state in `StandardForecastTab.tsx`
+  (`showTechnicalDetails`, default `false`) — not lifted to App/Context, since
+  nothing outside the component consumes it.
+- Toggle uses the app's existing rotating-chevron open/close idiom (same as
+  `HierarchicalDropdown` / `MultiSelectDropdown`), not a new interaction pattern.
+- **Explicitly OUT of scope, must remain always-visible regardless of the
+  toggle:** the Holt-Winters seasonal-fallback warning (§5) and the
+  missing-months gap warning (checklist item 11) — hiding either would be a
+  real regression, not a simplification.
+- **Explicitly OUT of scope, confirmed with the business:** Model Advisor and
+  Confidence Advisor panels stay always-visible and untouched this phase (they
+  carry a one-click "Apply Recommended" action, a different risk profile from
+  a static parameter table).
+
+---
+
+## 14. Regression checklist (the short version)
 
 Every item below was a real bug or a confirmed Phase 1/2 behaviour. Confirm all
 after any change:
@@ -403,6 +458,18 @@ after any change:
     every data-spanning `All`-aggregate kept (resolved via the worker O(N)
     fallback). Tariff-free file: no-op (4,896 → 4,896). Worker counts 0-row
     cohorts as `empty` (silent), 1-row as `failed` (insufficient-data warning).
+20. Volume-only Inflow/Retention market events with ARPU left blank auto-populate
+    from the cohort's trailing 3-month volume-weighted average, visibly (form
+    placeholder + inline hint) and consistently (same value stored, shown, and
+    exported) across every event-construction path. An explicit non-zero ARPU is
+    never overridden. Outflow/ARPU-scenario events are unaffected. ARPU MAPE,
+    the boundary correction, and the known-good reference cohort (§4) are
+    byte-identical to before this change — the fix is confined to event
+    construction and never touches `calculateBaseForecast`.
+21. Fitted Model Parameters is collapsed by default on Step 1 and reveals via a
+    "Show technical details" toggle; the Holt-Winters seasonal-fallback warning
+    (§5) and the missing-months gap warning (item 11) remain always-visible
+    regardless of the toggle's state — neither is affected by collapsing it.
 
 **Verdict rule:** "SAFE FOR USER TESTING" only if all pass. Otherwise list
 the failures and the cohort/filter combination that exposed each.

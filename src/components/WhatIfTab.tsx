@@ -8,6 +8,7 @@ import { format, parse, isValid, addMonths, differenceInCalendarMonths } from 'd
 import { useForecast } from '../context/ForecastContext';
 import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent } from '../types/forecast';
 import type { MarketEvent } from '../utils/forecasting';
+import { resolveEventArpuRevenue } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
 import { MultiSelectDropdown } from './MultiSelectDropdown';
@@ -30,8 +31,18 @@ interface WhatIfTabProps {
   wiInflowVal?: string;
   /** Value in wiMetricCol that identifies Retention rows */
   wiRetentionVal?: string;
-  /** Column that holds per-row ARPU — used to derive per-tier base ARPUs */
+  /** Column that holds per-row ARPU — optional fallback source for deriving
+   *  revenue (arpu × volume) only when no revenue column is mapped. The primary
+   *  per-tier ARPU derivation is sum(Revenue)/sum(Volume) over the user-mapped
+   *  Value and Revenue columns below, never a name-matched "ARPU" column. */
   wiArpuCol?: string;
+  /** Column that holds per-row subscriber volume (as selected in Data Mapping /
+   *  Baseline Forecast generation) — required to derive tier-level ARPU. */
+  wiValueCol?: string;
+  /** Column that holds per-row revenue (as selected in Data Mapping / Baseline
+   *  Forecast generation) — primary source for tier-level ARPU; falls back to
+   *  wiArpuCol × volume when not mapped. */
+  wiRevenueCol?: string;
   /** L1 → L2 children map for Product hierarchy (for local view bar and event form) */
   productTree: Map<string, string[]>;
   /** L1 → L2 children map for Channel hierarchy */
@@ -45,6 +56,11 @@ interface WhatIfTabProps {
    *  selected by default; constrains tariff targeting and the tariff mix axis. */
   selectedTariffs?: string[];
   setSelectedTariffs?: (t: string[]) => void;
+  /** Trailing 3-month cohort-average ARPU for the event currently being drafted
+   *  (Phase 3 P4) — null when not applicable (Outflow/ARPU scenario) or no
+   *  matching history. Shown as a placeholder; used to auto-populate ARPU on
+   *  submit if the user leaves the field blank. */
+  cohortAvgArpu?: number | null;
   newEvent: Partial<MarketEvent>;
   setNewEvent: (e: Partial<MarketEvent>) => void;
   marketEvents: MarketEvent[];
@@ -117,6 +133,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   wiInflowVal = '',
   wiRetentionVal = '',
   wiArpuCol = '',
+  wiValueCol = '',
+  wiRevenueCol = '',
   productTree,
   channelTree,
   tariffTree,
@@ -124,6 +142,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   wiTariffL2Col = '',
   selectedTariffs = [],
   setSelectedTariffs,
+  cohortAvgArpu = null,
   newEvent,
   setNewEvent,
   marketEvents,
@@ -277,7 +296,17 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // Tariff → the user's selected tariffs (Phase 2b). The rest of the
     // derivation (per-bucket ARPU, forecast scaling) is identical either way.
     const groupCol = mixAxis === 'tariff' ? wiTariffL1Col : wiProductL2Col;
-    if (!groupCol || !wiArpuCol || !wiMetricCol) return [];
+    // Historical per-tier ARPU is sum(Revenue)/sum(Volume) over the columns the
+    // user selected in Data Mapping/Baseline Forecast generation — never a
+    // name-matched "ARPU" column. This mirrors computeCohortTrailingArpu (P4)
+    // and computeWhatIfData's own aggregation, so cohort-average ARPU is derived
+    // the same way everywhere in the app. wiArpuCol, if mapped, is only used to
+    // derive revenue (arpu × volume) on rows where no revenue column is mapped —
+    // never required on its own. A file whose price column is auto-detected as
+    // neither "ARPU" nor "Revenue" (e.g. Avg_Unit_Price_GBP) still works as long
+    // as Volume + Revenue are mapped, which is required for baseline forecasting
+    // anyway.
+    if (!groupCol || !wiMetricCol || !wiValueCol || (!wiRevenueCol && !wiArpuCol)) return [];
     if (mixAxis === 'tariff' && selectedTariffs.length === 0) return [];
     const { segment, product, channelL1, channelL2, ibro, month } = newYieldEvent;
     const ibroVal = ibro === 'Inflow' ? wiInflowVal : wiRetentionVal;
@@ -291,23 +320,28 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       return true;
     });
 
-    // Group by the axis dimension → average ARPU (historical baseline).
+    // Group by the axis dimension → sum(Revenue)/sum(Volume) (historical baseline).
     // On the tariff axis, keep only the user's selected tariffs.
-    const tierMap = new Map<string, number[]>();
+    const tierMap = new Map<string, { vol: number; rev: number }>();
     filtered.forEach(row => {
       const tier = String(row[groupCol] ?? '');
       if (!tier || tier === 'undefined') return;
       if (mixAxis === 'tariff' && !selectedTariffs.includes(tier)) return;
-      const arpu = Number(row[wiArpuCol]);
-      if (!isFinite(arpu)) return;
-      if (!tierMap.has(tier)) tierMap.set(tier, []);
-      tierMap.get(tier)!.push(arpu);
+      const vol = Number(row[wiValueCol]);
+      if (!isFinite(vol)) return;
+      const arpu = wiArpuCol ? Number(row[wiArpuCol]) || 0 : 0;
+      let rev = wiRevenueCol ? Number(row[wiRevenueCol]) || 0 : 0;
+      if (arpu && (!wiRevenueCol || !rev)) rev = vol * arpu;
+      if (!tierMap.has(tier)) tierMap.set(tier, { vol: 0, rev: 0 });
+      const entry = tierMap.get(tier)!;
+      entry.vol += vol;
+      entry.rev += rev;
     });
 
     const historicalTiers = Array.from(tierMap.entries())
-      .map(([tier, arpus]) => ({
+      .map(([tier, { vol, rev }]) => ({
         tier,
-        historicalArpu: arpus.reduce((a, b) => a + b, 0) / arpus.length,
+        historicalArpu: vol > 0 ? rev / vol : 0,
       }))
       .sort((a, b) => {
         // Numeric-range labels like "0-1", "1-2", "10-11" → sort by leading number
@@ -336,7 +370,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     }
 
     return historicalTiers.map(t => ({ ...t, baseArpu: t.historicalArpu }));
-  }, [data, mixAxis, wiTariffL1Col, selectedTariffs, wiProductL2Col, wiArpuCol, wiMetricCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col, wiInflowVal, wiRetentionVal, newYieldEvent.segment, newYieldEvent.product, newYieldEvent.channelL1, newYieldEvent.channelL2, newYieldEvent.ibro, newYieldEvent.month, yieldArpuMode, baseForecast]);
+  }, [data, mixAxis, wiTariffL1Col, selectedTariffs, wiProductL2Col, wiArpuCol, wiValueCol, wiRevenueCol, wiMetricCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col, wiInflowVal, wiRetentionVal, newYieldEvent.segment, newYieldEvent.product, newYieldEvent.channelL1, newYieldEvent.channelL2, newYieldEvent.ibro, newYieldEvent.month, yieldArpuMode, baseForecast]);
 
   // Which mix axes are usable (Phase 2b). Value availability comes from the
   // already-computed productTree (O(1), no data scan) — "value null/All" means
@@ -1000,6 +1034,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       const fraction = pct / total;
       const monthStr = format(addMonths(baseDate, i), 'yyyy-MM');
       const vol = Math.round((newEvent.subscriberVolume || 0) * fraction);
+      // Phase 3 P4: auto-populate ARPU from the cohort trailing average when the
+      // user left it blank on a volume-only Inflow/Retention spread.
+      const resolved = resolveEventArpuRevenue(vol, newEvent.arpu, Math.round((newEvent.revenue || 0) * fraction), newEvent.scenario, cohortAvgArpu);
       return {
         id: Math.random().toString(36).substr(2, 9),
         scenario:        newEvent.scenario as any,
@@ -1013,8 +1050,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         date:            monthStr,
         subscriberVolume: neg(vol),
         customerVolume:   neg(Math.round((newEvent.customerVolume || 0) * fraction)),
-        revenue:          neg(Math.round((newEvent.revenue        || 0) * fraction)),
-        arpu:             neg(newEvent.arpu || 0),
+        revenue:          neg(resolved.revenue),
+        arpu:             neg(resolved.arpu),
         name:             newEvent.name         || '',
         campaignName:     newEvent.campaignName || '',
         comment:          newEvent.comment      || '',
@@ -1032,7 +1069,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setSpreadMonths(3);
     setSpreadDistType('even');
     setCustomDist([34, 33, 33]);
-  }, [newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, addMarketEvent, setMarketEvents, marketEvents, setNewEvent]);
+  }, [newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, addMarketEvent, setMarketEvents, marketEvents, setNewEvent, cohortAvgArpu]);
 
   const BLANK_EVENT: Partial<MarketEvent> = {
     scenario: 'Inflow', segment: 'All', product: 'All', productL2: 'All',
@@ -1188,6 +1225,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
     let newEvents: MarketEvent[];
     if (!spreadEnabled || newEvent.scenario === 'ARPU') {
+      const resolvedSingle = resolveEventArpuRevenue(newEvent.subscriberVolume || 0, newEvent.arpu, newEvent.revenue, newEvent.scenario, cohortAvgArpu);
       newEvents = [{
         id: Math.random().toString(36).substr(2, 9),
         scenario: newEvent.scenario as MarketEvent['scenario'],
@@ -1201,8 +1239,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         date: newEvent.date,
         subscriberVolume: neg(newEvent.subscriberVolume || 0),
         customerVolume:   neg(newEvent.customerVolume   || 0),
-        revenue:          neg(newEvent.revenue           || 0),
-        arpu:             neg(newEvent.arpu              || 0),
+        revenue:          neg(resolvedSingle.revenue),
+        arpu:             neg(resolvedSingle.arpu),
         name: '',
         campaignName: newEvent.campaignName || '',
         comment: newEvent.comment || '',
@@ -1217,6 +1255,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       const baseDate = parse(newEvent.date, 'yyyy-MM', new Date());
       newEvents = pcts.map((pct, i) => {
         const fraction = pct / total;
+        const vol = Math.round((newEvent.subscriberVolume || 0) * fraction);
+        // Phase 3 P4: auto-populate ARPU from the cohort trailing average when the
+        // user left it blank on a volume-only Inflow/Retention spread.
+        const resolved = resolveEventArpuRevenue(vol, newEvent.arpu, Math.round((newEvent.revenue || 0) * fraction), newEvent.scenario, cohortAvgArpu);
         return {
           id: Math.random().toString(36).substr(2, 9),
           scenario: newEvent.scenario as MarketEvent['scenario'],
@@ -1228,10 +1270,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           tariffL1: newEvent.tariffL1 || 'All',
           tariffL2: newEvent.tariffL2 || 'All',
           date: format(addMonths(baseDate, i), 'yyyy-MM'),
-          subscriberVolume: neg(Math.round((newEvent.subscriberVolume || 0) * fraction)),
+          subscriberVolume: neg(vol),
           customerVolume:   neg(Math.round((newEvent.customerVolume   || 0) * fraction)),
-          revenue:          neg(Math.round((newEvent.revenue           || 0) * fraction)),
-          arpu:             neg(newEvent.arpu || 0),
+          revenue:          neg(resolved.revenue),
+          arpu:             neg(resolved.arpu),
           name: '',
           campaignName: newEvent.campaignName || '',
           comment: newEvent.comment || '',
@@ -1247,12 +1289,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setSpreadMonths(3);
     setSpreadDistType('even');
     setCustomDist([34, 33, 33]);
-  }, [editingCampaign, newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, marketEvents, setMarketEvents, setNewEvent]);
+  }, [editingCampaign, newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, marketEvents, setMarketEvents, setNewEvent, cohortAvgArpu]);
 
   const handleSaveEdit = useCallback(() => {
     if (!editingEventId || !newEvent.date) return;
     const isOutflow = newEvent.scenario === 'Outflow';
     const neg = (v: number) => isOutflow ? -Math.abs(v) : v;
+    // Phase 3 P4: re-resolve ARPU on save too — if the user clears the field back
+    // to blank while editing, they get the cohort placeholder again rather than a
+    // stale explicit value or a diluting zero.
+    const resolved = resolveEventArpuRevenue(newEvent.subscriberVolume ?? 0, newEvent.arpu, newEvent.revenue, newEvent.scenario, cohortAvgArpu);
     updateMarketEvent(editingEventId, {
       scenario: newEvent.scenario as MarketEvent['scenario'],
       segment: newEvent.segment ?? 'All',
@@ -1265,8 +1311,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       date: newEvent.date,
       subscriberVolume: neg(newEvent.subscriberVolume ?? 0),
       customerVolume:   neg(newEvent.customerVolume   ?? 0),
-      revenue:          neg(newEvent.revenue           ?? 0),
-      arpu:             neg(newEvent.arpu              ?? 0),
+      revenue:          neg(resolved.revenue),
+      arpu:             neg(resolved.arpu),
       name: newEvent.name ?? '',
       campaignName: newEvent.campaignName ?? '',
       comment: newEvent.comment ?? '',
@@ -1274,7 +1320,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     });
     setEditingEventId(null);
     setNewEvent(BLANK_EVENT);
-  }, [editingEventId, newEvent, updateMarketEvent, setNewEvent]);
+  }, [editingEventId, newEvent, updateMarketEvent, setNewEvent, cohortAvgArpu]);
 
   const handleCancelEdit = useCallback(() => {
     setEditingEventId(null);
@@ -1925,12 +1971,19 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 <input
                   type="number"
                   value={newEvent.arpu || ''}
+                  placeholder={cohortAvgArpu != null ? cohortAvgArpu.toFixed(2) : undefined}
                   onChange={e => {
                     const arpu = Number(e.target.value);
                     setNewEvent({ ...newEvent, arpu, revenue: (newEvent.subscriberVolume || 0) * arpu });
                   }}
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
+                {/* Phase 3 P4 — visible confirmation of the auto-populate default */}
+                {!newEvent.arpu && cohortAvgArpu != null && (
+                  <p className="mt-1 text-[10px] text-slate-400 leading-snug">
+                    Left blank, uses the cohort's trailing 3-month average: {cohortAvgArpu.toFixed(2)}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">
@@ -2950,11 +3003,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 {/* Sliders */}
                 {yieldTierData.length === 0 ? (
                   <div className="py-6 text-center text-sm text-slate-400 border border-dashed border-slate-200 rounded-xl">
-                    {mixAxis === 'tariff'
-                      ? 'Select dimensions above to load tariff mix data (or select tariffs in "Tariffs in scope")'
-                      : wiProductL2Col
-                        ? 'Select dimensions above to load value tier data'
-                        : 'Map a Product L2 column in Data Mapping to enable value mix sliders'}
+                    {(!wiValueCol || (!wiRevenueCol && !wiArpuCol))
+                      ? 'Map a Volume column and a Revenue (or ARPU) column in Data Mapping to enable mix sliders'
+                      : mixAxis === 'tariff'
+                        ? 'Select dimensions above to load tariff mix data (or select tariffs in "Tariffs in scope")'
+                        : wiProductL2Col
+                          ? 'Select dimensions above to load value tier data'
+                          : 'Map a Product L2 column in Data Mapping to enable value mix sliders'}
                   </div>
                 ) : (
                   <div className="mb-5">

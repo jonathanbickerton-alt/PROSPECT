@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, computeWhatIfData, WhatIfConfig, getUniqueCombos, calculateBaseForecast, buildCohortDataMap } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, computeWhatIfData, WhatIfConfig, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent } from './types/forecast';
 import { ForecastProvider } from './context/ForecastContext';
@@ -208,6 +208,11 @@ export default function App() {
     // the stored values are negative, which is the correct sign for an increase in outflow.
     const isOutflow = newEvent.scenario === 'Outflow';
     const neg = (v: number) => isOutflow ? -Math.abs(v) : v;
+    // Phase 3 P4: a volume-only Inflow/Retention event (ARPU left blank) is
+    // auto-populated from the cohort's trailing 3-month average — baked into the
+    // stored event exactly as if the user had typed it, never overriding an
+    // explicit non-zero value.
+    const resolved = resolveEventArpuRevenue(newEvent.subscriberVolume || 0, newEvent.arpu, newEvent.revenue, newEvent.scenario, cohortAvgArpu);
     const event: MarketEvent = {
       id: Math.random().toString(36).substr(2, 9),
       scenario: newEvent.scenario as any,
@@ -221,8 +226,8 @@ export default function App() {
       date: newEvent.date,
       subscriberVolume: neg(newEvent.subscriberVolume || 0),
       customerVolume:   neg(newEvent.customerVolume   || 0),
-      revenue:          neg(newEvent.revenue           || 0),
-      arpu:             neg(newEvent.arpu              || 0),
+      revenue:          neg(resolved.revenue),
+      arpu:             neg(resolved.arpu),
       name:         newEvent.name         || '',
       campaignName: newEvent.campaignName || '',
       comment:      newEvent.comment      || '',
@@ -1527,6 +1532,25 @@ export default function App() {
     for (const children of tree.values()) children.sort();
     return tree;
   }, [data, wiTariffL1Col, wiTariffL2Col]);
+
+  // Phase 3 P4 — trailing 3-month cohort-average ARPU for the event currently being
+  // drafted in the What-If form. Recomputed whenever the draft's own dimensions or
+  // scenario change. Only meaningful for Inflow/Retention (the two scenarios that
+  // create an ARPU-bearing subscriber pool) — null otherwise or when there's no
+  // matching history, so the form shows no placeholder rather than a fabricated 0.
+  const cohortAvgArpu = useMemo<number | null>(() => {
+    if (newEvent.scenario !== 'Inflow' && newEvent.scenario !== 'Retention') return null;
+    const metricValue = newEvent.scenario === 'Inflow' ? wiInflowVal : wiRetentionVal;
+    if (!metricValue) return null;
+    return computeCohortTrailingArpu(
+      { data, wiDateCol, wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col },
+      metricValue,
+      {
+        segment: newEvent.segment, product: newEvent.product, productL2: newEvent.productL2,
+        channel: newEvent.channel, channelL2: newEvent.channelL2, tariffL1: newEvent.tariffL1, tariffL2: newEvent.tariffL2,
+      },
+    );
+  }, [data, wiDateCol, wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiInflowVal, wiRetentionVal, newEvent.scenario, newEvent.segment, newEvent.product, newEvent.productL2, newEvent.channel, newEvent.channelL2, newEvent.tariffL1, newEvent.tariffL2]);
 
   /** Handle ViewFilterBar change on Step 2 — loads the matching forecast (if any). */
   const handleStep2FilterChange = useCallback((filter: ViewFilter) => {
@@ -4025,11 +4049,14 @@ export default function App() {
             wiInflowVal={wiInflowVal}
             wiRetentionVal={wiRetentionVal}
             wiArpuCol={wiArpuCol}
+            wiValueCol={wiValueCol}
+            wiRevenueCol={wiRevenueCol}
             productTree={productTree}
             channelTree={channelTree}
             tariffTree={tariffTree}
             selectedTariffs={selectedTariffs}
             setSelectedTariffs={setSelectedTariffs}
+            cohortAvgArpu={cohortAvgArpu}
             downloadExcel={downloadExcel}
             formatNumber={formatNumber}
             newEvent={newEvent}
