@@ -8,7 +8,7 @@ import { format, parse, isValid, addMonths, differenceInCalendarMonths } from 'd
 import { useForecast } from '../context/ForecastContext';
 import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent } from '../types/forecast';
 import type { MarketEvent } from '../utils/forecasting';
-import { resolveEventArpuRevenue } from '../utils/forecasting';
+import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
 import { MultiSelectDropdown } from './MultiSelectDropdown';
@@ -20,6 +20,9 @@ import { MultiSelectDropdown } from './MultiSelectDropdown';
 interface WhatIfTabProps {
   /** Raw data rows — used to populate segment/product/channel options in the event form */
   data: any[];
+  /** Column that holds each row's date — required to derive trailing-average
+   *  ARPU (Phase 3 P4 / Phase 4 Custom Promotion Card's cohort-average fallback). */
+  wiDateCol?: string;
   wiSegmentCol: string;
   wiProductCol: string;
   wiProductL2Col?: string;
@@ -119,11 +122,292 @@ function fmtMonth(m: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Shared tier-data derivation (Value-mix control) — used by both the Yield
+// Event form (Value tab) and the Custom Promotion Card's mix arm (Phase 4) so
+// both derive per-tier ARPU the same way: sum(Revenue)/sum(Volume) over the
+// user-mapped Volume/Revenue columns, never a name-matched "ARPU" column.
+// ---------------------------------------------------------------------------
+
+interface TierDataParams {
+  data: any[];
+  mixAxis: 'value' | 'tariff';
+  groupCol: string;
+  wiMetricCol: string;
+  wiValueCol: string;
+  wiRevenueCol?: string;
+  wiArpuCol?: string;
+  wiSegmentCol: string;
+  wiProductCol: string;
+  wiChannelCol: string;
+  wiChannelL2Col?: string;
+  selectedTariffs: string[];
+  segment?: string;
+  product?: string;
+  channelL1?: string;
+  channelL2?: string;
+  ibro?: string;
+  ibroInflowVal?: string;
+  ibroRetentionVal?: string;
+  yieldArpuMode: 'historical' | 'forecast';
+  month?: string;
+  baseForecast: any;
+}
+
+function computeTierData(p: TierDataParams): { tier: string; baseArpu: number; historicalArpu: number }[] {
+  if (!p.groupCol || !p.wiMetricCol || !p.wiValueCol || (!p.wiRevenueCol && !p.wiArpuCol)) return [];
+  if (p.mixAxis === 'tariff' && p.selectedTariffs.length === 0) return [];
+  const ibroVal = p.ibro === 'Inflow' ? p.ibroInflowVal : p.ibroRetentionVal;
+
+  const filtered = p.data.filter(row => {
+    if (p.segment && p.segment !== 'All' && String(row[p.wiSegmentCol]) !== p.segment) return false;
+    if (p.product && p.product !== 'All' && String(row[p.wiProductCol]) !== p.product) return false;
+    if (p.channelL1 && p.channelL1 !== 'All' && String(row[p.wiChannelCol]) !== p.channelL1) return false;
+    if (p.channelL2 && p.channelL2 !== 'All' && p.wiChannelL2Col && String(row[p.wiChannelL2Col]) !== p.channelL2) return false;
+    if (ibroVal && String(row[p.wiMetricCol]) !== ibroVal) return false;
+    return true;
+  });
+
+  // Group by the axis dimension → sum(Revenue)/sum(Volume) (historical baseline).
+  // On the tariff axis, keep only the user's selected tariffs.
+  const tierMap = new Map<string, { vol: number; rev: number }>();
+  filtered.forEach(row => {
+    const tier = String(row[p.groupCol] ?? '');
+    if (!tier || tier === 'undefined') return;
+    if (p.mixAxis === 'tariff' && !p.selectedTariffs.includes(tier)) return;
+    const vol = Number(row[p.wiValueCol]);
+    if (!isFinite(vol)) return;
+    const arpu = p.wiArpuCol ? Number(row[p.wiArpuCol]) || 0 : 0;
+    let rev = p.wiRevenueCol ? Number(row[p.wiRevenueCol]) || 0 : 0;
+    if (arpu && (!p.wiRevenueCol || !rev)) rev = vol * arpu;
+    if (!tierMap.has(tier)) tierMap.set(tier, { vol: 0, rev: 0 });
+    const entry = tierMap.get(tier)!;
+    entry.vol += vol;
+    entry.rev += rev;
+  });
+
+  const historicalTiers = Array.from(tierMap.entries())
+    .map(([tier, { vol, rev }]) => ({
+      tier,
+      historicalArpu: vol > 0 ? rev / vol : 0,
+    }))
+    .sort((a, b) => {
+      // Numeric-range labels like "0-1", "1-2", "10-11" → sort by leading number
+      const numA = parseFloat(a.tier);
+      const numB = parseFloat(b.tier);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return a.tier.localeCompare(b.tier, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+  // Forecast scaling: when a month is selected and the forecast has per-scenario
+  // ARPU, scale all tier ARPUs proportionally so their equal-weight blend
+  // matches the forecast value for this scenario/month.
+  if (p.yieldArpuMode === 'forecast' && p.month && p.baseForecast) {
+    const fcMonth = p.baseForecast.months.find((m: any) => m.month === p.month);
+    const fcArpu = fcMonth
+      ? (p.ibro === 'Inflow' ? (fcMonth.inflowArpu?.mean ?? fcMonth.arpu.mean) : (fcMonth.retentionArpu?.mean ?? fcMonth.arpu.mean))
+      : null;
+    if (fcArpu !== null && fcArpu > 0 && historicalTiers.length > 0) {
+      const histBlended = historicalTiers.reduce((s, t) => s + t.historicalArpu, 0) / historicalTiers.length;
+      const scaleFactor = histBlended > 0 ? fcArpu / histBlended : 1;
+      return historicalTiers.map(t => ({
+        ...t,
+        baseArpu: Math.max(0, t.historicalArpu * scaleFactor),
+      }));
+    }
+  }
+
+  return historicalTiers.map(t => ({ ...t, baseArpu: t.historicalArpu }));
+}
+
+// ---------------------------------------------------------------------------
+// Custom Promotion Card (Phase 4) — shared draft shape + event builder, used
+// by Add / Save Edit / Save Campaign alike so the mix/pricing/spread
+// resolution logic exists in exactly one place.
+// ---------------------------------------------------------------------------
+
+interface PromoDraft {
+  segment: string; product: string; productL2: string;
+  channel: string; channelL2: string;
+  tariffL1: string; tariffL2: string;
+  date: string; subscriberVolume: number; contractLength: number;
+  campaignName: string; comment: string;
+}
+function blankPromo(): PromoDraft {
+  return {
+    segment: 'All', product: 'All', productL2: 'All',
+    channel: 'All', channelL2: 'All', tariffL1: 'All', tariffL2: 'All',
+    date: format(new Date(), 'yyyy-MM'), subscriberVolume: 0, contractLength: 24,
+    campaignName: '', comment: '',
+  };
+}
+
+interface BuildPromoEventsParams {
+  target: 'Inflow' | 'Retention';
+  draft: PromoDraft;
+  mixEnabled: boolean;
+  mixAxis: 'value' | 'tariff';
+  draftMix: Record<string, number>;
+  tierData: { tier: string; baseArpu: number }[];
+  pricingEnabled: boolean;
+  pricingMode: 'percentage' | 'absolute';
+  pricingAmount: number;
+  cohortAvgArpu: number | null;
+  spreadEnabled: boolean;
+  spreadMonths: number;
+  spreadDistType: 'even' | 'custom';
+  customDist: number[];
+}
+
+/** Builds one or more MarketEvent rows for the Custom Promotion Card — a
+ *  single event, or a ramp/decay spread, depending on spreadEnabled. Shared by
+ *  Add, Save Edit, and Save Campaign so the mix-blend / pricing-delta /
+ *  cohort-average resolution logic is never duplicated. */
+function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
+  const applyPricing = (arpu: number) =>
+    p.pricingMode === 'percentage' ? arpu * (1 + p.pricingAmount / 100) : arpu + p.pricingAmount;
+
+  const pcts = p.spreadEnabled
+    ? (p.spreadDistType === 'even'
+        ? Array.from({ length: p.spreadMonths }, () => 100 / p.spreadMonths)
+        : p.customDist.slice(0, p.spreadMonths))
+    : [100];
+  const total = pcts.reduce((s, pct) => s + pct, 0);
+  if (total <= 0) return [];
+
+  const tierArpu: Record<string, number> = {};
+  p.tierData.forEach(t => { tierArpu[t.tier] = t.baseArpu; });
+  const mixBlendedArpu = blendTierMix(p.draftMix, tierArpu);
+
+  const baseDate = parse(p.draft.date, 'yyyy-MM', new Date());
+  const promoRebanded = p.target === 'Retention' && (p.mixEnabled || p.pricingEnabled);
+
+  return pcts.map((pct, i) => {
+    const fraction = pct / total;
+    const monthStr = format(addMonths(baseDate, i), 'yyyy-MM');
+    const vol = Math.round(p.draft.subscriberVolume * fraction);
+
+    // Base ARPU: the mix arm's blended tier ARPU, or (no mix) the cohort's
+    // trailing-average — the exact same P4 fallback used for a plain volume
+    // event — never a diluting zero.
+    const baseArpu = p.mixEnabled
+      ? mixBlendedArpu
+      : resolveEventArpuRevenue(vol, undefined, undefined, p.target, p.cohortAvgArpu).arpu;
+    const finalArpu = p.pricingEnabled ? applyPricing(baseArpu) : baseArpu;
+
+    return {
+      id: Math.random().toString(36).substr(2, 9),
+      scenario: p.target,
+      segment: p.draft.segment, product: p.draft.product, productL2: p.draft.productL2,
+      channel: p.draft.channel, channelL2: p.draft.channelL2,
+      tariffL1: p.draft.tariffL1, tariffL2: p.draft.tariffL2,
+      date: monthStr,
+      subscriberVolume: vol,
+      customerVolume: 0,
+      revenue: vol * finalArpu,
+      arpu: finalArpu,
+      name: '',
+      campaignName: p.draft.campaignName,
+      comment: p.draft.comment,
+      contractLength: p.draft.contractLength,
+      isPromotion: true,
+      promoRebanded,
+      promoMixAxis: p.mixEnabled ? p.mixAxis : undefined,
+      promoMix: p.mixEnabled ? { ...p.draftMix } : undefined,
+      promoPricingMode: p.pricingEnabled ? p.pricingMode : undefined,
+      promoPricingAmount: p.pricingEnabled ? p.pricingAmount : undefined,
+    };
+  });
+}
+
+/**
+ * Groups MarketEvent rows by campaignName and flags each group editable/not —
+ * shared by the Volume tab and the Custom Promotion Card so a campaign name
+ * that happens to be reused by BOTH cards can never cause one card's group
+ * edit/save to see (and silently overwrite) the other's rows. Callers must
+ * pre-filter `events` to their own card's rows (e.g. `!e.isPromotion` for
+ * Volume, `e.isPromotion` for Promotion) before calling this.
+ */
+function groupByCampaign(events: MarketEvent[]): Map<string, { rows: MarketEvent[]; editable: boolean; reason: string }> {
+  const groups = new Map<string, { rows: MarketEvent[]; editable: boolean; reason: string }>();
+  events.forEach(e => {
+    if (!e.campaignName) return;
+    if (!groups.has(e.campaignName)) groups.set(e.campaignName, { rows: [], editable: true, reason: '' });
+    groups.get(e.campaignName)!.rows.push(e);
+  });
+  groups.forEach(g => {
+    g.rows.sort((a, b) => a.date.localeCompare(b.date));
+    const first = g.rows[0];
+    const homogeneous = g.rows.every(e =>
+      e.scenario === first.scenario &&
+      e.segment === first.segment &&
+      e.product === first.product &&
+      (e.productL2 ?? 'All') === (first.productL2 ?? 'All') &&
+      e.channel === first.channel &&
+      (e.channelL2 ?? 'All') === (first.channelL2 ?? 'All') &&
+      (e.tariffL1 ?? 'All') === (first.tariffL1 ?? 'All') &&
+      (e.tariffL2 ?? 'All') === (first.tariffL2 ?? 'All') &&
+      e.contractLength === first.contractLength
+    );
+    const d0 = parse(first.date, 'yyyy-MM', new Date());
+    const dN = parse(g.rows[g.rows.length - 1].date, 'yyyy-MM', new Date());
+    const span = isValid(d0) && isValid(dN) ? differenceInCalendarMonths(dN, d0) + 1 : 0;
+    if (!homogeneous) {
+      g.editable = false;
+      g.reason = 'Events in this campaign target different scenarios or cohorts — edit rows individually';
+    } else if (first.scenario === 'ARPU' && g.rows.length > 1) {
+      g.editable = false;
+      g.reason = 'Multi-month ARPU campaigns cannot be edited as a spread — edit rows individually';
+    } else if (span > 24) {
+      g.editable = false;
+      g.reason = 'Campaign spans more than 24 months — edit rows individually';
+    } else if (span < 1) {
+      g.editable = false;
+      g.reason = 'Campaign has an invalid month — edit rows individually';
+    }
+  });
+  return groups;
+}
+
+/** Auto-balancing mix-slider math — shared by the Value tab's tier sliders and
+ *  the Custom Promotion Card's mix arm (Phase 4). Clamps the changed tier and
+ *  redistributes the remainder across the others proportionally to their
+ *  current share, so the total always sums to exactly 100. */
+function autoBalanceMix(prev: Record<string, number>, changedTier: string, newValue: number): Record<string, number> {
+  const clamped = Math.min(100, Math.max(0, newValue));
+  const others = Object.keys(prev).filter(t => t !== changedTier);
+  const otherSum = others.reduce((s, t) => s + prev[t], 0);
+  const remaining = 100 - clamped;
+
+  const next: Record<string, number> = { ...prev, [changedTier]: clamped };
+  if (otherSum === 0) {
+    const eq = remaining / others.length;
+    others.forEach((t, i) => {
+      next[t] = i === others.length - 1
+        ? remaining - eq * (others.length - 1)
+        : eq;
+    });
+  } else {
+    let allocated = 0;
+    others.forEach((t, i) => {
+      if (i === others.length - 1) {
+        next[t] = Math.max(0, remaining - allocated);
+      } else {
+        const share = Math.max(0, (prev[t] / otherSum) * remaining);
+        next[t] = share;
+        allocated += share;
+      }
+    });
+  }
+  return next;
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   data,
+  wiDateCol = '',
   wiSegmentCol,
   wiProductCol,
   wiProductL2Col = '',
@@ -214,7 +498,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   }, [selectedTariffs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Tab state ─────────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<'volume' | 'value' | 'pricing'>('volume');
+  const [activeTab, setActiveTab] = useState<'volume' | 'value' | 'pricing' | 'promotion'>('volume');
 
   const [windowSize, setWindowSize] = useState(12);
   const [windowOffset, setWindowOffset] = useState(0);
@@ -238,7 +522,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   // When the active tab changes, sync the KPI selection to the tab's focus.
   useEffect(() => {
-    if (activeTab === 'volume') {
+    if (activeTab === 'volume' || activeTab === 'promotion') {
       setSelectedKpis(['Inflow', 'Outflow', 'Retention', 'Base']);
     } else {
       // Value and Pricing tabs focus on ARPU
@@ -295,81 +579,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // Choose the bucketing dimension by axis: Value → Product L2 tiers,
     // Tariff → the user's selected tariffs (Phase 2b). The rest of the
     // derivation (per-bucket ARPU, forecast scaling) is identical either way.
-    const groupCol = mixAxis === 'tariff' ? wiTariffL1Col : wiProductL2Col;
     // Historical per-tier ARPU is sum(Revenue)/sum(Volume) over the columns the
     // user selected in Data Mapping/Baseline Forecast generation — never a
     // name-matched "ARPU" column. This mirrors computeCohortTrailingArpu (P4)
     // and computeWhatIfData's own aggregation, so cohort-average ARPU is derived
-    // the same way everywhere in the app. wiArpuCol, if mapped, is only used to
-    // derive revenue (arpu × volume) on rows where no revenue column is mapped —
-    // never required on its own. A file whose price column is auto-detected as
-    // neither "ARPU" nor "Revenue" (e.g. Avg_Unit_Price_GBP) still works as long
-    // as Volume + Revenue are mapped, which is required for baseline forecasting
-    // anyway.
-    if (!groupCol || !wiMetricCol || !wiValueCol || (!wiRevenueCol && !wiArpuCol)) return [];
-    if (mixAxis === 'tariff' && selectedTariffs.length === 0) return [];
-    const { segment, product, channelL1, channelL2, ibro, month } = newYieldEvent;
-    const ibroVal = ibro === 'Inflow' ? wiInflowVal : wiRetentionVal;
-
-    const filtered = data.filter(row => {
-      if (segment && segment !== 'All' && String(row[wiSegmentCol]) !== segment) return false;
-      if (product && product !== 'All' && String(row[wiProductCol]) !== product) return false;
-      if (channelL1 && channelL1 !== 'All' && String(row[wiChannelCol]) !== channelL1) return false;
-      if (channelL2 && channelL2 !== 'All' && wiChannelL2Col && String(row[wiChannelL2Col]) !== channelL2) return false;
-      if (ibroVal && String(row[wiMetricCol]) !== ibroVal) return false;
-      return true;
+    // the same way everywhere in the app, including the Custom Promotion Card's
+    // mix arm (Phase 4), which calls the same computeTierData helper below.
+    return computeTierData({
+      data, mixAxis, groupCol: mixAxis === 'tariff' ? wiTariffL1Col : wiProductL2Col,
+      wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col,
+      selectedTariffs,
+      segment: newYieldEvent.segment, product: newYieldEvent.product,
+      channelL1: newYieldEvent.channelL1, channelL2: newYieldEvent.channelL2,
+      ibro: newYieldEvent.ibro, ibroInflowVal: wiInflowVal, ibroRetentionVal: wiRetentionVal,
+      yieldArpuMode, month: newYieldEvent.month, baseForecast,
     });
-
-    // Group by the axis dimension → sum(Revenue)/sum(Volume) (historical baseline).
-    // On the tariff axis, keep only the user's selected tariffs.
-    const tierMap = new Map<string, { vol: number; rev: number }>();
-    filtered.forEach(row => {
-      const tier = String(row[groupCol] ?? '');
-      if (!tier || tier === 'undefined') return;
-      if (mixAxis === 'tariff' && !selectedTariffs.includes(tier)) return;
-      const vol = Number(row[wiValueCol]);
-      if (!isFinite(vol)) return;
-      const arpu = wiArpuCol ? Number(row[wiArpuCol]) || 0 : 0;
-      let rev = wiRevenueCol ? Number(row[wiRevenueCol]) || 0 : 0;
-      if (arpu && (!wiRevenueCol || !rev)) rev = vol * arpu;
-      if (!tierMap.has(tier)) tierMap.set(tier, { vol: 0, rev: 0 });
-      const entry = tierMap.get(tier)!;
-      entry.vol += vol;
-      entry.rev += rev;
-    });
-
-    const historicalTiers = Array.from(tierMap.entries())
-      .map(([tier, { vol, rev }]) => ({
-        tier,
-        historicalArpu: vol > 0 ? rev / vol : 0,
-      }))
-      .sort((a, b) => {
-        // Numeric-range labels like "0-1", "1-2", "10-11" → sort by leading number
-        const numA = parseFloat(a.tier);
-        const numB = parseFloat(b.tier);
-        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-        return a.tier.localeCompare(b.tier, undefined, { numeric: true, sensitivity: 'base' });
-      });
-
-    // Forecast scaling: when a month is selected and the forecast has per-scenario
-    // ARPU, scale all tier ARPUs proportionally so their equal-weight blend
-    // matches the forecast value for this scenario/month.
-    if (yieldArpuMode === 'forecast' && month && baseForecast) {
-      const fcMonth = baseForecast.months.find(m => m.month === month);
-      const fcArpu = fcMonth
-        ? (ibro === 'Inflow' ? (fcMonth.inflowArpu?.mean ?? fcMonth.arpu.mean) : (fcMonth.retentionArpu?.mean ?? fcMonth.arpu.mean))
-        : null;
-      if (fcArpu !== null && fcArpu > 0 && historicalTiers.length > 0) {
-        const histBlended = historicalTiers.reduce((s, t) => s + t.historicalArpu, 0) / historicalTiers.length;
-        const scaleFactor = histBlended > 0 ? fcArpu / histBlended : 1;
-        return historicalTiers.map(t => ({
-          ...t,
-          baseArpu: Math.max(0, t.historicalArpu * scaleFactor),
-        }));
-      }
-    }
-
-    return historicalTiers.map(t => ({ ...t, baseArpu: t.historicalArpu }));
   }, [data, mixAxis, wiTariffL1Col, selectedTariffs, wiProductL2Col, wiArpuCol, wiValueCol, wiRevenueCol, wiMetricCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col, wiInflowVal, wiRetentionVal, newYieldEvent.segment, newYieldEvent.product, newYieldEvent.channelL1, newYieldEvent.channelL2, newYieldEvent.ibro, newYieldEvent.month, yieldArpuMode, baseForecast]);
 
   // Which mix axes are usable (Phase 2b). Value availability comes from the
@@ -402,34 +626,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   // Auto-balancing slider handler
   const handleSliderChange = useCallback((changedTier: string, newValue: number) => {
-    setDraftMix(prev => {
-      const clamped = Math.min(100, Math.max(0, newValue));
-      const others = Object.keys(prev).filter(t => t !== changedTier);
-      const otherSum = others.reduce((s, t) => s + prev[t], 0);
-      const remaining = 100 - clamped;
-
-      const next: Record<string, number> = { ...prev, [changedTier]: clamped };
-      if (otherSum === 0) {
-        const eq = remaining / others.length;
-        others.forEach((t, i) => {
-          next[t] = i === others.length - 1
-            ? remaining - eq * (others.length - 1)
-            : eq;
-        });
-      } else {
-        let allocated = 0;
-        others.forEach((t, i) => {
-          if (i === others.length - 1) {
-            next[t] = Math.max(0, remaining - allocated);
-          } else {
-            const share = Math.max(0, (prev[t] / otherSum) * remaining);
-            next[t] = share;
-            allocated += share;
-          }
-        });
-      }
-      return next;
-    });
+    setDraftMix(prev => autoBalanceMix(prev, changedTier, newValue));
   }, []);
 
   // Computed blended ARPU from current draft
@@ -445,6 +642,125 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // Approximate: assume existing mix is data-driven (average ARPU of all tiers weighted equally)
     return yieldTierData.reduce((s, t) => s + t.baseArpu, 0) / yieldTierData.length;
   }, [yieldTierData]);
+
+  // ---------------------------------------------------------------------------
+  // Custom Promotion Card (Phase 4) — a combined promo: mandatory volume
+  // (Acquisition/Inflow or Retention, reusing existing IBRO mechanics + ramp/
+  // decay), with optional value-mix and/or pricing arms that scope to the
+  // promo's own volume only and never re-mix or re-price the standing base.
+  // ---------------------------------------------------------------------------
+
+  // null = add-new mode; a string id/campaignName = editing that promo/campaign
+  // (separate from editingEventId/editingCampaign above, which belong to the
+  // Volume tab's own form and must stay unaffected by Promotion Card edits).
+  const [editingPromoId, setEditingPromoId] = useState<string | null>(null);
+  const [editingPromoCampaign, setEditingPromoCampaign] = useState<string | null>(null);
+
+  const [promoTarget, setPromoTarget] = useState<'Inflow' | 'Retention'>('Inflow');
+  const [newPromo, setNewPromo] = useState<PromoDraft>(blankPromo());
+
+  const [promoSpreadEnabled, setPromoSpreadEnabled] = useState(false);
+  const [promoSpreadMonths, setPromoSpreadMonths] = useState(3);
+  const [promoSpreadDistType, setPromoSpreadDistType] = useState<'even' | 'custom'>('even');
+  const [promoCustomDist, setPromoCustomDist] = useState<number[]>([34, 33, 33]);
+  useEffect(() => {
+    setPromoCustomDist(prev => {
+      const even = Math.floor(100 / promoSpreadMonths);
+      const remainder = 100 - even * promoSpreadMonths;
+      return Array.from({ length: promoSpreadMonths }, (_, i) =>
+        prev[i] !== undefined ? prev[i] : (i === 0 ? even + remainder : even)
+      );
+    });
+  }, [promoSpreadMonths]);
+
+  const [promoMixEnabled, setPromoMixEnabled] = useState(false);
+  const [promoMixAxis, setPromoMixAxis] = useState<'value' | 'tariff'>('value');
+  const [promoYieldArpuMode, setPromoYieldArpuMode] = useState<'historical' | 'forecast'>('historical');
+  const [promoDraftMix, setPromoDraftMix] = useState<Record<string, number>>({});
+
+  const [promoPricingEnabled, setPromoPricingEnabled] = useState(false);
+  const [promoPricingMode, setPromoPricingMode] = useState<'percentage' | 'absolute'>('percentage');
+  const [promoPricingAmount, setPromoPricingAmount] = useState(0);
+
+  // Same tier derivation as the Value tab's Yield Event form (computeTierData),
+  // scoped to the promo's own dimensions and volume target — never re-implemented.
+  const promoTierData = useMemo<{ tier: string; baseArpu: number; historicalArpu: number }[]>(() => {
+    return computeTierData({
+      data, mixAxis: promoMixAxis, groupCol: promoMixAxis === 'tariff' ? wiTariffL1Col : wiProductL2Col,
+      wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col,
+      selectedTariffs,
+      segment: newPromo.segment, product: newPromo.product,
+      channelL1: newPromo.channel, channelL2: newPromo.channelL2,
+      ibro: promoTarget, ibroInflowVal: wiInflowVal, ibroRetentionVal: wiRetentionVal,
+      yieldArpuMode: promoYieldArpuMode, month: newPromo.date, baseForecast,
+    });
+  }, [data, promoMixAxis, wiTariffL1Col, selectedTariffs, wiProductL2Col, wiArpuCol, wiValueCol, wiRevenueCol, wiMetricCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col, wiInflowVal, wiRetentionVal, newPromo.segment, newPromo.product, newPromo.channel, newPromo.channelL2, promoTarget, newPromo.date, promoYieldArpuMode, baseForecast]);
+
+  const promoTariffAxisAvailable = !!wiTariffL1Col && selectedTariffs.length > 0;
+
+  // Seed promoDraftMix with equal weights whenever tiers change
+  useEffect(() => {
+    if (promoTierData.length === 0) { setPromoDraftMix({}); return; }
+    const eq = 100 / promoTierData.length;
+    const init: Record<string, number> = {};
+    promoTierData.forEach((t, i) => {
+      init[t.tier] = i === promoTierData.length - 1
+        ? 100 - eq * (promoTierData.length - 1)
+        : eq;
+    });
+    setPromoDraftMix(init);
+  }, [promoTierData.map(t => t.tier).join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handlePromoSliderChange = useCallback((changedTier: string, newValue: number) => {
+    setPromoDraftMix(prev => autoBalanceMix(prev, changedTier, newValue));
+  }, []);
+
+  const promoDraftBlendedArpu = useMemo(() => {
+    const tierArpu: Record<string, number> = {};
+    promoTierData.forEach(t => { tierArpu[t.tier] = t.baseArpu; });
+    return blendTierMix(promoDraftMix, tierArpu);
+  }, [promoDraftMix, promoTierData]);
+
+  // Trailing 3-month cohort-average ARPU for the promo's own dimensions/target
+  // (Phase 3 P4 pattern) — the fallback base when the mix arm isn't used.
+  const promoCohortAvgArpu = useMemo<number | null>(() => {
+    const metricValue = promoTarget === 'Inflow' ? wiInflowVal : wiRetentionVal;
+    if (!metricValue) return null;
+    return computeCohortTrailingArpu(
+      { data, wiDateCol, wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col },
+      metricValue,
+      { segment: newPromo.segment, product: newPromo.product, productL2: newPromo.productL2, channel: newPromo.channel, channelL2: newPromo.channelL2, tariffL1: newPromo.tariffL1, tariffL2: newPromo.tariffL2 },
+    );
+  }, [data, wiDateCol, wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiInflowVal, wiRetentionVal, promoTarget, newPromo.segment, newPromo.product, newPromo.productL2, newPromo.channel, newPromo.channelL2, newPromo.tariffL1, newPromo.tariffL2]);
+
+  const resetPromoDraft = useCallback(() => {
+    setNewPromo(blankPromo());
+    setPromoSpreadEnabled(false);
+    setPromoSpreadMonths(3);
+    setPromoSpreadDistType('even');
+    setPromoCustomDist([34, 33, 33]);
+    setPromoMixEnabled(false);
+    setPromoPricingEnabled(false);
+    setPromoPricingAmount(0);
+  }, []);
+
+  // ── Add Custom Promotion event(s) ─────────────────────────────────────────
+  const handleAddPromotionEvent = useCallback(() => {
+    if (!newPromo.date || !newPromo.subscriberVolume) return;
+    if (promoMixEnabled && promoTierData.length === 0) return;
+
+    const events = buildPromoEvents({
+      target: promoTarget, draft: newPromo,
+      mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
+      pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
+      cohortAvgArpu: promoCohortAvgArpu,
+      spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
+    });
+    if (events.length === 0) return;
+
+    setMarketEvents([...marketEvents, ...events]);
+    resetPromoDraft();
+  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, marketEvents, setMarketEvents, resetPromoDraft]);
 
   // ── Unique options for Yield Event form ───────────────────────────────────
   const ySegmentOptions = useMemo(
@@ -756,7 +1072,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             !p_eventPools.find(p => p.eventId === e.id) &&
             (e.segment  === 'All' || vseg    === 'All' || e.segment  === vseg) &&
             (e.product  === 'All' || !vprodL1            || e.product  === vprodL1) &&
-            (e.channel  === 'All' || !vchanL1            || e.channel  === vchanL1),
+            (!e.productL2 || e.productL2 === 'All' || !vprodL2 || e.productL2 === vprodL2) &&
+            (e.channel  === 'All' || !vchanL1            || e.channel  === vchanL1) &&
+            (!e.channelL2 || e.channelL2 === 'All' || !vchanL2 || e.channelL2 === vchanL2) &&
+            (!e.tariffL1 || e.tariffL1 === 'All' || !vtarL1 || e.tariffL1 === vtarL1) &&
+            (!e.tariffL2 || e.tariffL2 === 'All' || !vtarL2 || e.tariffL2 === vtarL2),
           )
           .forEach(e => {
             const derivedArpu =
@@ -777,6 +1097,38 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         // idx === 0: no previous month to lag
         p_basePool += p_prevBBaseIn;
       }
+
+      // Custom Promotion Card (Phase 4) — Retention-with-arm re-banded pools.
+      // Retention applies in the SAME month as the event (no T-1 lag, matching
+      // Pass 1's adjRetention). A plain Retention promo (no mix/pricing arm) has
+      // promoRebanded unset and falls through to the existing base-pool/
+      // applicableRetentionYield mechanism below, unchanged. Only when the promo
+      // carries a mix and/or pricing arm is its volume carved out into its own
+      // pool at its own (already-resolved) arpu — isolating the promo's re-banded
+      // ARPU from the standing base, exactly as Inflow event pools already do.
+      marketEvents
+        .filter(e =>
+          e.date === m.month &&
+          e.scenario === 'Retention' &&
+          e.promoRebanded &&
+          !p_eventPools.find(p => p.eventId === e.id) &&
+          (e.segment   === 'All' || vseg   === 'All' || e.segment   === vseg) &&
+          (e.product   === 'All' || !vprodL1          || e.product   === vprodL1) &&
+          (!e.productL2 || e.productL2 === 'All' || !vprodL2 || e.productL2 === vprodL2) &&
+          (e.channel   === 'All' || !vchanL1          || e.channel   === vchanL1) &&
+          (!e.channelL2 || e.channelL2 === 'All' || !vchanL2 || e.channelL2 === vchanL2) &&
+          (!e.tariffL1 || e.tariffL1 === 'All' || !vtarL1 || e.tariffL1 === vtarL1) &&
+          (!e.tariffL2 || e.tariffL2 === 'All' || !vtarL2 || e.tariffL2 === vtarL2),
+        )
+        .forEach(e => {
+          p_eventPools.push({
+            eventId: e.id,
+            arpu: e.arpu > 0 ? e.arpu : m.baseline.arpu,
+            contractLength: e.contractLength ?? DEFAULT_CONTRACT_N,
+            enterMonthIdx: idx,
+            size: Math.max(0, e.subscriberVolume),
+          });
+        });
 
       // ── D: Enforce pool-sum consistency with newBAdj ──
       const eventTotal = p_eventPools.reduce((s, p) => s + p.size, 0);
@@ -1110,46 +1462,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // A campaign is group-editable when all its events share scenario + cohort
   // dimensions + contract length (i.e. it is a pure volume spread), the month
   // span fits the spread control (≤24), and it is not a multi-month ARPU group.
-  const campaignGroups = useMemo(() => {
-    const groups = new Map<string, { rows: MarketEvent[]; editable: boolean; reason: string }>();
-    marketEvents.forEach(e => {
-      if (!e.campaignName) return;
-      if (!groups.has(e.campaignName)) groups.set(e.campaignName, { rows: [], editable: true, reason: '' });
-      groups.get(e.campaignName)!.rows.push(e);
-    });
-    groups.forEach(g => {
-      g.rows.sort((a, b) => a.date.localeCompare(b.date));
-      const first = g.rows[0];
-      const homogeneous = g.rows.every(e =>
-        e.scenario === first.scenario &&
-        e.segment === first.segment &&
-        e.product === first.product &&
-        (e.productL2 ?? 'All') === (first.productL2 ?? 'All') &&
-        e.channel === first.channel &&
-        (e.channelL2 ?? 'All') === (first.channelL2 ?? 'All') &&
-        (e.tariffL1 ?? 'All') === (first.tariffL1 ?? 'All') &&
-        (e.tariffL2 ?? 'All') === (first.tariffL2 ?? 'All') &&
-        e.contractLength === first.contractLength
-      );
-      const d0 = parse(first.date, 'yyyy-MM', new Date());
-      const dN = parse(g.rows[g.rows.length - 1].date, 'yyyy-MM', new Date());
-      const span = isValid(d0) && isValid(dN) ? differenceInCalendarMonths(dN, d0) + 1 : 0;
-      if (!homogeneous) {
-        g.editable = false;
-        g.reason = 'Events in this campaign target different scenarios or cohorts — edit rows individually';
-      } else if (first.scenario === 'ARPU' && g.rows.length > 1) {
-        g.editable = false;
-        g.reason = 'Multi-month ARPU campaigns cannot be edited as a spread — edit rows individually';
-      } else if (span > 24) {
-        g.editable = false;
-        g.reason = 'Campaign spans more than 24 months — edit rows individually';
-      } else if (span < 1) {
-        g.editable = false;
-        g.reason = 'Campaign has an invalid month — edit rows individually';
-      }
-    });
-    return groups;
-  }, [marketEvents]);
+  // Scoped to this card's own rows only (excludes Promotion Card events) so a
+  // campaign name reused by both cards can never let one card's group edit/
+  // save see, and silently overwrite, the other's rows.
+  const campaignGroups = useMemo(
+    () => groupByCampaign(marketEvents.filter(e => !e.isPromotion)),
+    [marketEvents],
+  );
+  // Promotion Card's own campaign grouping — mirror image of the above,
+  // scoped to isPromotion rows only. Same campaign name, different card,
+  // never the same group.
+  const promoCampaignGroups = useMemo(
+    () => groupByCampaign(marketEvents.filter(e => e.isPromotion)),
+    [marketEvents],
+  );
 
   const handleEditCampaignStart = useCallback((campaign: string) => {
     const group = campaignGroups.get(campaign);
@@ -1282,7 +1608,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       });
     }
 
-    setMarketEvents([...marketEvents.filter(e => e.campaignName !== editingCampaign), ...newEvents]);
+    // Only replace THIS card's rows for the campaign — a Promotion Card
+    // campaign that happens to share this name is a different group
+    // (promoCampaignGroups) and must never be touched here.
+    setMarketEvents([...marketEvents.filter(e => e.campaignName !== editingCampaign || e.isPromotion), ...newEvents]);
     setEditingCampaign(null);
     setNewEvent(BLANK_EVENT);
     setSpreadEnabled(false);
@@ -1331,6 +1660,119 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setSpreadDistType('even');
     setCustomDist([34, 33, 33]);
   }, [setNewEvent]);
+
+  // ── Custom Promotion Card — edit a single promo event ─────────────────────
+  // Uses promoCampaignGroups (scoped to this card's own rows) for the same
+  // editable/reason gating the Volume tab applies via its own campaignGroups.
+  const handleEditPromoStart = useCallback((event: MarketEvent) => {
+    setNewPromo({
+      segment: event.segment, product: event.product, productL2: event.productL2 ?? 'All',
+      channel: event.channel, channelL2: event.channelL2 ?? 'All',
+      tariffL1: event.tariffL1 ?? 'All', tariffL2: event.tariffL2 ?? 'All',
+      date: event.date, subscriberVolume: event.subscriberVolume, contractLength: event.contractLength,
+      campaignName: event.campaignName ?? '', comment: event.comment ?? '',
+    });
+    setPromoTarget(event.scenario === 'Retention' ? 'Retention' : 'Inflow');
+    setPromoMixEnabled(!!event.promoMix);
+    setPromoMixAxis(event.promoMixAxis ?? 'value');
+    setPromoDraftMix(event.promoMix ? { ...event.promoMix } : {});
+    setPromoPricingEnabled(event.promoPricingAmount !== undefined);
+    setPromoPricingMode(event.promoPricingMode ?? 'percentage');
+    setPromoPricingAmount(event.promoPricingAmount ?? 0);
+    setPromoSpreadEnabled(false);
+    setEditingPromoId(event.id);
+    setEditingPromoCampaign(null);
+  }, []);
+
+  const handleEditPromoCampaignStart = useCallback((campaign: string) => {
+    const group = promoCampaignGroups.get(campaign);
+    if (!group || !group.editable) return;
+    const rows = group.rows;
+
+    if (rows.length === 1) {
+      handleEditPromoStart(rows[0]);
+      setEditingPromoId(null);
+      setEditingPromoCampaign(campaign);
+      return;
+    }
+
+    const first = rows[0];
+    // Reverse-engineer the spread exactly like the Volume tab's campaign edit:
+    // total volume is the sum, span is first→last month, per-month % is share.
+    const d0 = parse(first.date, 'yyyy-MM', new Date());
+    const span = differenceInCalendarMonths(parse(rows[rows.length - 1].date, 'yyyy-MM', new Date()), d0) + 1;
+    const volByOffset = new Array(span).fill(0);
+    let totalSub = 0;
+    rows.forEach(e => {
+      const off = differenceInCalendarMonths(parse(e.date, 'yyyy-MM', new Date()), d0);
+      volByOffset[off] += Math.abs(e.subscriberVolume);
+      totalSub += Math.abs(e.subscriberVolume);
+    });
+    const pcts = volByOffset.map(v => totalSub > 0 ? Math.round((v / totalSub) * 100) : 0);
+    pcts[0] += 100 - pcts.reduce((s, p) => s + p, 0);
+    const mean = totalSub / span;
+    const isEven = volByOffset.every(v => Math.abs(v - mean) <= 1);
+
+    setNewPromo({
+      segment: first.segment, product: first.product, productL2: first.productL2 ?? 'All',
+      channel: first.channel, channelL2: first.channelL2 ?? 'All',
+      tariffL1: first.tariffL1 ?? 'All', tariffL2: first.tariffL2 ?? 'All',
+      date: first.date, subscriberVolume: totalSub, contractLength: first.contractLength,
+      campaignName: campaign, comment: rows.find(e => e.comment)?.comment ?? '',
+    });
+    setPromoTarget(first.scenario === 'Retention' ? 'Retention' : 'Inflow');
+    setPromoMixEnabled(!!first.promoMix);
+    setPromoMixAxis(first.promoMixAxis ?? 'value');
+    setPromoDraftMix(first.promoMix ? { ...first.promoMix } : {});
+    setPromoPricingEnabled(first.promoPricingAmount !== undefined);
+    setPromoPricingMode(first.promoPricingMode ?? 'percentage');
+    setPromoPricingAmount(first.promoPricingAmount ?? 0);
+    setPromoSpreadEnabled(true);
+    setPromoSpreadMonths(span);
+    setPromoSpreadDistType(isEven ? 'even' : 'custom');
+    setPromoCustomDist(pcts);
+    setEditingPromoId(null);
+    setEditingPromoCampaign(campaign);
+  }, [promoCampaignGroups, handleEditPromoStart]);
+
+  const handleSavePromoEdit = useCallback(() => {
+    if (!editingPromoId || !newPromo.date || !newPromo.subscriberVolume) return;
+    const events = buildPromoEvents({
+      target: promoTarget, draft: newPromo,
+      mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
+      pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
+      cohortAvgArpu: promoCohortAvgArpu,
+      spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [100],
+    });
+    if (events.length === 0) return;
+    updateMarketEvent(editingPromoId, { ...events[0], id: editingPromoId });
+    setEditingPromoId(null);
+    resetPromoDraft();
+  }, [editingPromoId, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, updateMarketEvent, resetPromoDraft]);
+
+  const handleSavePromoCampaign = useCallback(() => {
+    if (!editingPromoCampaign || !newPromo.date || !newPromo.subscriberVolume) return;
+    const events = buildPromoEvents({
+      target: promoTarget, draft: newPromo,
+      mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
+      pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
+      cohortAvgArpu: promoCohortAvgArpu,
+      spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
+    });
+    if (events.length === 0) return;
+    // Only replace THIS card's rows for the campaign — a Volume-tab campaign
+    // that happens to share this name is a different group (campaignGroups)
+    // and must never be touched here.
+    setMarketEvents([...marketEvents.filter(e => e.campaignName !== editingPromoCampaign || !e.isPromotion), ...events]);
+    setEditingPromoCampaign(null);
+    resetPromoDraft();
+  }, [editingPromoCampaign, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, marketEvents, setMarketEvents, resetPromoDraft]);
+
+  const handleCancelPromoEdit = useCallback(() => {
+    setEditingPromoId(null);
+    setEditingPromoCampaign(null);
+    resetPromoDraft();
+  }, [resetPromoDraft]);
 
   // -------------------------------------------------------------------------
   // Write MarketEventAdjustedForecast back to context whenever inputs change
@@ -1756,9 +2198,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           </div>
         </div>
 
-        {/* ── Volume / Value / Pricing tab switcher — below the chart ────────── */}
+        {/* ── Volume / Value / Pricing / Promotion tab switcher — below the chart ── */}
         <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
-          {(['volume', 'value', 'pricing'] as const).map(tab => (
+          {(['volume', 'value', 'pricing', 'promotion'] as const).map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -1768,10 +2210,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              {tab === 'volume' ? 'Volume' : tab === 'value' ? 'Value' : 'Pricing'}
+              {tab === 'volume' ? 'Volume' : tab === 'value' ? 'Value' : tab === 'pricing' ? 'Pricing' : 'Promotion'}
             </button>
           ))}
         </div>
+        {/* Phase 4 — in-UI guidance: when to reach for the combined card vs the
+            three single-dimension ones. */}
+        <p className="text-xs text-slate-500 -mt-2">
+          Use <strong className="text-slate-600">Promotion</strong> for one combined scenario anchored on a volume
+          movement (with an optional mix and/or price change). Use <strong className="text-slate-600">Volume</strong>,{' '}
+          <strong className="text-slate-600">Value</strong>, or <strong className="text-slate-600">Pricing</strong> for
+          single-dimension events with no volume assumption — e.g. a pure base-wide price rise.
+        </p>
 
         {/* ── Tariff scoping control (Phase 2b) — pick the tariffs to plan with.
             None selected by default; constrains tariff targeting AND the tariff
@@ -2869,6 +3319,580 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   </button>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* ── PROMOTION TAB (Phase 4) — combined promo: mandatory volume target
+            (Acquisition/Retention), optional value-mix arm, optional pricing arm.
+            Everything scopes to the promo's own volume only — the standing base
+            mix and base ARPU are never touched. ─────────────────────────────── */}
+        {activeTab === 'promotion' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700">Custom Promotion</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    One combined promo: a volume ambition, optionally with a mix and/or price change on that volume only.
+                  </p>
+                </div>
+                <span className="text-xs text-slate-400 bg-white px-2 py-1 rounded border border-slate-200 hidden md:block">
+                  Reuses ramp/decay, IBRO mechanics, mix control and ARPU blending
+                </span>
+              </div>
+
+              <div className="p-6 border-b border-slate-100 bg-slate-50/30">
+                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 items-end">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Volume Target</label>
+                    <select
+                      value={promoTarget}
+                      onChange={e => setPromoTarget(e.target.value as 'Inflow' | 'Retention')}
+                      className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
+                    >
+                      <option value="Inflow">Acquisition (Inflow)</option>
+                      <option value="Retention">Retention</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Segment</label>
+                    <select
+                      value={newPromo.segment}
+                      onChange={e => setNewPromo({ ...newPromo, segment: e.target.value })}
+                      className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
+                    >
+                      <option value="All">All Segments</option>
+                      {ySegmentOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Product</label>
+                    {productTree.size > 0 ? (
+                      <HierarchicalDropdown
+                        label=""
+                        tree={productTree}
+                        value={{
+                          l1: newPromo.product !== 'All' ? newPromo.product : null,
+                          l2: newPromo.productL2 !== 'All' ? newPromo.productL2 : null,
+                        }}
+                        onChange={(v: HierarchicalSelection) => setNewPromo({
+                          ...newPromo, product: v.l1 ?? 'All', productL2: v.l2 ?? 'All',
+                        })}
+                        variant="light"
+                        className="w-full"
+                      />
+                    ) : (
+                      <select
+                        value={newPromo.product}
+                        onChange={e => setNewPromo({ ...newPromo, product: e.target.value, productL2: 'All' })}
+                        className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
+                      >
+                        <option value="All">All Products</option>
+                        {productL1Options.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Channel</label>
+                    {channelTree.size > 0 ? (
+                      <HierarchicalDropdown
+                        label=""
+                        tree={channelTree}
+                        value={{
+                          l1: newPromo.channel !== 'All' ? newPromo.channel : null,
+                          l2: newPromo.channelL2 !== 'All' ? newPromo.channelL2 : null,
+                        }}
+                        onChange={(v: HierarchicalSelection) => setNewPromo({
+                          ...newPromo, channel: v.l1 ?? 'All', channelL2: v.l2 ?? 'All',
+                        })}
+                        variant="light"
+                        className="w-full"
+                      />
+                    ) : (
+                      <select
+                        value={newPromo.channel}
+                        onChange={e => setNewPromo({ ...newPromo, channel: e.target.value, channelL2: 'All' })}
+                        className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
+                      >
+                        <option value="All">All Channels</option>
+                        {channelL1Options.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    )}
+                  </div>
+                  {/* Tariff targeting (Phase 2b) — composes with Product/Channel */}
+                  {wiTariffL1Col && targetTariffTree.size > 0 && (
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">Tariff</label>
+                      <HierarchicalDropdown
+                        label=""
+                        tree={targetTariffTree}
+                        value={{
+                          l1: newPromo.tariffL1 !== 'All' ? newPromo.tariffL1 : null,
+                          l2: newPromo.tariffL2 !== 'All' ? newPromo.tariffL2 : null,
+                        }}
+                        onChange={(v: HierarchicalSelection) => setNewPromo({
+                          ...newPromo, tariffL1: v.l1 ?? 'All', tariffL2: v.l2 ?? 'All',
+                        })}
+                        variant="light"
+                        className="w-full"
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Month</label>
+                    <input
+                      type="month"
+                      value={newPromo.date}
+                      onChange={e => setNewPromo({ ...newPromo, date: e.target.value })}
+                      className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">
+                      {promoTarget === 'Inflow' ? 'Acquisition Volume' : 'Retained Volume'}
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={newPromo.subscriberVolume || ''}
+                      onChange={e => setNewPromo({ ...newPromo, subscriberVolume: Math.max(0, Number(e.target.value)) })}
+                      className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">
+                      Contract Length
+                      <span className="relative group text-slate-400 cursor-help">
+                        <Info size={11} />
+                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-56 bg-white border border-slate-200 rounded-xl shadow-lg text-xs text-slate-600 p-2.5 z-50 pointer-events-none normal-case font-normal">
+                          How long this promo's subscribers are protected from churn (or, for Retention, re-contracted) before entering the at-risk pool. Default 24 months.
+                        </span>
+                      </span>
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={60}
+                      step={1}
+                      value={newPromo.contractLength}
+                      onChange={e => setNewPromo({ ...newPromo, contractLength: Math.min(60, Math.max(1, Math.round(Number(e.target.value)))) })}
+                      className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
+                    />
+                  </div>
+                </div>
+
+                {/* Ramp / decay — reuses the same spread mechanism as Volume events */}
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setPromoSpreadEnabled(v => !v)}
+                    className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
+                      promoSpreadEnabled
+                        ? 'bg-[#e60000] text-white border-[#e60000]'
+                        : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors ${promoSpreadEnabled ? 'border-white' : 'border-slate-400'}`}>
+                      {promoSpreadEnabled && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </span>
+                    Ramp volume over multiple months
+                  </button>
+
+                  {promoSpreadEnabled && (
+                    <div className="mt-3 p-4 bg-white border border-slate-200 rounded-xl">
+                      <div className="flex flex-wrap items-end gap-6 mb-4">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-500 mb-1">Ramp duration (months)</label>
+                          <input
+                            type="number"
+                            min={2}
+                            max={24}
+                            step={1}
+                            value={promoSpreadMonths}
+                            onChange={e => setPromoSpreadMonths(Math.min(24, Math.max(2, Math.round(Number(e.target.value)))))}
+                            className="w-24 text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-500 mb-1">Distribution</label>
+                          <div className="flex rounded-lg overflow-hidden border border-slate-200">
+                            <button
+                              onClick={() => setPromoSpreadDistType('even')}
+                              className={`px-4 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
+                                promoSpreadDistType === 'even' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                              }`}
+                            >Even</button>
+                            <button
+                              onClick={() => setPromoSpreadDistType('custom')}
+                              className={`px-4 py-2 text-xs font-semibold transition-colors ${
+                                promoSpreadDistType === 'custom' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                              }`}
+                            >Custom %</button>
+                          </div>
+                        </div>
+                      </div>
+                      {(() => {
+                        const baseDate = newPromo.date ? parse(newPromo.date, 'yyyy-MM', new Date()) : null;
+                        const totalVol = newPromo.subscriberVolume || 0;
+                        const pcts = promoSpreadDistType === 'even'
+                          ? Array.from({ length: promoSpreadMonths }, () => 100 / promoSpreadMonths)
+                          : promoCustomDist.slice(0, promoSpreadMonths);
+                        const pctTotal = pcts.reduce((s, p) => s + p, 0);
+                        const pctOk = Math.abs(pctTotal - 100) < 0.5;
+                        return (
+                          <div>
+                            <div className="grid gap-1.5" style={{ gridTemplateColumns: `140px 1fr${promoSpreadDistType === 'custom' ? ' 80px' : ''}` }}>
+                              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Month</span>
+                              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Volume</span>
+                              {promoSpreadDistType === 'custom' && <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">%</span>}
+                              {Array.from({ length: promoSpreadMonths }, (_, i) => {
+                                const monthLabel = baseDate && isValid(baseDate)
+                                  ? format(addMonths(baseDate, i), 'MMM yyyy')
+                                  : `Month ${i + 1}`;
+                                const fraction = pcts[i] / (pctTotal || 1);
+                                const vol = Math.round(totalVol * fraction);
+                                return (
+                                  <React.Fragment key={i}>
+                                    <span className="text-xs text-slate-600 py-1">{monthLabel}</span>
+                                    <span className="text-xs font-semibold text-emerald-600 py-1">+{vol.toLocaleString()}</span>
+                                    {promoSpreadDistType === 'custom' && (
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        max={100}
+                                        step={1}
+                                        value={promoCustomDist[i] ?? 0}
+                                        onChange={e => {
+                                          const next = [...promoCustomDist];
+                                          next[i] = Math.max(0, Number(e.target.value));
+                                          setPromoCustomDist(next);
+                                        }}
+                                        className="text-xs border border-slate-200 rounded px-2 py-1 w-16 outline-none focus:border-[#e60000]"
+                                      />
+                                    )}
+                                  </React.Fragment>
+                                );
+                              })}
+                            </div>
+                            {promoSpreadDistType === 'custom' && !pctOk && (
+                              <p className="mt-2 text-[10px] text-amber-600 font-medium">
+                                Percentages sum to {pctTotal.toFixed(1)}% — they will be normalised to 100% on add.
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+
+                {/* Value-mix arm — independent checkbox, available for both volume targets */}
+                <div className="mt-5 pt-5 border-t border-slate-100">
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={promoMixEnabled}
+                      onChange={e => setPromoMixEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-300 text-[#e60000] focus:ring-[#e60000]"
+                    />
+                    <span className="text-sm font-semibold text-slate-700">Value-mix arm</span>
+                  </label>
+                  <p className="text-[10px] text-slate-400 mt-1 ml-6">
+                    {promoTarget === 'Inflow'
+                      ? 'Describes the composition of the incoming volume. Does not re-mix the existing base.'
+                      : "Describes the terms the retained volume is re-contracted on — its blended ARPU reflects the new composition, not the previous one. The untouched base is not re-mixed."}
+                  </p>
+
+                  {promoMixEnabled && (
+                    <div className="mt-3 p-4 bg-slate-50/50 border border-slate-200 rounded-xl">
+                      {promoTariffAxisAvailable && (
+                        <div className="flex items-center gap-2 mb-4">
+                          <span className="text-xs text-slate-500">Distribute mix across</span>
+                          <div className="flex bg-slate-100 p-0.5 rounded-lg">
+                            <button
+                              type="button"
+                              onClick={() => setPromoMixAxis('value')}
+                              disabled={!valueAxisAvailable}
+                              className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed ${promoMixAxis === 'value' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                            >Value</button>
+                            <button
+                              type="button"
+                              onClick={() => setPromoMixAxis('tariff')}
+                              className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all ${promoMixAxis === 'tariff' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                            >Tariff</button>
+                          </div>
+                        </div>
+                      )}
+
+                      {promoTierData.length === 0 ? (
+                        <div className="py-6 text-center text-sm text-slate-400 border border-dashed border-slate-200 rounded-xl">
+                          {(!wiValueCol || (!wiRevenueCol && !wiArpuCol))
+                            ? 'Map a Volume column and a Revenue (or ARPU) column in Data Mapping to enable mix sliders'
+                            : promoMixAxis === 'tariff'
+                              ? 'Select dimensions above to load tariff mix data (or select tariffs in "Tariffs in scope")'
+                              : 'Select dimensions above to load value tier data'}
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                              {promoMixAxis === 'tariff' ? 'Tariff Mix' : 'Value Mix (Product L2)'}
+                            </span>
+                            <div className="flex items-center gap-3">
+                              <div className="flex bg-slate-100 p-0.5 rounded-lg">
+                                <button
+                                  onClick={() => setPromoYieldArpuMode('historical')}
+                                  className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition-all ${promoYieldArpuMode === 'historical' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                >Historical ARPU</button>
+                                <button
+                                  onClick={() => setPromoYieldArpuMode('forecast')}
+                                  className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition-all ${promoYieldArpuMode === 'forecast' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                >Forecast ARPU</button>
+                              </div>
+                              <span className={`text-xs font-semibold tabular-nums ${Math.abs((Object.values(promoDraftMix) as number[]).reduce((s, v) => s + v, 0) - 100) < 0.2 ? 'text-emerald-600' : 'text-amber-500'}`}>
+                                Sum: {(Object.values(promoDraftMix) as number[]).reduce((s, v) => s + v, 0).toFixed(1)}%
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-x-3 mb-1 pr-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider" style={{ gridTemplateColumns: 'minmax(80px,180px) 1fr 52px 90px' }}>
+                            <span>{promoMixAxis === 'tariff' ? 'Tariff' : 'Tier'}</span>
+                            <span />
+                            <span className="text-right">Mix %</span>
+                            <span className="text-right">Base ARPU</span>
+                          </div>
+                          <div className={`space-y-1.5 pr-1 ${promoTierData.length > 8 ? 'overflow-y-auto max-h-[300px]' : ''}`}>
+                            {promoTierData.map(({ tier, baseArpu }) => {
+                              const mixPct = promoDraftMix[tier] ?? 0;
+                              return (
+                                <div key={tier} className="grid gap-x-3 items-center" style={{ gridTemplateColumns: 'minmax(80px,180px) 1fr 52px 90px' }}>
+                                  <span className="text-xs font-medium text-slate-700 truncate leading-none" title={tier}>{tier}</span>
+                                  <input
+                                    type="range"
+                                    min={0}
+                                    max={100}
+                                    step={0.1}
+                                    value={mixPct}
+                                    onChange={e => handlePromoSliderChange(tier, Number(e.target.value))}
+                                    className="w-full accent-[#e60000] h-1.5 cursor-pointer"
+                                  />
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    step={0.1}
+                                    value={parseFloat(mixPct.toFixed(1))}
+                                    onChange={e => handlePromoSliderChange(tier, Number(e.target.value))}
+                                    className="w-full text-xs font-semibold text-slate-700 text-right tabular-nums border border-slate-200 rounded px-1 py-0.5 outline-none focus:border-[#e60000] bg-white"
+                                  />
+                                  <span className="text-xs text-slate-400 text-right tabular-nums leading-none">
+                                    {formatNumber(baseArpu)}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
+                            Promo blended ARPU: <span className="font-semibold text-slate-700">{formatNumber(promoDraftBlendedArpu)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Pricing arm — independent checkbox, applies to promo volume only */}
+                <div className="mt-5 pt-5 border-t border-slate-100">
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={promoPricingEnabled}
+                      onChange={e => setPromoPricingEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-300 text-[#e60000] focus:ring-[#e60000]"
+                    />
+                    <span className="text-sm font-semibold text-slate-700">Pricing arm</span>
+                  </label>
+                  <p className="text-[10px] text-slate-400 mt-1 ml-6">
+                    A promo price for this promo's volume only, applied via cohort-weighted ARPU blending. Never shifts base ARPU.
+                  </p>
+
+                  {promoPricingEnabled && (
+                    <div className="mt-3 p-4 bg-slate-50/50 border border-slate-200 rounded-xl">
+                      <label className="block text-xs font-medium text-slate-500 mb-1">Amount</label>
+                      <div className="flex rounded-lg overflow-hidden border border-slate-200 w-full max-w-xs">
+                        <button
+                          onClick={() => setPromoPricingMode('percentage')}
+                          className={`px-3 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
+                            promoPricingMode === 'percentage' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >%</button>
+                        <button
+                          onClick={() => setPromoPricingMode('absolute')}
+                          className={`px-3 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
+                            promoPricingMode === 'absolute' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >€</button>
+                        <input
+                          type="number"
+                          step={promoPricingMode === 'percentage' ? 0.1 : 0.01}
+                          value={promoPricingAmount || ''}
+                          onChange={e => setPromoPricingAmount(Number(e.target.value))}
+                          className="flex-1 text-sm px-3 py-2 bg-white outline-none min-w-0"
+                          placeholder={promoPricingMode === 'percentage' ? '+5 or -10' : '+2.50 or -1.00'}
+                        />
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        {promoPricingMode === 'percentage' ? 'Positive = price rise, negative = discount/promotion' : 'Absolute ARPU change per subscriber'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Editing banner — matches the Volume tab's convention */}
+                {editingPromoCampaign ? (
+                  <div className="mt-5 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium flex items-center gap-2">
+                    <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                    Editing campaign "{editingPromoCampaign}" — saving will replace all of its events with the values above.
+                  </div>
+                ) : editingPromoId ? (
+                  <div className="mt-5 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium flex items-center gap-2">
+                    <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                    Editing promotion — modify the fields above then click Save Changes.
+                  </div>
+                ) : null}
+
+                {/* Campaign + Comment + Add/Save button */}
+                <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-end">
+                  <div className="md:w-56 shrink-0">
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Campaign Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Summer Promo 2026"
+                      value={newPromo.campaignName}
+                      onChange={e => setNewPromo({ ...newPromo, campaignName: e.target.value })}
+                      className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Comment</label>
+                    <input
+                      type="text"
+                      placeholder="Describe the promo..."
+                      value={newPromo.comment}
+                      onChange={e => setNewPromo({ ...newPromo, comment: e.target.value })}
+                      className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
+                    />
+                  </div>
+                  {(editingPromoId || editingPromoCampaign) ? (
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        onClick={editingPromoCampaign ? handleSavePromoCampaign : handleSavePromoEdit}
+                        disabled={!newPromo.date || !newPromo.subscriberVolume || (promoMixEnabled && promoTierData.length === 0)}
+                        className="bg-[#e60000] text-white text-sm font-semibold py-2 px-5 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {editingPromoCampaign ? 'Save Campaign' : 'Save Changes'}
+                      </button>
+                      <button
+                        onClick={handleCancelPromoEdit}
+                        className="bg-white border border-slate-200 text-slate-600 text-sm font-semibold py-2 px-4 rounded-lg hover:bg-slate-50 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleAddPromotionEvent}
+                      disabled={!newPromo.date || !newPromo.subscriberVolume || (promoMixEnabled && promoTierData.length === 0)}
+                      className="bg-[#e60000] text-white text-sm font-semibold py-2 px-5 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                    >
+                      Add Promotion
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Promo events list — campaign badge doubles as the group-edit
+                  control, same convention as the Volume tab's table. */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100">
+                      <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Campaign</th>
+                      <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Target</th>
+                      <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Month</th>
+                      <th className="px-5 py-2.5 text-right text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Volume</th>
+                      <th className="px-5 py-2.5 text-right text-[10px] font-semibold text-slate-400 uppercase tracking-wider">ARPU</th>
+                      <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Arms</th>
+                      <th className="px-5 py-2.5" />
+                      <th className="px-5 py-2.5" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {marketEvents.filter(e => e.isPromotion).length === 0 ? (
+                      <tr><td colSpan={8} className="px-5 py-6 text-center text-sm text-slate-400">No promotions added yet</td></tr>
+                    ) : (
+                      marketEvents.filter(e => e.isPromotion).map(e => {
+                        const isEditingRow = editingPromoId === e.id
+                          || (editingPromoCampaign !== null && e.campaignName === editingPromoCampaign);
+                        const campaignLabel = e.campaignName || '';
+                        const group = campaignLabel ? promoCampaignGroups.get(campaignLabel) : undefined;
+                        const arms = [e.promoMix ? 'Mix' : null, e.promoPricingAmount !== undefined ? 'Pricing' : null].filter(Boolean).join(' + ');
+                        return (
+                          <tr key={e.id} className={`border-b border-slate-50 hover:bg-slate-50 transition-colors ${isEditingRow ? 'bg-amber-50/60 ring-1 ring-inset ring-amber-300' : ''}`}>
+                            <td className="px-5 py-3 text-xs max-w-[160px]">
+                              {campaignLabel ? (
+                                group?.editable ? (
+                                  <button
+                                    type="button"
+                                    onClick={(ev) => { ev.stopPropagation(); handleEditPromoCampaignStart(campaignLabel); }}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full hover:bg-[#e60000]/15 transition-colors cursor-pointer"
+                                    title={`Edit campaign "${campaignLabel}" (${group.rows.length} event${group.rows.length === 1 ? '' : 's'})`}
+                                  >
+                                    <Pencil size={11} className="shrink-0" />
+                                    {campaignLabel}
+                                  </button>
+                                ) : (
+                                  <span
+                                    className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full opacity-60 cursor-not-allowed"
+                                    title={group?.reason || campaignLabel}
+                                  >
+                                    {campaignLabel}
+                                  </span>
+                                )
+                              ) : (
+                                <span className="text-slate-300">—</span>
+                              )}
+                            </td>
+                            <td className="px-5 py-3 text-xs text-slate-600">{e.scenario}</td>
+                            <td className="px-5 py-3 text-xs text-slate-600">{fmtMonth(e.date)}</td>
+                            <td className="px-5 py-3 text-xs text-right font-semibold text-emerald-600">+{Math.round(e.subscriberVolume).toLocaleString()}</td>
+                            <td className="px-5 py-3 text-xs text-right text-slate-600">{formatNumber(e.arpu)}</td>
+                            <td className="px-5 py-3 text-xs text-slate-500">{arms || '—'}</td>
+                            <td className="px-5 py-3 text-center">
+                              <button
+                                type="button"
+                                onClick={(ev) => { ev.stopPropagation(); handleEditPromoStart(e); }}
+                                className={`p-1 rounded transition-colors ${
+                                  isEditingRow ? 'text-amber-600 bg-amber-100' : 'text-slate-400 hover:text-[#e60000] hover:bg-[#e60000]/5'
+                                }`}
+                                title={isEditingRow ? 'Currently editing' : 'Edit promotion'}
+                              >
+                                <Pencil size={14} />
+                              </button>
+                            </td>
+                            <td className="px-5 py-3 text-right">
+                              <button onClick={() => removeMarketEvent(e.id)} className="text-slate-400 hover:text-rose-600 transition-colors">
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}

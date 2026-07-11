@@ -491,6 +491,13 @@ export default function App() {
       ARPU: e.arpu,
       Contract_Length_Months: e.contractLength ?? 24,
       Comment: e.comment ?? '',
+      // Phase 4 — Custom Promotion Card
+      Is_Promotion: e.isPromotion ? 'Yes' : 'No',
+      Promo_Rebanded: e.promoRebanded ? 'Yes' : 'No',
+      Promo_Mix_Axis: e.promoMixAxis ?? '',
+      Promo_Mix_JSON: e.promoMix ? JSON.stringify(e.promoMix) : '',
+      Promo_Pricing_Mode: e.promoPricingMode ?? '',
+      Promo_Pricing_Amount: e.promoPricingAmount ?? '',
     }));
     XLSX.utils.book_append_sheet(
       wb,
@@ -866,6 +873,12 @@ export default function App() {
             arpu:             Number(r.ARPU              ?? 0),
             contractLength:   Number(r.Contract_Length_Months ?? 24),
             comment:          String(r.Comment ?? ''),
+            isPromotion:      r.Is_Promotion === 'Yes',
+            promoRebanded:    r.Promo_Rebanded === 'Yes',
+            promoMixAxis:     r.Promo_Mix_Axis === 'tariff' ? 'tariff' : r.Promo_Mix_Axis === 'value' ? 'value' : undefined,
+            promoMix:         r.Promo_Mix_JSON ? (() => { try { return JSON.parse(String(r.Promo_Mix_JSON)); } catch { return undefined; } })() : undefined,
+            promoPricingMode: r.Promo_Pricing_Mode === 'absolute' ? 'absolute' : r.Promo_Pricing_Mode === 'percentage' ? 'percentage' : undefined,
+            promoPricingAmount: r.Promo_Pricing_Amount !== undefined && r.Promo_Pricing_Amount !== '' ? Number(r.Promo_Pricing_Amount) : undefined,
           }));
           setMarketEvents(restoredEvents);
         }
@@ -4038,6 +4051,7 @@ export default function App() {
         {activeView === 'whatif' && (
           <WhatIfTab
             data={data}
+            wiDateCol={wiDateCol}
             wiSegmentCol={wiSegmentCol}
             wiProductCol={wiProductCol}
             wiProductL2Col={wiProductL2Col}
