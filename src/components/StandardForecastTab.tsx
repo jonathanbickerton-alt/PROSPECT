@@ -627,23 +627,40 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                 </select>
               </div>
 
-              {/* When the current cohort selection has no data, the advisors below
-                  can't recommend anything — say so explicitly rather than letting
-                  them silently vanish. */}
-              {emptyCohortSelection && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 leading-relaxed">
-                  <span className="font-semibold">No historical data for this cohort.</span> This exact
-                  combination of filters returns no rows, so the Model and Confidence advisors can't
-                  recommend settings and a forecast can't be generated. Adjust the filters — often the
-                  L2 or tariff selections — to a combination present in your data.
-                </div>
-              )}
-
               <div>
                 <label className="block text-xs font-semibold text-slate-900 mb-2">Forecast Model</label>
 
+                {/* Empty-cohort state — keep the Model Advisor's visual footprint
+                    but faded and non-interactive, with the explanation on hover,
+                    so the recommender never appears to simply vanish. */}
+                {emptyCohortSelection && (
+                  <div className="mb-4 relative group">
+                    <div className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-xl space-y-2 opacity-60 select-none">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-600">Model Advisor</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-500">Unavailable</span>
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        <span className="font-semibold text-slate-700">Recommended: </span>
+                        <span className="font-bold text-slate-400">—</span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-slate-400">Needs historical data for this cohort to recommend a model.</p>
+                      <button
+                        type="button"
+                        disabled
+                        className="w-full text-center px-2.5 py-1.5 bg-slate-200 text-slate-400 rounded-lg text-[10px] font-bold cursor-not-allowed"
+                      >
+                        Apply Recommended Model
+                      </button>
+                    </div>
+                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-60 bg-slate-800 text-white text-[10px] rounded-lg px-2.5 py-2 z-50 leading-snug pointer-events-none">
+                      No historical data for this cohort. This exact combination of filters returns no rows, so the Model and Confidence advisors can't recommend settings and a forecast can't be generated. Adjust the filters — often the L2 or tariff selections — to a combination present in your data.
+                    </span>
+                  </div>
+                )}
+
                 {/* Model Recommendation Panel */}
-                {modelRecommendation && (
+                {!emptyCohortSelection && modelRecommendation && (
                   <div className="mb-4">
                     {!isDismissed ? (
                       <div className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-2 relative">
@@ -749,8 +766,36 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                 </div>
               </div>
 
+              {/* Empty-cohort state — faded, non-interactive Confidence Advisor
+                  with the same on-hover explanation, mirroring the Model Advisor. */}
+              {emptyCohortSelection && (
+                <div className="mb-4 relative group">
+                  <div className="p-3 bg-violet-50/40 border border-violet-100 rounded-xl space-y-2 opacity-60 select-none">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-extrabold uppercase tracking-widest text-violet-600">Confidence Advisor</span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-500">Unavailable</span>
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      <span>Recommended Profile: </span>
+                      <span className="font-bold text-slate-400">—</span>
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-slate-400">Needs historical data for this cohort to recommend a confidence profile.</p>
+                    <button
+                      type="button"
+                      disabled
+                      className="w-full text-center px-2.5 py-1.5 bg-slate-200 text-slate-400 rounded-lg text-[10px] font-bold cursor-not-allowed"
+                    >
+                      Apply Recommended Settings
+                    </button>
+                  </div>
+                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-60 bg-slate-800 text-white text-[10px] rounded-lg px-2.5 py-2 z-50 leading-snug pointer-events-none">
+                    No historical data for this cohort. This exact combination of filters returns no rows, so the Model and Confidence advisors can't recommend settings and a forecast can't be generated. Adjust the filters — often the L2 or tariff selections — to a combination present in your data.
+                  </span>
+                </div>
+              )}
+
               {/* Confidence Settings Recommendation Panel */}
-              {confidenceRecommendation && (
+              {!emptyCohortSelection && confidenceRecommendation && (
                 <div className="mb-4">
                   {!isConfidenceDismissed ? (
                     <div className="p-3 bg-violet-50/50 border border-violet-100 rounded-xl space-y-2 relative">
