@@ -15,6 +15,16 @@ dist/
 # ── Local data and exports ────────────────────────────────────────────────────
 PROSPECT_data/
 Zipped Versions/
+# Synthetic test fixtures — the app loads data via upload at runtime, never from
+# bundled files, so these large xlsx don't belong in the build context or image.
+test-data/
+
+# ── Scratch / dev-only files (never needed to build the image) ────────────────
+*.cjs
+verify_state.json
+CLAUDE.md
+_archive/
+"New capability merge/"
 
 # ── Python / Streamlit artefacts ─────────────────────────────────────────────
 __pycache__/
