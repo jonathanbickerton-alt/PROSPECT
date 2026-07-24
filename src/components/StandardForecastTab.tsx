@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useForecast } from '../context/ForecastContext';
 import { Settings, Filter, Info, Download, LayersIcon, Database, CheckCircle2, AlertCircle, SlidersHorizontal, X, ChevronDown } from 'lucide-react';
 import type { ForecastModel } from '../types/forecast';
-import { analyzeAndRecommendModel, analyzeAndRecommendConfidence } from '../utils/forecasting';
+import { analyzeAndRecommendModel, analyzeAndRecommendConfidence, applyOneOffFlagsToSeries, substituteOneOffValue } from '../utils/forecasting';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Line, Brush } from 'recharts';
 import { format, parse, isValid } from 'date-fns';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
@@ -92,6 +92,11 @@ interface StandardForecastTabProps {
   /** Ordered history of manual generations — newest first, max 10 entries, one entry per run (not per cohort) */
   cohortGenLog: Array<{ cohortId: string; timestamp: string; modelUsed: ForecastModel }>;
   onSelectCohort: (cohortId: string) => void;
+  /** P10 — one-off historical event flags, keyed by the same 7-part cohort
+   *  key as forecastStore (segment|product|productL2|channel|channelL2|
+   *  tariffL1|tariffL2, no scenario component). */
+  oneOffMonths: Record<string, { month: string; reason: string }[]>;
+  setOneOffMonths: (updater: (prev: Record<string, { month: string; reason: string }[]>) => Record<string, { month: string; reason: string }[]>) => void;
 }
 
 export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
@@ -148,6 +153,8 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
   onOpenManageBulk,
   cohortGenLog,
   onSelectCohort,
+  oneOffMonths,
+  setOneOffMonths,
 }) => {
   const [showDataMappingDrawer, setShowDataMappingDrawer] = useState(false);
   const [stdChartView, setStdChartView] = useState<'volume' | 'value'>('volume');
@@ -216,8 +223,11 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
 
     const calStartMonth = new Date(sortedActuals[0][0]).getMonth();
     const actualValues = sortedActuals.map(e => e[1]);
+    // P10 — yyyy-MM calendar key per index, same order as actualValues, used
+    // both for the one-off flag lookup below and the flagging form's month picker.
+    const monthKeys = sortedActuals.map(e => format(new Date(e[0]), 'yyyy-MM'));
 
-    return { actualValues, calStartMonth };
+    return { actualValues, calStartMonth, monthKeys };
   }, [
     data, wiDateCol, wiMetricCol, wiValueCol, stdScenario,
     wiInflowVal, wiOutflowVal, wiBaseVal, wiRetentionVal,
@@ -230,18 +240,98 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
     wiTariffL2Col, tariffL2Value
   ]);
 
-  const modelRecommendation = useMemo(() => {
+  // P10 — this cohort's own 7-part key (same format as forecastStore/
+  // App.tsx's makeForecastKey) and its flagged one-off months, if any.
+  const oneOffCohortKey = `${segmentValue === 'All (Aggregated)' ? 'All' : segmentValue}|${productValue === 'All (Aggregated)' ? 'All' : productValue}|${productL2Value || 'All'}|${channelValue === 'All (Aggregated)' ? 'All' : channelValue}|${channelL2Value || 'All'}|${tariffValue === 'All (Aggregated)' ? 'All' : (tariffValue || 'All')}|${tariffL2Value || 'All'}`;
+  const currentOneOffFlags = oneOffMonths[oneOffCohortKey] ?? [];
+  // Key on oneOffMonths + oneOffCohortKey (both stable across renders) rather
+  // than currentOneOffFlags (a fresh `[]` each render when unflagged, which
+  // would otherwise make oneOffFlagSet — and every advisor memo downstream —
+  // recompute its grid-search on every render).
+  const oneOffFlagSet = useMemo(
+    () => new Set((oneOffMonths[oneOffCohortKey] ?? []).map(f => f.month)),
+    [oneOffMonths, oneOffCohortKey],
+  );
+
+  // Cleaned series (flagged months substituted) — what the model actually
+  // fits on. Falls back to the raw series untouched when there are no flags.
+  const cleanedActualValues = useMemo(() => {
     if (!actualValuesDetail) return null;
-    return analyzeAndRecommendModel(actualValuesDetail.actualValues, actualValuesDetail.calStartMonth);
-  }, [actualValuesDetail]);
+    return applyOneOffFlagsToSeries(actualValuesDetail.actualValues, actualValuesDetail.monthKeys, oneOffFlagSet);
+  }, [actualValuesDetail, oneOffFlagSet]);
+
+  const modelRecommendation = useMemo(() => {
+    if (!actualValuesDetail || !cleanedActualValues) return null;
+    return analyzeAndRecommendModel(cleanedActualValues, actualValuesDetail.calStartMonth);
+  }, [actualValuesDetail, cleanedActualValues]);
 
   const confidenceRecommendation = useMemo(() => {
-    if (!actualValuesDetail) return null;
-    return analyzeAndRecommendConfidence(actualValuesDetail.actualValues, actualValuesDetail.calStartMonth);
-  }, [actualValuesDetail]);
+    if (!actualValuesDetail || !cleanedActualValues) return null;
+    return analyzeAndRecommendConfidence(cleanedActualValues, actualValuesDetail.calStartMonth);
+  }, [actualValuesDetail, cleanedActualValues]);
+
+  // ── P10 one-off flagging form — local draft state ──────────────────────
+  const [oneOffFormOpen, setOneOffFormOpen] = useState(false);
+  const [draftOneOffMonth, setDraftOneOffMonth] = useState('');
+  const [draftOneOffReason, setDraftOneOffReason] = useState('');
+
+  const oneOffAvailableMonths = useMemo(() => {
+    if (!actualValuesDetail) return [];
+    // Exclude the most recent historical month: it is the forecast's boundary
+    // anchor (the ARPU boundary correction pins forecast month 0 to the last
+    // actual) and the Base-derivation seed (lastHistoricalInflow/Outflow).
+    // Substituting it would make the actual→forecast join disagree with the
+    // real last actual shown on the chart. A one-off is by nature a past
+    // anomaly, so the latest month isn't a sensible flag target anyway.
+    const monthKeys = actualValuesDetail.monthKeys;
+    const flaggable = monthKeys.slice(0, Math.max(0, monthKeys.length - 1));
+    return flaggable.filter(m => !oneOffFlagSet.has(m));
+  }, [actualValuesDetail, oneOffFlagSet]);
+
+  // Live preview of what the model will use, computed from the SAME
+  // substituteOneOffValue the engine calls — a display addition, not new logic.
+  const draftOneOffPreview = useMemo(() => {
+    if (!actualValuesDetail || !draftOneOffMonth) return null;
+    const idx = actualValuesDetail.monthKeys.indexOf(draftOneOffMonth);
+    if (idx === -1) return null;
+    const fileValue = actualValuesDetail.actualValues[idx];
+    const modelWillUse = substituteOneOffValue(actualValuesDetail.actualValues, idx);
+    return { fileValue, modelWillUse };
+  }, [actualValuesDetail, draftOneOffMonth]);
+
+  const handleAddOneOff = () => {
+    if (!draftOneOffMonth) return;
+    setOneOffMonths(prev => {
+      const existing = prev[oneOffCohortKey] ?? [];
+      return { ...prev, [oneOffCohortKey]: [...existing, { month: draftOneOffMonth, reason: draftOneOffReason.trim() }] };
+    });
+    setDraftOneOffMonth('');
+    setDraftOneOffReason('');
+  };
+
+  const handleRemoveOneOff = (month: string) => {
+    setOneOffMonths(prev => {
+      const existing = prev[oneOffCohortKey] ?? [];
+      const next = existing.filter(f => f.month !== month);
+      const updated = { ...prev };
+      if (next.length > 0) updated[oneOffCohortKey] = next;
+      else delete updated[oneOffCohortKey];
+      return updated;
+    });
+  };
 
 
   const mappingComplete = !!(wiDateCol && wiMetricCol && wiValueCol && wiInflowVal && wiOutflowVal);
+
+  // The Model/Confidence advisors and the forecast display are gated on the
+  // CURRENT cohort selection actually having data. When a user drills the
+  // filters (often the L2 / tariff selections) to a combination that returns
+  // no rows, actualValuesDetail is null — the advisors can't recommend anything
+  // and no forecast can be generated. We surface that explicitly and suppress
+  // any stale forecast, rather than silently hiding the advisors while a prior
+  // forecast lingers on the chart (which reads as "the advisor disappeared").
+  const selectionHasData = !!actualValuesDetail;
+  const emptyCohortSelection = mappingComplete && data.length > 0 && !selectionHasData && compareCategories.length === 0;
 
   // ARPU chart data — historical from raw data + forecast bands from baseForecast
   const arpuChartData = useMemo(() => {
@@ -544,11 +634,41 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   <option value="Retention">Retention</option>
                 </select>
               </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-900 mb-2">Forecast Model</label>
 
+                {/* Empty-cohort state — keep the Model Advisor's visual footprint
+                    but faded and non-interactive, with the explanation on hover,
+                    so the recommender never appears to simply vanish. */}
+                {emptyCohortSelection && (
+                  <div className="mb-4 relative group">
+                    <div className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-xl space-y-2 opacity-60 select-none">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-600">Model Advisor</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-500">Unavailable</span>
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        <span className="font-semibold text-slate-700">Recommended: </span>
+                        <span className="font-bold text-slate-400">—</span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-slate-400">Needs historical data for this cohort to recommend a model.</p>
+                      <button
+                        type="button"
+                        disabled
+                        className="w-full text-center px-2.5 py-1.5 bg-slate-200 text-slate-400 rounded-lg text-[10px] font-bold cursor-not-allowed"
+                      >
+                        Apply Recommended Model
+                      </button>
+                    </div>
+                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-60 bg-slate-800 text-white text-[10px] rounded-lg px-2.5 py-2 z-50 leading-snug pointer-events-none">
+                      No historical data for this cohort. This exact combination of filters returns no rows, so the Model and Confidence advisors can't recommend settings and a forecast can't be generated. Adjust the filters — often the L2 or tariff selections — to a combination present in your data.
+                    </span>
+                  </div>
+                )}
+
                 {/* Model Recommendation Panel */}
-                {modelRecommendation && (
+                {!emptyCohortSelection && modelRecommendation && (
                   <div className="mb-4">
                     {!isDismissed ? (
                       <div className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-2 relative">
@@ -654,8 +774,36 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                 </div>
               </div>
 
+              {/* Empty-cohort state — faded, non-interactive Confidence Advisor
+                  with the same on-hover explanation, mirroring the Model Advisor. */}
+              {emptyCohortSelection && (
+                <div className="mb-4 relative group">
+                  <div className="p-3 bg-violet-50/40 border border-violet-100 rounded-xl space-y-2 opacity-60 select-none">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-extrabold uppercase tracking-widest text-violet-600">Confidence Advisor</span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-500">Unavailable</span>
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      <span>Recommended Profile: </span>
+                      <span className="font-bold text-slate-400">—</span>
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-slate-400">Needs historical data for this cohort to recommend a confidence profile.</p>
+                    <button
+                      type="button"
+                      disabled
+                      className="w-full text-center px-2.5 py-1.5 bg-slate-200 text-slate-400 rounded-lg text-[10px] font-bold cursor-not-allowed"
+                    >
+                      Apply Recommended Settings
+                    </button>
+                  </div>
+                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-60 bg-slate-800 text-white text-[10px] rounded-lg px-2.5 py-2 z-50 leading-snug pointer-events-none">
+                    No historical data for this cohort. This exact combination of filters returns no rows, so the Model and Confidence advisors can't recommend settings and a forecast can't be generated. Adjust the filters — often the L2 or tariff selections — to a combination present in your data.
+                  </span>
+                </div>
+              )}
+
               {/* Confidence Settings Recommendation Panel */}
-              {confidenceRecommendation && (
+              {!emptyCohortSelection && confidenceRecommendation && (
                 <div className="mb-4">
                   {!isConfidenceDismissed ? (
                     <div className="p-3 bg-violet-50/50 border border-violet-100 rounded-xl space-y-2 relative">
@@ -791,6 +939,93 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
               </div>
             </div>
 
+            {/* P10 — one-off historical event flagging. Collapsed by default;
+                only the small toggle link shows for a cohort with no flags. */}
+            <div className="pt-1">
+              {currentOneOffFlags.length > 0 && (
+                <div className="mb-2 space-y-1">
+                  {currentOneOffFlags.map(f => (
+                    <div key={f.month} className="flex items-center justify-between gap-2 px-2.5 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px]">
+                      <span className="text-amber-800 font-semibold">{f.month}{f.reason ? ` — ${f.reason}` : ''}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveOneOff(f.month)}
+                        className="text-amber-500 hover:text-amber-700 transition-colors shrink-0"
+                        title="Remove flag"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setOneOffFormOpen(v => !v)}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-lg transition-colors"
+              >
+                <span>{currentOneOffFlags.length > 0 ? 'Flag another one-off month' : 'Flag a one-off historical month'}</span>
+                <ChevronDown size={13} className={`text-slate-400 transition-transform ${oneOffFormOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {oneOffFormOpen && (
+                <div className="mt-2 p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    Excludes an exceptional month (e.g. a one-time bulk subscriber load-in) from the seasonal fit, so
+                    Holt-Winters doesn't learn it as a recurring pattern. Cleans the seasonal fit <strong>and tightens
+                    the confidence bands</strong> for this cohort — the band change is a direct, expected consequence
+                    of flagging, not a separate issue.
+                  </p>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Month</label>
+                    <select
+                      value={draftOneOffMonth}
+                      onChange={e => setDraftOneOffMonth(e.target.value)}
+                      disabled={oneOffAvailableMonths.length === 0}
+                      className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000] disabled:opacity-50"
+                    >
+                      <option value="">Select a month…</option>
+                      {oneOffAvailableMonths.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Reason (optional)</label>
+                    <input
+                      type="text"
+                      value={draftOneOffReason}
+                      onChange={e => setDraftOneOffReason(e.target.value)}
+                      placeholder="e.g. one-time fleet update"
+                      className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
+                    />
+                  </div>
+
+                  {/* Transparency: the exact number the optimiser will use in place of
+                      the anomaly, computed by the same substituteOneOffValue the engine
+                      calls — lets the user sanity-check the heuristic before committing. */}
+                  {draftOneOffPreview && (
+                    <div className="px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-600">
+                      File value: <span className="font-mono font-semibold text-slate-800">{formatNumber(draftOneOffPreview.fileValue)}</span>
+                      <span className="mx-1.5 text-slate-300">·</span>
+                      Model will use: <span className="font-mono font-semibold text-emerald-700">{formatNumber(draftOneOffPreview.modelWillUse)}</span>
+                      <span className="text-slate-400"> (trend and seasonal-consistent)</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleAddOneOff}
+                    disabled={!draftOneOffMonth}
+                    className="w-full text-center px-2.5 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Add Flag
+                  </button>
+                </div>
+              )}
+            </div>
+
             <button onClick={generateStandardForecast} className="w-full bg-[#e60000] hover:bg-[#cc0000] text-white font-medium py-2.5 px-4 rounded-lg transition-colors shadow-sm mt-4">
               Generate Forecast
             </button>
@@ -801,7 +1036,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
       <div className="flex-1 overflow-y-auto p-8">
         {error && <div className="mb-6 bg-red-50 text-red-700 p-4 rounded-xl border border-red-100 text-sm flex items-start gap-3"><Info className="shrink-0 mt-0.5" size={18} /><p>{error}</p></div>}
         
-        {forecastData.length > 0 ? (
+        {forecastData.length > 0 && !emptyCohortSelection ? (
           <div className="flex gap-4 items-start">
 
             {/* Manual-generations side panel */}
@@ -1186,6 +1421,18 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   >
                     Go to Home
                   </button>
+                </>
+              ) : emptyCohortSelection ? (
+                <>
+                  <h3 className="text-lg font-semibold text-slate-800 mb-2">No data for this selection</h3>
+                  <p className="text-sm text-slate-500 mb-1">
+                    The current cohort filters return no rows in your data, so there's nothing to forecast
+                    and no model can be recommended.
+                  </p>
+                  <p className="text-xs text-slate-400 mt-2">
+                    Adjust the dimension filters — often the L2 or tariff selections — to a combination that
+                    exists in your data.
+                  </p>
                 </>
               ) : (
                 <>

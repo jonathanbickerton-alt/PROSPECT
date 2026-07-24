@@ -497,7 +497,114 @@ mechanics; does not reimplement them.
 
 ---
 
-## 15. Regression checklist (the short version)
+## 15. One-Off Historical Event Exclusion (P10)
+
+Lets a planner flag an exceptional historical month (e.g. a one-time bulk
+subscriber load-in) so Holt-Winters doesn't learn it as a recurring seasonal
+pattern. Two stages, the second gated on the first passing review.
+
+### Stage 1 — the substitution heuristic (proven in isolation first)
+`substituteOneOffValue(y, flaggedIdx)` in `src/utils/forecasting.ts` derives
+the flagged month's fitting-time replacement from the **same calendar slot in
+adjacent cycles, scaled by observed trend** — the midpoint of the prior- and
+next-year same-slot values when both exist; growth-rate extrapolation from
+the two most recent same-slot values when only one side does. Never naive
+neighbour interpolation, which would understate a flagged peak-season month.
+
+Proven against a genuinely seasonal real cohort (MNC | Mobile Voice | Indirect,
+Inflow, seasonality strength 0.689) before any wiring: injecting a synthetic
++3,200 one-off spike into a flat month distorted the fit severely (seasonal
+index at that slot +18.6%, mse 286→1.76M, σ 0.0033→0.2055, trend sign
+flipped). Flagging the month and substituting recovered the fit within 0.24%
+RMSE on seasonal indices and 0.96% on the 6-month forecast vs. the
+pre-injection baseline.
+
+### Stage 2 — wired in, storage, form, export
+- **Single injection point for `calculateBaseForecast`:** a new optional
+  trailing `flaggedMonths?: ReadonlySet<string>` parameter. The substitution
+  (`applyOneOffFlags`, all 8 IBRO fields independently) is applied once,
+  immediately after `sorted` is built, before any fitting happens — every one
+  of `calculateBaseForecast`'s callers (6 in `App.tsx` — manual generation,
+  aggregate-scope generation, AutoML challenger preview and re-run, worker's
+  own IBRO path — plus the bulk-generation worker) gets the cleaned series
+  automatically. Omitting the parameter is byte-identical to before P10.
+- **`analyzeAndRecommendModel`/`analyzeAndRecommendConfidence`** don't share a
+  code path with `calculateBaseForecast`, so they're wired separately at their
+  3 call sites (`StandardForecastTab.tsx`'s `actualValuesDetail`, and both the
+  Standard-cohort and IBRO paths in `forecasting.worker.ts`) via
+  `applyOneOffFlagsToSeries` — but call the identical `substituteOneOffValue`
+  logic, never a re-implementation. Recommendation and actual fit always see
+  the same cleaned series for a flagged cohort.
+  - **Known, deliberate scope limit (not a bug):** the *legacy* single-metric
+    `calculateHoltWinters` path (the worker's "Standard cohorts" loop, a
+    parallel/older bulk-gen output format) is left unwired — its own
+    `analyzeAndRecommendModel`/`Confidence` calls are correspondingly also
+    left unwired, so that path stays internally self-consistent. Same
+    precedent as `computeWhatIfData`'s untouched legacy ARPU fallback (§13).
+- **Storage:** `oneOffMonths: Record<cohortKey, {month, reason}[]>` in
+  `App.tsx`, keyed by the same 7-part `makeForecastKey` format as
+  `forecastStore` (no scenario component — a flag applies to all 4 IBRO
+  series for that cohort/month, since a real one-off plausibly touches more
+  than one metric; substituting an already-normal series for that month is a
+  safe near-no-op).
+- **Form:** a small, collapsed-by-default section in `StandardForecastTab.tsx`
+  near the Generate Forecast button (sized like the Pricing Event form, not a
+  new tab). Month picker is scoped to the *selected cohort's own* history
+  (via `actualValuesDetail.monthKeys`), optional reason text, an already-set
+  list of flags with a remove control. Nothing renders beyond a single
+  collapsed toggle line for a cohort with no flags.
+  - **The most recent historical month is deliberately excluded from the
+    flaggable list.** That month is the forecast's boundary anchor (the ARPU
+    boundary correction, §5, pins forecast month 0 to the last actual) and the
+    Base-derivation seed (`lastHistoricalInflow`/`Outflow`). Substituting it
+    would make the actual→forecast join disagree with the real last actual
+    shown on the chart. A one-off is by nature a *past* anomaly, so the latest
+    month isn't a sensible target — excluding it keeps the boundary-correction
+    guarantee intact for every flag.
+- **Empty-cohort advisor state:** when the current filter combination has zero
+  rows (`emptyCohortSelection`), the Model and Confidence advisors render
+  faded and disabled (an "Unavailable" pill, greyed non-clickable Apply
+  buttons, an on-hover tooltip explaining no data exists), and the forecast
+  area shows a "No data for this selection" empty state instead of a stale
+  forecast. This keeps the advisor's visual footprint consistent rather than
+  silently vanishing — see the standalone fix that shipped alongside P10.
+- **Transparency display:** picking a month shows both the real file value
+  and what the model will use, computed live via the same
+  `substituteOneOffValue` the engine calls — e.g. "File value: 6,200 · Model
+  will use: 3,100 (trend and seasonal-consistent)" — so the mechanism is
+  never a black box, and an implausible substituted value is a visible signal
+  the heuristic misfired for that cohort.
+- **Confidence-band notation:** the form states plainly that flagging both
+  cleans the seasonal fit *and* tightens the confidence bands for that
+  cohort — the band narrowing is an expected, transparent consequence, not a
+  separate surprise.
+  - **Caveat (cohort-dependent, not a defect):** `analyzeAndRecommendConfidence`
+    picks the *minimum* backtest MAPE across all four candidate models
+    (SES/HL/DT/HW). For aggregate/L1 cohorts where Holt Linear's trend fit
+    already dominates and Holt-Winters never wins the backtest, a one-off
+    spike inflates HW's error but not the winning HL error, so the
+    *discretised profile* may not visibly change even though the HW sigma and
+    the actual forecast do recover when flagged. The narrowing is clearest on
+    genuinely seasonal leaf cohorts. This is pre-existing recommender design
+    (unchanged by P10 — it correctly receives the cleaned series either way);
+    a demo should pick a seasonal cohort to show the effect.
+- **Displayed/exported/Actuals-Review values are untouched** — only the
+  number the optimiser sees changes. Gap detection reads only `_parsedDate`
+  (never touched by the substitution), so it is unaffected regardless of
+  flags.
+- **Export/import:** new `One_Off_Months` sheet (Segment/Product/Product_L2/
+  Channel_L1/Channel_L2/Tariff_L1/Tariff_L2/Month/Reason columns), restored
+  via `makeForecastKey` reconstruction — same precedent as `Yield_Events`/
+  `Pricing_Events`.
+- Does **not** touch `computeWhatIfData` or any Market/Yield/Pricing/Promotion
+  event logic; `calculateBaseForecast`'s core math is unchanged for any
+  cohort with no flags (confirmed via the same end-to-end entry point used
+  for the Stage 1 proof: 11.4% distortion without a flag, 0.3% recovery with
+  one, on identical injected data).
+
+---
+
+## 16. Regression checklist (the short version)
 
 Every item below was a real bug or a confirmed Phase 1/2 behaviour. Confirm all
 after any change:
@@ -566,26 +673,29 @@ after any change:
     never mutually exclusive). Promo scopes to a tariff via the Phase 2b
     selection control; ramp/decay and IBRO node mechanics behave as they do for
     existing Volume events.
-23. Acquisition-with-mix and Retention-with-mix produce distinguishably
+23. A promo's mix skew never alters the base cohort's own mix or ARPU:
+    standing base mix and base ARPU are byte-identical before and after any
+    promo — Acquisition or Retention, with or without arms. Mix skew and
+    promo pricing apply to the promo's own volume only, never the standing
+    base. A plain Retention promo with neither arm active behaves exactly
+    like an ordinary Retention event.
+24. Acquisition-with-mix and Retention-with-mix produce distinguishably
     different ARPU outcomes on identical volume/mix inputs (Base stock grows
     for Acquisition, stays flat for Retention) — if ever identical, the two
-    semantics have been conflated. Mix skew and promo pricing apply to the
-    promo volume only; standing base mix and base ARPU are byte-identical to
-    before the promo in all cases. A plain Retention promo with neither arm
-    active behaves exactly like an ordinary Retention event.
-24. Promotion Card events persist through full session export/import
+    semantics have been conflated.
+25. Promotion Card events persist through full session export/import
     (`Is_Promotion`/`Promo_Rebanded`/`Promo_Mix_Axis`/`Promo_Mix_JSON`/
     `Promo_Pricing_Mode`/`Promo_Pricing_Amount` columns on the `Market_Events`
     sheet). `calculateBaseForecast` and `computeWhatIfData` remain
     byte-identical to before this phase.
-25. Promotion Card individual-event edit and campaign group edit work the same
+26. Promotion Card individual-event edit and campaign group edit work the same
     way as the Volume tab's: editing restores volume/dims/date/contract length
     AND the mix arm's percentages/axis and the pricing arm's mode/amount;
     saving a campaign edit replaces (never duplicates) that campaign's rows;
     a non-homogeneous or >24-month-span campaign is correctly marked
     non-editable via `promoCampaignGroups`' gating (mirrors `campaignGroups`),
     same as Volume events.
-26. A Volume-tab campaign and a Promotion-tab campaign sharing the exact same
+27. A Volume-tab campaign and a Promotion-tab campaign sharing the exact same
     campaign name never conflict: editing/saving one never removes, edits, or
     strips promo metadata from the other's rows (`campaignGroups` and
     `promoCampaignGroups` are pre-filtered by `isPromotion`, and each Save
@@ -593,6 +703,26 @@ after any change:
     rows). Deliberate name-sharing across cards (e.g. a real-world campaign
     represented as one Inflow promo + one Retention promo, per Phase 1's
     design) continues to work exactly as intended.
+28. Flagging a one-off historical month recovers a distorted seasonal fit:
+    injecting a synthetic spike into a flat month of a genuinely seasonal
+    cohort measurably distorts the forecast (double-digit % shift on the next
+    month's mean); flagging that month and letting the substitution apply
+    recovers a fit within ~1% of the pre-injection baseline. An unflagged
+    cohort's forecast is byte-identical to before P10 (the `flaggedMonths`
+    parameter defaults to none).
+29. One-off flags apply consistently everywhere a cohort's historical series
+    is read: manual generation, bulk generation, the AutoML challenger
+    preview, and the Model/Confidence Advisor recommendations all reflect the
+    same flagged months for a given cohort — the recommendation never
+    disagrees with what the actual fit does.
+30. The one-off form's displayed "Model will use" value always matches what
+    `substituteOneOffValue` actually returns for that cohort/month (it's the
+    same live call, not a separate computation) — and the real file value
+    shown in tables, exports, and Actuals Review is never altered by
+    flagging.
+31. One-off flags persist through full session export/import (`One_Off_Months`
+    sheet); an unflagged cohort's gap detection, `calculateBaseForecast`
+    core math, and MAPE/accuracy scoring are byte-identical to before P10.
 
 **Verdict rule:** "SAFE FOR USER TESTING" only if all pass. Otherwise list
 the failures and the cohort/filter combination that exposed each.

@@ -26,6 +26,13 @@ COPY --from=build /app/dist /usr/share/nginx/html
 # This is how we inject the Cloud Run $PORT at container start-up.
 COPY nginx.conf /etc/nginx/templates/default.conf.template
 
+# Restrict envsubst to ONLY the PORT variable. Without this the entrypoint
+# substitutes every defined environment variable, which risks clobbering
+# nginx's own runtime variables ($uri, $host, $args, …) that legitimately
+# appear in the config — the usual cause of a broken nginx template. With the
+# filter, ${PORT} is the only thing replaced and everything else is left verbatim.
+ENV NGINX_ENVSUBST_FILTER="PORT"
+
 # Cloud Run sets $PORT at runtime (default 8080).
 # We declare a build-time default so the image works locally without it.
 ENV PORT=8080

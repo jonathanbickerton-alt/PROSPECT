@@ -9,7 +9,8 @@
  * processes its assigned cohorts independently.
  */
 
-import { buildCohortDataMap, calculateHoltWinters, calculateBaseForecast, analyzeAndRecommendModel, analyzeAndRecommendConfidence } from '../utils/forecasting';
+import { format } from 'date-fns';
+import { buildCohortDataMap, calculateHoltWinters, calculateBaseForecast, analyzeAndRecommendModel, analyzeAndRecommendConfidence, applyOneOffFlagsToSeries } from '../utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow } from '../utils/forecasting';
 import type { BaseForecast, ForecastModel } from '../types/forecast';
 
@@ -65,6 +66,9 @@ export interface WorkerConfig {
   runModel: ForecastModel;
   autoModel: boolean;
   autoConfidence: boolean;
+  /** P10 — cohort key (7-part, same format as App.tsx's makeForecastKey) ->
+   *  flagged yyyy-MM months. Applied to whichever cohort's series matches. */
+  oneOffMonths: Record<string, string[]>;
 }
 
 export interface WorkerInMessage {
@@ -107,8 +111,16 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
     wiInflowVal, wiOutflowVal, wiBaseVal, wiRetentionVal,
     wiArpuCol, wiRevenueCol,
     genLength, runPreUnc, runPostExp, runConfHor, runModel,
-    autoModel, autoConfidence,
+    autoModel, autoConfidence, oneOffMonths,
   } = config;
+
+  // P10 — cohort key -> Set<yyyy-MM>, ready for applyOneOffFlagsToSeries /
+  // calculateBaseForecast. Same 7-part key format as CohortDataMap/App.tsx's
+  // makeForecastKey (no scenario component — a flag applies to all 4 IBRO
+  // series for that cohort/month alike).
+  const oneOffFlagSets = new Map<string, Set<string>>(
+    Object.entries(oneOffMonths || {}).map(([key, months]) => [key, new Set(months)]),
+  );
 
   // Rebuild the cohort data map from the pre-filtered row slice.
   // buildCohortDataMap re-parses dates from wiDateCol so the _parsedDate on
@@ -374,7 +386,12 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
         ? (baseReadings.get(Math.max(...baseReadings.keys())) ?? 0)
         : 0;
 
-      const ibroValues = ibroArr.map(r => r.inflow);
+      // P10 — flagged one-off months for this cohort (fKey matches
+      // makeForecastKey's format, no scenario component).
+      const ibroFlags = oneOffFlagSets.get(fKey);
+      const ibroMonthKeys = ibroArr.map(r => format(r._parsedDate, 'yyyy-MM'));
+      const ibroValuesRaw = ibroArr.map(r => r.inflow);
+      const ibroValues = applyOneOffFlagsToSeries(ibroValuesRaw, ibroMonthKeys, ibroFlags);
       const ibroCalStart = ibroArr.length > 0 ? ibroArr[0]._parsedDate.getMonth() : 0;
 
       const ibroCohortModel = autoModel
@@ -398,6 +415,7 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
         ibroPostExp,
         ibroConfHor,
         ibroCohortModel,
+        ibroFlags,
       );
 
       if (bf) {

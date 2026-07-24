@@ -381,6 +381,148 @@ function optimiseHWTriple(y: number[], calStartMonth: number): FittedParams {
 }
 
 // ---------------------------------------------------------------------------
+// P10 — One-off historical event exclusion (Stage 1: isolated, not yet wired
+// into any caller). See SCENARIO_PLANNING_BACKLOG.md § P10 for the full
+// research spike and rationale.
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the fitting-time value a flagged one-off historical month should be
+ * replaced with, so a single anomalous month (e.g. a one-time bulk load-in)
+ * doesn't get learned by Holt-Winters as a recurring seasonal pattern.
+ *
+ * Method: same calendar slot in adjacent cycles, scaled by the trend observed
+ * between them — NOT a naive average of the immediately neighbouring months,
+ * which would understate a flagged peak-season month by anchoring to its
+ * off-season neighbours.
+ *
+ * - Both a prior-year and next-year same-slot value exist: the flagged month
+ *   sits exactly halfway between them in cycle-index terms, so the expected
+ *   value is their midpoint — this captures genuine year-over-year seasonal
+ *   growth without needing a circular pre-fit.
+ * - Only a prior-year same-slot value exists (flagged month is in the most
+ *   recent cycle): extrapolate forward using the growth rate between the two
+ *   most recent prior same-slot values, if both exist; otherwise use the one
+ *   available prior same-slot value as-is.
+ * - Only a next-year same-slot value exists (flagged month is in the first
+ *   cycle): the mirror-image case, extrapolating backward.
+ * - No same-slot neighbour exists at all (series shorter than one full
+ *   cycle): falls back to linear interpolation of the immediate neighbours —
+ *   never reachable in production, where Holt-Winters requires ≥24 points,
+ *   but keeps the function total and safe.
+ *
+ * Only ever changes what the OPTIMISER sees. The value shown to the user in
+ * tables, exports, and Actuals Review is always the real, unmodified figure.
+ */
+export function substituteOneOffValue(y: number[], flaggedIdx: number): number {
+  const m = 12;
+  const prevIdx = flaggedIdx - m;
+  const nextIdx = flaggedIdx + m;
+  const prevPrevIdx = flaggedIdx - 2 * m;
+  const nextNextIdx = flaggedIdx + 2 * m;
+
+  const has = (i: number) => i >= 0 && i < y.length && i !== flaggedIdx;
+
+  if (has(prevIdx) && has(nextIdx)) {
+    return (y[prevIdx] + y[nextIdx]) / 2;
+  }
+  if (has(prevIdx) && has(prevPrevIdx) && y[prevPrevIdx] !== 0) {
+    const growth = y[prevIdx] / y[prevPrevIdx];
+    return y[prevIdx] * growth;
+  }
+  if (has(prevIdx)) {
+    return y[prevIdx];
+  }
+  if (has(nextIdx) && has(nextNextIdx) && y[nextNextIdx] !== 0) {
+    const growth = y[nextIdx] / y[nextNextIdx];
+    return y[nextIdx] * growth;
+  }
+  if (has(nextIdx)) {
+    return y[nextIdx];
+  }
+  // Fallback: no same-slot neighbour available at all (< 1 full cycle of
+  // history) — linear interpolation of the immediate neighbours.
+  const before = flaggedIdx - 1 >= 0 ? y[flaggedIdx - 1] : undefined;
+  const after = flaggedIdx + 1 < y.length ? y[flaggedIdx + 1] : undefined;
+  if (before !== undefined && after !== undefined) return (before + after) / 2;
+  if (before !== undefined) return before;
+  if (after !== undefined) return after;
+  return y[flaggedIdx];
+}
+
+/**
+ * Diagnostic wrapper exposing the winning Holt-Winters triple parameters plus
+ * the final level/trend/seasonal-index state for a raw series. Not used by
+ * the production forecast pipeline (which calls fitAndBuildBands directly) —
+ * exposed for the P10 Stage 1 proof and any future seasonal-fit debugging.
+ */
+export function fitSeasonalDiagnostics(y: number[], calStartMonth: number): {
+  alpha: number; beta: number; gamma: number; mse: number; sigma: number;
+  L: number; T: number; S: number[];
+} {
+  const params = optimiseHWTriple(y, calStartMonth);
+  const { L, T, S } = fitHWTripleParams(y, params.alpha, params.beta, params.gamma!, calStartMonth);
+  return { alpha: params.alpha, beta: params.beta, gamma: params.gamma!, mse: params.mse, sigma: params.sigma, L, T, S };
+}
+
+/**
+ * P10 Stage 2 — applies substituteOneOffValue to every flagged month across
+ * all 8 IBRO fields of an already-chronologically-sorted AggregatedIBRORow[]
+ * series. This is the single place the substitution is wired in for the
+ * BaseForecast pipeline — calculateBaseForecast calls it once internally, so
+ * every caller (manual generation, bulk generation, AutoML challenger preview)
+ * benefits automatically without touching any of their own aggregation code.
+ *
+ * Never mutates the input; returns the input unchanged (by reference) when
+ * there are no flags, so this is a true no-op for every cohort with none.
+ */
+export function applyOneOffFlags(
+  sortedRows: AggregatedIBRORow[],
+  flaggedMonths: ReadonlySet<string> | undefined,
+): AggregatedIBRORow[] {
+  if (!flaggedMonths || flaggedMonths.size === 0) return sortedRows;
+  const flaggedIndices: number[] = [];
+  sortedRows.forEach((r, i) => {
+    if (flaggedMonths.has(format(r._parsedDate, 'yyyy-MM'))) flaggedIndices.push(i);
+  });
+  if (flaggedIndices.length === 0) return sortedRows;
+
+  const fields = ['inflow', 'outflow', 'retention', 'arpu', 'inflowArpu', 'outflowArpu', 'retentionArpu', 'baseArpu'] as const;
+  const cleaned = sortedRows.map(r => ({ ...r }));
+  for (const field of fields) {
+    const series = sortedRows.map(r => r[field]);
+    for (const idx of flaggedIndices) {
+      cleaned[idx][field] = substituteOneOffValue(series, idx);
+    }
+  }
+  return cleaned;
+}
+
+/**
+ * P10 Stage 2 — same idea as applyOneOffFlags, for the plain single-metric
+ * series analyzeAndRecommendModel/analyzeAndRecommendConfidence consume
+ * (they don't go through calculateBaseForecast, so this is wired in
+ * separately at their own call sites — but calls the identical
+ * substituteOneOffValue logic, never a reimplementation).
+ *
+ * @param monthKeys  yyyy-MM calendar key for values[i], same length/order as
+ *   values, chronologically sorted.
+ */
+export function applyOneOffFlagsToSeries(
+  values: number[],
+  monthKeys: string[],
+  flaggedMonths: ReadonlySet<string> | undefined,
+): number[] {
+  if (!flaggedMonths || flaggedMonths.size === 0) return values;
+  let touched = false;
+  const cleaned = [...values];
+  monthKeys.forEach((key, idx) => {
+    if (flaggedMonths.has(key)) { cleaned[idx] = substituteOneOffValue(values, idx); touched = true; }
+  });
+  return touched ? cleaned : values;
+}
+
+// ---------------------------------------------------------------------------
 // Public-compatible fitHoltWinters wrapper (used by legacy calculateHoltWinters)
 // — runs the optimiser then fits with winning params
 // ---------------------------------------------------------------------------
@@ -670,6 +812,11 @@ export interface AggregatedIBRORow {
  * by reducing Outflow (consistent with the what-if market event model).
  *
  * Returns null when the input series is too short (< 4 months).
+ * @param flaggedMonths  P10 — calendar months (yyyy-MM) whose historical value
+ *   is a known one-off anomaly. Each of the 8 IBRO fields is independently
+ *   replaced (fitting-time only, via substituteOneOffValue) before any model
+ *   fitting happens. Omit or pass undefined for a cohort with no flags — the
+ *   function is then byte-identical to before this parameter existed.
  */
 export function calculateBaseForecast(
   aggregatedData: AggregatedIBRORow[],
@@ -680,9 +827,18 @@ export function calculateBaseForecast(
   postHorizonExpansionRate: number,
   confidenceHorizon: number = 3,
   model: ForecastModel = 'Holt Linear',
+  flaggedMonths?: ReadonlySet<string>,
 ): BaseForecast | null {
-  const sorted = [...aggregatedData].sort(
-    (a, b) => a._parsedDate.getTime() - b._parsedDate.getTime(),
+  // P10 — sort first (substituteOneOffValue assumes a chronologically ordered,
+  // gap-free array so index±12 means "same calendar slot, adjacent cycle"),
+  // then substitute any flagged one-off months before fitting. Gap detection
+  // below reads only _parsedDate (unchanged by the substitution), so it is
+  // unaffected; lastHistoricalInflow/Outflow (the Base-derivation seed)
+  // correctly reads the cleaned value too, since everything downstream uses
+  // `sorted`.
+  const sorted = applyOneOffFlags(
+    [...aggregatedData].sort((a, b) => a._parsedDate.getTime() - b._parsedDate.getTime()),
+    flaggedMonths,
   );
 
   if (sorted.length < 4) return null;
