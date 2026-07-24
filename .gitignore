@@ -6,3 +6,14 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Archived versions — never needed in the repo
+*.zip
+/_archive/
+
+# Synthetic test data — keep local, not in the shared repo
+/test-data/*.xlsx
+
+# Build output and dependencies
+/node_modules/
+/dist/
