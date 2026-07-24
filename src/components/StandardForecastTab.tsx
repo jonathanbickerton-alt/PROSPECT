@@ -955,7 +955,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
               <button
                 type="button"
                 onClick={() => setOneOffFormOpen(v => !v)}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 text-[11px] font-semibold text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-lg transition-colors"
+                className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-lg transition-colors"
               >
                 <span>{currentOneOffFlags.length > 0 ? 'Flag another one-off month' : 'Flag a one-off historical month'}</span>
                 <ChevronDown size={13} className={`text-slate-400 transition-transform ${oneOffFormOpen ? 'rotate-180' : ''}`} />
@@ -971,12 +971,12 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   </p>
 
                   <div>
-                    <label className="block text-[10px] font-medium text-slate-500 mb-1">Month</label>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Month</label>
                     <select
                       value={draftOneOffMonth}
                       onChange={e => setDraftOneOffMonth(e.target.value)}
                       disabled={oneOffAvailableMonths.length === 0}
-                      className="w-full text-xs border border-slate-200 rounded-lg p-1.5 bg-white outline-none focus:border-[#e60000] disabled:opacity-50"
+                      className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000] disabled:opacity-50"
                     >
                       <option value="">Select a month…</option>
                       {oneOffAvailableMonths.map(m => <option key={m} value={m}>{m}</option>)}
@@ -984,13 +984,13 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-medium text-slate-500 mb-1">Reason (optional)</label>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Reason (optional)</label>
                     <input
                       type="text"
                       value={draftOneOffReason}
                       onChange={e => setDraftOneOffReason(e.target.value)}
                       placeholder="e.g. one-time fleet update"
-                      className="w-full text-xs border border-slate-200 rounded-lg p-1.5 bg-white outline-none focus:border-[#e60000]"
+                      className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                     />
                   </div>
 
@@ -1010,7 +1010,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                     type="button"
                     onClick={handleAddOneOff}
                     disabled={!draftOneOffMonth}
-                    className="w-full text-center px-2.5 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-[11px] font-bold transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full text-center px-2.5 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Add Flag
                   </button>
