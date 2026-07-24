@@ -244,7 +244,14 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
   // App.tsx's makeForecastKey) and its flagged one-off months, if any.
   const oneOffCohortKey = `${segmentValue === 'All (Aggregated)' ? 'All' : segmentValue}|${productValue === 'All (Aggregated)' ? 'All' : productValue}|${productL2Value || 'All'}|${channelValue === 'All (Aggregated)' ? 'All' : channelValue}|${channelL2Value || 'All'}|${tariffValue === 'All (Aggregated)' ? 'All' : (tariffValue || 'All')}|${tariffL2Value || 'All'}`;
   const currentOneOffFlags = oneOffMonths[oneOffCohortKey] ?? [];
-  const oneOffFlagSet = useMemo(() => new Set(currentOneOffFlags.map(f => f.month)), [currentOneOffFlags]);
+  // Key on oneOffMonths + oneOffCohortKey (both stable across renders) rather
+  // than currentOneOffFlags (a fresh `[]` each render when unflagged, which
+  // would otherwise make oneOffFlagSet — and every advisor memo downstream —
+  // recompute its grid-search on every render).
+  const oneOffFlagSet = useMemo(
+    () => new Set((oneOffMonths[oneOffCohortKey] ?? []).map(f => f.month)),
+    [oneOffMonths, oneOffCohortKey],
+  );
 
   // Cleaned series (flagged months substituted) — what the model actually
   // fits on. Falls back to the raw series untouched when there are no flags.
@@ -307,6 +314,16 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
 
 
   const mappingComplete = !!(wiDateCol && wiMetricCol && wiValueCol && wiInflowVal && wiOutflowVal);
+
+  // The Model/Confidence advisors and the forecast display are gated on the
+  // CURRENT cohort selection actually having data. When a user drills the
+  // filters (often the L2 / tariff selections) to a combination that returns
+  // no rows, actualValuesDetail is null — the advisors can't recommend anything
+  // and no forecast can be generated. We surface that explicitly and suppress
+  // any stale forecast, rather than silently hiding the advisors while a prior
+  // forecast lingers on the chart (which reads as "the advisor disappeared").
+  const selectionHasData = !!actualValuesDetail;
+  const emptyCohortSelection = mappingComplete && data.length > 0 && !selectionHasData && compareCategories.length === 0;
 
   // ARPU chart data — historical from raw data + forecast bands from baseForecast
   const arpuChartData = useMemo(() => {
@@ -609,6 +626,19 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   <option value="Retention">Retention</option>
                 </select>
               </div>
+
+              {/* When the current cohort selection has no data, the advisors below
+                  can't recommend anything — say so explicitly rather than letting
+                  them silently vanish. */}
+              {emptyCohortSelection && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 leading-relaxed">
+                  <span className="font-semibold">No historical data for this cohort.</span> This exact
+                  combination of filters returns no rows, so the Model and Confidence advisors can't
+                  recommend settings and a forecast can't be generated. Adjust the filters — often the
+                  L2 or tariff selections — to a combination present in your data.
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold text-slate-900 mb-2">Forecast Model</label>
 
@@ -953,7 +983,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
       <div className="flex-1 overflow-y-auto p-8">
         {error && <div className="mb-6 bg-red-50 text-red-700 p-4 rounded-xl border border-red-100 text-sm flex items-start gap-3"><Info className="shrink-0 mt-0.5" size={18} /><p>{error}</p></div>}
         
-        {forecastData.length > 0 ? (
+        {forecastData.length > 0 && !emptyCohortSelection ? (
           <div className="flex gap-4 items-start">
 
             {/* Manual-generations side panel */}
@@ -1338,6 +1368,18 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   >
                     Go to Home
                   </button>
+                </>
+              ) : emptyCohortSelection ? (
+                <>
+                  <h3 className="text-lg font-semibold text-slate-800 mb-2">No data for this selection</h3>
+                  <p className="text-sm text-slate-500 mb-1">
+                    The current cohort filters return no rows in your data, so there's nothing to forecast
+                    and no model can be recommended.
+                  </p>
+                  <p className="text-xs text-slate-400 mt-2">
+                    Adjust the dimension filters — often the L2 or tariff selections — to a combination that
+                    exists in your data.
+                  </p>
                 </>
               ) : (
                 <>
