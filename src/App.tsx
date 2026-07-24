@@ -2709,6 +2709,7 @@ export default function App() {
     wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal,
     wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiChannelCol,
     stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon,
+    oneOffMonths, // P10 — accepted forecast must use the current one-off flag set
   ]);
 
   // ---------------------------------------------------------------------------
@@ -2960,6 +2961,7 @@ export default function App() {
       wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal,
       wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiChannelCol,
       stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon,
+      oneOffMonths, // P10 — accept-all must use the current one-off flag set
     ],
   );
 

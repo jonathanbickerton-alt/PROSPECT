@@ -277,7 +277,15 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
 
   const oneOffAvailableMonths = useMemo(() => {
     if (!actualValuesDetail) return [];
-    return actualValuesDetail.monthKeys.filter(m => !oneOffFlagSet.has(m));
+    // Exclude the most recent historical month: it is the forecast's boundary
+    // anchor (the ARPU boundary correction pins forecast month 0 to the last
+    // actual) and the Base-derivation seed (lastHistoricalInflow/Outflow).
+    // Substituting it would make the actual→forecast join disagree with the
+    // real last actual shown on the chart. A one-off is by nature a past
+    // anomaly, so the latest month isn't a sensible flag target anyway.
+    const monthKeys = actualValuesDetail.monthKeys;
+    const flaggable = monthKeys.slice(0, Math.max(0, monthKeys.length - 1));
+    return flaggable.filter(m => !oneOffFlagSet.has(m));
   }, [actualValuesDetail, oneOffFlagSet]);
 
   // Live preview of what the model will use, computed from the SAME

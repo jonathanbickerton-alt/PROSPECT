@@ -553,6 +553,21 @@ pre-injection baseline.
   (via `actualValuesDetail.monthKeys`), optional reason text, an already-set
   list of flags with a remove control. Nothing renders beyond a single
   collapsed toggle line for a cohort with no flags.
+  - **The most recent historical month is deliberately excluded from the
+    flaggable list.** That month is the forecast's boundary anchor (the ARPU
+    boundary correction, §5, pins forecast month 0 to the last actual) and the
+    Base-derivation seed (`lastHistoricalInflow`/`Outflow`). Substituting it
+    would make the actual→forecast join disagree with the real last actual
+    shown on the chart. A one-off is by nature a *past* anomaly, so the latest
+    month isn't a sensible target — excluding it keeps the boundary-correction
+    guarantee intact for every flag.
+- **Empty-cohort advisor state:** when the current filter combination has zero
+  rows (`emptyCohortSelection`), the Model and Confidence advisors render
+  faded and disabled (an "Unavailable" pill, greyed non-clickable Apply
+  buttons, an on-hover tooltip explaining no data exists), and the forecast
+  area shows a "No data for this selection" empty state instead of a stale
+  forecast. This keeps the advisor's visual footprint consistent rather than
+  silently vanishing — see the standalone fix that shipped alongside P10.
 - **Transparency display:** picking a month shows both the real file value
   and what the model will use, computed live via the same
   `substituteOneOffValue` the engine calls — e.g. "File value: 6,200 · Model
@@ -563,6 +578,16 @@ pre-injection baseline.
   cleans the seasonal fit *and* tightens the confidence bands for that
   cohort — the band narrowing is an expected, transparent consequence, not a
   separate surprise.
+  - **Caveat (cohort-dependent, not a defect):** `analyzeAndRecommendConfidence`
+    picks the *minimum* backtest MAPE across all four candidate models
+    (SES/HL/DT/HW). For aggregate/L1 cohorts where Holt Linear's trend fit
+    already dominates and Holt-Winters never wins the backtest, a one-off
+    spike inflates HW's error but not the winning HL error, so the
+    *discretised profile* may not visibly change even though the HW sigma and
+    the actual forecast do recover when flagged. The narrowing is clearest on
+    genuinely seasonal leaf cohorts. This is pre-existing recommender design
+    (unchanged by P10 — it correctly receives the cleaned series either way);
+    a demo should pick a seasonal cohort to show the effect.
 - **Displayed/exported/Actuals-Review values are untouched** — only the
   number the optimiser sees changes. Gap detection reads only `_parsedDate`
   (never touched by the substitution), so it is unaffected regardless of
