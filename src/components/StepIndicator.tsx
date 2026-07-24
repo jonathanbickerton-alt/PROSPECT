@@ -1,30 +1,31 @@
 import React from 'react';
 import { Check, Lock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 type StepId = 1 | 2 | 3;
 type StepStatus = 'active' | 'complete' | 'locked' | 'idle';
 
 interface StepConfig {
   id: StepId;
-  title: string;
-  subtitle: string;
+  titleKey: string;
+  subtitleKey: string;
 }
 
 const STEPS: StepConfig[] = [
   {
     id: 1,
-    title: 'Baseline Forecast',
-    subtitle: 'Generate & save an IBRO forecast',
+    titleKey: 'baseline_forecast',
+    subtitleKey: 'generate_save_forecast',
   },
   {
     id: 2,
-    title: 'Market Events',
-    subtitle: 'Apply uplift scenarios & events',
+    titleKey: 'market_events',
+    subtitleKey: 'apply_uplift_scenarios',
   },
   {
     id: 3,
-    title: 'Actuals Review',
-    subtitle: 'Compare forecast against actuals',
+    titleKey: 'actuals_review',
+    subtitleKey: 'compare_forecast',
   },
 ];
 
@@ -91,6 +92,7 @@ function ConnectorLine({ complete }: { complete: boolean }) {
 }
 
 export default function StepIndicator({ activeStep, hasBaseline, hasData, onStepClick }: StepIndicatorProps) {
+  const { t } = useTranslation();
   return (
     <div className="border-t border-slate-100 bg-white px-6 py-3">
       <div className="max-w-2xl mx-auto flex items-start">
@@ -111,7 +113,7 @@ export default function StepIndicator({ activeStep, hasBaseline, hasData, onStep
                 className={`flex flex-col items-center text-center gap-1 min-w-[120px] group transition-opacity
                   ${isClickable ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}
                 `}
-                title={status === 'locked' ? 'Complete Step 1 first to unlock' : undefined}
+                title={status === 'locked' ? t('complete_step_1') : undefined}
               >
                 <StepBadge id={step.id} status={status} />
                 <span
@@ -119,10 +121,10 @@ export default function StepIndicator({ activeStep, hasBaseline, hasData, onStep
                     ${status === 'active' ? 'text-[#e60000]' : status === 'complete' ? 'text-emerald-600' : 'text-slate-500'}
                   `}
                 >
-                  {step.title}
+                  {t(step.titleKey)}
                 </span>
                 <span className="text-[10px] text-slate-400 leading-tight max-w-[110px]">
-                  {step.subtitle}
+                  {t(step.subtitleKey)}
                 </span>
               </button>
             </React.Fragment>
