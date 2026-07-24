@@ -618,6 +618,25 @@ export default function App() {
       'Pricing_Events',
     );
 
+    // ── Sheet 9: One_Off_Months (P10) ─────────────────────────────────────────
+    const oneOffRows: Record<string, any>[] = [];
+    Object.entries(oneOffMonths).forEach(([key, flags]: [string, { month: string; reason: string }[]]) => {
+      const [segment, product, productL2, channel, channelL2, tariffL1, tariffL2] = key.split('|');
+      flags.forEach(f => {
+        oneOffRows.push({
+          Segment: segment, Product: product, Product_L2: productL2,
+          Channel_L1: channel, Channel_L2: channelL2,
+          Tariff_L1: tariffL1, Tariff_L2: tariffL2,
+          Month: f.month, Reason: f.reason ?? '',
+        });
+      });
+    });
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(oneOffRows.length ? oneOffRows : [{ Note: 'No one-off months flagged' }]),
+      'One_Off_Months',
+    );
+
     // ── Sheet 8b: Tariff_Selection (Phase 2b) — the tariffs in scope ──────────
     const tariffSelRows = selectedTariffs.length
       ? selectedTariffs.map(t => ({ Tariff_L1: t }))
@@ -934,6 +953,24 @@ export default function App() {
               originalBaseArpu: Number(r.Original_Base_ARPU ?? 0),
               comment:          String(r.Comment ?? ''),
             })));
+          }
+        }
+
+        // ── One-Off Months (P10) ──────────────────────────────────────────────
+        if (wb.SheetNames.includes('One_Off_Months')) {
+          const oneOffRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['One_Off_Months']);
+          if (oneOffRaw.length > 0 && !oneOffRaw[0]?.Note) {
+            const restored: Record<string, { month: string; reason: string }[]> = {};
+            oneOffRaw.forEach(r => {
+              const key = makeForecastKey(
+                String(r.Segment ?? 'All'), String(r.Product ?? 'All'), String(r.Product_L2 ?? 'All'),
+                String(r.Channel_L1 ?? 'All'), String(r.Channel_L2 ?? 'All'),
+                String(r.Tariff_L1 ?? 'All'), String(r.Tariff_L2 ?? 'All'),
+              );
+              if (!restored[key]) restored[key] = [];
+              restored[key].push({ month: String(r.Month ?? ''), reason: String(r.Reason ?? '') });
+            });
+            setOneOffMonths(restored);
           }
         }
 
@@ -1260,6 +1297,13 @@ export default function App() {
   // Multi-forecast store: all generated forecasts keyed by "segment|product|channel"
   const [forecastStore, setForecastStore] = useState<Map<string, BaseForecast>>(new Map());
 
+  // P10 — one-off historical event flags, keyed by the same 7-part cohort key
+  // as forecastStore. Each flagged month's value is substituted (fitting-time
+  // only, via substituteOneOffValue) before Holt-Winters ever sees it — the
+  // real value shown in tables/exports/Actuals Review is always the one in
+  // the file. Persisted in export via the One_Off_Months sheet.
+  const [oneOffMonths, setOneOffMonths] = useState<Record<string, { month: string; reason: string }[]>>({});
+
   // Per-tab view filter — each step remembers its own last-used selection independently
   const [step2Filter, setStep2Filter] = useState<ViewFilter>({ segment: 'All', product: { l1: null, l2: null }, channel: { l1: null, l2: null } });
   const [step3Filter, setStep3Filter] = useState<ViewFilter>({ segment: 'All', product: { l1: null, l2: null }, channel: { l1: null, l2: null } });
@@ -1449,6 +1493,22 @@ export default function App() {
     tariffL1?: string | null | undefined,
     tariffL2?: string | null | undefined,
   ) => `${seg}|${prodL1}|${prodL2 || 'All'}|${chanL1}|${chanL2 || 'All'}|${tariffL1 || 'All'}|${tariffL2 || 'All'}`;
+
+  /**
+   * P10 — flagged one-off months for a cohort, as a Set ready for
+   * calculateBaseForecast/applyOneOffFlagsToSeries. Returns undefined (not an
+   * empty Set) when there are no flags, so every existing call site that
+   * doesn't pass this argument continues to behave byte-identically.
+   */
+  const getOneOffFlagsForCohort = (c: {
+    segment: string; product: string; productL2?: string | null;
+    channel: string; channelL2?: string | null;
+    tariffL1?: string | null; tariffL2?: string | null;
+  }): Set<string> | undefined => {
+    const key = makeForecastKey(c.segment, c.product, c.productL2, c.channel, c.channelL2, c.tariffL1, c.tariffL2);
+    const flags = oneOffMonths[key];
+    return flags && flags.length > 0 ? new Set(flags.map(f => f.month)) : undefined;
+  };
 
   /** Build a forecast key from a ViewFilter object */
   const filterToKey = (f: ViewFilter) =>
@@ -2224,24 +2284,26 @@ export default function App() {
           baseReadings.set(t, (baseReadings.get(t) || 0) + (Number(r[wiValueCol]) || 0));
         });
         const seedBase = baseReadings.size > 0 ? (baseReadings.get(Math.max(...baseReadings.keys())) || 0) : 0;
+        const stdCohortObj = {
+          segment:   segmentValue === 'All (Aggregated)' ? 'All' : segmentValue,
+          product:   productValue === 'All (Aggregated)' ? 'All' : productValue,
+          productL2: productL2Value || 'All',
+          channel:   channelValue === 'All (Aggregated)' ? 'All' : channelValue,
+          channelL2: channelL2Value || 'All',
+          tariffL1:  tariffValue === 'All (Aggregated)' ? 'All' : (tariffValue || 'All'),
+          tariffL2:  tariffL2Value || 'All',
+          scenario: stdScenario,
+        };
         const bf = calculateBaseForecast(
           ibroArr,
-          {
-            segment:   segmentValue === 'All (Aggregated)' ? 'All' : segmentValue,
-            product:   productValue === 'All (Aggregated)' ? 'All' : productValue,
-            productL2: productL2Value || 'All',
-            channel:   channelValue === 'All (Aggregated)' ? 'All' : channelValue,
-            channelL2: channelL2Value || 'All',
-            tariffL1:  tariffValue === 'All (Aggregated)' ? 'All' : (tariffValue || 'All'),
-            tariffL2:  tariffL2Value || 'All',
-            scenario: stdScenario,
-          },
+          stdCohortObj,
           seedBase,
           stdForecastLength,
           preHorizonUncertainty,
           postHorizonExpansionRate,
           confidenceHorizon,
           selectedForecastModel,
+          getOneOffFlagsForCohort(stdCohortObj),
         );
         if (bf) {
           const fKey = makeForecastKey(bf.cohort.segment, bf.cohort.product, bf.cohort.productL2, bf.cohort.channel, bf.cohort.channelL2, bf.cohort.tariffL1, bf.cohort.tariffL2);
@@ -2395,24 +2457,26 @@ export default function App() {
       });
       const seedBase = baseReadings.size > 0 ? (baseReadings.get(Math.max(...baseReadings.keys())) || 0) : 0;
 
+      const stdCohortObj2 = {
+        segment:   segmentValue === 'All (Aggregated)' ? 'All' : segmentValue,
+        product:   productValue === 'All (Aggregated)' ? 'All' : productValue,
+        productL2: productL2Value || 'All',
+        channel:   channelValue === 'All (Aggregated)' ? 'All' : channelValue,
+        channelL2: channelL2Value || 'All',
+        tariffL1:  tariffValue === 'All (Aggregated)' ? 'All' : (tariffValue || 'All'),
+        tariffL2:  tariffL2Value || 'All',
+        scenario: stdScenario,
+      };
       const bf = calculateBaseForecast(
         ibroArr,
-        {
-          segment:   segmentValue === 'All (Aggregated)' ? 'All' : segmentValue,
-          product:   productValue === 'All (Aggregated)' ? 'All' : productValue,
-          productL2: productL2Value || 'All',
-          channel:   channelValue === 'All (Aggregated)' ? 'All' : channelValue,
-          channelL2: channelL2Value || 'All',
-          tariffL1:  tariffValue === 'All (Aggregated)' ? 'All' : (tariffValue || 'All'),
-          tariffL2:  tariffL2Value || 'All',
-          scenario: stdScenario,
-        },
+        stdCohortObj2,
         seedBase,
         stdForecastLength,
         preHorizonUncertainty,
         postHorizonExpansionRate,
         confidenceHorizon,
         selectedForecastModel,
+        getOneOffFlagsForCohort(stdCohortObj2),
       );
       if (bf) {
         console.log('[generateStandardForecast] modelUsed written to ForecastContext:', bf.modelUsed);
@@ -2494,15 +2558,17 @@ export default function App() {
           const aggIBROarr = Array.from(aggIBROmap.values())
             .filter(e => e.inflow > 0 || e.outflow > 0 || e.retention > 0)
             .sort((a, b) => a._parsedDate.getTime() - b._parsedDate.getTime());
+          const aggCohortObj = { ...bf.cohort, channel: 'All', channelL2: 'All' };
           const aggBf = calculateBaseForecast(
             aggIBROarr,
-            { ...bf.cohort, channel: 'All', channelL2: 'All' },
+            aggCohortObj,
             aggSeed,
             stdForecastLength,
             preHorizonUncertainty,
             postHorizonExpansionRate,
             confidenceHorizon,
             selectedForecastModel,
+            getOneOffFlagsForCohort(aggCohortObj),
           );
           if (aggBf) {
             const aggFKey = makeForecastKey(aggBf.cohort.segment, aggBf.cohort.product, aggBf.cohort.productL2, aggBf.cohort.channel, aggBf.cohort.channelL2, aggBf.cohort.tariffL1, aggBf.cohort.tariffL2);
@@ -2601,6 +2667,7 @@ export default function App() {
       postHorizonExpansionRate,
       confidenceHorizon,
       model,
+      getOneOffFlagsForCohort(cohort),
     );
     if (!bf) return;
 
@@ -2720,9 +2787,11 @@ export default function App() {
       ibroArr, cohort, seedBase,
       stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon,
       model,
+      getOneOffFlagsForCohort(cohort),
     );
   }, [
     data, wiDateCol, wiMetricCol, wiValueCol,
+    oneOffMonths,
     wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal,
     wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
     baseForecast, forecastStore, makeForecastKey,
@@ -2851,6 +2920,7 @@ export default function App() {
           postHorizonExpansionRate,
           confidenceHorizon,
           model,
+          getOneOffFlagsForCohort(cohort),
         );
         if (bf) {
           // Splice: preserve old values before switchover month as paper trail.
@@ -3720,6 +3790,13 @@ export default function App() {
       runModel,
       autoModel:      options?.autoModel      ?? true,
       autoConfidence: options?.autoConfidence ?? true,
+      // P10 — cohort key -> flagged yyyy-MM months (reason text dropped; the
+      // worker only needs to know which months to substitute).
+      oneOffMonths: (() => {
+        const out: Record<string, string[]> = {};
+        for (const key in oneOffMonths) out[key] = oneOffMonths[key].map(f => f.month);
+        return out;
+      })(),
     };
 
     setGenerationProgress({ current: 0, total: targets.length });
@@ -3814,7 +3891,7 @@ export default function App() {
     setBulkRuns(prev => [...prev, record]);
 
     return { generated, failed };
-  }, [allCohorts, cohortHasData, computeCohortForecastData, selectedForecastModel, genPreHorizonUncertainty, genPostHorizonExpansionRate, confidenceHorizon, genLength, data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [allCohorts, cohortHasData, computeCohortForecastData, selectedForecastModel, genPreHorizonUncertainty, genPostHorizonExpansionRate, confidenceHorizon, genLength, data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, oneOffMonths]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // After a single-combo forecast is saved, check whether there are remaining combinations
   // without a forecast and show the bulk-generate prompt if so.
@@ -4044,6 +4121,8 @@ export default function App() {
             onOpenManageBulk={() => setShowManageBulkDrawer(true)}
             cohortGenLog={cohortGenLog}
             onSelectCohort={onSelectCohort}
+            oneOffMonths={oneOffMonths}
+            setOneOffMonths={setOneOffMonths}
           />
         )}
 

@@ -229,7 +229,7 @@ Aligns with the "simulation tool, keep it simple" steer.
 **Acceptance:** technical diagnostics hidden by default; retrievable if needed;
 business workflow uncluttered.
 
-### P10 — Exclude one-off historical events (SPIKE — RESOLVED, build approved)
+### P10 — Exclude one-off historical events (BUILD COMPLETE — pre-merge gate pending)
 **Spike branch:** `spike-oneoff-events` (investigation only, no code shipped).
 **Build branch:** `oneoff-events` (off main, after this spike).
 
@@ -296,36 +296,49 @@ precedent).
   MAPE/in-band scores for affected cohorts should be spot-checked, but no new
   handling is needed there.
 
-**Build sequencing — Stage 1 gates Stage 2:**
-1. **Stage 1 (isolation, must pass before anything else is built):** implement
-   the substitution function and prove it numerically — real seasonal cohort,
-   record its fitted seasonal indices/forecast, inject a synthetic one-off
-   spike, confirm the fit is distorted, flag the month, apply the
-   substitution, confirm the cleaned fit closely recovers the pre-injection
-   fit. If it doesn't, the heuristic needs rework before Stage 2 starts.
-2. **Stage 2 (only after Stage 1 passes and is confirmed):**
-   - Apply the substitution once, downstream of `buildCohortDataMap`.
-   - Store flags as a new cohort-keyed state map in `App.tsx` (same
-     precedent as `forecastStore`/`savedForecasts`/`marketEvents`).
-   - Add a `One_Off_Months` export sheet + import branch (same precedent as
+**Build sequencing — Stage 1 gated Stage 2 — both complete.**
+1. **Stage 1 (DONE):** `substituteOneOffValue` implemented in isolation and
+   proven numerically against a real seasonal cohort (MNC | Mobile Voice |
+   Indirect, seasonality strength 0.689) — a synthetic spike distorted the
+   fit severely (seasonal index +18.6%, mse 286→1.76M), flagging + substitution
+   recovered it within 0.24%/0.96% of the pre-injection baseline. See
+   `EXPECTED.md` §15 for the full numbers.
+2. **Stage 2 (DONE) — architecture correction from the original plan:**
+   `buildCohortDataMap` turned out NOT to be the right injection point — it
+   only buckets raw rows by cohort; the actual monthly-IBRO aggregation is
+   duplicated inline at 6+ sites in `App.tsx` plus the worker. Rather than
+   touch every duplicated aggregation block, the substitution was wired
+   into `calculateBaseForecast` itself (a new optional trailing
+   `flaggedMonths` parameter, applied once internally) — every one of its
+   callers benefits with zero duplication, since they all already converge
+   on this one function. `analyzeAndRecommendModel`/`analyzeAndRecommendConfidence`
+   don't share that code path, so they're wired at their own 3 call sites via
+   a second shared helper (`applyOneOffFlagsToSeries`) — still exactly one
+   implementation of the substitution logic, just two entry points into it.
+   - Storage: `oneOffMonths` cohort-keyed state map in `App.tsx` (same
+     precedent as `forecastStore`).
+   - `One_Off_Months` export sheet + import branch (same precedent as
      `Yield_Events`/`Pricing_Events`).
-   - Add a small dedicated form near the forecast-generation controls (sized
-     like the Pricing Event form, not a new tab) — pick a month from the
-     selected cohort's own history, optional reason string, add to a short
-     list. Must not appear intrusively for users with no one-off to flag.
-   - Displayed/exported/actuals-review values stay exactly as in the file —
-     only the fitting-time number changes.
-   - UI notation makes clear that flagging a one-off both cleans the seasonal
-     fit AND tightens the confidence bands for that cohort — the band change
-     should be transparent, not a surprise.
+   - Small collapsed-by-default form in `StandardForecastTab.tsx` near
+     Generate Forecast (sized like the Pricing Event form) — month picker
+     scoped to the selected cohort's own history, optional reason, a
+     transparency line ("File value: X · Model will use: Y") computed live
+     from the same substitution function, and notation that flagging both
+     cleans the fit and tightens confidence bands.
+   - Known, deliberate scope limit: the legacy single-metric
+     `calculateHoltWinters` bulk-gen path (and its own recommendation calls)
+     is left unwired, for the same reason `computeWhatIfData`'s legacy ARPU
+     fallback was left alone in Phase 3 — avoiding regression risk in a path
+     already superseded by the IBRO-combined `calculateBaseForecast` path.
 
-**Acceptance criteria:**
+**Acceptance criteria — all met, see `EXPECTED.md` §15 and checklist items 28-31:**
 - A flagged one-off month's fitting-time value is derived from the same
   calendar slot in adjacent cycles, scaled by observed trend — never a naive
   neighbour-average.
-- The substitution is implemented exactly once, downstream of
-  `buildCohortDataMap`; manual generation, bulk generation, auto model
-  selection, and auto-confidence all reflect a flagged one-off consistently.
+- The substitution logic is implemented exactly once (`substituteOneOffValue`,
+  wrapped by `applyOneOffFlags`/`applyOneOffFlagsToSeries`); manual
+  generation, bulk generation, auto model selection, and auto-confidence all
+  reflect a flagged one-off consistently.
 - Displayed, exported, and actuals-review values are byte-identical to the
   source file regardless of flagging — only the optimiser's input changes.
 - Gap detection, `calculateBaseForecast`'s core math, and existing
