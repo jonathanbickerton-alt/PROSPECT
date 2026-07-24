@@ -14,6 +14,9 @@ coverage/
 # Synthetic test data — keep local, not in the shared repo
 /test-data/*.xlsx
 
+# Local forecast data, imports and exports — keep local, never in the shared repo
+/PROSPECT_data/
+
 # Build output and dependencies
 /node_modules/
 /dist/
