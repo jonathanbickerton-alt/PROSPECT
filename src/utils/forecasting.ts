@@ -381,6 +381,91 @@ function optimiseHWTriple(y: number[], calStartMonth: number): FittedParams {
 }
 
 // ---------------------------------------------------------------------------
+// P10 — One-off historical event exclusion (Stage 1: isolated, not yet wired
+// into any caller). See SCENARIO_PLANNING_BACKLOG.md § P10 for the full
+// research spike and rationale.
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the fitting-time value a flagged one-off historical month should be
+ * replaced with, so a single anomalous month (e.g. a one-time bulk load-in)
+ * doesn't get learned by Holt-Winters as a recurring seasonal pattern.
+ *
+ * Method: same calendar slot in adjacent cycles, scaled by the trend observed
+ * between them — NOT a naive average of the immediately neighbouring months,
+ * which would understate a flagged peak-season month by anchoring to its
+ * off-season neighbours.
+ *
+ * - Both a prior-year and next-year same-slot value exist: the flagged month
+ *   sits exactly halfway between them in cycle-index terms, so the expected
+ *   value is their midpoint — this captures genuine year-over-year seasonal
+ *   growth without needing a circular pre-fit.
+ * - Only a prior-year same-slot value exists (flagged month is in the most
+ *   recent cycle): extrapolate forward using the growth rate between the two
+ *   most recent prior same-slot values, if both exist; otherwise use the one
+ *   available prior same-slot value as-is.
+ * - Only a next-year same-slot value exists (flagged month is in the first
+ *   cycle): the mirror-image case, extrapolating backward.
+ * - No same-slot neighbour exists at all (series shorter than one full
+ *   cycle): falls back to linear interpolation of the immediate neighbours —
+ *   never reachable in production, where Holt-Winters requires ≥24 points,
+ *   but keeps the function total and safe.
+ *
+ * Only ever changes what the OPTIMISER sees. The value shown to the user in
+ * tables, exports, and Actuals Review is always the real, unmodified figure.
+ */
+export function substituteOneOffValue(y: number[], flaggedIdx: number): number {
+  const m = 12;
+  const prevIdx = flaggedIdx - m;
+  const nextIdx = flaggedIdx + m;
+  const prevPrevIdx = flaggedIdx - 2 * m;
+  const nextNextIdx = flaggedIdx + 2 * m;
+
+  const has = (i: number) => i >= 0 && i < y.length && i !== flaggedIdx;
+
+  if (has(prevIdx) && has(nextIdx)) {
+    return (y[prevIdx] + y[nextIdx]) / 2;
+  }
+  if (has(prevIdx) && has(prevPrevIdx) && y[prevPrevIdx] !== 0) {
+    const growth = y[prevIdx] / y[prevPrevIdx];
+    return y[prevIdx] * growth;
+  }
+  if (has(prevIdx)) {
+    return y[prevIdx];
+  }
+  if (has(nextIdx) && has(nextNextIdx) && y[nextNextIdx] !== 0) {
+    const growth = y[nextIdx] / y[nextNextIdx];
+    return y[nextIdx] * growth;
+  }
+  if (has(nextIdx)) {
+    return y[nextIdx];
+  }
+  // Fallback: no same-slot neighbour available at all (< 1 full cycle of
+  // history) — linear interpolation of the immediate neighbours.
+  const before = flaggedIdx - 1 >= 0 ? y[flaggedIdx - 1] : undefined;
+  const after = flaggedIdx + 1 < y.length ? y[flaggedIdx + 1] : undefined;
+  if (before !== undefined && after !== undefined) return (before + after) / 2;
+  if (before !== undefined) return before;
+  if (after !== undefined) return after;
+  return y[flaggedIdx];
+}
+
+/**
+ * Diagnostic wrapper exposing the winning Holt-Winters triple parameters plus
+ * the final level/trend/seasonal-index state for a raw series. Not used by
+ * the production forecast pipeline (which calls fitAndBuildBands directly) —
+ * exposed for the P10 Stage 1 proof and any future seasonal-fit debugging.
+ */
+export function fitSeasonalDiagnostics(y: number[], calStartMonth: number): {
+  alpha: number; beta: number; gamma: number; mse: number; sigma: number;
+  L: number; T: number; S: number[];
+} {
+  const params = optimiseHWTriple(y, calStartMonth);
+  const { L, T, S } = fitHWTripleParams(y, params.alpha, params.beta, params.gamma!, calStartMonth);
+  return { alpha: params.alpha, beta: params.beta, gamma: params.gamma!, mse: params.mse, sigma: params.sigma, L, T, S };
+}
+
+// ---------------------------------------------------------------------------
 // Public-compatible fitHoltWinters wrapper (used by legacy calculateHoltWinters)
 // — runs the optimiser then fits with winning params
 // ---------------------------------------------------------------------------
