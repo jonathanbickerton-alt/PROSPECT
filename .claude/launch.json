@@ -6,12 +6,6 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["tsx", "server.ts"],
       "port": 3000
-    },
-    {
-      "name": "Streamlit",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "streamlit", "run", "app.py"],
-      "port": 8501
     }
   ]
 }
