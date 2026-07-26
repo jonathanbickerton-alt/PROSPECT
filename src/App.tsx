@@ -3703,8 +3703,8 @@ export default function App() {
     // Enumerate only cohorts that actually exist in the data — see the shared
     // populatedCohortKeys / cohortHasData defined above (used here AND by the
     // missing-count prompt so they agree). Keeps every data-spanning aggregate
-    // (resolved via the worker's O(N) fallback), drops only genuinely-empty
-    // combinations, and never keys off the user's tariff selection.
+    // (derived in the worker by summing its constituent leaves), drops only
+    // genuinely-empty combinations, and never keys off the user's tariff selection.
     const targets = options?.cohortIds
       ? allCohorts.filter(c => options.cohortIds!.includes(c.id))
       : allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast' && cohortHasData(c));
@@ -3774,10 +3774,10 @@ export default function App() {
     ibroCohortArray.forEach((spec, i) => workerIbro[i % poolSize].push(spec));
 
     // Flatten the entire pre-aggregated map into a single array shared by every worker.
-    // Each worker receives all rows so that 'All'-dimension cohorts (which have no exact
-    // map key) can fall back to a full O(N) scan inside the worker.  The dataset is
-    // small enough that structured-clone overhead is acceptable and avoids the key-mismatch
-    // bug that caused "Insufficient Data" for aggregated cohorts.
+    // Each worker receives all rows so it can rebuild the leaf buckets it needs and derive
+    // any 'All'-dimension aggregate by summing those leaves (bottom-up — there is no
+    // O(N) scan fallback any more). The dataset is small enough that structured-clone
+    // overhead is acceptable.
     const allRows: PreAggRow[] = Array.from(cohortDataMap.values()).flat();
 
     const workerConfig = {
