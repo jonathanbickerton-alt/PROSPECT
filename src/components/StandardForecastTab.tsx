@@ -92,6 +92,8 @@ interface StandardForecastTabProps {
   /** Ordered history of manual generations — newest first, max 10 entries, one entry per run (not per cohort) */
   cohortGenLog: Array<{ cohortId: string; timestamp: string; modelUsed: ForecastModel }>;
   onSelectCohort: (cohortId: string) => void;
+  /** Bottom-up: cohortId -> short-leaf diagnostics for derived aggregates. */
+  shortLeafWarnings?: Record<string, { shortLeaves: number; totalLeaves: number; share: number }>;
   /** P10 — one-off historical event flags, keyed by the same 7-part cohort
    *  key as forecastStore (segment|product|productL2|channel|channelL2|
    *  tariffL1|tariffL2, no scenario component). */
@@ -155,6 +157,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
   onSelectCohort,
   oneOffMonths,
   setOneOffMonths,
+  shortLeafWarnings = {},
 }) => {
   const [showDataMappingDrawer, setShowDataMappingDrawer] = useState(false);
   const [stdChartView, setStdChartView] = useState<'volume' | 'value'>('volume');
@@ -450,6 +453,9 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
     'Standard Forecast',
     stdScenario,
   ].join('|');
+
+  /** Short-leaf warning for the cohort currently on screen, if any. */
+  const activeShortLeafWarning = shortLeafWarnings[activeCohortId];
 
   // Legend label for the forecast mean line — includes the model name once a
   // forecast has been generated, so the chart self-documents which model was used.
@@ -1241,6 +1247,24 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   The following {baseForecast.missingMonths.length === 1 ? 'month is' : 'months are'} absent from this cohort's history:{' '}
                   <span className="font-mono">{baseForecast.missingMonths.join(', ')}</span>.
                   {' '}Gaps can bias level and trend initialisation — the forecast may be unreliable.
+                </span>
+              </div>
+            )}
+
+            {/* Bottom-up short-leaf warning — this aggregate is derived by summing
+                its constituent leaves, and most of them are too short to fit a
+                seasonal term, so the summed seasonal amplitude may be understated.
+                Advisory only: the numbers still reconcile exactly to the leaves. */}
+            {activeShortLeafWarning && (
+              <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-100 rounded-xl text-sm text-amber-800">
+                <Info size={15} className="shrink-0 mt-0.5 text-amber-500" />
+                <span>
+                  <strong>Seasonality may be understated for this aggregate.</strong>{' '}
+                  {activeShortLeafWarning.shortLeaves} of {activeShortLeafWarning.totalLeaves} constituent cohorts
+                  ({(activeShortLeafWarning.share * 100).toFixed(0)}%) have fewer than 24 months of history, so they
+                  cannot fit a seasonal pattern. This aggregate is the sum of its cohorts, so its seasonal peaks and
+                  troughs may be flatter than the underlying business. Totals still reconcile exactly to the
+                  constituent cohorts.
                 </span>
               </div>
             )}

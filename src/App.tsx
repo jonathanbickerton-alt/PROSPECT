@@ -202,6 +202,12 @@ export default function App() {
 
   // Overall Forecasts State
   const [savedForecasts, setSavedForecasts] = useState<Record<string, any>>({});
+  /**
+   * Bottom-up forecasting: cohortId → short-leaf diagnostics for aggregates
+   * whose constituent leaves are mostly too short to fit seasonality. Advisory
+   * only; it changes no forecast values, it makes the caveat visible.
+   */
+  const [shortLeafWarnings, setShortLeafWarnings] = useState<Record<string, { shortLeaves: number; totalLeaves: number; share: number }>>({});
   const addMarketEvent = () => {
     if (!newEvent.date || newEvent.subscriberVolume === undefined) return;
     // Outflow events always represent subscribers leaving — negate the magnitudes so
@@ -3801,6 +3807,9 @@ export default function App() {
       })(),
     };
 
+    // Bottom-up short-leaf warnings collected across the worker pool.
+    const collectedShortLeafWarnings = new Map<string, { shortLeaves: number; totalLeaves: number; share: number }>();
+
     setGenerationProgress({ current: 0, total: targets.length });
     const newTypedForecasts = new Map<string, BaseForecast>();
 
@@ -3820,7 +3829,13 @@ export default function App() {
               generated: number;
               failed: number;
               empty?: number;
+              shortLeafWarnings?: Array<[string, { shortLeaves: number; totalLeaves: number; share: number }]>;
             };
+            // Bottom-up: aggregates whose seasonal amplitude may be understated
+            // because most constituent leaves are too short to fit seasonality.
+            for (const [cohortId, w] of result.shortLeafWarnings ?? []) {
+              collectedShortLeafWarnings.set(cohortId, w);
+            }
             Object.assign(newForecasts, result.newForecasts);
             generatedIds.push(...result.generatedIds);
             generated += result.generated;
@@ -3861,6 +3876,7 @@ export default function App() {
     );
 
     setGenerationProgress({ current: 0, total: 0 });
+    setShortLeafWarnings(prev => ({ ...prev, ...Object.fromEntries(collectedShortLeafWarnings) }));
     setSavedForecasts(prev => ({ ...prev, ...newForecasts }));
 
     if (newTypedForecasts.size > 0) {
@@ -4123,6 +4139,7 @@ export default function App() {
             onOpenManageBulk={() => setShowManageBulkDrawer(true)}
             cohortGenLog={cohortGenLog}
             onSelectCohort={onSelectCohort}
+            shortLeafWarnings={shortLeafWarnings}
             oneOffMonths={oneOffMonths}
             setOneOffMonths={setOneOffMonths}
           />
