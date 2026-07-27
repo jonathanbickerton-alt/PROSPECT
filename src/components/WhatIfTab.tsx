@@ -8,7 +8,8 @@ import { format, parse, isValid, addMonths, differenceInCalendarMonths } from 'd
 import { useForecast } from '../context/ForecastContext';
 import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent } from '../types/forecast';
 import type { MarketEvent } from '../utils/forecasting';
-import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix } from '../utils/forecasting';
+import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix, eventProRataShare } from '../utils/forecasting';
+import type { ProRataLeaf, ProRataScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
 import { MultiSelectDropdown } from './MultiSelectDropdown';
@@ -846,6 +847,55 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
     const computed: AdjustedForecastMonth[] = [];
 
+    // Market-event pro-rata scoping (shared rule — see eventProRataShare).
+    // An event aimed at an aggregate must not apply at full magnitude to the
+    // aggregate AND to every leaf inside it. Each view takes only its volume
+    // share; shares across the target's leaves sum to 1, so the event is applied
+    // once in total and an aggregate reconciles to the sum of its leaves.
+    // Leaves are enumerated from the loaded rows — no rows.filter fallback scan.
+    const proRataLeaves: ProRataLeaf[] = (() => {
+      const byLeaf = new Map<string, ProRataLeaf>();
+      for (const row of data) {
+        const leaf: ProRataLeaf = {
+          segment:   wiSegmentCol  ? String(row[wiSegmentCol]  ?? 'All').trim() : 'All',
+          product:   wiProductCol  ? String(row[wiProductCol]  ?? 'All').trim() : 'All',
+          productL2: wiProductL2Col ? String(row[wiProductL2Col] ?? 'All').trim() : 'All',
+          channel:   wiChannelCol  ? String(row[wiChannelCol]  ?? 'All').trim() : 'All',
+          channelL2: wiChannelL2Col ? String(row[wiChannelL2Col] ?? 'All').trim() : 'All',
+          tariffL1:  wiTariffL1Col ? String(row[wiTariffL1Col] ?? 'All').trim() : 'All',
+          tariffL2:  wiTariffL2Col ? String(row[wiTariffL2Col] ?? 'All').trim() : 'All',
+          volume: 0,
+        };
+        const k = [leaf.segment, leaf.product, leaf.productL2, leaf.channel, leaf.channelL2, leaf.tariffL1, leaf.tariffL2].join('|');
+        const vol = wiValueCol ? Number(row[wiValueCol]) || 0 : 0;
+        const cur = byLeaf.get(k);
+        if (cur) cur.volume += vol; else { leaf.volume = vol; byLeaf.set(k, leaf); }
+      }
+      return Array.from(byLeaf.values());
+    })();
+    const viewScope: ProRataScope = {
+      segment: vseg === 'All' ? 'All' : vseg,
+      product: vprodL1 ?? 'All',
+      productL2: vprodL2 ?? 'All',
+      channel: vchanL1 ?? 'All',
+      channelL2: vchanL2 ?? 'All',
+      tariffL1: vtarL1 ?? 'All',
+      tariffL2: vtarL2 ?? 'All',
+    };
+    const shareCache = new Map<string, number>();
+    /** Share of a VOLUME event belonging to the current view. Rate events never use this. */
+    const eventShare = (e: MarketEvent): number => {
+      const hit = shareCache.get(e.id);
+      if (hit !== undefined) return hit;
+      const v = eventProRataShare(
+        { segment: e.segment, product: e.product, productL2: e.productL2, channel: e.channel,
+          channelL2: e.channelL2, tariffL1: e.tariffL1, tariffL2: e.tariffL2 },
+        viewScope, proRataLeaves,
+      );
+      shareCache.set(e.id, v);
+      return v;
+    };
+
     baseForecast.months.forEach(month => {
       const applicable = marketEvents.filter(e => {
         if (e.date !== month.month) return false;
@@ -869,21 +919,27 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       const appliedIds: string[] = [];
 
       applicable.forEach(e => {
+        // VOLUME events take only this view's pro-rata share of the event.
+        const vol = e.subscriberVolume * eventShare(e);
         if (e.scenario === 'Inflow') {
-          adjInflow += e.subscriberVolume;
+          adjInflow += vol;
         } else if (e.scenario === 'Outflow') {
           // subscriberVolume is stored as a negative number for Outflow events.
           // Subtracting a negative value adds its absolute magnitude to adjOutflow,
           // which correctly increases outflow and reduces Base (T+1 via lagged formula).
-          adjOutflow -= e.subscriberVolume;
+          adjOutflow -= vol;
         } else if (e.scenario === 'Retention') {
           // Retention events reduce Outflow AND increase Retention tracking.
           // Because Retention is not in the base stock formula, only the Outflow
           // reduction affects Base (one month later, via the lagged formula).
-          adjOutflow -= e.subscriberVolume;
-          adjRetention += e.subscriberVolume;
+          adjOutflow -= vol;
+          adjRetention += vol;
         } else if (e.scenario === 'ARPU') {
-          // Direct ARPU pricing change — additive, applies to all subscribers.
+          // RATE event — deliberately NOT pro-rated. ARPU is a rate, not a
+          // quantity: a volume-weighted average of (leafArpu + delta) already
+          // equals (aggregateArpu + delta), so the same delta applies correctly
+          // at every level. Splitting it by volume share would understate the
+          // price change at leaf level. Do not route this through eventShare().
           adjArpu += e.arpu;
         }
         appliedIds.push(e.id);
@@ -1001,6 +1057,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       if (idx > 0) {
         const prevMonthKey = computed[idx - 1].month;
 
+        // RATE event — Yield Events redistribute the tariff/value MIX and drive a
+        // blended ARPU ratio; they are not quantities, so they are NOT pro-rated
+        // (same reasoning as Pricing/ARPU events above).
         // Find the most recent applicable Inflow yield event for prevMonthKey
         // (either a direct hit or a roll-forward event whose month ≤ prevMonthKey)
         const applicableInflowYield = yieldEvents
@@ -1090,7 +1149,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               arpu: derivedArpu,
               contractLength: e.contractLength ?? DEFAULT_CONTRACT_N,
               enterMonthIdx: idx,
-              size: Math.max(0, e.subscriberVolume),
+              // Same pro-rata share as Pass 1 — the pool must hold exactly the
+              // volume this view actually received, or the blended ARPU would be
+              // computed over subscribers that were never added to Base.
+              size: Math.max(0, e.subscriberVolume * eventShare(e)),
             });
           });
       } else {
@@ -1126,7 +1188,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             arpu: e.arpu > 0 ? e.arpu : m.baseline.arpu,
             contractLength: e.contractLength ?? DEFAULT_CONTRACT_N,
             enterMonthIdx: idx,
-            size: Math.max(0, e.subscriberVolume),
+            // Pro-rata share, consistent with Pass 1 (see eventProRataShare).
+            size: Math.max(0, e.subscriberVolume * eventShare(e)),
           });
         });
 
@@ -1193,6 +1256,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       }
 
       // ── F: Pass 3 — Pricing Events (applied after yield blending) ──────────
+      // RATE events — deliberately NOT pro-rated. A Pricing Event is a % or
+      // absolute ARPU delta, not a quantity. Applying the same delta at both
+      // aggregate and leaf level is already reconciliation-correct, because a
+      // volume-weighted average of (leafArpu + delta) equals
+      // (aggregateArpu + delta). Splitting it by volume share would understate
+      // the price change at leaf level. Do not route these through eventShare().
       // one-off: applies only in event.month; recurring: from event.month onwards.
       // Multiple events stack sequentially (earliest first).
       //
