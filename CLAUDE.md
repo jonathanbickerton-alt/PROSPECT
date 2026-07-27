@@ -38,6 +38,22 @@ This is where the Opus budget belongs.
 - Use the trimmed test fixture for routine agent runs. The full 80k-cohort file
   is only needed for pre-merge validation and bulk-generation testing.
 
+## Reserved decisions
+
+When I reserve a decision — "show me X before doing Y", "tell me which it is
+before acting", "report back and I'll choose" — that decision stays reserved
+**even where the answer looks self-evident**. Report and wait.
+
+The evidence being overwhelming is not an exception. Neither is the change
+being trivially revertable, nor the alternative contradicting some other goal
+I stated in the same breath. If a reserved decision appears to conflict with
+another instruction, that conflict is itself the thing to report — it is not
+a licence to resolve it unilaterally.
+
+Specifically: keeping `git status` clean is never a reason to make a call I
+asked to make. A dirty working tree is a cheap, visible, entirely reversible
+state. A decision taken out of my hands is none of those things.
+
 ## Compact instructions
 
 When compacting, preserve: test output, agent findings, code changes, and the

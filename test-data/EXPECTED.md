@@ -815,5 +815,24 @@ after any change:
     before. Leaf-targeted events must be unaffected, and ARPU-scenario/Yield/
     Pricing events must **not** be pro-rated (see §16).
 
+33. **AI capability — hard gate.** main is under an AI-approval hold, so
+    every branch must stay AI-free: no AI/LLM SDK dependencies in
+    `package.json`, no AI/LLM imports, model API calls or API-key patterns
+    in `src/`, and `.env` not tracked by git (only `.env.example`).
+
+    **Scope, which must be stated whenever this is reported:** the check
+    verifies the *working tree*, and therefore what is actually built and
+    deployed. That is the right scope for the hold and should stay. It does
+    **not** cover repository history or remote branches. The
+    `ai-capability` branch on origin, and the AI capability reachable in
+    main's history, are a deliberate preservation pending approval — not a
+    leak, and not a regression. Removing them would mean rewriting history,
+    which is out of bounds.
+
+    Report it as "main's working tree and build output are AI-free" with the
+    scope named. Never shorten it to "no AI capability present": that claim
+    is broader than the evidence supports, and the gap is exactly where a
+    false assurance would hide.
+
 **Verdict rule:** "SAFE FOR USER TESTING" only if all pass. Otherwise list
 the failures and the cohort/filter combination that exposed each.

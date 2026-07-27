@@ -51,6 +51,30 @@ Run every one of these after any change and report PASS or FAIL for each:
 - Export includes all data points, market events, model history, L2 fields
 - Import restores the full session to the same state
 
+### AI capability (hard gate — main is under an AI-approval hold)
+- No AI/LLM SDK dependencies in `package.json`
+- No AI/LLM imports, model API calls, or API-key patterns in `src/`
+- `.env` is not tracked by git (`git ls-files | grep -i env` — only
+  `.env.example` may appear)
+
+**State the scope of this check when you report it.** It verifies the
+*working tree* of the branch and therefore what actually gets built and
+deployed. That is the correct scope for the hold, and it should stay that
+way. But it does **not** cover repository history or remote branches, and
+it must not be reported as though it did.
+
+In particular, the `ai-capability` branch on origin and the AI capability
+reachable in main's history are a **deliberate preservation pending
+approval, not a leak**. Removing them would require rewriting history,
+which is out of bounds. Finding them is not a regression and must not be
+reported as one.
+
+Report this item as: "main's working tree and build output are AI-free
+(package.json, src/, .env). Scope: working tree only — history and remote
+branches are out of scope and the preserved ai-capability branch is
+expected." Do not shorten it to "no AI capability present" — that claim is
+broader than the evidence.
+
 ## How you report
 Produce a single structured table: each checklist item with PASS or FAIL.
 For any FAIL, give the exact symptom and the cohort/filter combination that
