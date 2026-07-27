@@ -406,425 +406,35 @@ function autoBalanceMix(prev: Record<string, number>, changedTier: string, newVa
 // Component
 // ---------------------------------------------------------------------------
 
-export const WhatIfTab: React.FC<WhatIfTabProps> = ({
-  data,
-  wiDateCol = '',
-  wiSegmentCol,
-  wiProductCol,
-  wiProductL2Col = '',
-  wiChannelCol,
-  wiChannelL2Col = '',
-  wiMetricCol = '',
-  wiInflowVal = '',
-  wiRetentionVal = '',
-  wiArpuCol = '',
-  wiValueCol = '',
-  wiRevenueCol = '',
-  productTree,
-  channelTree,
-  tariffTree,
-  wiTariffL1Col = '',
-  wiTariffL2Col = '',
-  selectedTariffs = [],
-  setSelectedTariffs,
-  cohortAvgArpu = null,
-  newEvent,
-  setNewEvent,
-  marketEvents,
-  setMarketEvents,
-  addMarketEvent,
-  removeMarketEvent,
-  updateMarketEvent,
-  yieldEvents,
-  newYieldEvent,
-  setNewYieldEvent,
-  addYieldEvent,
-  removeYieldEvent,
-  clearAllYieldEvents,
-  pricingEvents,
-  newPricingEvent,
-  setNewPricingEvent,
-  addPricingEvent,
-  removePricingEvent,
-  clearAllPricingEvents,
-  downloadExcel,
-  formatNumber,
-  setActiveView,
-  missingMonths,
-}) => {
-  const { baseForecast, setAdjustedForecast } = useForecast();
+/**
+ * Adjusted-forecast engine (Pass 1 / Pass 2 / Pass 3) — extracted verbatim from
+ * the component so it can be driven directly (MAPE verification, reconciliation
+ * assertions) without a DOM. The useMemo below is now a thin caller; the body is
+ * unchanged, so behaviour is identical.
+ */
+export interface AdjustedForecastInput {
+  baseForecast: any;
+  marketEvents: MarketEvent[];
+  yieldEvents: YieldEvent[];
+  pricingEvents: PricingEvent[];
+  viewSegment: string;
+  viewProduct: HierarchicalSelection;
+  viewChannel: HierarchicalSelection;
+  viewTariff: HierarchicalSelection;
+  data: any[];
+  wiSegmentCol: string; wiProductCol: string; wiProductL2Col: string;
+  wiChannelCol: string; wiChannelL2Col: string;
+  wiTariffL1Col: string; wiTariffL2Col: string; wiValueCol: string;
+  /** Injectable for tests: pass [] to reproduce the pre-pro-rata wildcard behaviour. */
+  proRataLeavesOverride?: ProRataLeaf[];
+}
 
-  const [selectedKpis, setSelectedKpis] = useState<KpiName[]>(['Inflow', 'Outflow', 'Retention', 'Base']);
-
-  // null = add-new mode; a string id = editing that event
-  const [editingEventId, setEditingEventId] = useState<string | null>(null);
-  // null = not editing a campaign; a string = editing all events sharing that campaignName
-  const [editingCampaign, setEditingCampaign] = useState<string | null>(null);
-
-  // ---------------------------------------------------------------------------
-  // Local view filter — independent from Step 1 selections.
-  // Defaults to 'All' on every mount; never reads from baseForecast.cohort.
-  // ---------------------------------------------------------------------------
-  const [viewSegment, setViewSegment] = useState('All');
-  const [viewProduct, setViewProduct] = useState<HierarchicalSelection>({ l1: null, l2: null });
-  const [viewChannel, setViewChannel] = useState<HierarchicalSelection>({ l1: null, l2: null });
-  const [viewTariff, setViewTariff] = useState<HierarchicalSelection>({ l1: null, l2: null });
-  // 'All' means all KPIs visible; a specific scenario pre-selects that KPI.
-  const [viewScenario, setViewScenario] = useState('All');
-
-  // Tariff tree constrained to the user's selected tariffs (Phase 2b) — feeds the
-  // P7 targeting dropdowns and the tariff mix axis. Empty selection = no options,
-  // so nothing renders until the user selects tariffs (per the scoping control).
-  const fullTariffTree = tariffTree ?? new Map<string, string[]>();
-  const targetTariffTree = useMemo<Map<string, string[]>>(() => {
-    if (!selectedTariffs.length) return new Map();
-    const t = new Map<string, string[]>();
-    for (const l1 of selectedTariffs) {
-      if (fullTariffTree.has(l1)) t.set(l1, fullTariffTree.get(l1)!);
-    }
-    return t;
-  }, [fullTariffTree, selectedTariffs]);
-
-  // If a targeted tariff leaves the selected set, clear it from the draft event
-  // forms so a now-hidden dropdown can't silently save a deselected tariff scope.
-  useEffect(() => {
-    if (newEvent.tariffL1 && newEvent.tariffL1 !== 'All' && !selectedTariffs.includes(newEvent.tariffL1)) {
-      setNewEvent({ ...newEvent, tariffL1: 'All', tariffL2: 'All' });
-    }
-  }, [selectedTariffs]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (newPricingEvent.tariffL1 && newPricingEvent.tariffL1 !== 'All' && !selectedTariffs.includes(newPricingEvent.tariffL1)) {
-      setNewPricingEvent({ ...newPricingEvent, tariffL1: 'All', tariffL2: 'All' });
-    }
-  }, [selectedTariffs]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Tab state ─────────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<'volume' | 'value' | 'pricing' | 'promotion'>('volume');
-
-  const [windowSize, setWindowSize] = useState(12);
-  const [windowOffset, setWindowOffset] = useState(0);
-
-  // ── Volume spread state ────────────────────────────────────────────────────
-  const [spreadEnabled, setSpreadEnabled] = useState(false);
-  const [spreadMonths, setSpreadMonths] = useState(3);
-  const [spreadDistType, setSpreadDistType] = useState<'even' | 'custom'>('even');
-  const [customDist, setCustomDist] = useState<number[]>([34, 33, 33]);
-
-  // Keep customDist length in sync with spreadMonths
-  useEffect(() => {
-    setCustomDist(prev => {
-      const even = Math.floor(100 / spreadMonths);
-      const remainder = 100 - even * spreadMonths;
-      return Array.from({ length: spreadMonths }, (_, i) =>
-        prev[i] !== undefined ? prev[i] : (i === 0 ? even + remainder : even)
-      );
-    });
-  }, [spreadMonths]);
-
-  // When the active tab changes, sync the KPI selection to the tab's focus.
-  useEffect(() => {
-    if (activeTab === 'volume' || activeTab === 'promotion') {
-      setSelectedKpis(['Inflow', 'Outflow', 'Retention', 'Base']);
-    } else {
-      // Value and Pricing tabs focus on ARPU
-      setSelectedKpis(['ARPU']);
-    }
-  }, [activeTab]);
-
-  // When the user picks a specific scenario, focus the chart on that KPI.
-  // When 'All' is selected, do nothing — the activeTab effect owns the default set.
-  useEffect(() => {
-    if (viewScenario !== 'All') {
-      setSelectedKpis([viewScenario as KpiName]);
-    }
-  }, [viewScenario]);
-
-  // Sync local view filter from the loaded baseForecast's cohort dimensions.
-  // Keeps the page-level VIEW dropdowns aligned with the global VIEWING bar.
-  useEffect(() => {
-    if (!baseForecast) return;
-    const { segment, product, productL2, channel, channelL2, tariffL1, tariffL2 } = baseForecast.cohort;
-    setViewSegment(segment !== 'All' ? segment : 'All');
-    setViewProduct({
-      l1: product !== 'All' ? product : null,
-      l2: productL2 && productL2 !== 'All' ? productL2 : null,
-    });
-    setViewChannel({
-      l1: channel !== 'All' ? channel : null,
-      l2: channelL2 && channelL2 !== 'All' ? channelL2 : null,
-    });
-    setViewTariff({
-      l1: tariffL1 && tariffL1 !== 'All' ? tariffL1 : null,
-      l2: tariffL2 && tariffL2 !== 'All' ? tariffL2 : null,
-    });
-  }, [baseForecast]);
-
-  // ── Yield Events form local draft state ──────────────────────────────────
-  // draftMix holds the live slider values (always sums to 100).
-  const [draftMix, setDraftMix] = useState<Record<string, number>>({});
-  // 'historical' = raw data average per tier; 'forecast' = scaled to match the
-  // forecast's per-scenario ARPU for the selected yield event month.
-  const [yieldArpuMode, setYieldArpuMode] = useState<'historical' | 'forecast'>('historical');
-
-  // Mix dimension selector (Phase 2b P6): the yield mix is distributed across
-  // either the Value axis (Product L2 tiers) or the Tariff axis (selected tariffs).
-  // Independent axes — never a value×tariff matrix; the user picks one per event.
-  const [mixAxis, setMixAxis] = useState<'value' | 'tariff'>('value');
-
-  // Derive Product L2 options + their base ARPUs from data whenever the
-  // newYieldEvent selectors change.
-  // When yieldArpuMode === 'forecast', tier ARPUs are scaled so their
-  // volume-weighted blend equals the forecast's per-scenario ARPU for the
-  // selected month — preserving relative tier relativities.
-  const yieldTierData = useMemo<{ tier: string; baseArpu: number; historicalArpu: number }[]>(() => {
-    // Choose the bucketing dimension by axis: Value → Product L2 tiers,
-    // Tariff → the user's selected tariffs (Phase 2b). The rest of the
-    // derivation (per-bucket ARPU, forecast scaling) is identical either way.
-    // Historical per-tier ARPU is sum(Revenue)/sum(Volume) over the columns the
-    // user selected in Data Mapping/Baseline Forecast generation — never a
-    // name-matched "ARPU" column. This mirrors computeCohortTrailingArpu (P4)
-    // and computeWhatIfData's own aggregation, so cohort-average ARPU is derived
-    // the same way everywhere in the app, including the Custom Promotion Card's
-    // mix arm (Phase 4), which calls the same computeTierData helper below.
-    return computeTierData({
-      data, mixAxis, groupCol: mixAxis === 'tariff' ? wiTariffL1Col : wiProductL2Col,
-      wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col,
-      selectedTariffs,
-      segment: newYieldEvent.segment, product: newYieldEvent.product,
-      channelL1: newYieldEvent.channelL1, channelL2: newYieldEvent.channelL2,
-      ibro: newYieldEvent.ibro, ibroInflowVal: wiInflowVal, ibroRetentionVal: wiRetentionVal,
-      yieldArpuMode, month: newYieldEvent.month, baseForecast,
-    });
-  }, [data, mixAxis, wiTariffL1Col, selectedTariffs, wiProductL2Col, wiArpuCol, wiValueCol, wiRevenueCol, wiMetricCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col, wiInflowVal, wiRetentionVal, newYieldEvent.segment, newYieldEvent.product, newYieldEvent.channelL1, newYieldEvent.channelL2, newYieldEvent.ibro, newYieldEvent.month, yieldArpuMode, baseForecast]);
-
-  // Which mix axes are usable (Phase 2b). Value availability comes from the
-  // already-computed productTree (O(1), no data scan) — "value null/All" means
-  // no Product L2 tiers exist. Tariff needs a mapped column + selected tariffs.
-  const valueAxisAvailable = !!wiProductL2Col && Array.from(productTree.values()).some((a: string[]) => a.length > 0);
-  const tariffAxisAvailable = !!wiTariffL1Col && selectedTariffs.length > 0;
-
-  // Conditional default: prefer Value; fall back to Tariff only when Value has no
-  // usable buckets and tariffs are selected. Only switches AWAY from an unusable
-  // axis, so a deliberate manual toggle to a usable axis is never undone.
-  useEffect(() => {
-    if (mixAxis === 'value' && !valueAxisAvailable && tariffAxisAvailable) setMixAxis('tariff');
-    else if (mixAxis === 'tariff' && !tariffAxisAvailable && valueAxisAvailable) setMixAxis('value');
-  }, [mixAxis, valueAxisAvailable, tariffAxisAvailable]);
-
-  // Seed draftMix with equal weights whenever tiers change
-  useEffect(() => {
-    if (yieldTierData.length === 0) { setDraftMix({}); return; }
-    const eq = 100 / yieldTierData.length;
-    const init: Record<string, number> = {};
-    yieldTierData.forEach((t, i) => {
-      // last tier absorbs rounding residual so total is exactly 100
-      init[t.tier] = i === yieldTierData.length - 1
-        ? 100 - eq * (yieldTierData.length - 1)
-        : eq;
-    });
-    setDraftMix(init);
-  }, [yieldTierData.map(t => t.tier).join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Auto-balancing slider handler
-  const handleSliderChange = useCallback((changedTier: string, newValue: number) => {
-    setDraftMix(prev => autoBalanceMix(prev, changedTier, newValue));
-  }, []);
-
-  // Computed blended ARPU from current draft
-  const draftBlendedArpu = useMemo(() => {
-    return yieldTierData.reduce((sum, t) => sum + (draftMix[t.tier] ?? 0) / 100 * t.baseArpu, 0);
-  }, [draftMix, yieldTierData]);
-
-  // Baseline blended ARPU from data (equal to sum of existing share × arpu)
-  const baselineBlendedArpu = useMemo(() => {
-    if (yieldTierData.length === 0) return 0;
-    const total = yieldTierData.reduce((s, t) => s + t.baseArpu, 0);
-    if (total === 0) return 0;
-    // Approximate: assume existing mix is data-driven (average ARPU of all tiers weighted equally)
-    return yieldTierData.reduce((s, t) => s + t.baseArpu, 0) / yieldTierData.length;
-  }, [yieldTierData]);
-
-  // ---------------------------------------------------------------------------
-  // Custom Promotion Card (Phase 4) — a combined promo: mandatory volume
-  // (Acquisition/Inflow or Retention, reusing existing IBRO mechanics + ramp/
-  // decay), with optional value-mix and/or pricing arms that scope to the
-  // promo's own volume only and never re-mix or re-price the standing base.
-  // ---------------------------------------------------------------------------
-
-  // null = add-new mode; a string id/campaignName = editing that promo/campaign
-  // (separate from editingEventId/editingCampaign above, which belong to the
-  // Volume tab's own form and must stay unaffected by Promotion Card edits).
-  const [editingPromoId, setEditingPromoId] = useState<string | null>(null);
-  const [editingPromoCampaign, setEditingPromoCampaign] = useState<string | null>(null);
-
-  const [promoTarget, setPromoTarget] = useState<'Inflow' | 'Retention'>('Inflow');
-  const [newPromo, setNewPromo] = useState<PromoDraft>(blankPromo());
-
-  const [promoSpreadEnabled, setPromoSpreadEnabled] = useState(false);
-  const [promoSpreadMonths, setPromoSpreadMonths] = useState(3);
-  const [promoSpreadDistType, setPromoSpreadDistType] = useState<'even' | 'custom'>('even');
-  const [promoCustomDist, setPromoCustomDist] = useState<number[]>([34, 33, 33]);
-  useEffect(() => {
-    setPromoCustomDist(prev => {
-      const even = Math.floor(100 / promoSpreadMonths);
-      const remainder = 100 - even * promoSpreadMonths;
-      return Array.from({ length: promoSpreadMonths }, (_, i) =>
-        prev[i] !== undefined ? prev[i] : (i === 0 ? even + remainder : even)
-      );
-    });
-  }, [promoSpreadMonths]);
-
-  const [promoMixEnabled, setPromoMixEnabled] = useState(false);
-  const [promoMixAxis, setPromoMixAxis] = useState<'value' | 'tariff'>('value');
-  const [promoYieldArpuMode, setPromoYieldArpuMode] = useState<'historical' | 'forecast'>('historical');
-  const [promoDraftMix, setPromoDraftMix] = useState<Record<string, number>>({});
-
-  const [promoPricingEnabled, setPromoPricingEnabled] = useState(false);
-  const [promoPricingMode, setPromoPricingMode] = useState<'percentage' | 'absolute'>('percentage');
-  const [promoPricingAmount, setPromoPricingAmount] = useState(0);
-
-  // Same tier derivation as the Value tab's Yield Event form (computeTierData),
-  // scoped to the promo's own dimensions and volume target — never re-implemented.
-  const promoTierData = useMemo<{ tier: string; baseArpu: number; historicalArpu: number }[]>(() => {
-    return computeTierData({
-      data, mixAxis: promoMixAxis, groupCol: promoMixAxis === 'tariff' ? wiTariffL1Col : wiProductL2Col,
-      wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col,
-      selectedTariffs,
-      segment: newPromo.segment, product: newPromo.product,
-      channelL1: newPromo.channel, channelL2: newPromo.channelL2,
-      ibro: promoTarget, ibroInflowVal: wiInflowVal, ibroRetentionVal: wiRetentionVal,
-      yieldArpuMode: promoYieldArpuMode, month: newPromo.date, baseForecast,
-    });
-  }, [data, promoMixAxis, wiTariffL1Col, selectedTariffs, wiProductL2Col, wiArpuCol, wiValueCol, wiRevenueCol, wiMetricCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col, wiInflowVal, wiRetentionVal, newPromo.segment, newPromo.product, newPromo.channel, newPromo.channelL2, promoTarget, newPromo.date, promoYieldArpuMode, baseForecast]);
-
-  const promoTariffAxisAvailable = !!wiTariffL1Col && selectedTariffs.length > 0;
-
-  // Seed promoDraftMix with equal weights whenever tiers change
-  useEffect(() => {
-    if (promoTierData.length === 0) { setPromoDraftMix({}); return; }
-    const eq = 100 / promoTierData.length;
-    const init: Record<string, number> = {};
-    promoTierData.forEach((t, i) => {
-      init[t.tier] = i === promoTierData.length - 1
-        ? 100 - eq * (promoTierData.length - 1)
-        : eq;
-    });
-    setPromoDraftMix(init);
-  }, [promoTierData.map(t => t.tier).join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handlePromoSliderChange = useCallback((changedTier: string, newValue: number) => {
-    setPromoDraftMix(prev => autoBalanceMix(prev, changedTier, newValue));
-  }, []);
-
-  const promoDraftBlendedArpu = useMemo(() => {
-    const tierArpu: Record<string, number> = {};
-    promoTierData.forEach(t => { tierArpu[t.tier] = t.baseArpu; });
-    return blendTierMix(promoDraftMix, tierArpu);
-  }, [promoDraftMix, promoTierData]);
-
-  // Trailing 3-month cohort-average ARPU for the promo's own dimensions/target
-  // (Phase 3 P4 pattern) — the fallback base when the mix arm isn't used.
-  const promoCohortAvgArpu = useMemo<number | null>(() => {
-    const metricValue = promoTarget === 'Inflow' ? wiInflowVal : wiRetentionVal;
-    if (!metricValue) return null;
-    return computeCohortTrailingArpu(
-      { data, wiDateCol, wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col },
-      metricValue,
-      { segment: newPromo.segment, product: newPromo.product, productL2: newPromo.productL2, channel: newPromo.channel, channelL2: newPromo.channelL2, tariffL1: newPromo.tariffL1, tariffL2: newPromo.tariffL2 },
-    );
-  }, [data, wiDateCol, wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiInflowVal, wiRetentionVal, promoTarget, newPromo.segment, newPromo.product, newPromo.productL2, newPromo.channel, newPromo.channelL2, newPromo.tariffL1, newPromo.tariffL2]);
-
-  const resetPromoDraft = useCallback(() => {
-    setNewPromo(blankPromo());
-    setPromoSpreadEnabled(false);
-    setPromoSpreadMonths(3);
-    setPromoSpreadDistType('even');
-    setPromoCustomDist([34, 33, 33]);
-    setPromoMixEnabled(false);
-    setPromoPricingEnabled(false);
-    setPromoPricingAmount(0);
-  }, []);
-
-  // ── Add Custom Promotion event(s) ─────────────────────────────────────────
-  const handleAddPromotionEvent = useCallback(() => {
-    if (!newPromo.date || !newPromo.subscriberVolume) return;
-    if (promoMixEnabled && promoTierData.length === 0) return;
-
-    const events = buildPromoEvents({
-      target: promoTarget, draft: newPromo,
-      mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
-      pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
-      cohortAvgArpu: promoCohortAvgArpu,
-      spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
-    });
-    if (events.length === 0) return;
-
-    setMarketEvents([...marketEvents, ...events]);
-    resetPromoDraft();
-  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, marketEvents, setMarketEvents, resetPromoDraft]);
-
-  // ── Unique options for Yield Event form ───────────────────────────────────
-  const ySegmentOptions = useMemo(
-    () => Array.from(new Set(data.map(r => String(r[wiSegmentCol])).filter(v => v && v !== 'undefined'))).sort(),
-    [data, wiSegmentCol],
-  );
-  const yProductOptions = useMemo(
-    () => Array.from(new Set(data.map(r => String(r[wiProductCol])).filter(v => v && v !== 'undefined'))).sort(),
-    [data, wiProductCol],
-  );
-  const yChannelL1Options = useMemo(
-    () => Array.from(new Set(data.map(r => String(r[wiChannelCol])).filter(v => v && v !== 'undefined'))).sort(),
-    [data, wiChannelCol],
-  );
-  // ── Unique options for Pricing Event form ────────────────────────────────
-  const pricingProductL2Options = useMemo(() => {
-    if (!wiProductL2Col) return [];
-    const filtered = newPricingEvent.product && newPricingEvent.product !== 'All'
-      ? data.filter(r => String(r[wiProductCol]) === newPricingEvent.product)
-      : data;
-    return Array.from(new Set(filtered.map(r => String(r[wiProductL2Col])).filter(v => v && v !== 'undefined'))).sort();
-  }, [data, wiProductCol, wiProductL2Col, newPricingEvent.product]);
-
-  // ── Add Yield Event ────────────────────────────────────────────────────────
-  const handleAddYieldEvent = useCallback(() => {
-    if (!newYieldEvent.month || yieldTierData.length === 0) return;
-    const tariffBaseArpu: Record<string, number> = {};
-    yieldTierData.forEach(t => { tariffBaseArpu[t.tier] = t.baseArpu; });
-
-    const event: YieldEvent = {
-      id: Math.random().toString(36).substr(2, 9),
-      ibro: newYieldEvent.ibro ?? 'Inflow',
-      segment: newYieldEvent.segment ?? 'All',
-      product: newYieldEvent.product ?? 'All',
-      channelL1: newYieldEvent.channelL1 ?? 'All',
-      channelL2: newYieldEvent.channelL2 ?? 'All',
-      month: newYieldEvent.month,
-      mixAxis,
-      tariffMix: { ...draftMix },
-      tariffBaseArpu,
-      rollForward: newYieldEvent.rollForward ?? false,
-      name:    newYieldEvent.name    ?? '',
-      comment: newYieldEvent.comment ?? '',
-    };
-    addYieldEvent(event);
-  }, [newYieldEvent, draftMix, yieldTierData, addYieldEvent]);
-
-  // ── All unique tiers across saved yield events (for table header) ──────────
-  const allYieldTiers = useMemo(() => {
-    const tiers = new Set<string>();
-    yieldEvents.forEach(e => Object.keys(e.tariffMix).forEach(t => tiers.add(t)));
-    return Array.from(tiers).sort();
-  }, [yieldEvents]);
-
-  // -------------------------------------------------------------------------
-  // Derive adjusted months from BaseForecast + market events (no HW re-run)
-  // -------------------------------------------------------------------------
-
-  const { chartData, adjustedMonths } = useMemo<{
-    chartData: any[];
-    adjustedMonths: AdjustedForecastMonth[];
-  }>(() => {
-    if (!baseForecast) return { chartData: [], adjustedMonths: [] };
+export function computeAdjustedForecast(input: AdjustedForecastInput): { chartData: any[]; adjustedMonths: AdjustedForecastMonth[] } {
+  const { baseForecast, marketEvents, yieldEvents, pricingEvents, viewSegment, viewProduct,
+    viewChannel, viewTariff, data, wiSegmentCol, wiProductCol, wiProductL2Col,
+    wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiValueCol,
+    proRataLeavesOverride } = input;
+  if (!baseForecast) return { chartData: [], adjustedMonths: [] };
 
     // Use the local view filter for event matching so the chart reflects the
     // currently selected view scope — not the cohort from Step 1.
@@ -853,7 +463,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // share; shares across the target's leaves sum to 1, so the event is applied
     // once in total and an aggregate reconciles to the sum of its leaves.
     // Leaves are enumerated from the loaded rows — no rows.filter fallback scan.
-    const proRataLeaves: ProRataLeaf[] = (() => {
+    const proRataLeaves: ProRataLeaf[] = proRataLeavesOverride ?? (() => {
       const byLeaf = new Map<string, ProRataLeaf>();
       for (const row of data) {
         const leaf: ProRataLeaf = {
@@ -1358,7 +968,428 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     });
 
     return { chartData: rows, adjustedMonths: computed };
-  }, [baseForecast, marketEvents, yieldEvents, pricingEvents, viewSegment, viewProduct, viewChannel, viewTariff]);
+}
+
+export const WhatIfTab: React.FC<WhatIfTabProps> = ({
+  data,
+  wiDateCol = '',
+  wiSegmentCol,
+  wiProductCol,
+  wiProductL2Col = '',
+  wiChannelCol,
+  wiChannelL2Col = '',
+  wiMetricCol = '',
+  wiInflowVal = '',
+  wiRetentionVal = '',
+  wiArpuCol = '',
+  wiValueCol = '',
+  wiRevenueCol = '',
+  productTree,
+  channelTree,
+  tariffTree,
+  wiTariffL1Col = '',
+  wiTariffL2Col = '',
+  selectedTariffs = [],
+  setSelectedTariffs,
+  cohortAvgArpu = null,
+  newEvent,
+  setNewEvent,
+  marketEvents,
+  setMarketEvents,
+  addMarketEvent,
+  removeMarketEvent,
+  updateMarketEvent,
+  yieldEvents,
+  newYieldEvent,
+  setNewYieldEvent,
+  addYieldEvent,
+  removeYieldEvent,
+  clearAllYieldEvents,
+  pricingEvents,
+  newPricingEvent,
+  setNewPricingEvent,
+  addPricingEvent,
+  removePricingEvent,
+  clearAllPricingEvents,
+  downloadExcel,
+  formatNumber,
+  setActiveView,
+  missingMonths,
+}) => {
+  const { baseForecast, setAdjustedForecast } = useForecast();
+
+  const [selectedKpis, setSelectedKpis] = useState<KpiName[]>(['Inflow', 'Outflow', 'Retention', 'Base']);
+
+  // null = add-new mode; a string id = editing that event
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  // null = not editing a campaign; a string = editing all events sharing that campaignName
+  const [editingCampaign, setEditingCampaign] = useState<string | null>(null);
+
+  // ---------------------------------------------------------------------------
+  // Local view filter — independent from Step 1 selections.
+  // Defaults to 'All' on every mount; never reads from baseForecast.cohort.
+  // ---------------------------------------------------------------------------
+  const [viewSegment, setViewSegment] = useState('All');
+  const [viewProduct, setViewProduct] = useState<HierarchicalSelection>({ l1: null, l2: null });
+  const [viewChannel, setViewChannel] = useState<HierarchicalSelection>({ l1: null, l2: null });
+  const [viewTariff, setViewTariff] = useState<HierarchicalSelection>({ l1: null, l2: null });
+  // 'All' means all KPIs visible; a specific scenario pre-selects that KPI.
+  const [viewScenario, setViewScenario] = useState('All');
+
+  // Tariff tree constrained to the user's selected tariffs (Phase 2b) — feeds the
+  // P7 targeting dropdowns and the tariff mix axis. Empty selection = no options,
+  // so nothing renders until the user selects tariffs (per the scoping control).
+  const fullTariffTree = tariffTree ?? new Map<string, string[]>();
+  const targetTariffTree = useMemo<Map<string, string[]>>(() => {
+    if (!selectedTariffs.length) return new Map();
+    const t = new Map<string, string[]>();
+    for (const l1 of selectedTariffs) {
+      if (fullTariffTree.has(l1)) t.set(l1, fullTariffTree.get(l1)!);
+    }
+    return t;
+  }, [fullTariffTree, selectedTariffs]);
+
+  // If a targeted tariff leaves the selected set, clear it from the draft event
+  // forms so a now-hidden dropdown can't silently save a deselected tariff scope.
+  useEffect(() => {
+    if (newEvent.tariffL1 && newEvent.tariffL1 !== 'All' && !selectedTariffs.includes(newEvent.tariffL1)) {
+      setNewEvent({ ...newEvent, tariffL1: 'All', tariffL2: 'All' });
+    }
+  }, [selectedTariffs]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (newPricingEvent.tariffL1 && newPricingEvent.tariffL1 !== 'All' && !selectedTariffs.includes(newPricingEvent.tariffL1)) {
+      setNewPricingEvent({ ...newPricingEvent, tariffL1: 'All', tariffL2: 'All' });
+    }
+  }, [selectedTariffs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Tab state ─────────────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState<'volume' | 'value' | 'pricing' | 'promotion'>('volume');
+
+  const [windowSize, setWindowSize] = useState(12);
+  const [windowOffset, setWindowOffset] = useState(0);
+
+  // ── Volume spread state ────────────────────────────────────────────────────
+  const [spreadEnabled, setSpreadEnabled] = useState(false);
+  const [spreadMonths, setSpreadMonths] = useState(3);
+  const [spreadDistType, setSpreadDistType] = useState<'even' | 'custom'>('even');
+  const [customDist, setCustomDist] = useState<number[]>([34, 33, 33]);
+
+  // Keep customDist length in sync with spreadMonths
+  useEffect(() => {
+    setCustomDist(prev => {
+      const even = Math.floor(100 / spreadMonths);
+      const remainder = 100 - even * spreadMonths;
+      return Array.from({ length: spreadMonths }, (_, i) =>
+        prev[i] !== undefined ? prev[i] : (i === 0 ? even + remainder : even)
+      );
+    });
+  }, [spreadMonths]);
+
+  // When the active tab changes, sync the KPI selection to the tab's focus.
+  useEffect(() => {
+    if (activeTab === 'volume' || activeTab === 'promotion') {
+      setSelectedKpis(['Inflow', 'Outflow', 'Retention', 'Base']);
+    } else {
+      // Value and Pricing tabs focus on ARPU
+      setSelectedKpis(['ARPU']);
+    }
+  }, [activeTab]);
+
+  // When the user picks a specific scenario, focus the chart on that KPI.
+  // When 'All' is selected, do nothing — the activeTab effect owns the default set.
+  useEffect(() => {
+    if (viewScenario !== 'All') {
+      setSelectedKpis([viewScenario as KpiName]);
+    }
+  }, [viewScenario]);
+
+  // Sync local view filter from the loaded baseForecast's cohort dimensions.
+  // Keeps the page-level VIEW dropdowns aligned with the global VIEWING bar.
+  useEffect(() => {
+    if (!baseForecast) return;
+    const { segment, product, productL2, channel, channelL2, tariffL1, tariffL2 } = baseForecast.cohort;
+    setViewSegment(segment !== 'All' ? segment : 'All');
+    setViewProduct({
+      l1: product !== 'All' ? product : null,
+      l2: productL2 && productL2 !== 'All' ? productL2 : null,
+    });
+    setViewChannel({
+      l1: channel !== 'All' ? channel : null,
+      l2: channelL2 && channelL2 !== 'All' ? channelL2 : null,
+    });
+    setViewTariff({
+      l1: tariffL1 && tariffL1 !== 'All' ? tariffL1 : null,
+      l2: tariffL2 && tariffL2 !== 'All' ? tariffL2 : null,
+    });
+  }, [baseForecast]);
+
+  // ── Yield Events form local draft state ──────────────────────────────────
+  // draftMix holds the live slider values (always sums to 100).
+  const [draftMix, setDraftMix] = useState<Record<string, number>>({});
+  // 'historical' = raw data average per tier; 'forecast' = scaled to match the
+  // forecast's per-scenario ARPU for the selected yield event month.
+  const [yieldArpuMode, setYieldArpuMode] = useState<'historical' | 'forecast'>('historical');
+
+  // Mix dimension selector (Phase 2b P6): the yield mix is distributed across
+  // either the Value axis (Product L2 tiers) or the Tariff axis (selected tariffs).
+  // Independent axes — never a value×tariff matrix; the user picks one per event.
+  const [mixAxis, setMixAxis] = useState<'value' | 'tariff'>('value');
+
+  // Derive Product L2 options + their base ARPUs from data whenever the
+  // newYieldEvent selectors change.
+  // When yieldArpuMode === 'forecast', tier ARPUs are scaled so their
+  // volume-weighted blend equals the forecast's per-scenario ARPU for the
+  // selected month — preserving relative tier relativities.
+  const yieldTierData = useMemo<{ tier: string; baseArpu: number; historicalArpu: number }[]>(() => {
+    // Choose the bucketing dimension by axis: Value → Product L2 tiers,
+    // Tariff → the user's selected tariffs (Phase 2b). The rest of the
+    // derivation (per-bucket ARPU, forecast scaling) is identical either way.
+    // Historical per-tier ARPU is sum(Revenue)/sum(Volume) over the columns the
+    // user selected in Data Mapping/Baseline Forecast generation — never a
+    // name-matched "ARPU" column. This mirrors computeCohortTrailingArpu (P4)
+    // and computeWhatIfData's own aggregation, so cohort-average ARPU is derived
+    // the same way everywhere in the app, including the Custom Promotion Card's
+    // mix arm (Phase 4), which calls the same computeTierData helper below.
+    return computeTierData({
+      data, mixAxis, groupCol: mixAxis === 'tariff' ? wiTariffL1Col : wiProductL2Col,
+      wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col,
+      selectedTariffs,
+      segment: newYieldEvent.segment, product: newYieldEvent.product,
+      channelL1: newYieldEvent.channelL1, channelL2: newYieldEvent.channelL2,
+      ibro: newYieldEvent.ibro, ibroInflowVal: wiInflowVal, ibroRetentionVal: wiRetentionVal,
+      yieldArpuMode, month: newYieldEvent.month, baseForecast,
+    });
+  }, [data, mixAxis, wiTariffL1Col, selectedTariffs, wiProductL2Col, wiArpuCol, wiValueCol, wiRevenueCol, wiMetricCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col, wiInflowVal, wiRetentionVal, newYieldEvent.segment, newYieldEvent.product, newYieldEvent.channelL1, newYieldEvent.channelL2, newYieldEvent.ibro, newYieldEvent.month, yieldArpuMode, baseForecast]);
+
+  // Which mix axes are usable (Phase 2b). Value availability comes from the
+  // already-computed productTree (O(1), no data scan) — "value null/All" means
+  // no Product L2 tiers exist. Tariff needs a mapped column + selected tariffs.
+  const valueAxisAvailable = !!wiProductL2Col && Array.from(productTree.values()).some((a: string[]) => a.length > 0);
+  const tariffAxisAvailable = !!wiTariffL1Col && selectedTariffs.length > 0;
+
+  // Conditional default: prefer Value; fall back to Tariff only when Value has no
+  // usable buckets and tariffs are selected. Only switches AWAY from an unusable
+  // axis, so a deliberate manual toggle to a usable axis is never undone.
+  useEffect(() => {
+    if (mixAxis === 'value' && !valueAxisAvailable && tariffAxisAvailable) setMixAxis('tariff');
+    else if (mixAxis === 'tariff' && !tariffAxisAvailable && valueAxisAvailable) setMixAxis('value');
+  }, [mixAxis, valueAxisAvailable, tariffAxisAvailable]);
+
+  // Seed draftMix with equal weights whenever tiers change
+  useEffect(() => {
+    if (yieldTierData.length === 0) { setDraftMix({}); return; }
+    const eq = 100 / yieldTierData.length;
+    const init: Record<string, number> = {};
+    yieldTierData.forEach((t, i) => {
+      // last tier absorbs rounding residual so total is exactly 100
+      init[t.tier] = i === yieldTierData.length - 1
+        ? 100 - eq * (yieldTierData.length - 1)
+        : eq;
+    });
+    setDraftMix(init);
+  }, [yieldTierData.map(t => t.tier).join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-balancing slider handler
+  const handleSliderChange = useCallback((changedTier: string, newValue: number) => {
+    setDraftMix(prev => autoBalanceMix(prev, changedTier, newValue));
+  }, []);
+
+  // Computed blended ARPU from current draft
+  const draftBlendedArpu = useMemo(() => {
+    return yieldTierData.reduce((sum, t) => sum + (draftMix[t.tier] ?? 0) / 100 * t.baseArpu, 0);
+  }, [draftMix, yieldTierData]);
+
+  // Baseline blended ARPU from data (equal to sum of existing share × arpu)
+  const baselineBlendedArpu = useMemo(() => {
+    if (yieldTierData.length === 0) return 0;
+    const total = yieldTierData.reduce((s, t) => s + t.baseArpu, 0);
+    if (total === 0) return 0;
+    // Approximate: assume existing mix is data-driven (average ARPU of all tiers weighted equally)
+    return yieldTierData.reduce((s, t) => s + t.baseArpu, 0) / yieldTierData.length;
+  }, [yieldTierData]);
+
+  // ---------------------------------------------------------------------------
+  // Custom Promotion Card (Phase 4) — a combined promo: mandatory volume
+  // (Acquisition/Inflow or Retention, reusing existing IBRO mechanics + ramp/
+  // decay), with optional value-mix and/or pricing arms that scope to the
+  // promo's own volume only and never re-mix or re-price the standing base.
+  // ---------------------------------------------------------------------------
+
+  // null = add-new mode; a string id/campaignName = editing that promo/campaign
+  // (separate from editingEventId/editingCampaign above, which belong to the
+  // Volume tab's own form and must stay unaffected by Promotion Card edits).
+  const [editingPromoId, setEditingPromoId] = useState<string | null>(null);
+  const [editingPromoCampaign, setEditingPromoCampaign] = useState<string | null>(null);
+
+  const [promoTarget, setPromoTarget] = useState<'Inflow' | 'Retention'>('Inflow');
+  const [newPromo, setNewPromo] = useState<PromoDraft>(blankPromo());
+
+  const [promoSpreadEnabled, setPromoSpreadEnabled] = useState(false);
+  const [promoSpreadMonths, setPromoSpreadMonths] = useState(3);
+  const [promoSpreadDistType, setPromoSpreadDistType] = useState<'even' | 'custom'>('even');
+  const [promoCustomDist, setPromoCustomDist] = useState<number[]>([34, 33, 33]);
+  useEffect(() => {
+    setPromoCustomDist(prev => {
+      const even = Math.floor(100 / promoSpreadMonths);
+      const remainder = 100 - even * promoSpreadMonths;
+      return Array.from({ length: promoSpreadMonths }, (_, i) =>
+        prev[i] !== undefined ? prev[i] : (i === 0 ? even + remainder : even)
+      );
+    });
+  }, [promoSpreadMonths]);
+
+  const [promoMixEnabled, setPromoMixEnabled] = useState(false);
+  const [promoMixAxis, setPromoMixAxis] = useState<'value' | 'tariff'>('value');
+  const [promoYieldArpuMode, setPromoYieldArpuMode] = useState<'historical' | 'forecast'>('historical');
+  const [promoDraftMix, setPromoDraftMix] = useState<Record<string, number>>({});
+
+  const [promoPricingEnabled, setPromoPricingEnabled] = useState(false);
+  const [promoPricingMode, setPromoPricingMode] = useState<'percentage' | 'absolute'>('percentage');
+  const [promoPricingAmount, setPromoPricingAmount] = useState(0);
+
+  // Same tier derivation as the Value tab's Yield Event form (computeTierData),
+  // scoped to the promo's own dimensions and volume target — never re-implemented.
+  const promoTierData = useMemo<{ tier: string; baseArpu: number; historicalArpu: number }[]>(() => {
+    return computeTierData({
+      data, mixAxis: promoMixAxis, groupCol: promoMixAxis === 'tariff' ? wiTariffL1Col : wiProductL2Col,
+      wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col,
+      selectedTariffs,
+      segment: newPromo.segment, product: newPromo.product,
+      channelL1: newPromo.channel, channelL2: newPromo.channelL2,
+      ibro: promoTarget, ibroInflowVal: wiInflowVal, ibroRetentionVal: wiRetentionVal,
+      yieldArpuMode: promoYieldArpuMode, month: newPromo.date, baseForecast,
+    });
+  }, [data, promoMixAxis, wiTariffL1Col, selectedTariffs, wiProductL2Col, wiArpuCol, wiValueCol, wiRevenueCol, wiMetricCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col, wiInflowVal, wiRetentionVal, newPromo.segment, newPromo.product, newPromo.channel, newPromo.channelL2, promoTarget, newPromo.date, promoYieldArpuMode, baseForecast]);
+
+  const promoTariffAxisAvailable = !!wiTariffL1Col && selectedTariffs.length > 0;
+
+  // Seed promoDraftMix with equal weights whenever tiers change
+  useEffect(() => {
+    if (promoTierData.length === 0) { setPromoDraftMix({}); return; }
+    const eq = 100 / promoTierData.length;
+    const init: Record<string, number> = {};
+    promoTierData.forEach((t, i) => {
+      init[t.tier] = i === promoTierData.length - 1
+        ? 100 - eq * (promoTierData.length - 1)
+        : eq;
+    });
+    setPromoDraftMix(init);
+  }, [promoTierData.map(t => t.tier).join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handlePromoSliderChange = useCallback((changedTier: string, newValue: number) => {
+    setPromoDraftMix(prev => autoBalanceMix(prev, changedTier, newValue));
+  }, []);
+
+  const promoDraftBlendedArpu = useMemo(() => {
+    const tierArpu: Record<string, number> = {};
+    promoTierData.forEach(t => { tierArpu[t.tier] = t.baseArpu; });
+    return blendTierMix(promoDraftMix, tierArpu);
+  }, [promoDraftMix, promoTierData]);
+
+  // Trailing 3-month cohort-average ARPU for the promo's own dimensions/target
+  // (Phase 3 P4 pattern) — the fallback base when the mix arm isn't used.
+  const promoCohortAvgArpu = useMemo<number | null>(() => {
+    const metricValue = promoTarget === 'Inflow' ? wiInflowVal : wiRetentionVal;
+    if (!metricValue) return null;
+    return computeCohortTrailingArpu(
+      { data, wiDateCol, wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col },
+      metricValue,
+      { segment: newPromo.segment, product: newPromo.product, productL2: newPromo.productL2, channel: newPromo.channel, channelL2: newPromo.channelL2, tariffL1: newPromo.tariffL1, tariffL2: newPromo.tariffL2 },
+    );
+  }, [data, wiDateCol, wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiInflowVal, wiRetentionVal, promoTarget, newPromo.segment, newPromo.product, newPromo.productL2, newPromo.channel, newPromo.channelL2, newPromo.tariffL1, newPromo.tariffL2]);
+
+  const resetPromoDraft = useCallback(() => {
+    setNewPromo(blankPromo());
+    setPromoSpreadEnabled(false);
+    setPromoSpreadMonths(3);
+    setPromoSpreadDistType('even');
+    setPromoCustomDist([34, 33, 33]);
+    setPromoMixEnabled(false);
+    setPromoPricingEnabled(false);
+    setPromoPricingAmount(0);
+  }, []);
+
+  // ── Add Custom Promotion event(s) ─────────────────────────────────────────
+  const handleAddPromotionEvent = useCallback(() => {
+    if (!newPromo.date || !newPromo.subscriberVolume) return;
+    if (promoMixEnabled && promoTierData.length === 0) return;
+
+    const events = buildPromoEvents({
+      target: promoTarget, draft: newPromo,
+      mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
+      pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
+      cohortAvgArpu: promoCohortAvgArpu,
+      spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
+    });
+    if (events.length === 0) return;
+
+    setMarketEvents([...marketEvents, ...events]);
+    resetPromoDraft();
+  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, marketEvents, setMarketEvents, resetPromoDraft]);
+
+  // ── Unique options for Yield Event form ───────────────────────────────────
+  const ySegmentOptions = useMemo(
+    () => Array.from(new Set(data.map(r => String(r[wiSegmentCol])).filter(v => v && v !== 'undefined'))).sort(),
+    [data, wiSegmentCol],
+  );
+  const yProductOptions = useMemo(
+    () => Array.from(new Set(data.map(r => String(r[wiProductCol])).filter(v => v && v !== 'undefined'))).sort(),
+    [data, wiProductCol],
+  );
+  const yChannelL1Options = useMemo(
+    () => Array.from(new Set(data.map(r => String(r[wiChannelCol])).filter(v => v && v !== 'undefined'))).sort(),
+    [data, wiChannelCol],
+  );
+  // ── Unique options for Pricing Event form ────────────────────────────────
+  const pricingProductL2Options = useMemo(() => {
+    if (!wiProductL2Col) return [];
+    const filtered = newPricingEvent.product && newPricingEvent.product !== 'All'
+      ? data.filter(r => String(r[wiProductCol]) === newPricingEvent.product)
+      : data;
+    return Array.from(new Set(filtered.map(r => String(r[wiProductL2Col])).filter(v => v && v !== 'undefined'))).sort();
+  }, [data, wiProductCol, wiProductL2Col, newPricingEvent.product]);
+
+  // ── Add Yield Event ────────────────────────────────────────────────────────
+  const handleAddYieldEvent = useCallback(() => {
+    if (!newYieldEvent.month || yieldTierData.length === 0) return;
+    const tariffBaseArpu: Record<string, number> = {};
+    yieldTierData.forEach(t => { tariffBaseArpu[t.tier] = t.baseArpu; });
+
+    const event: YieldEvent = {
+      id: Math.random().toString(36).substr(2, 9),
+      ibro: newYieldEvent.ibro ?? 'Inflow',
+      segment: newYieldEvent.segment ?? 'All',
+      product: newYieldEvent.product ?? 'All',
+      channelL1: newYieldEvent.channelL1 ?? 'All',
+      channelL2: newYieldEvent.channelL2 ?? 'All',
+      month: newYieldEvent.month,
+      mixAxis,
+      tariffMix: { ...draftMix },
+      tariffBaseArpu,
+      rollForward: newYieldEvent.rollForward ?? false,
+      name:    newYieldEvent.name    ?? '',
+      comment: newYieldEvent.comment ?? '',
+    };
+    addYieldEvent(event);
+  }, [newYieldEvent, draftMix, yieldTierData, addYieldEvent]);
+
+  // ── All unique tiers across saved yield events (for table header) ──────────
+  const allYieldTiers = useMemo(() => {
+    const tiers = new Set<string>();
+    yieldEvents.forEach(e => Object.keys(e.tariffMix).forEach(t => tiers.add(t)));
+    return Array.from(tiers).sort();
+  }, [yieldEvents]);
+
+  // -------------------------------------------------------------------------
+  // Derive adjusted months from BaseForecast + market events (no HW re-run)
+  // -------------------------------------------------------------------------
+
+  const { chartData, adjustedMonths } = useMemo(() => computeAdjustedForecast({
+    baseForecast, marketEvents, yieldEvents, pricingEvents,
+    viewSegment, viewProduct, viewChannel, viewTariff, data,
+    wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
+    wiTariffL1Col, wiTariffL2Col, wiValueCol,
+  }), [baseForecast, marketEvents, yieldEvents, pricingEvents, viewSegment, viewProduct, viewChannel, viewTariff]);
 
   // ── Custom chart tooltip — shows KPI values + any event names for that month ─
   const renderTooltip = useCallback(({ active, payload, label }: any) => {
