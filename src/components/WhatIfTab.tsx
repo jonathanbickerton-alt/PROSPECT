@@ -429,12 +429,12 @@ export interface AdjustedForecastInput {
   proRataLeavesOverride?: ProRataLeaf[];
 }
 
-export function computeAdjustedForecast(input: AdjustedForecastInput): { chartData: any[]; adjustedMonths: AdjustedForecastMonth[] } {
+export function computeAdjustedForecast(input: AdjustedForecastInput): { chartData: any[]; adjustedMonths: AdjustedForecastMonth[]; eventShares: Map<string, number> } {
   const { baseForecast, marketEvents, yieldEvents, pricingEvents, viewSegment, viewProduct,
     viewChannel, viewTariff, data, wiSegmentCol, wiProductCol, wiProductL2Col,
     wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiValueCol,
     proRataLeavesOverride } = input;
-  if (!baseForecast) return { chartData: [], adjustedMonths: [] };
+  if (!baseForecast) return { chartData: [], adjustedMonths: [], eventShares: new Map() };
 
     // Use the local view filter for event matching so the chart reflects the
     // currently selected view scope — not the cohort from Step 1.
@@ -971,7 +971,12 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
       return row;
     });
 
-    return { chartData: rows, adjustedMonths: computed };
+    // shareCache is the authoritative record of what share of each volume event
+    // this view actually received. Exposed so view-scoped UI (e.g. the retention
+    // warning) reads the applied volume instead of re-deriving it — a second
+    // leaf enumeration here would be a parallel implementation of the very
+    // thing eventProRataShare exists to centralise.
+    return { chartData: rows, adjustedMonths: computed, eventShares: shareCache };
 }
 
 export const WhatIfTab: React.FC<WhatIfTabProps> = ({
@@ -1388,7 +1393,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // Derive adjusted months from BaseForecast + market events (no HW re-run)
   // -------------------------------------------------------------------------
 
-  const { chartData, adjustedMonths } = useMemo(() => computeAdjustedForecast({
+  const { chartData, adjustedMonths, eventShares } = useMemo(() => computeAdjustedForecast({
     baseForecast, marketEvents, yieldEvents, pricingEvents,
     viewSegment, viewProduct, viewChannel, viewTariff, data,
     wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
@@ -1923,12 +1928,25 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       .filter(e => e.scenario === 'Retention')
       .forEach(e => {
         const bm = baseForecast.months.find(m => m.month === e.date);
-        if (bm && e.subscriberVolume > bm.outflow.mean) {
+        // View-scoped: compare the volume this view ACTUALLY receives against
+        // this view's outflow, not the event's raw headline volume. Under an
+        // aggregate-targeted event a leaf takes only its pro-rata share, so the
+        // raw figure would warn against an outflow it was never measured
+        // against — e.g. a 10,000 event on Corporate·All·All firing against a
+        // leaf whose outflow is 2,000 but which only receives ~1,035. Every
+        // other figure on this screen is view-scoped after the pro-rata work,
+        // and a warning that fires while the applied volume sits comfortably
+        // under the view's outflow just trains users to ignore it.
+        // A missing share means the engine never applied this event in this
+        // view (out of scope, or filtered out), so the applied volume is 0 and
+        // there is nothing to warn about here.
+        const appliedVol = e.subscriberVolume * (eventShares.get(e.id) ?? 0);
+        if (bm && appliedVol > bm.outflow.mean) {
           warned.add(e.id);
         }
       });
     return warned;
-  }, [baseForecast, marketEvents]);
+  }, [baseForecast, marketEvents, eventShares]);
 
   // -------------------------------------------------------------------------
   // Toggle KPI helper
