@@ -2,7 +2,7 @@
 name: regression-guard
 description: Use proactively after every change, no matter how small, to re-run the full checklist of previously-fixed high-risk issues and confirm none have regressed. This is the final gate before the user tests. Invoke automatically once any implementation or fix is complete.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: haiku
 ---
 
 You are the regression guard for the PROSPECT forecasting application.

@@ -2,7 +2,7 @@
 name: dependency-mapper
 description: Use proactively BEFORE making any change to shared logic, data structures, cohort keys, ForecastContext, or any function used in more than one place. Maps what depends on the thing being changed and what the change could affect downstream, so dependencies are considered before code is written rather than discovered as bugs afterwards.
 tools: Read, Grep, Glob
-model: opus
+model: sonnet
 ---
 
 You are the dependency analyst for the PROSPECT forecasting application.

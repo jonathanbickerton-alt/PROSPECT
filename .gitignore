@@ -20,3 +20,15 @@ coverage/
 # Build output and dependencies
 /node_modules/
 /dist/
+
+# One-off verification and migration scratch scripts — run once, kept locally,
+# never part of the build. They accumulate in the repo root and obscure genuinely
+# unexpected changes in `git status`.
+/verify_*.cjs
+/verify_state.json
+/*_scratch.cjs
+/add_translations.cjs
+
+# Agent worktrees — ephemeral local checkouts created per-agent for isolation.
+# Machine-local and disposable; never meaningful to another clone.
+.claude/worktrees/
