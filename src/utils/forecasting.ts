@@ -1142,6 +1142,113 @@ export function distributeProRata(amount: number, leafVolumes: number[]): number
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Market-event pro-rata scoping (shared by ALL event-application paths)
+//
+// THE DEFECT THIS FIXES: event targeting treats 'All' on a dimension as a
+// wildcard. An event aimed at an aggregate (e.g. Corporate · All · All)
+// therefore matched the aggregate AND every constituent leaf, and was applied
+// at FULL magnitude to each — an over-application of (legs − 1) × the event.
+// Measured at 8x on a Corporate · All · All event.
+//
+// THE RULE: an event belongs to its target scope as a whole. Any cohort inside
+// that scope receives only its VOLUME SHARE of it. So:
+//   - the cohort that is exactly the event's target gets share 1
+//   - each leaf inside gets leafVolume / targetVolume
+//   - shares across the target's leaves sum to exactly 1
+// Because every cohort applies only its own share, the event is applied once
+// in total however many cohorts are computed, and an aggregate always equals
+// the sum of its adjusted leaves — the reconciliation guarantee.
+//
+// This is the ONE implementation of that rule. computeWhatIfData, WhatIfTab's
+// adjusted-forecast engine and scenarioHelper all call it. They differ only in
+// how they read their rows (raw vs exported PascalCase); the share arithmetic
+// must never be duplicated, because these three paths have drifted apart
+// before.
+//
+// SCOPE — VOLUME EVENTS ONLY. Inflow / Outflow / Retention events carry
+// quantities (subscriberVolume, revenue, customerVolume) and must be split.
+// ARPU-scenario events, Yield Events and Pricing Events carry RATES, and a
+// rate must NOT be pro-rated: a volume-weighted average of (leafArpu + Δ)
+// already equals (aggregateArpu + Δ), so applying the same delta at every
+// level is already reconciliation-correct. Pro-rating a rate would understate
+// the price change at leaf level. See the comments at each rate matcher.
+// ---------------------------------------------------------------------------
+
+/** Cohort/event dimension scope. 'All' (or absent) means "not narrowed on this dimension". */
+export interface ProRataScope {
+  segment?: string;
+  product?: string;
+  productL2?: string;
+  channel?: string;
+  channelL2?: string;
+  tariffL1?: string;
+  tariffL2?: string;
+}
+
+/** One populated leaf plus the volume used to weight its share. */
+export interface ProRataLeaf extends ProRataScope {
+  volume: number;
+}
+
+/** True when `leaf` falls inside `scope` ('All'/absent = no narrowing on that dim). */
+function leafWithinScope(scope: ProRataScope, leaf: ProRataScope): boolean {
+  const dims: Array<keyof ProRataScope> = ['segment', 'product', 'productL2', 'channel', 'channelL2', 'tariffL1', 'tariffL2'];
+  for (const d of dims) {
+    const want = scope[d];
+    if (!want || want === 'All') continue;          // not narrowed on this dimension
+    const have = leaf[d];
+    if (have === undefined) continue;               // leaf doesn't carry this dimension
+    if (String(have) !== String(want)) return false;
+  }
+  return true;
+}
+
+/**
+ * The fraction of a volume event's magnitude that belongs to `cohort`.
+ *
+ * Returns 0 when the cohort sits outside the event's target scope (the event
+ * simply does not apply). Returns 1 when the cohort covers the whole target.
+ * Otherwise returns the cohort's share of the target's volume.
+ *
+ * Zero-volume targets fall back to an EVEN split via distributeProRata, so a
+ * targeted event is never silently discarded just because the leaves have no
+ * historical volume yet (a brand-new product/channel combination).
+ *
+ * Multiply subscriberVolume, revenue AND customerVolume by the same factor —
+ * splitting one without the others reconciles volume while silently corrupting
+ * blended ARPU.
+ */
+export function eventProRataShare(
+  event: ProRataScope,
+  cohort: ProRataScope,
+  leaves: ProRataLeaf[],
+): number {
+  // Leaves inside the event's target scope, and the subset also inside the cohort.
+  const targetIdx: number[] = [];
+  const cohortIdx = new Set<number>();
+  leaves.forEach((leaf, i) => {
+    if (!leafWithinScope(event, leaf)) return;
+    targetIdx.push(i);
+    if (leafWithinScope(cohort, leaf)) cohortIdx.add(i);
+  });
+
+  if (targetIdx.length === 0) {
+    // No populated leaf under the event's target. Fall back to the legacy
+    // all-or-nothing behaviour so the event is not silently dropped: it applies
+    // in full to any cohort that the event's own dimensions match.
+    return leafWithinScope(event, cohort) || leafWithinScope(cohort, event) ? 1 : 0;
+  }
+  if (cohortIdx.size === 0) return 0;
+
+  // distributeProRata owns the split (including the zero-volume even fallback),
+  // so shares here behave identically to volumes distributed elsewhere.
+  const shares = distributeProRata(1, targetIdx.map(i => leaves[i].volume));
+  let share = 0;
+  targetIdx.forEach((leafI, k) => { if (cohortIdx.has(leafI)) share += shares[k]; });
+  return share;
+}
+
 /**
  * Single O(N) pass over `data` that groups each valid row into a CohortDataMap.
  *
@@ -1414,6 +1521,37 @@ export function computeWhatIfData(
       (e.channel === 'All' || e.channel === channelFilter),
   );
 
+  // Pro-rata scoping. An event aimed at an aggregate must not be applied at
+  // full magnitude to the aggregate AND to every leaf inside it; each cohort
+  // takes only its volume share, and the shares sum to 1. See
+  // eventProRataShare for the rule. Leaves are enumerated from the data itself
+  // (no rows.filter fallback scan).
+  const proRataLeaves: ProRataLeaf[] = (() => {
+    const byLeaf = new Map<string, ProRataLeaf>();
+    for (const row of data) {
+      const seg = wiSegmentCol ? String(row[wiSegmentCol] ?? 'All').trim() : 'All';
+      const prod = wiProductCol ? String(row[wiProductCol] ?? 'All').trim() : 'All';
+      const chan = wiChannelCol ? String(row[wiChannelCol] ?? 'All').trim() : 'All';
+      const k = `${seg}|${prod}|${chan}`;
+      const vol = Number(row[wiValueCol]) || 0;
+      const cur = byLeaf.get(k);
+      if (cur) cur.volume += vol;
+      else byLeaf.set(k, { segment: seg, product: prod, channel: chan, volume: vol });
+    }
+    return Array.from(byLeaf.values());
+  })();
+  const cohortScope: ProRataScope = {
+    segment: segmentFilter === 'All (Aggregated)' ? 'All' : segmentFilter,
+    product: productFilter === 'All (Aggregated)' ? 'All' : productFilter,
+    channel: channelFilter === 'All (Aggregated)' ? 'All' : channelFilter,
+  };
+  /** Share of a VOLUME event belonging to this cohort. Rate events never use this. */
+  const shareOf = (e: MarketEvent): number =>
+    eventProRataShare({ segment: e.segment, product: e.product, channel: e.channel }, cohortScope, proRataLeaves);
+  const eventShares = new Map<string, number>();
+  for (const e of relevantEvents) eventShares.set(e.id, shareOf(e));
+  const share = (e: MarketEvent) => eventShares.get(e.id) ?? 1;
+
   let processedData = data
     .map(row => ({ ...row, _parsedDate: new Date(row[wiDateCol]) }))
     .filter(row => isValid(row._parsedDate))
@@ -1654,15 +1792,15 @@ export function computeWhatIfData(
     monthEvents
       .filter(e => e.scenario === 'Inflow')
       .forEach(e => {
-        inUpEventSubs += e.subscriberVolume || 0;
-        inUpEventRev +=
-          e.revenue !== undefined && e.revenue !== 0
-            ? e.revenue
-            : (e.subscriberVolume || 0) * inflowArpu;
-        inUpEventCust +=
-          e.customerVolume !== undefined && e.customerVolume !== 0
-            ? e.customerVolume
-            : (e.subscriberVolume || 0) * inflowCustRatio;
+        // VOLUME event: take only this cohort's pro-rata share (see eventProRataShare).
+        const f = share(e);
+        inUpEventSubs += (e.subscriberVolume || 0) * f;
+        inUpEventRev += ((e.revenue !== undefined && e.revenue !== 0)
+          ? e.revenue
+          : (e.subscriberVolume || 0) * inflowArpu) * f;
+        inUpEventCust += ((e.customerVolume !== undefined && e.customerVolume !== 0)
+          ? e.customerVolume
+          : (e.subscriberVolume || 0) * inflowCustRatio) * f;
       });
 
     const inUp = inUpNatural + inUpEventSubs;
@@ -1691,29 +1829,33 @@ export function computeWhatIfData(
     monthEvents
       .filter(e => e.scenario === 'Retention')
       .forEach(e => {
-        retUpEventSubs += e.subscriberVolume || 0;
-        retUpEventRev +=
-          e.revenue !== undefined && e.revenue !== 0
-            ? e.revenue
-            : (e.subscriberVolume || 0) * blendedArpu;
-        retUpEventCust +=
-          e.customerVolume !== undefined && e.customerVolume !== 0
-            ? e.customerVolume
-            : (e.subscriberVolume || 0) * blendedCustRatio;
+        // VOLUME event: take only this cohort's pro-rata share. Volume, revenue
+        // and customer volume are scaled by the SAME factor — splitting one
+        // without the others reconciles volume but corrupts blended ARPU.
+        const f = share(e);
+        retUpEventSubs += (e.subscriberVolume || 0) * f;
+        retUpEventRev += ((e.revenue !== undefined && e.revenue !== 0)
+          ? e.revenue
+          : (e.subscriberVolume || 0) * blendedArpu) * f;
+        retUpEventCust += ((e.customerVolume !== undefined && e.customerVolume !== 0)
+          ? e.customerVolume
+          : (e.subscriberVolume || 0) * blendedCustRatio) * f;
       });
 
     monthEvents
       .filter(e => e.scenario === 'Outflow')
       .forEach(e => {
-        outUpEventSubs += e.subscriberVolume || 0;
-        outUpEventRev +=
-          e.revenue !== undefined && e.revenue !== 0
-            ? e.revenue
-            : (e.subscriberVolume || 0) * blendedArpu;
-        outUpEventCust +=
-          e.customerVolume !== undefined && e.customerVolume !== 0
-            ? e.customerVolume
-            : (e.subscriberVolume || 0) * blendedCustRatio;
+        // VOLUME event: take only this cohort's pro-rata share. Volume, revenue
+        // and customer volume are scaled by the SAME factor — splitting one
+        // without the others reconciles volume but corrupts blended ARPU.
+        const f = share(e);
+        outUpEventSubs += (e.subscriberVolume || 0) * f;
+        outUpEventRev += ((e.revenue !== undefined && e.revenue !== 0)
+          ? e.revenue
+          : (e.subscriberVolume || 0) * blendedArpu) * f;
+        outUpEventCust += ((e.customerVolume !== undefined && e.customerVolume !== 0)
+          ? e.customerVolume
+          : (e.subscriberVolume || 0) * blendedCustRatio) * f;
       });
 
     let retUp = retUpNatural + retUpEventSubs - outUpEventSubs;
@@ -1753,6 +1895,12 @@ export function computeWhatIfData(
     monthEvents
       .filter(e => e.scenario === 'ARPU')
       .forEach(e => {
+        // RATE event — deliberately NOT pro-rated. ARPU is a rate, not a
+        // quantity: a volume-weighted average of (leafArpu + delta) already
+        // equals (aggregateArpu + delta), so applying the same delta at every
+        // level is already reconciliation-correct. Splitting it by volume share
+        // would understate the price change at leaf level. Do not "complete"
+        // the pro-rata fix by routing this through share().
         cumulativeArpuImpact += e.arpu || 0;
       });
 

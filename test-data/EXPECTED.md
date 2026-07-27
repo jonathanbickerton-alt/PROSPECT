@@ -448,7 +448,12 @@ mechanics; does not reimplement them.
     10.6717 vs Retention 10.7888 on the same 50,000-base / 5,000-promo / Low10-
     Med20-High70 mix inputs). If they ever come out identical, the two
     semantics have been conflated — this is the single highest-risk regression
-    for this feature.
+    for this feature. **Scope assumption:** those two ARPU figures assume a
+    *leaf-targeted* promo, where the leaf receives the full 5,000 promo volume.
+    Under an **aggregate-targeted** promo the leaf receives only its pro-rata
+    volume share (see §16), so the blend inputs differ and these exact numbers
+    do not apply. The Acquisition-vs-Retention *distinguishability* still must
+    hold at either scope — that is the actual invariant being checked.
   - **Pricing arm:** a promo price (% or absolute) layered on top of whichever
     base ARPU was chosen (mix blend, or the P4 cohort-average fallback) —
     computed once at event-creation time and baked into the stored event's
@@ -604,7 +609,83 @@ pre-injection baseline.
 
 ---
 
-## 16. Regression checklist (the short version)
+## 16. Aggregate-targeted market events — pro-rata distribution
+
+Before this fix, an event whose target carried `'All'` on any dimension was
+treated as a **wildcard**: it applied at full magnitude to the aggregate *and*
+independently to every constituent leg. A Corporate · All · All event of
++10,000 subscribers measured at **+80,000** across the eight legs — an
+over-application of exactly `(legs − 1) × volume`.
+
+The rule now enforced: **an event belongs to its target scope as a whole.**
+Each cohort inside the scope receives only its volume share; the shares sum to
+exactly 1, so the event is applied once in total. One shared helper,
+`eventProRataShare` in `src/utils/forecasting.ts`, is the single implementation
+of that rule. All three event-application paths consume it:
+
+| Path | Function | Location |
+|---|---|---|
+| A | `computeWhatIfData` | `src/utils/forecasting.ts` |
+| B | `computeAdjustedForecast` (Pass 1/2/3) | `src/components/WhatIfTab.tsx` |
+| C | `computeScenarioForFilter` (leaf case) | `src/utils/scenarioHelper.ts` |
+
+Path C's *aggregate* case already summed leaf rows and applied the event once,
+and is deliberately untouched — with view scope equal to event target the share
+is 1, so it needs no special-casing.
+
+**Rate events are excluded, by design.** ARPU-scenario, Yield and Pricing
+events are rates, not quantities: a volume-weighted average of
+`(leafArpu + Δ)` already equals `(aggregateArpu + Δ)`. Pro-rating them would
+under-apply the rate change. Five rate matchers carry an explicit "RATE event —
+NOT pro-rated" comment saying so — `forecasting.ts` (ARPU, path A),
+`WhatIfTab.tsx` ×3 (ARPU Pass 1, Yield Pass 2, Pricing Pass 3) and
+`scenarioHelper.ts` (ARPU, path C). Do not "fix" them into the volume path.
+Two further rate blocks — the Retention-yield application in `WhatIfTab.tsx`
+and the Pricing block in `scenarioHelper.ts` — are also correctly not
+pro-rated and carry the same comment.
+
+Volume, revenue and customerVolume are split by the **same** share. Splitting
+one without the others reconciles volume while silently corrupting blended
+ARPU. Zero-volume leaves fall through to `distributeProRata`'s even-split
+fallback rather than dropping the event.
+
+**Measured, against the real pre-fix code (commit `0d5cd13`), not a stand-in:**
+
+| Path | Before (agg / leaves) | Over-application | After (agg / leaves) | Drift |
+|---|---|---|---|---|
+| A | +10,000 / +80,000 | 70,000 (8 legs) | +10,000 / +10,000.01 | 0.01 |
+| B | +10,000 / +40,000 | 30,000 (4 legs) | +10,000 / +10,000 | 0 |
+| C | +10,000 / +40,000 | 30,000 (4 legs) | +10,000 / +10,000 | 0 |
+
+Leaf-targeted events are unaffected on all three paths (+10,000 → +10,000).
+
+### Accuracy scores will move — this is not a regression
+
+Path B feeds `useAdjustedScoring` in `ForecastVsActualsTab`, so the wildcard
+defect was corrupting MAPE for any leaf cohort in scope of an aggregate-targeted
+event. Correcting it **moves leaf accuracy scores**, and the *direction depends
+on whether the actuals contain the event*:
+
+- Actuals do **not** contain the event (hypothetical/planned scenario) —
+  scores **improve**, because the leaf was being inflated by the full event
+  volume when it should carry only its share. Measured on a Corporate · All ·
+  All +10,000 backtest: all four leaf cohorts improved, IoT 14.02% → 5.22%
+  MAPE. The aggregate was unchanged at 5.25% (it was always correct).
+- Actuals **do** contain the event (it really happened) — scores move the other
+  way, toward worse stated accuracy, which is the honest correction.
+
+Sum of leaf uplift moved 680,424 → 650,424, i.e. exactly the aggregate's
++10,000 rather than 4× it. A score shift on this path after a change to event
+distribution should be checked against this rule before being logged as a
+regression.
+
+**Saved sessions:** events stored in sessions created before this fix reload
+with corrected — smaller — leaf magnitudes. The stored event is unchanged; only
+its distribution is. This is accepted and expected.
+
+---
+
+## 17. Regression checklist (the short version)
 
 Every item below was a real bug or a confirmed Phase 1/2 behaviour. Confirm all
 after any change:
@@ -723,6 +804,16 @@ after any change:
 31. One-off flags persist through full session export/import (`One_Off_Months`
     sheet); an unflagged cohort's gap detection, `calculateBaseForecast`
     core math, and MAPE/accuracy scoring are byte-identical to before P10.
+
+32. An aggregate with a market event applied reconciles **exactly** to the sum
+    of its adjusted leaves — drift 0. Apply one volume event at an aggregate
+    target (e.g. Corporate · All · All, +10,000 Inflow), then sum the adjusted
+    forecast across every constituent leg: the total uplift must equal the
+    event volume, not `legs × volume`. Must hold on all three paths
+    (`computeWhatIfData`, `computeAdjustedForecast`, `computeScenarioForFilter`)
+    — they are three implementations of the same concept and have drifted
+    before. Leaf-targeted events must be unaffected, and ARPU-scenario/Yield/
+    Pricing events must **not** be pro-rated (see §16).
 
 **Verdict rule:** "SAFE FOR USER TESTING" only if all pass. Otherwise list
 the failures and the cohort/filter combination that exposed each.

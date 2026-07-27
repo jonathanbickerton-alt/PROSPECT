@@ -193,7 +193,7 @@ function getKpiVal(obj: Record<string, any> | null | undefined, kpi: KpiKey): nu
 // comparisonRows, then computes per-metric MAPE.
 // Called once per matching forecast in the summaryMape useMemo.
 // ---------------------------------------------------------------------------
-function computeForecastMape(
+export function computeForecastMape(
   bf: import('../types/forecast').BaseForecast,
   data: any[],
   wiDateCol: string,

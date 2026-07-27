@@ -8,7 +8,8 @@ import { format, parse, isValid, addMonths, differenceInCalendarMonths } from 'd
 import { useForecast } from '../context/ForecastContext';
 import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent } from '../types/forecast';
 import type { MarketEvent } from '../utils/forecasting';
-import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix } from '../utils/forecasting';
+import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix, eventProRataShare } from '../utils/forecasting';
+import type { ProRataLeaf, ProRataScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
 import { MultiSelectDropdown } from './MultiSelectDropdown';
@@ -404,6 +405,579 @@ function autoBalanceMix(prev: Record<string, number>, changedTier: string, newVa
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
+
+/**
+ * Adjusted-forecast engine (Pass 1 / Pass 2 / Pass 3) — extracted verbatim from
+ * the component so it can be driven directly (MAPE verification, reconciliation
+ * assertions) without a DOM. The useMemo below is now a thin caller; the body is
+ * unchanged, so behaviour is identical.
+ */
+export interface AdjustedForecastInput {
+  baseForecast: any;
+  marketEvents: MarketEvent[];
+  yieldEvents: YieldEvent[];
+  pricingEvents: PricingEvent[];
+  viewSegment: string;
+  viewProduct: HierarchicalSelection;
+  viewChannel: HierarchicalSelection;
+  viewTariff: HierarchicalSelection;
+  data: any[];
+  wiSegmentCol: string; wiProductCol: string; wiProductL2Col: string;
+  wiChannelCol: string; wiChannelL2Col: string;
+  wiTariffL1Col: string; wiTariffL2Col: string; wiValueCol: string;
+  /** Injectable for tests: pass [] to reproduce the pre-pro-rata wildcard behaviour. */
+  proRataLeavesOverride?: ProRataLeaf[];
+}
+
+export function computeAdjustedForecast(input: AdjustedForecastInput): { chartData: any[]; adjustedMonths: AdjustedForecastMonth[]; eventShares: Map<string, number> } {
+  const { baseForecast, marketEvents, yieldEvents, pricingEvents, viewSegment, viewProduct,
+    viewChannel, viewTariff, data, wiSegmentCol, wiProductCol, wiProductL2Col,
+    wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiValueCol,
+    proRataLeavesOverride } = input;
+  if (!baseForecast) return { chartData: [], adjustedMonths: [], eventShares: new Map() };
+
+    // Use the local view filter for event matching so the chart reflects the
+    // currently selected view scope — not the cohort from Step 1.
+    const vseg = viewSegment;
+    const vprod = viewProduct;
+    const vchan = viewChannel;
+    const vprodL1 = vprod.l1;   // null = All
+    const vprodL2 = vprod.l2;   // null = All L2 within L1
+    const vchanL1 = vchan.l1;
+    const vchanL2 = vchan.l2;
+    const vtarL1 = viewTariff.l1;  // null = All (Phase 2a; event tariff targeting arrives in 2b)
+    const vtarL2 = viewTariff.l2;
+
+    // ---------------------------------------------------------------------------
+    // Pass 1 — apply market events to each forecast month.
+    //
+    // Computes uplifted IBRO flows; uplifted.arpu holds any direct ARPU-event
+    // adjustments.  Pass 2 overwrites it with the cohort-pool blended ARPU.
+    // ---------------------------------------------------------------------------
+
+    const computed: AdjustedForecastMonth[] = [];
+
+    // Market-event pro-rata scoping (shared rule — see eventProRataShare).
+    // An event aimed at an aggregate must not apply at full magnitude to the
+    // aggregate AND to every leaf inside it. Each view takes only its volume
+    // share; shares across the target's leaves sum to 1, so the event is applied
+    // once in total and an aggregate reconciles to the sum of its leaves.
+    // Leaves are enumerated from the loaded rows — no rows.filter fallback scan.
+    const proRataLeaves: ProRataLeaf[] = proRataLeavesOverride ?? (() => {
+      const byLeaf = new Map<string, ProRataLeaf>();
+      for (const row of data) {
+        const leaf: ProRataLeaf = {
+          segment:   wiSegmentCol  ? String(row[wiSegmentCol]  ?? 'All').trim() : 'All',
+          product:   wiProductCol  ? String(row[wiProductCol]  ?? 'All').trim() : 'All',
+          productL2: wiProductL2Col ? String(row[wiProductL2Col] ?? 'All').trim() : 'All',
+          channel:   wiChannelCol  ? String(row[wiChannelCol]  ?? 'All').trim() : 'All',
+          channelL2: wiChannelL2Col ? String(row[wiChannelL2Col] ?? 'All').trim() : 'All',
+          tariffL1:  wiTariffL1Col ? String(row[wiTariffL1Col] ?? 'All').trim() : 'All',
+          tariffL2:  wiTariffL2Col ? String(row[wiTariffL2Col] ?? 'All').trim() : 'All',
+          volume: 0,
+        };
+        const k = [leaf.segment, leaf.product, leaf.productL2, leaf.channel, leaf.channelL2, leaf.tariffL1, leaf.tariffL2].join('|');
+        const vol = wiValueCol ? Number(row[wiValueCol]) || 0 : 0;
+        const cur = byLeaf.get(k);
+        if (cur) cur.volume += vol; else { leaf.volume = vol; byLeaf.set(k, leaf); }
+      }
+      return Array.from(byLeaf.values());
+    })();
+    const viewScope: ProRataScope = {
+      segment: vseg === 'All' ? 'All' : vseg,
+      product: vprodL1 ?? 'All',
+      productL2: vprodL2 ?? 'All',
+      channel: vchanL1 ?? 'All',
+      channelL2: vchanL2 ?? 'All',
+      tariffL1: vtarL1 ?? 'All',
+      tariffL2: vtarL2 ?? 'All',
+    };
+    const shareCache = new Map<string, number>();
+    /** Share of a VOLUME event belonging to the current view. Rate events never use this. */
+    const eventShare = (e: MarketEvent): number => {
+      const hit = shareCache.get(e.id);
+      if (hit !== undefined) return hit;
+      const v = eventProRataShare(
+        { segment: e.segment, product: e.product, productL2: e.productL2, channel: e.channel,
+          channelL2: e.channelL2, tariffL1: e.tariffL1, tariffL2: e.tariffL2 },
+        viewScope, proRataLeaves,
+      );
+      shareCache.set(e.id, v);
+      return v;
+    };
+
+    baseForecast.months.forEach(month => {
+      const applicable = marketEvents.filter(e => {
+        if (e.date !== month.month) return false;
+        const segMatch  = e.segment === 'All' || vseg === 'All' || e.segment === vseg;
+        // Event matches view product when:
+        //  - event targets All products, OR view is All products, OR event.product === view L1
+        // AND if the event has an L2 and the view has an L2, they must match too.
+        const prodL1Match = e.product === 'All' || !vprodL1 || e.product === vprodL1;
+        const prodL2Match = !e.productL2 || e.productL2 === 'All' || !vprodL2 || e.productL2 === vprodL2;
+        const chanL1Match = e.channel === 'All' || !vchanL1 || e.channel === vchanL1;
+        const chanL2Match = !e.channelL2 || e.channelL2 === 'All' || !vchanL2 || e.channelL2 === vchanL2;
+        const tarL1Match = !e.tariffL1 || e.tariffL1 === 'All' || !vtarL1 || e.tariffL1 === vtarL1;
+        const tarL2Match = !e.tariffL2 || e.tariffL2 === 'All' || !vtarL2 || e.tariffL2 === vtarL2;
+        return segMatch && prodL1Match && prodL2Match && chanL1Match && chanL2Match && tarL1Match && tarL2Match;
+      });
+
+      let adjInflow = month.inflow.mean;
+      let adjOutflow = month.outflow.mean;
+      let adjRetention = month.retention.mean;
+      let adjArpu = month.arpu.mean;   // direct ARPU-event adjustments only
+      const appliedIds: string[] = [];
+
+      applicable.forEach(e => {
+        // VOLUME events take only this view's pro-rata share of the event.
+        const vol = e.subscriberVolume * eventShare(e);
+        if (e.scenario === 'Inflow') {
+          adjInflow += vol;
+        } else if (e.scenario === 'Outflow') {
+          // subscriberVolume is stored as a negative number for Outflow events.
+          // Subtracting a negative value adds its absolute magnitude to adjOutflow,
+          // which correctly increases outflow and reduces Base (T+1 via lagged formula).
+          adjOutflow -= vol;
+        } else if (e.scenario === 'Retention') {
+          // Retention events reduce Outflow AND increase Retention tracking.
+          // Because Retention is not in the base stock formula, only the Outflow
+          // reduction affects Base (one month later, via the lagged formula).
+          adjOutflow -= vol;
+          adjRetention += vol;
+        } else if (e.scenario === 'ARPU') {
+          // RATE event — deliberately NOT pro-rated. ARPU is a rate, not a
+          // quantity: a volume-weighted average of (leafArpu + delta) already
+          // equals (aggregateArpu + delta), so the same delta applies correctly
+          // at every level. Splitting it by volume share would understate the
+          // price change at leaf level. Do not route this through eventShare().
+          adjArpu += e.arpu;
+        }
+        appliedIds.push(e.id);
+      });
+
+      computed.push({
+        month: month.month,
+        baseline: {
+          inflow: month.inflow.mean,
+          retention: month.retention.mean,
+          outflow: month.outflow.mean,
+          arpu: month.arpu.mean,
+        },
+        uplifted: {
+          inflow: Math.max(0, adjInflow),
+          retention: Math.max(0, adjRetention),
+          outflow: Math.max(0, adjOutflow),
+          // uplifted.arpu starts as the direct-event-adjusted value; it will be
+          // overwritten below with the blended ARPU once Base volumes are known.
+          arpu: Math.max(0, adjArpu),
+        },
+        appliedEventIds: appliedIds,
+      });
+    });
+
+    // ---------------------------------------------------------------------------
+    // Pass 2 — cohort-pool ARPU calculation.
+    //
+    // Each Inflow event creates an isolated subscriber pool with its own ARPU
+    // and a contract-length protection window (default 24 months).  The existing
+    // base subscribers form a second pool.
+    //
+    // Outflow allocation each month:
+    //   1. Draw first from the at-risk base pool  (1/DEFAULT_CONTRACT_N of the
+    //      base pool churns per month — uniform age distribution assumption).
+    //   2. If outflow exceeds the at-risk base, draw the remainder
+    //      proportionally from any event pools whose protection window has elapsed.
+    //   3. Proportional fallback to all pools for any residual.
+    //
+    // Blended ARPU = (basePool × baseARPU + Σ eventPool_i × eventARPU_i) / total
+    // ---------------------------------------------------------------------------
+
+    const DEFAULT_CONTRACT_N = 24;
+
+    interface EventPool {
+      eventId: string;
+      arpu: number;           // fixed per-subscriber ARPU for this cohort
+      contractLength: number; // protection window in months
+      enterMonthIdx: number;  // 0-based index when they enter Base (event month + 1)
+      size: number;           // current subscriber count
+    }
+
+    let p_bBase = baseForecast.seedBaseVolume;
+    let p_bAdj  = baseForecast.seedBaseVolume;
+    let p_basePool = baseForecast.seedBaseVolume;
+    // Base pool ARPU is read fresh from the forecast's blended arpu.mean each month
+    // (set in step E). No accumulated state needed — Option A: without events the
+    // adjusted line tracks the baseline exactly, month by month.
+    const p_eventPools: EventPool[] = [];
+
+    let p_prevBBaseIn  = baseForecast.lastHistoricalInflow;
+    let p_prevBBaseOut = baseForecast.lastHistoricalOutflow;
+    let p_prevBAdjIn   = baseForecast.lastHistoricalInflow;
+    let p_prevBAdjOut  = baseForecast.lastHistoricalOutflow;
+
+    const rows = computed.map((m, idx) => {
+      // ── A: Compute total subscriber counts (lagged formula) ──
+      const newBBase = Math.max(0, p_bBase + p_prevBBaseIn - p_prevBBaseOut);
+      const newBAdj  = Math.max(0, p_bAdj  + p_prevBAdjIn  - p_prevBAdjOut);
+
+      // ── B: Allocate last month's outflow between pools ──
+      // Uses pool sizes as they were at start of this month (before adding new inflow).
+      const totalOutflow = p_prevBAdjOut;
+      if (totalOutflow > 0 && p_bAdj > 0) {
+        // At-risk base: 1/DEFAULT_CONTRACT_N of base pool expires each month.
+        const atRiskBase = Math.min(p_basePool, p_basePool / DEFAULT_CONTRACT_N);
+        let remaining = totalOutflow;
+
+        const baseChurn = Math.min(atRiskBase, remaining);
+        p_basePool = Math.max(0, p_basePool - baseChurn);
+        remaining -= baseChurn;
+
+        if (remaining > 0) {
+          // Event pools whose protection window has elapsed
+          const atRiskPools = p_eventPools.filter(
+            p => p.size > 0 && (idx - p.enterMonthIdx) >= p.contractLength,
+          );
+          const atRiskTotal = atRiskPools.reduce((s, p) => s + p.size, 0);
+
+          if (atRiskTotal > 0) {
+            const eventChurn = Math.min(atRiskTotal, remaining);
+            atRiskPools.forEach(p => {
+              const take = eventChurn * (p.size / atRiskTotal);
+              p.size = Math.max(0, p.size - take);
+            });
+            remaining -= eventChurn;
+          }
+
+          // Proportional fallback: distribute any remainder across all pools
+          if (remaining > 0) {
+            const totalSubs = p_basePool + p_eventPools.reduce((s, p) => s + p.size, 0);
+            if (totalSubs > 0) {
+              const frac = remaining / totalSubs;
+              p_basePool = Math.max(0, p_basePool * (1 - frac));
+              p_eventPools.forEach(p => { p.size = Math.max(0, p.size * (1 - frac)); });
+            }
+          }
+        }
+      }
+
+      // ── C: Add last month's inflow to pools (T-1 lag) ──
+      // Natural inflow → base pool unless a Yield Event overrides its ARPU,
+      // in which case it enters an isolated yield pool at the blended yield ARPU.
+      // Inflow market-event subscribers → their own event pools (unchanged).
+      if (idx > 0) {
+        const prevMonthKey = computed[idx - 1].month;
+
+        // RATE event — Yield Events redistribute the tariff/value MIX and drive a
+        // blended ARPU ratio; they are not quantities, so they are NOT pro-rated
+        // (same reasoning as Pricing/ARPU events above).
+        // Find the most recent applicable Inflow yield event for prevMonthKey
+        // (either a direct hit or a roll-forward event whose month ≤ prevMonthKey)
+        const applicableInflowYield = yieldEvents
+          .filter(ye => {
+            if (ye.ibro !== 'Inflow') return false;
+            const segOk = ye.segment === 'All' || vseg === 'All' || ye.segment === vseg;
+            const prodOk = ye.product === 'All' || !vprodL1 || ye.product === vprodL1;
+            const ch1Ok = ye.channelL1 === 'All' || !vchanL1 || ye.channelL1 === vchanL1;
+            const ch2Ok = ye.channelL2 === 'All' || !vchanL2 || ye.channelL2 === vchanL2;
+            if (!segOk || !prodOk || !ch1Ok || !ch2Ok) return false;
+            if (ye.rollForward) return ye.month <= prevMonthKey;
+            return ye.month === prevMonthKey;
+          })
+          // If multiple roll-forward events overlap, use the most recent
+          .sort((a, b) => b.month.localeCompare(a.month))[0];
+
+        if (applicableInflowYield) {
+          // Natural inflow enters a yield pool at the blended yield ARPU.
+          //
+          // The event's tariffBaseArpu values may be historical (raw average from data)
+          // or forecast-scaled (if the user created the event in Forecast ARPU mode).
+          // To make the computation consistent in either case we express the yield
+          // as an ARPU ratio: (new blended yield ARPU) / (equal-weight baseline ARPU).
+          // That ratio is then applied to the forecast's per-scenario Inflow ARPU for
+          // the previous month, so the improvement is anchored to the forecast level.
+          const rawBlendedYieldArpu = Object.keys(applicableInflowYield.tariffMix).reduce((sum, tier) => {
+            return sum + (applicableInflowYield.tariffMix[tier] / 100) * (applicableInflowYield.tariffBaseArpu[tier] ?? 0);
+          }, 0);
+          const storedTiers = Object.keys(applicableInflowYield.tariffBaseArpu);
+          const storedEqualWeightArpu = storedTiers.length > 0
+            ? storedTiers.reduce((s, t) => s + (applicableInflowYield.tariffBaseArpu[t] ?? 0), 0) / storedTiers.length
+            : rawBlendedYieldArpu;
+          const yieldRatio = storedEqualWeightArpu > 0 ? rawBlendedYieldArpu / storedEqualWeightArpu : 1;
+          // Forecast inflow ARPU for the month whose subscribers are entering this pool
+          const fcPrevMonth = baseForecast.months[idx - 1];
+          const fcInflowArpu = fcPrevMonth
+            ? (fcPrevMonth.inflowArpu?.mean ?? fcPrevMonth.arpu.mean)
+            : storedEqualWeightArpu;
+          const yieldArpu = fcInflowArpu * yieldRatio;
+
+          if (p_prevBBaseIn > 0) {
+            p_eventPools.push({
+              eventId: `yield-${applicableInflowYield.id}-${prevMonthKey}`,
+              arpu: yieldArpu,
+              contractLength: DEFAULT_CONTRACT_N,
+              enterMonthIdx: idx,
+              size: Math.max(0, p_prevBBaseIn),
+            });
+            // Natural inflow captured by yield pool — do NOT also add to base pool
+          }
+        } else {
+          // No yield override — natural inflow joins base pool.
+          // ARPU is read from m.baseline.arpu each month (step E), so no accumulated
+          // re-averaging is needed here.
+          p_basePool += p_prevBBaseIn;
+        }
+
+        // Volume market-event Inflow pools.
+        // Per-subscriber ARPU is derived from event revenue ÷ event volume so the
+        // blended formula  (baseRevenue + eventRevenue) / totalSubs  is always
+        // consistent with what the user entered.  Fall back to the explicit arpu
+        // field if revenue was left blank, and finally to the baseline ARPU for
+        // the month so a volume-only event doesn't collapse the blended ARPU to 0.
+        const prevMonthBaselineArpu = computed[idx - 1]?.baseline.arpu ?? m.baseline.arpu;
+        marketEvents
+          .filter(e =>
+            e.date === prevMonthKey &&
+            e.scenario === 'Inflow' &&
+            !p_eventPools.find(p => p.eventId === e.id) &&
+            (e.segment  === 'All' || vseg    === 'All' || e.segment  === vseg) &&
+            (e.product  === 'All' || !vprodL1            || e.product  === vprodL1) &&
+            (!e.productL2 || e.productL2 === 'All' || !vprodL2 || e.productL2 === vprodL2) &&
+            (e.channel  === 'All' || !vchanL1            || e.channel  === vchanL1) &&
+            (!e.channelL2 || e.channelL2 === 'All' || !vchanL2 || e.channelL2 === vchanL2) &&
+            (!e.tariffL1 || e.tariffL1 === 'All' || !vtarL1 || e.tariffL1 === vtarL1) &&
+            (!e.tariffL2 || e.tariffL2 === 'All' || !vtarL2 || e.tariffL2 === vtarL2),
+          )
+          .forEach(e => {
+            const derivedArpu =
+              e.subscriberVolume > 0 && Math.abs(e.revenue) > 0
+                ? e.revenue / e.subscriberVolume   // revenue ÷ volume — primary source
+                : e.arpu > 0
+                  ? e.arpu                          // explicit arpu entry
+                  : prevMonthBaselineArpu;           // volume-only: keep blended ARPU neutral
+            p_eventPools.push({
+              eventId: e.id,
+              arpu: derivedArpu,
+              contractLength: e.contractLength ?? DEFAULT_CONTRACT_N,
+              enterMonthIdx: idx,
+              // Same pro-rata share as Pass 1 — the pool must hold exactly the
+              // volume this view actually received, or the blended ARPU would be
+              // computed over subscribers that were never added to Base.
+              size: Math.max(0, e.subscriberVolume * eventShare(e)),
+            });
+          });
+      } else {
+        // idx === 0: no previous month to lag
+        p_basePool += p_prevBBaseIn;
+      }
+
+      // Custom Promotion Card (Phase 4) — Retention-with-arm re-banded pools.
+      // Retention applies in the SAME month as the event (no T-1 lag, matching
+      // Pass 1's adjRetention). A plain Retention promo (no mix/pricing arm) has
+      // promoRebanded unset and falls through to the existing base-pool/
+      // applicableRetentionYield mechanism below, unchanged. Only when the promo
+      // carries a mix and/or pricing arm is its volume carved out into its own
+      // pool at its own (already-resolved) arpu — isolating the promo's re-banded
+      // ARPU from the standing base, exactly as Inflow event pools already do.
+      marketEvents
+        .filter(e =>
+          e.date === m.month &&
+          e.scenario === 'Retention' &&
+          e.promoRebanded &&
+          !p_eventPools.find(p => p.eventId === e.id) &&
+          (e.segment   === 'All' || vseg   === 'All' || e.segment   === vseg) &&
+          (e.product   === 'All' || !vprodL1          || e.product   === vprodL1) &&
+          (!e.productL2 || e.productL2 === 'All' || !vprodL2 || e.productL2 === vprodL2) &&
+          (e.channel   === 'All' || !vchanL1          || e.channel   === vchanL1) &&
+          (!e.channelL2 || e.channelL2 === 'All' || !vchanL2 || e.channelL2 === vchanL2) &&
+          (!e.tariffL1 || e.tariffL1 === 'All' || !vtarL1 || e.tariffL1 === vtarL1) &&
+          (!e.tariffL2 || e.tariffL2 === 'All' || !vtarL2 || e.tariffL2 === vtarL2),
+        )
+        .forEach(e => {
+          p_eventPools.push({
+            eventId: e.id,
+            arpu: e.arpu > 0 ? e.arpu : m.baseline.arpu,
+            contractLength: e.contractLength ?? DEFAULT_CONTRACT_N,
+            enterMonthIdx: idx,
+            // Pro-rata share, consistent with Pass 1 (see eventProRataShare).
+            size: Math.max(0, e.subscriberVolume * eventShare(e)),
+          });
+        });
+
+      // ── D: Enforce pool-sum consistency with newBAdj ──
+      const eventTotal = p_eventPools.reduce((s, p) => s + p.size, 0);
+      p_basePool = Math.max(0, newBAdj - eventTotal);
+
+      // ── E: Blended ARPU ──
+      // Base pool ARPU = this month's forecast blended ARPU. Reading it fresh each
+      // month (rather than accumulating) guarantees adjusted = baseline when no
+      // events are applied (Option A). Events shift it from this anchor.
+      let baseARPU = m.baseline.arpu;
+
+      // Retention yield events: adjust the effective base ARPU to reflect the
+      // yield mix on the retained cohort for this month.
+      // RATE event — NOT pro-rated. Yield shifts a per-head ARPU, not a
+      // quantity: a volume-weighted average of (leafArpu + delta) already
+      // equals (aggregateArpu + delta). Scaling by a leaf's volume share would
+      // under-apply the rate change. Do not route this through eventShare().
+      const applicableRetentionYield = yieldEvents
+        .filter(ye => {
+          if (ye.ibro !== 'Retention') return false;
+          const segOk = ye.segment === 'All' || vseg === 'All' || ye.segment === vseg;
+          const prodOk = ye.product === 'All' || !vprodL1 || ye.product === vprodL1;
+          const ch1Ok = ye.channelL1 === 'All' || !vchanL1 || ye.channelL1 === vchanL1;
+          const ch2Ok = ye.channelL2 === 'All' || !vchanL2 || ye.channelL2 === vchanL2;
+          if (!segOk || !prodOk || !ch1Ok || !ch2Ok) return false;
+          if (ye.rollForward) return ye.month <= m.month;
+          return ye.month === m.month;
+        })
+        .sort((a, b) => b.month.localeCompare(a.month))[0];
+
+      if (applicableRetentionYield && p_basePool > 0) {
+        const retentionVol = Math.min(m.uplifted.retention, p_basePool);
+        // Same ratio-anchoring logic as the Inflow case above: express as a ratio
+        // of (new blended) / (equal-weight stored) then apply to forecast retention ARPU.
+        const rawRetentionYieldArpu = Object.keys(applicableRetentionYield.tariffMix).reduce((sum, tier) => {
+          return sum + (applicableRetentionYield.tariffMix[tier] / 100) * (applicableRetentionYield.tariffBaseArpu[tier] ?? 0);
+        }, 0);
+        const retStoredTiers = Object.keys(applicableRetentionYield.tariffBaseArpu);
+        const retStoredEqualWeightArpu = retStoredTiers.length > 0
+          ? retStoredTiers.reduce((s, t) => s + (applicableRetentionYield.tariffBaseArpu[t] ?? 0), 0) / retStoredTiers.length
+          : rawRetentionYieldArpu;
+        const retYieldRatio = retStoredEqualWeightArpu > 0 ? rawRetentionYieldArpu / retStoredEqualWeightArpu : 1;
+        const fcCurMonth = baseForecast.months[idx];
+        const fcRetentionArpu = fcCurMonth
+          ? (fcCurMonth.retentionArpu?.mean ?? fcCurMonth.arpu.mean)
+          : retStoredEqualWeightArpu;
+        const yieldArpu = fcRetentionArpu * retYieldRatio;
+
+        // Revenue-weighted blend: retained subs shift to yieldArpu, rest keep baseARPU
+        const nonRetainedVol = Math.max(0, p_basePool - retentionVol);
+        baseARPU = (nonRetainedVol * baseARPU + retentionVol * yieldArpu) / p_basePool;
+      }
+
+      let blendedARPU = baseARPU;
+
+      if (newBAdj > 0 && eventTotal > 0) {
+        // Adjusted ARPU = (Σ current cohort revenue + Σ market event revenue)
+        //                 / (current cohort subs   + market event subs)
+        // Event pool ARPU is derived from event.revenue / event.subscriberVolume
+        // (see pool creation above), so p.size * p.arpu = remaining event revenue.
+        // Contract length controls when event subs enter the at-risk churn pool,
+        // keeping their per-subscriber ARPU in the blend for the protected period.
+        const baseRevenue  = p_basePool * baseARPU;
+        const eventRevenue = p_eventPools.reduce((s, p) => s + p.size * p.arpu, 0);
+        blendedARPU = Math.max(0, (baseRevenue + eventRevenue) / newBAdj);
+      }
+
+      // ── F: Pass 3 — Pricing Events (applied after yield blending) ──────────
+      // RATE events — deliberately NOT pro-rated. A Pricing Event is a % or
+      // absolute ARPU delta, not a quantity. Applying the same delta at both
+      // aggregate and leaf level is already reconciliation-correct, because a
+      // volume-weighted average of (leafArpu + delta) equals
+      // (aggregateArpu + delta). Splitting it by volume share would understate
+      // the price change at leaf level. Do not route these through eventShare().
+      // one-off: applies only in event.month; recurring: from event.month onwards.
+      // Multiple events stack sequentially (earliest first).
+      //
+      // target === 'cohorts':
+      //   Delta applies only to inflow + retention cohort volume this month.
+      //   Existing base pool keeps the pre-pricing blendedARPU.
+      //   Blended = (cohortVol × pricedARPU + baseVol × blendedARPU) / totalVol
+      //
+      // target === 'cohorts+base':
+      //   Delta applies to the full blended ARPU (all subscribers).
+      let pricingARPU = blendedARPU;
+      pricingEvents
+        .filter(pe => {
+          const segOk  = pe.segment   === 'All' || vseg    === 'All' || pe.segment   === vseg;
+          const prodOk = pe.product   === 'All' || !vprodL1              || pe.product   === vprodL1;
+          const pl2Ok  = pe.productL2 === 'All' || !vprodL2              || pe.productL2 === vprodL2;
+          const ch1Ok  = pe.channelL1 === 'All' || !vchanL1              || pe.channelL1 === vchanL1;
+          const ch2Ok  = pe.channelL2 === 'All' || !vchanL2              || pe.channelL2 === vchanL2;
+          const tar1Ok = !pe.tariffL1 || pe.tariffL1 === 'All' || !vtarL1 || pe.tariffL1 === vtarL1;
+          const tar2Ok = !pe.tariffL2 || pe.tariffL2 === 'All' || !vtarL2 || pe.tariffL2 === vtarL2;
+          if (!segOk || !prodOk || !pl2Ok || !ch1Ok || !ch2Ok || !tar1Ok || !tar2Ok) return false;
+          if (pe.duration === 'one-off') return pe.month === m.month;
+          return pe.month <= m.month;
+        })
+        .sort((a, b) => a.month.localeCompare(b.month))
+        .forEach(pe => {
+          const applyDelta = (arpu: number) =>
+            pe.inputMode === 'percentage' ? arpu * (1 + pe.amount / 100) : arpu + pe.amount;
+
+          if (pe.target === 'cohorts') {
+            // Cohorts Only: price the selected cohort type(s); base + unselected cohorts stay unchanged.
+            const inflowVol     = pe.cohortScope !== 'retention' ? m.uplifted.inflow     : 0;
+            const retentionVol  = pe.cohortScope !== 'inflow'    ? m.uplifted.retention  : 0;
+            const pricedVol     = inflowVol + retentionVol;
+            const totalVol      = m.uplifted.inflow + m.uplifted.retention + newBAdj;
+            if (totalVol > 0 && pricedVol > 0) {
+              const pricedARPU = applyDelta(pricingARPU);
+              pricingARPU = (pricedVol * pricedARPU + (totalVol - pricedVol) * pricingARPU) / totalVol;
+            }
+          } else if (pe.target === 'base-only') {
+            // Base Only: delta applies to the base pool component only;
+            // event pools retain their own fixed ARPUs.
+            if (newBAdj > 0) {
+              const pricedBaseARPU = applyDelta(baseARPU);
+              const baseRevenue  = p_basePool * pricedBaseARPU;
+              const eventRevenue = p_eventPools.reduce((s, p) => s + p.size * p.arpu, 0);
+              pricingARPU = (baseRevenue + eventRevenue) / newBAdj;
+            }
+          } else {
+            // Cohorts + Base: base always included; cohortScope controls which cohort type(s) also get the delta.
+            if (pe.cohortScope === 'both') {
+              pricingARPU = applyDelta(pricingARPU);
+            } else {
+              const inflowVol    = pe.cohortScope !== 'retention' ? m.uplifted.inflow    : 0;
+              const retentionVol = pe.cohortScope !== 'inflow'    ? m.uplifted.retention : 0;
+              const pricedVol    = inflowVol + retentionVol + newBAdj;
+              const totalVol     = m.uplifted.inflow + m.uplifted.retention + newBAdj;
+              if (totalVol > 0 && pricedVol > 0) {
+                const pricedARPU = applyDelta(pricingARPU);
+                pricingARPU = (pricedVol * pricedARPU + (totalVol - pricedVol) * pricingARPU) / totalVol;
+              }
+            }
+          }
+        });
+      pricingARPU = Math.max(0, pricingARPU);
+
+      m.uplifted.arpu = pricingARPU;
+
+      const row = {
+        month: m.month,
+        'Inflow (Baseline)':    +m.baseline.inflow.toFixed(2),
+        'Inflow (Adjusted)':    +m.uplifted.inflow.toFixed(2),
+        'Outflow (Baseline)':   +m.baseline.outflow.toFixed(2),
+        'Outflow (Adjusted)':   +m.uplifted.outflow.toFixed(2),
+        'Retention (Baseline)': +m.baseline.retention.toFixed(2),
+        'Retention (Adjusted)': +m.uplifted.retention.toFixed(2),
+        'Base (Baseline)':      +newBBase.toFixed(2),
+        'Base (Adjusted)':      +newBAdj.toFixed(2),
+        'ARPU (Baseline)':      +m.baseline.arpu.toFixed(2),
+        'ARPU (Adjusted)':      +pricingARPU.toFixed(2),
+        // Outflow ARPU reference — display-only line on ARPU axis
+        'ARPU Outflow (Ref)':   +(baseForecast.months[idx]?.outflowArpu?.mean ?? m.baseline.arpu).toFixed(2),
+        hasEvent: m.appliedEventIds.length > 0,
+      };
+
+      p_prevBBaseIn  = m.baseline.inflow;
+      p_prevBBaseOut = m.baseline.outflow;
+      p_prevBAdjIn   = m.uplifted.inflow;
+      p_prevBAdjOut  = m.uplifted.outflow;
+      p_bBase = newBBase;
+      p_bAdj  = newBAdj;
+
+      return row;
+    });
+
+    // shareCache is the authoritative record of what share of each volume event
+    // this view actually received. Exposed so view-scoped UI (e.g. the retention
+    // warning) reads the applied volume instead of re-deriving it — a second
+    // leaf enumeration here would be a parallel implementation of the very
+    // thing eventProRataShare exists to centralise.
+    return { chartData: rows, adjustedMonths: computed, eventShares: shareCache };
+}
 
 export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   data,
@@ -819,477 +1393,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // Derive adjusted months from BaseForecast + market events (no HW re-run)
   // -------------------------------------------------------------------------
 
-  const { chartData, adjustedMonths } = useMemo<{
-    chartData: any[];
-    adjustedMonths: AdjustedForecastMonth[];
-  }>(() => {
-    if (!baseForecast) return { chartData: [], adjustedMonths: [] };
-
-    // Use the local view filter for event matching so the chart reflects the
-    // currently selected view scope — not the cohort from Step 1.
-    const vseg = viewSegment;
-    const vprod = viewProduct;
-    const vchan = viewChannel;
-    const vprodL1 = vprod.l1;   // null = All
-    const vprodL2 = vprod.l2;   // null = All L2 within L1
-    const vchanL1 = vchan.l1;
-    const vchanL2 = vchan.l2;
-    const vtarL1 = viewTariff.l1;  // null = All (Phase 2a; event tariff targeting arrives in 2b)
-    const vtarL2 = viewTariff.l2;
-
-    // ---------------------------------------------------------------------------
-    // Pass 1 — apply market events to each forecast month.
-    //
-    // Computes uplifted IBRO flows; uplifted.arpu holds any direct ARPU-event
-    // adjustments.  Pass 2 overwrites it with the cohort-pool blended ARPU.
-    // ---------------------------------------------------------------------------
-
-    const computed: AdjustedForecastMonth[] = [];
-
-    baseForecast.months.forEach(month => {
-      const applicable = marketEvents.filter(e => {
-        if (e.date !== month.month) return false;
-        const segMatch  = e.segment === 'All' || vseg === 'All' || e.segment === vseg;
-        // Event matches view product when:
-        //  - event targets All products, OR view is All products, OR event.product === view L1
-        // AND if the event has an L2 and the view has an L2, they must match too.
-        const prodL1Match = e.product === 'All' || !vprodL1 || e.product === vprodL1;
-        const prodL2Match = !e.productL2 || e.productL2 === 'All' || !vprodL2 || e.productL2 === vprodL2;
-        const chanL1Match = e.channel === 'All' || !vchanL1 || e.channel === vchanL1;
-        const chanL2Match = !e.channelL2 || e.channelL2 === 'All' || !vchanL2 || e.channelL2 === vchanL2;
-        const tarL1Match = !e.tariffL1 || e.tariffL1 === 'All' || !vtarL1 || e.tariffL1 === vtarL1;
-        const tarL2Match = !e.tariffL2 || e.tariffL2 === 'All' || !vtarL2 || e.tariffL2 === vtarL2;
-        return segMatch && prodL1Match && prodL2Match && chanL1Match && chanL2Match && tarL1Match && tarL2Match;
-      });
-
-      let adjInflow = month.inflow.mean;
-      let adjOutflow = month.outflow.mean;
-      let adjRetention = month.retention.mean;
-      let adjArpu = month.arpu.mean;   // direct ARPU-event adjustments only
-      const appliedIds: string[] = [];
-
-      applicable.forEach(e => {
-        if (e.scenario === 'Inflow') {
-          adjInflow += e.subscriberVolume;
-        } else if (e.scenario === 'Outflow') {
-          // subscriberVolume is stored as a negative number for Outflow events.
-          // Subtracting a negative value adds its absolute magnitude to adjOutflow,
-          // which correctly increases outflow and reduces Base (T+1 via lagged formula).
-          adjOutflow -= e.subscriberVolume;
-        } else if (e.scenario === 'Retention') {
-          // Retention events reduce Outflow AND increase Retention tracking.
-          // Because Retention is not in the base stock formula, only the Outflow
-          // reduction affects Base (one month later, via the lagged formula).
-          adjOutflow -= e.subscriberVolume;
-          adjRetention += e.subscriberVolume;
-        } else if (e.scenario === 'ARPU') {
-          // Direct ARPU pricing change — additive, applies to all subscribers.
-          adjArpu += e.arpu;
-        }
-        appliedIds.push(e.id);
-      });
-
-      computed.push({
-        month: month.month,
-        baseline: {
-          inflow: month.inflow.mean,
-          retention: month.retention.mean,
-          outflow: month.outflow.mean,
-          arpu: month.arpu.mean,
-        },
-        uplifted: {
-          inflow: Math.max(0, adjInflow),
-          retention: Math.max(0, adjRetention),
-          outflow: Math.max(0, adjOutflow),
-          // uplifted.arpu starts as the direct-event-adjusted value; it will be
-          // overwritten below with the blended ARPU once Base volumes are known.
-          arpu: Math.max(0, adjArpu),
-        },
-        appliedEventIds: appliedIds,
-      });
-    });
-
-    // ---------------------------------------------------------------------------
-    // Pass 2 — cohort-pool ARPU calculation.
-    //
-    // Each Inflow event creates an isolated subscriber pool with its own ARPU
-    // and a contract-length protection window (default 24 months).  The existing
-    // base subscribers form a second pool.
-    //
-    // Outflow allocation each month:
-    //   1. Draw first from the at-risk base pool  (1/DEFAULT_CONTRACT_N of the
-    //      base pool churns per month — uniform age distribution assumption).
-    //   2. If outflow exceeds the at-risk base, draw the remainder
-    //      proportionally from any event pools whose protection window has elapsed.
-    //   3. Proportional fallback to all pools for any residual.
-    //
-    // Blended ARPU = (basePool × baseARPU + Σ eventPool_i × eventARPU_i) / total
-    // ---------------------------------------------------------------------------
-
-    const DEFAULT_CONTRACT_N = 24;
-
-    interface EventPool {
-      eventId: string;
-      arpu: number;           // fixed per-subscriber ARPU for this cohort
-      contractLength: number; // protection window in months
-      enterMonthIdx: number;  // 0-based index when they enter Base (event month + 1)
-      size: number;           // current subscriber count
-    }
-
-    let p_bBase = baseForecast.seedBaseVolume;
-    let p_bAdj  = baseForecast.seedBaseVolume;
-    let p_basePool = baseForecast.seedBaseVolume;
-    // Base pool ARPU is read fresh from the forecast's blended arpu.mean each month
-    // (set in step E). No accumulated state needed — Option A: without events the
-    // adjusted line tracks the baseline exactly, month by month.
-    const p_eventPools: EventPool[] = [];
-
-    let p_prevBBaseIn  = baseForecast.lastHistoricalInflow;
-    let p_prevBBaseOut = baseForecast.lastHistoricalOutflow;
-    let p_prevBAdjIn   = baseForecast.lastHistoricalInflow;
-    let p_prevBAdjOut  = baseForecast.lastHistoricalOutflow;
-
-    const rows = computed.map((m, idx) => {
-      // ── A: Compute total subscriber counts (lagged formula) ──
-      const newBBase = Math.max(0, p_bBase + p_prevBBaseIn - p_prevBBaseOut);
-      const newBAdj  = Math.max(0, p_bAdj  + p_prevBAdjIn  - p_prevBAdjOut);
-
-      // ── B: Allocate last month's outflow between pools ──
-      // Uses pool sizes as they were at start of this month (before adding new inflow).
-      const totalOutflow = p_prevBAdjOut;
-      if (totalOutflow > 0 && p_bAdj > 0) {
-        // At-risk base: 1/DEFAULT_CONTRACT_N of base pool expires each month.
-        const atRiskBase = Math.min(p_basePool, p_basePool / DEFAULT_CONTRACT_N);
-        let remaining = totalOutflow;
-
-        const baseChurn = Math.min(atRiskBase, remaining);
-        p_basePool = Math.max(0, p_basePool - baseChurn);
-        remaining -= baseChurn;
-
-        if (remaining > 0) {
-          // Event pools whose protection window has elapsed
-          const atRiskPools = p_eventPools.filter(
-            p => p.size > 0 && (idx - p.enterMonthIdx) >= p.contractLength,
-          );
-          const atRiskTotal = atRiskPools.reduce((s, p) => s + p.size, 0);
-
-          if (atRiskTotal > 0) {
-            const eventChurn = Math.min(atRiskTotal, remaining);
-            atRiskPools.forEach(p => {
-              const take = eventChurn * (p.size / atRiskTotal);
-              p.size = Math.max(0, p.size - take);
-            });
-            remaining -= eventChurn;
-          }
-
-          // Proportional fallback: distribute any remainder across all pools
-          if (remaining > 0) {
-            const totalSubs = p_basePool + p_eventPools.reduce((s, p) => s + p.size, 0);
-            if (totalSubs > 0) {
-              const frac = remaining / totalSubs;
-              p_basePool = Math.max(0, p_basePool * (1 - frac));
-              p_eventPools.forEach(p => { p.size = Math.max(0, p.size * (1 - frac)); });
-            }
-          }
-        }
-      }
-
-      // ── C: Add last month's inflow to pools (T-1 lag) ──
-      // Natural inflow → base pool unless a Yield Event overrides its ARPU,
-      // in which case it enters an isolated yield pool at the blended yield ARPU.
-      // Inflow market-event subscribers → their own event pools (unchanged).
-      if (idx > 0) {
-        const prevMonthKey = computed[idx - 1].month;
-
-        // Find the most recent applicable Inflow yield event for prevMonthKey
-        // (either a direct hit or a roll-forward event whose month ≤ prevMonthKey)
-        const applicableInflowYield = yieldEvents
-          .filter(ye => {
-            if (ye.ibro !== 'Inflow') return false;
-            const segOk = ye.segment === 'All' || vseg === 'All' || ye.segment === vseg;
-            const prodOk = ye.product === 'All' || !vprodL1 || ye.product === vprodL1;
-            const ch1Ok = ye.channelL1 === 'All' || !vchanL1 || ye.channelL1 === vchanL1;
-            const ch2Ok = ye.channelL2 === 'All' || !vchanL2 || ye.channelL2 === vchanL2;
-            if (!segOk || !prodOk || !ch1Ok || !ch2Ok) return false;
-            if (ye.rollForward) return ye.month <= prevMonthKey;
-            return ye.month === prevMonthKey;
-          })
-          // If multiple roll-forward events overlap, use the most recent
-          .sort((a, b) => b.month.localeCompare(a.month))[0];
-
-        if (applicableInflowYield) {
-          // Natural inflow enters a yield pool at the blended yield ARPU.
-          //
-          // The event's tariffBaseArpu values may be historical (raw average from data)
-          // or forecast-scaled (if the user created the event in Forecast ARPU mode).
-          // To make the computation consistent in either case we express the yield
-          // as an ARPU ratio: (new blended yield ARPU) / (equal-weight baseline ARPU).
-          // That ratio is then applied to the forecast's per-scenario Inflow ARPU for
-          // the previous month, so the improvement is anchored to the forecast level.
-          const rawBlendedYieldArpu = Object.keys(applicableInflowYield.tariffMix).reduce((sum, tier) => {
-            return sum + (applicableInflowYield.tariffMix[tier] / 100) * (applicableInflowYield.tariffBaseArpu[tier] ?? 0);
-          }, 0);
-          const storedTiers = Object.keys(applicableInflowYield.tariffBaseArpu);
-          const storedEqualWeightArpu = storedTiers.length > 0
-            ? storedTiers.reduce((s, t) => s + (applicableInflowYield.tariffBaseArpu[t] ?? 0), 0) / storedTiers.length
-            : rawBlendedYieldArpu;
-          const yieldRatio = storedEqualWeightArpu > 0 ? rawBlendedYieldArpu / storedEqualWeightArpu : 1;
-          // Forecast inflow ARPU for the month whose subscribers are entering this pool
-          const fcPrevMonth = baseForecast.months[idx - 1];
-          const fcInflowArpu = fcPrevMonth
-            ? (fcPrevMonth.inflowArpu?.mean ?? fcPrevMonth.arpu.mean)
-            : storedEqualWeightArpu;
-          const yieldArpu = fcInflowArpu * yieldRatio;
-
-          if (p_prevBBaseIn > 0) {
-            p_eventPools.push({
-              eventId: `yield-${applicableInflowYield.id}-${prevMonthKey}`,
-              arpu: yieldArpu,
-              contractLength: DEFAULT_CONTRACT_N,
-              enterMonthIdx: idx,
-              size: Math.max(0, p_prevBBaseIn),
-            });
-            // Natural inflow captured by yield pool — do NOT also add to base pool
-          }
-        } else {
-          // No yield override — natural inflow joins base pool.
-          // ARPU is read from m.baseline.arpu each month (step E), so no accumulated
-          // re-averaging is needed here.
-          p_basePool += p_prevBBaseIn;
-        }
-
-        // Volume market-event Inflow pools.
-        // Per-subscriber ARPU is derived from event revenue ÷ event volume so the
-        // blended formula  (baseRevenue + eventRevenue) / totalSubs  is always
-        // consistent with what the user entered.  Fall back to the explicit arpu
-        // field if revenue was left blank, and finally to the baseline ARPU for
-        // the month so a volume-only event doesn't collapse the blended ARPU to 0.
-        const prevMonthBaselineArpu = computed[idx - 1]?.baseline.arpu ?? m.baseline.arpu;
-        marketEvents
-          .filter(e =>
-            e.date === prevMonthKey &&
-            e.scenario === 'Inflow' &&
-            !p_eventPools.find(p => p.eventId === e.id) &&
-            (e.segment  === 'All' || vseg    === 'All' || e.segment  === vseg) &&
-            (e.product  === 'All' || !vprodL1            || e.product  === vprodL1) &&
-            (!e.productL2 || e.productL2 === 'All' || !vprodL2 || e.productL2 === vprodL2) &&
-            (e.channel  === 'All' || !vchanL1            || e.channel  === vchanL1) &&
-            (!e.channelL2 || e.channelL2 === 'All' || !vchanL2 || e.channelL2 === vchanL2) &&
-            (!e.tariffL1 || e.tariffL1 === 'All' || !vtarL1 || e.tariffL1 === vtarL1) &&
-            (!e.tariffL2 || e.tariffL2 === 'All' || !vtarL2 || e.tariffL2 === vtarL2),
-          )
-          .forEach(e => {
-            const derivedArpu =
-              e.subscriberVolume > 0 && Math.abs(e.revenue) > 0
-                ? e.revenue / e.subscriberVolume   // revenue ÷ volume — primary source
-                : e.arpu > 0
-                  ? e.arpu                          // explicit arpu entry
-                  : prevMonthBaselineArpu;           // volume-only: keep blended ARPU neutral
-            p_eventPools.push({
-              eventId: e.id,
-              arpu: derivedArpu,
-              contractLength: e.contractLength ?? DEFAULT_CONTRACT_N,
-              enterMonthIdx: idx,
-              size: Math.max(0, e.subscriberVolume),
-            });
-          });
-      } else {
-        // idx === 0: no previous month to lag
-        p_basePool += p_prevBBaseIn;
-      }
-
-      // Custom Promotion Card (Phase 4) — Retention-with-arm re-banded pools.
-      // Retention applies in the SAME month as the event (no T-1 lag, matching
-      // Pass 1's adjRetention). A plain Retention promo (no mix/pricing arm) has
-      // promoRebanded unset and falls through to the existing base-pool/
-      // applicableRetentionYield mechanism below, unchanged. Only when the promo
-      // carries a mix and/or pricing arm is its volume carved out into its own
-      // pool at its own (already-resolved) arpu — isolating the promo's re-banded
-      // ARPU from the standing base, exactly as Inflow event pools already do.
-      marketEvents
-        .filter(e =>
-          e.date === m.month &&
-          e.scenario === 'Retention' &&
-          e.promoRebanded &&
-          !p_eventPools.find(p => p.eventId === e.id) &&
-          (e.segment   === 'All' || vseg   === 'All' || e.segment   === vseg) &&
-          (e.product   === 'All' || !vprodL1          || e.product   === vprodL1) &&
-          (!e.productL2 || e.productL2 === 'All' || !vprodL2 || e.productL2 === vprodL2) &&
-          (e.channel   === 'All' || !vchanL1          || e.channel   === vchanL1) &&
-          (!e.channelL2 || e.channelL2 === 'All' || !vchanL2 || e.channelL2 === vchanL2) &&
-          (!e.tariffL1 || e.tariffL1 === 'All' || !vtarL1 || e.tariffL1 === vtarL1) &&
-          (!e.tariffL2 || e.tariffL2 === 'All' || !vtarL2 || e.tariffL2 === vtarL2),
-        )
-        .forEach(e => {
-          p_eventPools.push({
-            eventId: e.id,
-            arpu: e.arpu > 0 ? e.arpu : m.baseline.arpu,
-            contractLength: e.contractLength ?? DEFAULT_CONTRACT_N,
-            enterMonthIdx: idx,
-            size: Math.max(0, e.subscriberVolume),
-          });
-        });
-
-      // ── D: Enforce pool-sum consistency with newBAdj ──
-      const eventTotal = p_eventPools.reduce((s, p) => s + p.size, 0);
-      p_basePool = Math.max(0, newBAdj - eventTotal);
-
-      // ── E: Blended ARPU ──
-      // Base pool ARPU = this month's forecast blended ARPU. Reading it fresh each
-      // month (rather than accumulating) guarantees adjusted = baseline when no
-      // events are applied (Option A). Events shift it from this anchor.
-      let baseARPU = m.baseline.arpu;
-
-      // Retention yield events: adjust the effective base ARPU to reflect the
-      // yield mix on the retained cohort for this month.
-      const applicableRetentionYield = yieldEvents
-        .filter(ye => {
-          if (ye.ibro !== 'Retention') return false;
-          const segOk = ye.segment === 'All' || vseg === 'All' || ye.segment === vseg;
-          const prodOk = ye.product === 'All' || !vprodL1 || ye.product === vprodL1;
-          const ch1Ok = ye.channelL1 === 'All' || !vchanL1 || ye.channelL1 === vchanL1;
-          const ch2Ok = ye.channelL2 === 'All' || !vchanL2 || ye.channelL2 === vchanL2;
-          if (!segOk || !prodOk || !ch1Ok || !ch2Ok) return false;
-          if (ye.rollForward) return ye.month <= m.month;
-          return ye.month === m.month;
-        })
-        .sort((a, b) => b.month.localeCompare(a.month))[0];
-
-      if (applicableRetentionYield && p_basePool > 0) {
-        const retentionVol = Math.min(m.uplifted.retention, p_basePool);
-        // Same ratio-anchoring logic as the Inflow case above: express as a ratio
-        // of (new blended) / (equal-weight stored) then apply to forecast retention ARPU.
-        const rawRetentionYieldArpu = Object.keys(applicableRetentionYield.tariffMix).reduce((sum, tier) => {
-          return sum + (applicableRetentionYield.tariffMix[tier] / 100) * (applicableRetentionYield.tariffBaseArpu[tier] ?? 0);
-        }, 0);
-        const retStoredTiers = Object.keys(applicableRetentionYield.tariffBaseArpu);
-        const retStoredEqualWeightArpu = retStoredTiers.length > 0
-          ? retStoredTiers.reduce((s, t) => s + (applicableRetentionYield.tariffBaseArpu[t] ?? 0), 0) / retStoredTiers.length
-          : rawRetentionYieldArpu;
-        const retYieldRatio = retStoredEqualWeightArpu > 0 ? rawRetentionYieldArpu / retStoredEqualWeightArpu : 1;
-        const fcCurMonth = baseForecast.months[idx];
-        const fcRetentionArpu = fcCurMonth
-          ? (fcCurMonth.retentionArpu?.mean ?? fcCurMonth.arpu.mean)
-          : retStoredEqualWeightArpu;
-        const yieldArpu = fcRetentionArpu * retYieldRatio;
-
-        // Revenue-weighted blend: retained subs shift to yieldArpu, rest keep baseARPU
-        const nonRetainedVol = Math.max(0, p_basePool - retentionVol);
-        baseARPU = (nonRetainedVol * baseARPU + retentionVol * yieldArpu) / p_basePool;
-      }
-
-      let blendedARPU = baseARPU;
-
-      if (newBAdj > 0 && eventTotal > 0) {
-        // Adjusted ARPU = (Σ current cohort revenue + Σ market event revenue)
-        //                 / (current cohort subs   + market event subs)
-        // Event pool ARPU is derived from event.revenue / event.subscriberVolume
-        // (see pool creation above), so p.size * p.arpu = remaining event revenue.
-        // Contract length controls when event subs enter the at-risk churn pool,
-        // keeping their per-subscriber ARPU in the blend for the protected period.
-        const baseRevenue  = p_basePool * baseARPU;
-        const eventRevenue = p_eventPools.reduce((s, p) => s + p.size * p.arpu, 0);
-        blendedARPU = Math.max(0, (baseRevenue + eventRevenue) / newBAdj);
-      }
-
-      // ── F: Pass 3 — Pricing Events (applied after yield blending) ──────────
-      // one-off: applies only in event.month; recurring: from event.month onwards.
-      // Multiple events stack sequentially (earliest first).
-      //
-      // target === 'cohorts':
-      //   Delta applies only to inflow + retention cohort volume this month.
-      //   Existing base pool keeps the pre-pricing blendedARPU.
-      //   Blended = (cohortVol × pricedARPU + baseVol × blendedARPU) / totalVol
-      //
-      // target === 'cohorts+base':
-      //   Delta applies to the full blended ARPU (all subscribers).
-      let pricingARPU = blendedARPU;
-      pricingEvents
-        .filter(pe => {
-          const segOk  = pe.segment   === 'All' || vseg    === 'All' || pe.segment   === vseg;
-          const prodOk = pe.product   === 'All' || !vprodL1              || pe.product   === vprodL1;
-          const pl2Ok  = pe.productL2 === 'All' || !vprodL2              || pe.productL2 === vprodL2;
-          const ch1Ok  = pe.channelL1 === 'All' || !vchanL1              || pe.channelL1 === vchanL1;
-          const ch2Ok  = pe.channelL2 === 'All' || !vchanL2              || pe.channelL2 === vchanL2;
-          const tar1Ok = !pe.tariffL1 || pe.tariffL1 === 'All' || !vtarL1 || pe.tariffL1 === vtarL1;
-          const tar2Ok = !pe.tariffL2 || pe.tariffL2 === 'All' || !vtarL2 || pe.tariffL2 === vtarL2;
-          if (!segOk || !prodOk || !pl2Ok || !ch1Ok || !ch2Ok || !tar1Ok || !tar2Ok) return false;
-          if (pe.duration === 'one-off') return pe.month === m.month;
-          return pe.month <= m.month;
-        })
-        .sort((a, b) => a.month.localeCompare(b.month))
-        .forEach(pe => {
-          const applyDelta = (arpu: number) =>
-            pe.inputMode === 'percentage' ? arpu * (1 + pe.amount / 100) : arpu + pe.amount;
-
-          if (pe.target === 'cohorts') {
-            // Cohorts Only: price the selected cohort type(s); base + unselected cohorts stay unchanged.
-            const inflowVol     = pe.cohortScope !== 'retention' ? m.uplifted.inflow     : 0;
-            const retentionVol  = pe.cohortScope !== 'inflow'    ? m.uplifted.retention  : 0;
-            const pricedVol     = inflowVol + retentionVol;
-            const totalVol      = m.uplifted.inflow + m.uplifted.retention + newBAdj;
-            if (totalVol > 0 && pricedVol > 0) {
-              const pricedARPU = applyDelta(pricingARPU);
-              pricingARPU = (pricedVol * pricedARPU + (totalVol - pricedVol) * pricingARPU) / totalVol;
-            }
-          } else if (pe.target === 'base-only') {
-            // Base Only: delta applies to the base pool component only;
-            // event pools retain their own fixed ARPUs.
-            if (newBAdj > 0) {
-              const pricedBaseARPU = applyDelta(baseARPU);
-              const baseRevenue  = p_basePool * pricedBaseARPU;
-              const eventRevenue = p_eventPools.reduce((s, p) => s + p.size * p.arpu, 0);
-              pricingARPU = (baseRevenue + eventRevenue) / newBAdj;
-            }
-          } else {
-            // Cohorts + Base: base always included; cohortScope controls which cohort type(s) also get the delta.
-            if (pe.cohortScope === 'both') {
-              pricingARPU = applyDelta(pricingARPU);
-            } else {
-              const inflowVol    = pe.cohortScope !== 'retention' ? m.uplifted.inflow    : 0;
-              const retentionVol = pe.cohortScope !== 'inflow'    ? m.uplifted.retention : 0;
-              const pricedVol    = inflowVol + retentionVol + newBAdj;
-              const totalVol     = m.uplifted.inflow + m.uplifted.retention + newBAdj;
-              if (totalVol > 0 && pricedVol > 0) {
-                const pricedARPU = applyDelta(pricingARPU);
-                pricingARPU = (pricedVol * pricedARPU + (totalVol - pricedVol) * pricingARPU) / totalVol;
-              }
-            }
-          }
-        });
-      pricingARPU = Math.max(0, pricingARPU);
-
-      m.uplifted.arpu = pricingARPU;
-
-      const row = {
-        month: m.month,
-        'Inflow (Baseline)':    +m.baseline.inflow.toFixed(2),
-        'Inflow (Adjusted)':    +m.uplifted.inflow.toFixed(2),
-        'Outflow (Baseline)':   +m.baseline.outflow.toFixed(2),
-        'Outflow (Adjusted)':   +m.uplifted.outflow.toFixed(2),
-        'Retention (Baseline)': +m.baseline.retention.toFixed(2),
-        'Retention (Adjusted)': +m.uplifted.retention.toFixed(2),
-        'Base (Baseline)':      +newBBase.toFixed(2),
-        'Base (Adjusted)':      +newBAdj.toFixed(2),
-        'ARPU (Baseline)':      +m.baseline.arpu.toFixed(2),
-        'ARPU (Adjusted)':      +pricingARPU.toFixed(2),
-        // Outflow ARPU reference — display-only line on ARPU axis
-        'ARPU Outflow (Ref)':   +(baseForecast.months[idx]?.outflowArpu?.mean ?? m.baseline.arpu).toFixed(2),
-        hasEvent: m.appliedEventIds.length > 0,
-      };
-
-      p_prevBBaseIn  = m.baseline.inflow;
-      p_prevBBaseOut = m.baseline.outflow;
-      p_prevBAdjIn   = m.uplifted.inflow;
-      p_prevBAdjOut  = m.uplifted.outflow;
-      p_bBase = newBBase;
-      p_bAdj  = newBAdj;
-
-      return row;
-    });
-
-    return { chartData: rows, adjustedMonths: computed };
-  }, [baseForecast, marketEvents, yieldEvents, pricingEvents, viewSegment, viewProduct, viewChannel, viewTariff]);
+  const { chartData, adjustedMonths, eventShares } = useMemo(() => computeAdjustedForecast({
+    baseForecast, marketEvents, yieldEvents, pricingEvents,
+    viewSegment, viewProduct, viewChannel, viewTariff, data,
+    wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
+    wiTariffL1Col, wiTariffL2Col, wiValueCol,
+    // data + the column mappings are load-bearing: the pro-rata leaf enumeration
+    // reads them to derive each leaf's volume share. Before pro-rata they were
+    // unused in this body, which is why they were historically absent here.
+  }), [baseForecast, marketEvents, yieldEvents, pricingEvents, viewSegment, viewProduct, viewChannel, viewTariff,
+       data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col]);
 
   // ── Custom chart tooltip — shows KPI values + any event names for that month ─
   const renderTooltip = useCallback(({ active, payload, label }: any) => {
@@ -1815,12 +1928,25 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       .filter(e => e.scenario === 'Retention')
       .forEach(e => {
         const bm = baseForecast.months.find(m => m.month === e.date);
-        if (bm && e.subscriberVolume > bm.outflow.mean) {
+        // View-scoped: compare the volume this view ACTUALLY receives against
+        // this view's outflow, not the event's raw headline volume. Under an
+        // aggregate-targeted event a leaf takes only its pro-rata share, so the
+        // raw figure would warn against an outflow it was never measured
+        // against — e.g. a 10,000 event on Corporate·All·All firing against a
+        // leaf whose outflow is 2,000 but which only receives ~1,035. Every
+        // other figure on this screen is view-scoped after the pro-rata work,
+        // and a warning that fires while the applied volume sits comfortably
+        // under the view's outflow just trains users to ignore it.
+        // A missing share means the engine never applied this event in this
+        // view (out of scope, or filtered out), so the applied volume is 0 and
+        // there is nothing to warn about here.
+        const appliedVol = e.subscriberVolume * (eventShares.get(e.id) ?? 0);
+        if (bm && appliedVol > bm.outflow.mean) {
           warned.add(e.id);
         }
       });
     return warned;
-  }, [baseForecast, marketEvents]);
+  }, [baseForecast, marketEvents, eventShares]);
 
   // -------------------------------------------------------------------------
   // Toggle KPI helper
