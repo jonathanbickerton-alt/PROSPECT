@@ -202,6 +202,12 @@ export default function App() {
 
   // Overall Forecasts State
   const [savedForecasts, setSavedForecasts] = useState<Record<string, any>>({});
+  /**
+   * Bottom-up forecasting: cohortId → short-leaf diagnostics for aggregates
+   * whose constituent leaves are mostly too short to fit seasonality. Advisory
+   * only; it changes no forecast values, it makes the caveat visible.
+   */
+  const [shortLeafWarnings, setShortLeafWarnings] = useState<Record<string, { shortLeaves: number; totalLeaves: number; share: number }>>({});
   const addMarketEvent = () => {
     if (!newEvent.date || newEvent.subscriberVolume === undefined) return;
     // Outflow events always represent subscribers leaving — negate the magnitudes so
@@ -3697,8 +3703,8 @@ export default function App() {
     // Enumerate only cohorts that actually exist in the data — see the shared
     // populatedCohortKeys / cohortHasData defined above (used here AND by the
     // missing-count prompt so they agree). Keeps every data-spanning aggregate
-    // (resolved via the worker's O(N) fallback), drops only genuinely-empty
-    // combinations, and never keys off the user's tariff selection.
+    // (derived in the worker by summing its constituent leaves), drops only
+    // genuinely-empty combinations, and never keys off the user's tariff selection.
     const targets = options?.cohortIds
       ? allCohorts.filter(c => options.cohortIds!.includes(c.id))
       : allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast' && cohortHasData(c));
@@ -3768,10 +3774,10 @@ export default function App() {
     ibroCohortArray.forEach((spec, i) => workerIbro[i % poolSize].push(spec));
 
     // Flatten the entire pre-aggregated map into a single array shared by every worker.
-    // Each worker receives all rows so that 'All'-dimension cohorts (which have no exact
-    // map key) can fall back to a full O(N) scan inside the worker.  The dataset is
-    // small enough that structured-clone overhead is acceptable and avoids the key-mismatch
-    // bug that caused "Insufficient Data" for aggregated cohorts.
+    // Each worker receives all rows so it can rebuild the leaf buckets it needs and derive
+    // any 'All'-dimension aggregate by summing those leaves (bottom-up — there is no
+    // O(N) scan fallback any more). The dataset is small enough that structured-clone
+    // overhead is acceptable.
     const allRows: PreAggRow[] = Array.from(cohortDataMap.values()).flat();
 
     const workerConfig = {
@@ -3801,6 +3807,9 @@ export default function App() {
       })(),
     };
 
+    // Bottom-up short-leaf warnings collected across the worker pool.
+    const collectedShortLeafWarnings = new Map<string, { shortLeaves: number; totalLeaves: number; share: number }>();
+
     setGenerationProgress({ current: 0, total: targets.length });
     const newTypedForecasts = new Map<string, BaseForecast>();
 
@@ -3820,7 +3829,13 @@ export default function App() {
               generated: number;
               failed: number;
               empty?: number;
+              shortLeafWarnings?: Array<[string, { shortLeaves: number; totalLeaves: number; share: number }]>;
             };
+            // Bottom-up: aggregates whose seasonal amplitude may be understated
+            // because most constituent leaves are too short to fit seasonality.
+            for (const [cohortId, w] of result.shortLeafWarnings ?? []) {
+              collectedShortLeafWarnings.set(cohortId, w);
+            }
             Object.assign(newForecasts, result.newForecasts);
             generatedIds.push(...result.generatedIds);
             generated += result.generated;
@@ -3861,6 +3876,7 @@ export default function App() {
     );
 
     setGenerationProgress({ current: 0, total: 0 });
+    setShortLeafWarnings(prev => ({ ...prev, ...Object.fromEntries(collectedShortLeafWarnings) }));
     setSavedForecasts(prev => ({ ...prev, ...newForecasts }));
 
     if (newTypedForecasts.size > 0) {
@@ -4123,6 +4139,7 @@ export default function App() {
             onOpenManageBulk={() => setShowManageBulkDrawer(true)}
             cohortGenLog={cohortGenLog}
             onSelectCohort={onSelectCohort}
+            shortLeafWarnings={shortLeafWarnings}
             oneOffMonths={oneOffMonths}
             setOneOffMonths={setOneOffMonths}
           />

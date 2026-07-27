@@ -9,10 +9,18 @@
  * processes its assigned cohorts independently.
  */
 
-import { format } from 'date-fns';
-import { buildCohortDataMap, calculateHoltWinters, calculateBaseForecast, analyzeAndRecommendModel, analyzeAndRecommendConfidence, applyOneOffFlagsToSeries } from '../utils/forecasting';
-import type { AggregatedIBRORow, PreAggRow } from '../utils/forecasting';
+import { format, addMonths } from 'date-fns';
+import { buildCohortDataMap, calculateHoltWinters, calculateBaseForecast, analyzeAndRecommendModel, analyzeAndRecommendConfidence, applyOneOffFlagsToSeries, aggregateForecastBands } from '../utils/forecasting';
+import type { AggregatedIBRORow, PreAggRow, AggBand } from '../utils/forecasting';
 import type { BaseForecast, ForecastModel } from '../types/forecast';
+
+/**
+ * Minimum history for a seasonal (Holt-Winters) fit — mirrors
+ * SEASONAL_MIN_POINTS in forecasting.ts. Used here only to DETECT leaves too
+ * short to carry a seasonal term, so the aggregates built from them can be
+ * flagged. It never changes which model is chosen.
+ */
+const SEASONAL_MIN_POINTS_WORKER = 24;
 
 // ---------------------------------------------------------------------------
 // Message types
@@ -94,14 +102,30 @@ export interface WorkerOutMessage {
   /** Cohorts skipped because they had 0 matching rows (expected — an aggregate
    *  slice with no data; not surfaced as a failure). */
   empty: number;
+  /**
+   * Aggregates whose seasonal amplitude may be understated because more than
+   * half their constituent leaves have too little history to fit seasonality.
+   * Advisory only — it changes no numbers, it makes the condition visible.
+   * Serialised as an array because Map cannot cross postMessage.
+   */
+  shortLeafWarnings: Array<[string, ShortLeafWarning]>;
+}
+
+/** Short-history diagnostics for one derived aggregate. */
+export interface ShortLeafWarning {
+  /** leaves with fewer than 24 points (cannot fit a seasonal term) */
+  shortLeaves: number;
+  totalLeaves: number;
+  /** shortLeaves / totalLeaves, 0..1 */
+  share: number;
 }
 
 // ---------------------------------------------------------------------------
 // Worker handler
 // ---------------------------------------------------------------------------
 
-self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
-  const { workerId, config, rows, standardCohorts, ibroCohorts } = e.data;
+export function runForecastJob(input: WorkerInMessage): WorkerOutMessage {
+  const { workerId, config, rows, standardCohorts, ibroCohorts } = input;
 
   const {
     wiDateCol, wiMetricCol, wiValueCol,
@@ -139,11 +163,117 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
 
   const newForecasts: Record<string, unknown[]> = {};
   const generatedIds: string[] = [];
+  const shortLeafWarnings = new Map<string, ShortLeafWarning>();
   let generated = 0;
   let failed = 0;
   let empty = 0;
 
-  // ── Standard cohorts: per-metric Holt-Winters ────────────────────────────
+  // ── Bottom-up index ───────────────────────────────────────────────────────
+  // Only populated leaf cohorts are ever fitted. Every requested aggregate is
+  // mapped to the leaves it contains, and derived from them by summation.
+  // The old O(N) `rows.filter(...)` fallback is gone: a key is either an exact
+  // leaf, derivable from leaves, or legitimately absent.
+  const cohortKeyOf = (c: { segment: string; product: string; productL2?: string; channel?: string; channelL2?: string; tariffL1?: string; tariffL2?: string }) =>
+    `${c.segment}|${c.product}|${c.productL2 || 'All'}|${c.channel || 'All'}|${c.channelL2 || 'All'}|${c.tariffL1 || 'All'}|${c.tariffL2 || 'All'}`;
+
+  const leafKeys = Array.from(cohortDataMap.keys());
+  const leafDims = leafKeys.map(k => k.split('|'));
+  const DIMS = 7;
+
+  const requestedKeys = new Set<string>();
+  for (const c of standardCohorts) requestedKeys.add(cohortKeyOf(c));
+  // Distinct "shapes" (which dims are 'All') across requested keys — so we only
+  // ever materialise ancestor keys somebody actually asked for.
+  const masks = Array.from(new Set(Array.from(requestedKeys, key => {
+    const p = key.split('|');
+    let m = 0;
+    for (let i = 0; i < DIMS; i++) if (p[i] === 'All') m |= (1 << i);
+    return m;
+  })));
+
+  /** requested cohort key -> indices into leafKeys that roll up into it */
+  const keyToLeaves = new Map<string, number[]>();
+  for (let li = 0; li < leafDims.length; li++) {
+    const d = leafDims[li];
+    for (const mask of masks) {
+      let key = '';
+      for (let i = 0; i < DIMS; i++) {
+        key += (mask & (1 << i)) ? 'All' : d[i];
+        if (i < DIMS - 1) key += '|';
+      }
+      if (!requestedKeys.has(key)) continue;
+      const arr = keyToLeaves.get(key);
+      if (arr) arr.push(li); else keyToLeaves.set(key, [li]);
+    }
+  }
+
+  /** Monthly series for one leaf + metric, ascending by date. */
+  interface LeafSeries { months: Array<{ t: number; date: Date; value: number; rep: PreAggRow }>; rawCount: number; }
+  const leafSeriesCache = new Map<string, LeafSeries>();
+  function leafSeriesFor(leafIdx: number, metric: string): LeafSeries {
+    const ck = `${leafIdx} ${metric}`;
+    const hit = leafSeriesCache.get(ck);
+    if (hit) return hit;
+    const bucket = cohortDataMap.get(leafKeys[leafIdx]) ?? [];
+    const byMonth = new Map<number, { t: number; date: Date; value: number; rep: PreAggRow }>();
+    let rawCount = 0;
+    for (const row of bucket) {
+      if (String(row[wiMetricCol]) !== metric) continue;
+      rawCount++;
+      const t = row._parsedDate.getTime();
+      const cur = byMonth.get(t);
+      const v = Number(row[wiValueCol]) || 0;
+      if (cur) cur.value += v;
+      else byMonth.set(t, { t, date: row._parsedDate, value: v, rep: row });
+    }
+    const out: LeafSeries = { months: Array.from(byMonth.values()).sort((a, b) => a.t - b.t), rawCount };
+    leafSeriesCache.set(ck, out);
+    return out;
+  }
+
+  /** Fitted forecast for one leaf + metric. null when the leaf can't be fitted. */
+  interface LeafFit {
+    bands: AggBand[];
+    lastDate: Date;
+    preUnc: number;
+    postExp: number;
+    /** raw calculateHoltWinters rows — reused verbatim when this leaf is itself
+     *  the requested cohort, so leaf output stays byte-identical to pre-bottom-up */
+    fcRows: any[];
+    /** the per-month rows the fit was run on, for the same reason */
+    fitRows: Array<Record<string, unknown> & { _parsedDate: Date }>;
+  }
+  const leafFitCache = new Map<string, LeafFit | null>();
+  function leafFitFor(leafIdx: number, metric: string): LeafFit | null {
+    const ck = `${leafIdx} ${metric}`;
+    if (leafFitCache.has(ck)) return leafFitCache.get(ck)!;
+    const series = leafSeriesFor(leafIdx, metric);
+    if (series.rawCount < 2 || series.months.length === 0) { leafFitCache.set(ck, null); return null; }
+    const values = series.months.map(m => m.value);
+    const calStart = series.months[0].date.getMonth();
+    // Model selection and confidence auto-configuration run PER LEAF only.
+    // Aggregates inherit no model of their own — they are pure summations.
+    const model = autoModel ? analyzeAndRecommendModel(values, calStart).recommendedModel : runModel;
+    let preUnc = runPreUnc, postExp = runPostExp, confHor = runConfHor;
+    if (autoConfidence) {
+      const conf = analyzeAndRecommendConfidence(values, calStart);
+      preUnc = conf.preHorizonZ; postExp = conf.postHorizonMultiplier; confHor = conf.confidenceHorizon;
+    }
+    const rowsForFit = series.months.map(m => ({ ...m.rep, [wiValueCol]: m.value, _parsedDate: m.date }));
+    const fc = calculateHoltWinters(rowsForFit as any, wiDateCol, wiValueCol, genLength, preUnc, postExp, confHor, model);
+    if (!fc) { leafFitCache.set(ck, null); return null; }
+    const fit: LeafFit = {
+      bands: fc.map((r: any) => ({ mean: Number(r['Mean (Base)']) || 0, optimistic: Number(r.Optimistic) || 0, pessimistic: Number(r.Pessimistic) || 0 })),
+      lastDate: series.months[series.months.length - 1].date,
+      preUnc, postExp,
+      fcRows: fc,
+      fitRows: rowsForFit as any,
+    };
+    leafFitCache.set(ck, fit);
+    return fit;
+  }
+
+  // ── Standard cohorts: leaves fitted, aggregates derived by summation ──────
   for (const cohort of standardCohorts) {
     const targetMetric =
       cohort.scenario === 'Inflow'    ? wiInflowVal :
@@ -156,121 +286,110 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
       continue;
     }
 
-    const cohortMapKey = `${cohort.segment}|${cohort.product}|${cohort.productL2 || 'All'}|${cohort.channel || 'All'}|${cohort.channelL2 || 'All'}|${cohort.tariffL1 || 'All'}|${cohort.tariffL2 || 'All'}`;
-    const preAggBucket = cohortDataMap.get(cohortMapKey);
+    const cohortMapKey = cohortKeyOf(cohort);
+    const memberIdx = keyToLeaves.get(cohortMapKey) ?? [];
+    if (memberIdx.length === 0) { empty++; continue; }
 
-    // O(1) path: exact key hit (specific-dimension cohorts).
-    // O(N) fallback: 'All'-dimension cohorts have no single map key — scan all rows
-    // and apply per-dimension filters for whichever dimensions are not 'All'.
-    let processedData: PreAggRow[];
-    if (preAggBucket) {
-      processedData = preAggBucket
-        .filter(row => String(row[wiMetricCol]) === targetMetric)
-        .sort((a, b) => a._parsedDate.getTime() - b._parsedDate.getTime());
-    } else {
-      processedData = rows
-        .filter(row => String(row[wiMetricCol]) === targetMetric)
-        .sort((a, b) => a._parsedDate.getTime() - b._parsedDate.getTime());
-
-      if (wiSegmentCol && cohort.segment !== 'All') {
-        processedData = processedData.filter(row => String(row[wiSegmentCol]) === cohort.segment);
-      }
-      if (wiProductCol && cohort.product !== 'All') {
-        processedData = processedData.filter(row => String(row[wiProductCol]) === cohort.product);
-      }
-      if (wiProductL2Col && cohort.productL2 && cohort.productL2 !== 'All') {
-        processedData = processedData.filter(row => String(row[wiProductL2Col]) === cohort.productL2);
-      }
-      if (wiChannelCol && cohort.channel && cohort.channel !== 'All') {
-        processedData = processedData.filter(row => String(row[wiChannelCol]) === cohort.channel);
-      }
-      if (wiChannelL2Col && cohort.channelL2 && cohort.channelL2 !== 'All') {
-        processedData = processedData.filter(row => String(row[wiChannelL2Col]) === cohort.channelL2);
-      }
-      if (wiTariffL1Col && cohort.tariffL1 && cohort.tariffL1 !== 'All') {
-        processedData = processedData.filter(row => String(row[wiTariffL1Col]) === cohort.tariffL1);
-      }
-      if (wiTariffL2Col && cohort.tariffL2 && cohort.tariffL2 !== 'All') {
-        processedData = processedData.filter(row => String(row[wiTariffL2Col]) === cohort.tariffL2);
-      }
+    // Fit every constituent leaf (cached, so a leaf shared by many aggregates
+    // is fitted once per metric regardless of how many parents need it).
+    const fits: LeafFit[] = [];
+    const memberSeries: LeafSeries[] = [];
+    let shortLeaves = 0;
+    for (const li of memberIdx) {
+      const s = leafSeriesFor(li, targetMetric);
+      memberSeries.push(s);
+      if (s.months.length < SEASONAL_MIN_POINTS_WORKER) shortLeaves++;
+      const f = leafFitFor(li, targetMetric);
+      if (f) fits.push(f);
     }
 
-    if (processedData.length < 2) {
-      // 0 rows = expected empty slice (not a failure); 1 row = genuine insufficient data.
-      if (processedData.length === 0) empty++; else failed++;
+    if (fits.length === 0) {
+      // No constituent leaf could be fitted: 0 raw rows anywhere ⇒ empty,
+      // otherwise genuinely insufficient data.
+      const anyRows = memberSeries.some(s => s.rawCount > 0);
+      if (anyRows) failed++; else empty++;
       continue;
     }
 
-    // Aggregate rows that share the same timestamp (multiple rows per month).
-    const aggregatedDataMap = new Map<number, Record<string, unknown> & { _parsedDate: Date }>();
-    for (const row of processedData) {
-      const time = row._parsedDate.getTime();
-      const targetVal = Number(row[wiValueCol]) || 0;
-      if (!aggregatedDataMap.has(time)) {
-        aggregatedDataMap.set(time, { ...row, [wiValueCol]: targetVal });
-      } else {
-        (aggregatedDataMap.get(time)! as Record<string, unknown>)[wiValueCol] =
-          (Number((aggregatedDataMap.get(time)! as Record<string, unknown>)[wiValueCol]) || 0) + targetVal;
+    // Seasonality caveat: if most constituent leaves are too short to fit a
+    // seasonal term, the summed aggregate can understate seasonal amplitude.
+    // Surfaced as a warning; the numbers are left reconcilable and unchanged.
+    if (memberIdx.length > 1 && shortLeaves / memberIdx.length > 0.5) {
+      shortLeafWarnings.set(cohort.id, {
+        shortLeaves, totalLeaves: memberIdx.length, share: shortLeaves / memberIdx.length,
+      });
+    }
+
+    // Historical series = exact sum of leaf actuals per month (reconciles by construction).
+    const histByMonth = new Map<number, { date: Date; value: number }>();
+    for (const s of memberSeries) {
+      for (const m of s.months) {
+        const cur = histByMonth.get(m.t);
+        if (cur) cur.value += m.value;
+        else histByMonth.set(m.t, { date: m.date, value: m.value });
       }
     }
+    const histSorted = Array.from(histByMonth.entries()).sort((a, b) => a[0] - b[0]).map(([, v]) => v);
 
-    const aggregatedData = Array.from(aggregatedDataMap.values())
-      .sort((a, b) => a._parsedDate.getTime() - b._parsedDate.getTime());
+    // Forecast = summed means, variance-combined bands (see aggregateForecastBands).
+    const aggBands = aggregateForecastBands(fits.map(f => f.bands));
+    const lastDate = histSorted.length ? histSorted[histSorted.length - 1].date : fits[0].lastDate;
 
-    const cohortValues = aggregatedData.map(r => Number(r[wiValueCol]) || 0);
-    const calStart = aggregatedData.length > 0 ? aggregatedData[0]._parsedDate.getMonth() : 0;
+    // A single-leaf "aggregate" is that leaf: same data, same fit, so a leaf
+    // cohort's own forecast is unchanged by bottom-up.
+    const isLeafCohort = memberIdx.length === 1 && leafKeys[memberIdx[0]] === cohortMapKey;
+    const preUncOut = isLeafCohort ? fits[0].preUnc : null;
+    const postExpOut = isLeafCohort ? fits[0].postExp : null;
 
-    const cohortModel = autoModel
-      ? analyzeAndRecommendModel(cohortValues, calStart).recommendedModel
-      : runModel;
+    // A leaf cohort is emitted exactly as before bottom-up existed: its own fit,
+    // its own rows (raw source columns included, which downstream Excel export
+    // relies on). Bottom-up changes how AGGREGATES are produced, never leaves.
+    const historicalData = isLeafCohort
+      ? fits[0].fitRows.map(row => {
+          const { _parsedDate, ...rest } = row;
+          return {
+            ...rest,
+            [wiDateCol]: _parsedDate,
+            'Mean (Base)': Number(Number(row[wiValueCol] as number).toFixed(2)),
+            'Optimistic': null,
+            'Pessimistic': null,
+            Type: 'Historical',
+            'Pre-Horizon Uncertainty %': preUncOut,
+            'Post-Horizon Expansion Rate %': postExpOut,
+          };
+        })
+      : histSorted.map(h => ({
+          [wiDateCol]: h.date,
+          'Mean (Base)': Number(h.value.toFixed(2)),
+          Optimistic: null,
+          Pessimistic: null,
+          Type: 'Historical',
+          // Aggregates inherit no model, so no per-cohort uncertainty settings.
+          'Pre-Horizon Uncertainty %': preUncOut,
+          'Post-Horizon Expansion Rate %': postExpOut,
+        }));
 
-    let cohortPreUnc = runPreUnc, cohortPostExp = runPostExp, cohortConfHor = runConfHor;
-    if (autoConfidence) {
-      const conf = analyzeAndRecommendConfidence(cohortValues, calStart);
-      cohortPreUnc  = conf.preHorizonZ;
-      cohortPostExp = conf.postHorizonMultiplier;
-      cohortConfHor = conf.confidenceHorizon;
-    }
-
-    const newForecastData = calculateHoltWinters(
-      aggregatedData,
-      wiDateCol,
-      wiValueCol,
-      genLength,
-      cohortPreUnc,
-      cohortPostExp,
-      cohortConfHor,
-      cohortModel,
-    );
-
-    if (!newForecastData) {
-      failed++;
-      continue;
-    }
-
-    const historicalData = aggregatedData.map(row => {
-      const { _parsedDate, ...rest } = row;
-      return {
-        ...rest,
-        [wiDateCol]: _parsedDate,
-        'Mean (Base)': Number(Number(row[wiValueCol]).toFixed(2)),
-        'Optimistic': null,
-        'Pessimistic': null,
-        Type: 'Historical',
-        'Pre-Horizon Uncertainty %': cohortPreUnc,
-        'Post-Horizon Expansion Rate %': cohortPostExp,
-      };
-    });
-
-    const forecastWithTrace = newForecastData.map(r => ({
-      ...r,
-      'Pre-Horizon Uncertainty %': cohortPreUnc,
-      'Post-Horizon Expansion Rate %': cohortPostExp,
-    }));
+    const forecastWithTrace = isLeafCohort
+      ? fits[0].fcRows.map((r: any) => ({
+          ...r,
+          'Pre-Horizon Uncertainty %': preUncOut,
+          'Post-Horizon Expansion Rate %': postExpOut,
+        }))
+      : aggBands.map((b, i) => ({
+          [wiDateCol]: addMonths(lastDate, i + 1),
+          _parsedDate: addMonths(lastDate, i + 1),
+          'Mean (Base)': b.mean,
+          Optimistic: b.optimistic,
+          Pessimistic: b.pessimistic,
+          Type: 'Forecast',
+          'Pre-Horizon Uncertainty %': preUncOut,
+          'Post-Horizon Expansion Rate %': postExpOut,
+        }));
 
     newForecasts[cohort.id] = [...historicalData, ...forecastWithTrace];
     generatedIds.push(cohort.id);
     generated++;
+    continue;
   }
 
   // ── IBRO cohorts: typed BaseForecast (all 4 metrics combined) ────────────
@@ -281,20 +400,10 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
       // O(1) exact hit for specific-dimension cohorts.
       // O(N) fallback for aggregate ('All') keys that have no single map entry
       // (e.g. Corporate|Mobile Voice|All|All|All spans multiple channel buckets).
-      const exactBucket = cohortDataMap.get(fKey);
-      const allIBRO: PreAggRow[] = exactBucket ?? (() => {
-        if (chan !== 'All' && prod !== 'All' && seg !== 'All') return [];
-        return rows.filter(row => {
-          if (wiSegmentCol  && seg   !== 'All' && String(row[wiSegmentCol])   !== seg)   return false;
-          if (wiProductCol  && prod  !== 'All' && String(row[wiProductCol])   !== prod)  return false;
-          if (wiProductL2Col && prodL2 !== 'All' && String(row[wiProductL2Col]) !== prodL2) return false;
-          if (wiChannelCol  && chan  !== 'All' && String(row[wiChannelCol])   !== chan)  return false;
-          if (wiChannelL2Col && chanL2 !== 'All' && String(row[wiChannelL2Col]) !== chanL2) return false;
-          if (wiTariffL1Col && tariffL1 && tariffL1 !== 'All' && String(row[wiTariffL1Col]) !== tariffL1) return false;
-          if (wiTariffL2Col && tariffL2 && tariffL2 !== 'All' && String(row[wiTariffL2Col]) !== tariffL2) return false;
-          return true;
-        });
-      })();
+      // Leaf-key lookup only. The O(N) `rows.filter(...)` fallback is removed:
+      // IBRO cohorts are enumerated from the data itself and are therefore
+      // always exact leaf keys. Anything not in the map has no data.
+      const allIBRO: PreAggRow[] = cohortDataMap.get(fKey) ?? [];
 
       // Aggregate all four IBRO metrics by month.
       const ibroMap = new Map<number, AggregatedIBRORow>();
@@ -432,7 +541,12 @@ self.onmessage = (e: MessageEvent<WorkerInMessage>) => {
     generated,
     failed,
     empty,
+    shortLeafWarnings: Array.from(shortLeafWarnings.entries()),
   };
 
-  self.postMessage(result);
-};
+  return result;
+}
+
+if (typeof self !== 'undefined' && typeof (self as any).postMessage === 'function') {
+  self.onmessage = (e: MessageEvent<WorkerInMessage>) => { self.postMessage(runForecastJob(e.data)); };
+}

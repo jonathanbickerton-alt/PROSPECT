@@ -430,6 +430,61 @@ volume assumption).
 
 ---
 
+# Known limitations
+
+## Bottom-up forecasting may understate seasonal amplitude
+
+Only populated leaf cohorts are fitted; every aggregate is derived by summing
+its leaves. Where leaves have **materially shorter histories than their parent
+aggregate**, this can understate the aggregate's seasonality: a leaf with fewer
+than 24 months falls back from Holt-Winters to Holt Linear, which has no
+seasonal component, so the summed aggregate blends seasonal and flat
+components while a direct fit on the (longer) aggregate history would have
+captured the full seasonal pattern.
+
+**Measured** (Stage 1 validation, synthetic tariff file, aggregate held at 30
+months while a rising share of leaves was truncated to 18):
+
+| Share of short leaves | MAPE vs actuals | Seasonal amplitude retained |
+|---|---|---|
+| 0%   | −0.10pp (bottom-up better) | 99.0% |
+| 25%  | +0.11pp | 94.1% |
+| 50%  | +0.30pp | 89.5% |
+| 75%  | +0.43pp | 85.6% |
+| 100% | +0.62pp | 82.1% |
+
+So the effect is real, scales with the short-leaf share, and is mild — roughly
+**10% amplitude loss and 0.3pp accuracy at a 50% short-leaf share**. It does
+not occur in the current synthetic data at all (540/540 leaves have the full
+42-month history), but it is realistic in production, where newly-launched
+tariffs or channels will have short histories while their parent segment has
+years.
+
+**Currently mitigated by disclosure, not by changing the numbers.** Any
+aggregate whose short-leaf share exceeds 50% raises a warning on that cohort
+(same pattern as the existing gap-detection and seasonal-fallback warnings),
+stating that its seasonal peaks and troughs may be flatter than the underlying
+business. Totals still reconcile exactly.
+
+**Recorded mitigation if production data shows this matters: seasonal-index
+borrowing.** Short leaves would inherit the seasonal index from their parent
+aggregate (or from established sibling leaves) while still fitting their own
+level and trend on their own history. Because each leaf remains an additive
+component, this preserves additivity and therefore reconciliation.
+
+**Explicitly rejected: fitting "difficult" aggregates directly** as a hybrid.
+That breaks the sum-equals-parts guarantee, which is the primary benefit of
+bottom-up — aggregates would then reconcile or not depending on an invisible
+internal threshold. For a finance audience, consistent behaviour either way is
+worth more than a marginally better fit on some rows.
+
+Seasonal-index borrowing is **not implemented now** because it cannot be
+validated against synthetic data that never triggers the condition. It needs
+production data (or a deliberately constructed fixture with mixed history
+lengths) to verify it improves rather than merely changes the result.
+
+---
+
 # P11 — Strategic guardrail (not a task)
 Keep the programme focused on simulation fidelity over forecasting analytics.
 Use this as a scope check when tempted to add model sophistication: if an idea

@@ -1025,6 +1025,123 @@ export type PreAggRow = Record<string, any> & { _parsedDate: Date };
  */
 export type CohortDataMap = Map<string, PreAggRow[]>;
 
+// ---------------------------------------------------------------------------
+// Bottom-up aggregation
+//
+// Only populated leaf cohorts are fitted; every aggregate is DERIVED from its
+// constituent leaves. The point of this is reconciliation: an aggregate always
+// equals the sum of its parts, exactly, by construction.
+//
+// Deliberately NOT done: fitting "difficult" aggregates directly as a hybrid.
+// That would break the sum-equals-parts guarantee, so an aggregate would
+// reconcile or not depending on an invisible internal threshold. For a finance
+// audience, consistent behaviour either way is worth more than a marginally
+// better fit on some rows. Where the bottom-up assumption is weak we surface a
+// WARNING instead of silently changing the method (see short-leaf detection in
+// the bulk worker) — the numbers stay reconcilable and the caveat is visible.
+// ---------------------------------------------------------------------------
+
+/** One forecast point: the mean plus a symmetric confidence half-width. */
+export interface AggBand { mean: number; optimistic: number; pessimistic: number; }
+
+/**
+ * Combines per-leaf forecast bands into an aggregate band series.
+ *
+ * Means add exactly (a sum of forecasts is the forecast of the sum).
+ *
+ * Confidence bands do NOT add. Summing the optimistic values of every leaf
+ * would assume all leaves simultaneously hit their best case (and likewise the
+ * worst), which is implausible and produces absurdly wide aggregate intervals.
+ * ASSUMPTION: leaf forecast errors are INDEPENDENT, so their variances add and
+ * the aggregate half-width is sqrt(Σ halfWidth²). This is the standard
+ * independent-errors convolution. It is an assumption, not a fact — genuinely
+ * correlated leaves (e.g. one macro driver moving every cohort together) would
+ * make the real aggregate interval wider than this. It is chosen because the
+ * alternative (direct summation) is wrong in the opposite and much larger
+ * direction.
+ *
+ * Bands stay symmetric about the mean, matching buildBands().
+ */
+export function aggregateForecastBands(leafBands: AggBand[][]): AggBand[] {
+  if (leafBands.length === 0) return [];
+  const horizon = Math.max(...leafBands.map(b => b.length));
+  const out: AggBand[] = [];
+  for (let t = 0; t < horizon; t++) {
+    let mean = 0;
+    let varSum = 0;
+    for (const bands of leafBands) {
+      const b = bands[t];
+      if (!b) continue;
+      mean += b.mean;
+      const halfWidth = b.optimistic - b.mean; // symmetric by construction
+      varSum += halfWidth * halfWidth;
+    }
+    const halfWidth = Math.sqrt(varSum);
+    out.push({
+      mean: Number(mean.toFixed(2)),
+      optimistic: Number((mean + halfWidth).toFixed(2)),
+      pessimistic: Number((mean - halfWidth).toFixed(2)),
+    });
+  }
+  return out;
+}
+
+/**
+ * Volume-weighted ARPU for an aggregate.
+ *
+ * ARPU is a RATE, not a quantity: it must never be summed, and averaging the
+ * leaf ARPUs (an unweighted mean) silently over-weights small cohorts. The only
+ * correct aggregate is total revenue / total volume — which, because revenue is
+ * reconstructed per leaf as arpu × volume, is the volume-weighted blend.
+ *
+ * Returns 0 when total volume is 0 (no revenue to attribute).
+ */
+export function aggregateArpu(parts: Array<{ arpu: number; volume: number }>): number {
+  let rev = 0, vol = 0;
+  for (const p of parts) {
+    if (!isFinite(p.arpu) || !isFinite(p.volume)) continue;
+    rev += p.arpu * p.volume;
+    vol += p.volume;
+  }
+  return vol > 0 ? rev / vol : 0;
+}
+
+/**
+ * Splits a quantity targeted at an aggregate across its constituent leaves in
+ * proportion to each leaf's share of volume.
+ *
+ * Used for market events aimed at an aggregate level (e.g. "Corporate · All ·
+ * All"): the event is distributed pro-rata to the leaves, applied at leaf
+ * level, and summed back up, so the aggregate result stays exactly consistent
+ * with its components. Applying the event only at aggregate level would break
+ * reconciliation — the parent would move while the children did not.
+ *
+ * The final leaf absorbs any rounding residual so the parts sum EXACTLY to the
+ * input amount. When every leaf has zero volume the split is even, so a
+ * targeted event is never silently discarded.
+ */
+export function distributeProRata(amount: number, leafVolumes: number[]): number[] {
+  const n = leafVolumes.length;
+  if (n === 0) return [];
+  const total = leafVolumes.reduce((s, v) => s + (isFinite(v) ? v : 0), 0);
+  const out = new Array<number>(n).fill(0);
+  if (total <= 0) {
+    const even = amount / n;
+    for (let i = 0; i < n; i++) out[i] = even;
+    let acc = 0;
+    for (let i = 0; i < n - 1; i++) acc += out[i];
+    out[n - 1] = amount - acc;
+    return out;
+  }
+  let allocated = 0;
+  for (let i = 0; i < n - 1; i++) {
+    out[i] = amount * ((isFinite(leafVolumes[i]) ? leafVolumes[i] : 0) / total);
+    allocated += out[i];
+  }
+  out[n - 1] = amount - allocated; // residual absorbs float error — parts sum exactly
+  return out;
+}
+
 /**
  * Single O(N) pass over `data` that groups each valid row into a CohortDataMap.
  *
