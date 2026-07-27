@@ -1,4 +1,6 @@
 import { format, addMonths, parse } from 'date-fns';
+import { eventProRataShare } from './forecasting';
+import type { ProRataLeaf, ProRataScope } from './forecasting';
 
 export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod: any, vchan: any, vtariff?: any) {
   const { baselineRows, marketEvents, yieldEvents, pricingEvents } = parsedSession;
@@ -23,6 +25,59 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
   });
 
   if (!matchingBaseline.length) return [];
+
+  // Market-event pro-rata scoping — SAME shared rule as computeWhatIfData and
+  // the WhatIfTab engine (see eventProRataShare). No parallel implementation.
+  //
+  // Note this deliberately leaves the AGGREGATE case untouched: when the view
+  // scope is exactly the event's target, the cohort covers the whole target and
+  // the share is 1, so an aggregate query keeps summing its leaf rows and
+  // applying the event once — which was already correct. Only a LEAF view, where
+  // the wildcard previously re-attached the event at full magnitude, changes.
+  const proRataLeaves: ProRataLeaf[] = (() => {
+    const byLeaf = new Map<string, ProRataLeaf>();
+    for (const r of baselineRows as any[]) {
+      const leaf: ProRataLeaf = {
+        segment:   String(r.Segment ?? 'All').trim(),
+        product:   String(r.Product ?? 'All').trim(),
+        productL2: String(r.Product_L2 ?? 'All').trim(),
+        channel:   String(r.Channel ?? 'All').trim(),
+        channelL2: String(r.Channel_L2 ?? 'All').trim(),
+        tariffL1:  String(r.Tariff_L1 ?? 'All').trim(),
+        tariffL2:  String(r.Tariff_L2 ?? 'All').trim(),
+        volume: 0,
+      };
+      const k = [leaf.segment, leaf.product, leaf.productL2, leaf.channel, leaf.channelL2, leaf.tariffL1, leaf.tariffL2].join('|');
+      const vol = Number(r.Inflow_Mean || 0);
+      const cur = byLeaf.get(k);
+      if (cur) cur.volume += vol; else { leaf.volume = vol; byLeaf.set(k, leaf); }
+    }
+    return Array.from(byLeaf.values());
+  })();
+  const viewScope: ProRataScope = {
+    segment: vseg === 'All' ? 'All' : vseg,
+    product: vprodL1 ?? 'All',
+    productL2: vprodL2 ?? 'All',
+    channel: vchanL1 ?? 'All',
+    channelL2: vchanL2 ?? 'All',
+    tariffL1: vtarL1 ?? 'All',
+    tariffL2: vtarL2 ?? 'All',
+  };
+  const shareCache = new Map<string, number>();
+  /** Share of a VOLUME event belonging to this view. Rate events never use this. */
+  const eventShare = (e: any): number => {
+    const id = String(e.ID ?? e.Name ?? '') + '|' + String(e.Start_Month ?? e.Date ?? e.Month ?? '') + '|' + String(e.Scenario ?? '');
+    const hit = shareCache.get(id);
+    if (hit !== undefined) return hit;
+    const v = eventProRataShare(
+      { segment: String(e.Segment ?? 'All'), product: String(e.Product ?? 'All'), productL2: String(e.Product_L2 ?? 'All'),
+        channel: String(e.Channel ?? 'All'), channelL2: String(e.Channel_L2 ?? 'All'),
+        tariffL1: String(e.Tariff_L1 ?? 'All'), tariffL2: String(e.Tariff_L2 ?? 'All') },
+      viewScope, proRataLeaves,
+    );
+    shareCache.set(id, v);
+    return v;
+  };
 
   // Group matching baseline by Month
   const monthMap = new Map<string, {
@@ -120,14 +175,22 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
     let adjArpu = month.arpu.mean;
 
     applicable.forEach((e: any) => {
+      // VOLUME events take only this view's pro-rata share (share is 1 for an
+      // aggregate view, so the already-correct aggregate case is unchanged).
+      const vol = Number(e.Subscriber_Volume || 0) * eventShare(e);
       if (e.Scenario === 'Inflow') {
-        adjInflow += Number(e.Subscriber_Volume || 0);
+        adjInflow += vol;
       } else if (e.Scenario === 'Outflow') {
-        adjOutflow -= Number(e.Subscriber_Volume || 0);
+        adjOutflow -= vol;
       } else if (e.Scenario === 'Retention') {
-        adjOutflow -= Number(e.Subscriber_Volume || 0);
-        adjRetention += Number(e.Subscriber_Volume || 0);
+        adjOutflow -= vol;
+        adjRetention += vol;
       } else if (e.Scenario === 'ARPU') {
+        // RATE event — deliberately NOT pro-rated. ARPU is a rate: a
+        // volume-weighted average of (leafArpu + delta) already equals
+        // (aggregateArpu + delta), so the same delta is correct at every level.
+        // Splitting it by volume share would understate the price change at
+        // leaf level. Do not route this through eventShare().
         adjArpu += Number(e.ARPU || 0);
       }
     });
@@ -272,11 +335,15 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       applicableEvents.forEach((ev: any) => {
         const arpu = Number(ev.ARPU);
         if (isFinite(arpu) && arpu > 0 && Number(ev.Subscriber_Volume) > 0) {
+          // Same pro-rata share as the application above — the pool must hold
+          // exactly the volume this view received, or blended ARPU is computed
+          // over subscribers that were never added to Base.
+          const poolShare = eventShare(ev);
           p_eventPools.push({
             arpu,
             contractLength: Number(ev.Contract_Length_Months || 24),
             enterMonthIdx: idx,
-            size: Number(ev.Subscriber_Volume),
+            size: Number(ev.Subscriber_Volume) * poolShare,
           });
         } else {
           p_basePool += Number(ev.Subscriber_Volume || 0);
