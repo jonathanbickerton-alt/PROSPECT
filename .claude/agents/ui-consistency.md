@@ -50,6 +50,19 @@ You never change code. You detect inconsistencies and report them.
    diff against an untranslated page is still a FAIL for that page, and
    saying "no new hardcoded strings" without that count is the exact
    phrasing that lets an untranslated page pass unnoticed.
+7. Hook dependency-array integrity. For every `useMemo`/`useCallback` whose
+   body was moved, extracted or extended, list the values the body now
+   READS and compare that against the dependency array. **Textual parity
+   with main is not sufficient and is not the question.** An array can be
+   character-identical to main while the body beneath it starts reading
+   values the array does not list — the array did not change, the meaning
+   under it did. That is invisible to a diff and produces stale UI: the
+   memo returns a result derived from a previous dataset, prop or column
+   mapping. Report the read-set and the dependency set side by side and
+   name any value in the first that is missing from the second. Do not
+   accept "unchanged from main" or "those props are stable across
+   re-renders" as an answer — the first is not the question and the second
+   is an assumption to be tested, not asserted.
 
 ## How you report
 A list of consistency checks with PASS or FAIL. For each FAIL, name the new

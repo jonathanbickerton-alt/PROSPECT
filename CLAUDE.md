@@ -37,6 +37,27 @@ This is where the Opus budget belongs.
   Pasted content is reprocessed on every subsequent message.
 - Use the trimmed test fixture for routine agent runs. The full 80k-cohort file
   is only needed for pre-merge validation and bulk-generation testing.
+- Agents write scratch scripts to the scratchpad directory, never into the
+  repo. A harness left in the repo root becomes untracked clutter that hides
+  genuinely unexpected entries in `git status`.
+
+## Folding gate checks back into definitions
+
+Any check that proves useful in a gate prompt gets folded into the relevant
+agent definition **at the end of that gate** — not left in conversation
+history.
+
+A check that lives only in a prompt runs exactly once and then vanishes with
+the conversation. The agent definitions encode what went wrong in previous
+sessions; improvised prompt checks encode what is going wrong in this one,
+and that is usually the more valuable of the two. Every check that caught a
+real defect in the pro-rata gate — the hook dependency-array read-set, measure
+-don't-reimplement, declare-what-you-could-not-exercise, the vacuous-result
+trap, verify-counts-independently, and no-parallel-implementations — existed
+only in an improvised prompt and would never have run again.
+
+When a gate finishes, ask of each check that earned its place: does this live
+in the agent definition, or only in the prompt I just wrote? Move it.
 
 ## Reserved decisions
 

@@ -33,6 +33,43 @@ For every change you are asked to test:
    - What-If engine uses selected model, not hardcoded Holt-Winters
    - Accuracy scoring: in-band actuals score 80+, mean-proximity primary
 
+## Evidence standards
+These are not optional and they override any convenience. Each one exists
+because its absence produced a false pass.
+
+1. **Measure by driving the real functions.** Import the actual function
+   and run it. Never reimplement its maths to compute an expected answer —
+   that only confirms your own arithmetic, and it agrees with itself even
+   when the production code is wrong.
+2. **Never report a pass for something you could not genuinely exercise.**
+   If a check was inconclusive, blocked, or you reasoned it out
+   structurally rather than running it, say exactly that. A stated gap is
+   useful; a pass that turns out to be hollow destroys the value of every
+   other line in your report. "I did not re-run X; I inferred it from Y"
+   is a good sentence — write it when it is true.
+3. **Check for vacuous results.** A number that looks perfect may mean the
+   test never ran. Before reporting a zero, a no-change, or a clean
+   reconciliation, confirm the thing you measured was actually non-zero to
+   begin with and that the code path really fired. Watch output-shape
+   mismatches in particular: implementations of the same concept in this
+   codebase return different field names (nested `uplifted.inflow` vs flat
+   `adjustedInflow`), so a harness reading the wrong field gets
+   `undefined`, coerces to 0, and prints a flawless pass.
+4. **Verify counts and locations yourself.** When a prompt tells you there
+   are four of something, or lists where they live, treat that as a claim
+   to check, not a fact to confirm. Grep and count independently, then
+   report YOUR number. If it disagrees with the prompt, say so plainly —
+   the prompt is frequently the thing that is wrong.
+5. **No parallel implementations of a shared concept.** CLAUDE.md names
+   three-parallel-implementations as this project's recurring failure
+   mode, and it has cost more than any other class of bug here. When a
+   change fixes a behaviour, grep the whole of `src/` for other code doing
+   the same job and confirm it consumes the same shared helper. A fix
+   applied to one path while siblings drift is not a fix. Report any
+   additional call site as a blocking finding.
+
+Write scratch scripts to the scratchpad directory, never into the repo.
+
 ## How you report
 Produce a structured report:
 - PASS / FAIL for each test area
