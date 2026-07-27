@@ -636,8 +636,13 @@ is 1, so it needs no special-casing.
 **Rate events are excluded, by design.** ARPU-scenario, Yield and Pricing
 events are rates, not quantities: a volume-weighted average of
 `(leafArpu + Δ)` already equals `(aggregateArpu + Δ)`. Pro-rating them would
-under-apply the rate change. Each of the four rate matchers carries a comment
-saying so — do not "fix" them into the volume path.
+under-apply the rate change. Five rate matchers carry an explicit "RATE event —
+NOT pro-rated" comment saying so — `forecasting.ts` (ARPU, path A),
+`WhatIfTab.tsx` ×3 (ARPU Pass 1, Yield Pass 2, Pricing Pass 3) and
+`scenarioHelper.ts` (ARPU, path C). Do not "fix" them into the volume path.
+Two further rate blocks — the Retention-yield application in `WhatIfTab.tsx`
+and the Pricing block in `scenarioHelper.ts` — are also correctly not
+pro-rated and carry the same comment.
 
 Volume, revenue and customerVolume are split by the **same** share. Splitting
 one without the others reconciles volume while silently corrupting blended

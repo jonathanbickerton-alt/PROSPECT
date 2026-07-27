@@ -815,6 +815,10 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
 
       // Retention yield events: adjust the effective base ARPU to reflect the
       // yield mix on the retained cohort for this month.
+      // RATE event — NOT pro-rated. Yield shifts a per-head ARPU, not a
+      // quantity: a volume-weighted average of (leafArpu + delta) already
+      // equals (aggregateArpu + delta). Scaling by a leaf's volume share would
+      // under-apply the rate change. Do not route this through eventShare().
       const applicableRetentionYield = yieldEvents
         .filter(ye => {
           if (ye.ibro !== 'Retention') return false;
@@ -1389,7 +1393,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     viewSegment, viewProduct, viewChannel, viewTariff, data,
     wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
     wiTariffL1Col, wiTariffL2Col, wiValueCol,
-  }), [baseForecast, marketEvents, yieldEvents, pricingEvents, viewSegment, viewProduct, viewChannel, viewTariff]);
+    // data + the column mappings are load-bearing: the pro-rata leaf enumeration
+    // reads them to derive each leaf's volume share. Before pro-rata they were
+    // unused in this body, which is why they were historically absent here.
+  }), [baseForecast, marketEvents, yieldEvents, pricingEvents, viewSegment, viewProduct, viewChannel, viewTariff,
+       data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col]);
 
   // ── Custom chart tooltip — shows KPI values + any event names for that month ─
   const renderTooltip = useCallback(({ active, payload, label }: any) => {

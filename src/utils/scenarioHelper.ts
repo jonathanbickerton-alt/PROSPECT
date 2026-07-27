@@ -359,6 +359,10 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
     const blendedArpu = tSubs > 0 ? tRev / tSubs : m.uplifted.arpu;
 
     let finalArpu = blendedArpu;
+    // RATE event — NOT pro-rated. Pricing shifts a per-head ARPU, not a
+    // quantity: a volume-weighted average of (leafArpu + delta) already equals
+    // (aggregateArpu + delta). Scaling by a leaf's volume share would
+    // under-apply the price change. Do not route this through eventShare().
     const applicablePricing = pricingEvents.filter((e: any) => {
       const segOk = e.Segment === 'All' || vseg === 'All' || e.Segment === vseg;
       const prodOk = e.Product === 'All' || !vprodL1 || e.Product === vprodL1;
