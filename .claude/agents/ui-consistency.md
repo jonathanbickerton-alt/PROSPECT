@@ -28,6 +28,12 @@ You never change code. You detect inconsistencies and report them.
   0-39 red)
 - Buttons: consistent placement, the Import/Remove/Export grouping pattern
 - Empty states: explicit messages, never blank panels or silent zeros
+- Internationalisation: the app ships EN/DE/ES/FR/IT/PT via react-i18next
+  (global singleton registered by `initReactI18next` in `src/i18n.ts` — no
+  provider is needed, any component may call `useTranslation`). Every
+  user-facing string must come from a translation key. This includes JSX
+  text and the `placeholder`, `title`, `aria-label`, `alt` and `label`
+  props.
 
 ## Your method
 1. Identify what UI changed
@@ -35,6 +41,15 @@ You never change code. You detect inconsistencies and report them.
 3. Compare the new element against it point by point
 4. Run npm run lint and npm run build to confirm nothing is broken
 5. Report any divergence from the established pattern
+6. i18n conformance — ABSOLUTE, NOT DIFF-SCOPED. Do not limit this to what
+   changed. For every page or component you touch, and for the file it
+   lives in as a whole, report the count of hardcoded user-facing strings
+   and whether the file calls `useTranslation` at all. A file with zero
+   `t()` calls is wholly untranslated regardless of whether this change
+   touched it. Report the count even when the diff added nothing — a clean
+   diff against an untranslated page is still a FAIL for that page, and
+   saying "no new hardcoded strings" without that count is the exact
+   phrasing that lets an untranslated page pass unnoticed.
 
 ## How you report
 A list of consistency checks with PASS or FAIL. For each FAIL, name the new
