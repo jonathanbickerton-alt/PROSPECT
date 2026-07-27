@@ -32,3 +32,8 @@ coverage/
 # Agent worktrees — ephemeral local checkouts created per-agent for isolation.
 # Machine-local and disposable; never meaningful to another clone.
 .claude/worktrees/
+
+# Local-only Express dev server. Untracked by request: production is served by
+# nginx (see Dockerfile/nginx.conf) and must not ship a Node server. Run it
+# locally with `npm run dev:express`.
+/server.ts

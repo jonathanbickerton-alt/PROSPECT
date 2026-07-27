@@ -44,3 +44,6 @@ npm-debug.log*
 # Never bake secrets into the image — inject them at runtime via Cloud Run.
 .env
 .env.*
+
+# Local-only Express dev server — never part of the production image.
+server.ts
