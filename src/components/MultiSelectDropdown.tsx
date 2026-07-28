@@ -102,7 +102,7 @@ export function MultiSelectDropdown({
                 type="text"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
-                placeholder={`Search ${noun}s…`}
+                placeholder={t('multiselect_search_s', { p0: noun })}
                 className="w-full pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded-md bg-white placeholder-slate-400 outline-none focus:border-[#e60000]"
               />
             </div>

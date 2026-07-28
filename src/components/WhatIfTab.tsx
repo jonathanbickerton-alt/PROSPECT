@@ -1432,13 +1432,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             ))}
             {yeForMonth.map(e => (
               <div key={e.id} style={{ fontSize: 11, color: '#8b5cf6', marginBottom: 3 }}>
-                <span style={{ fontWeight: 700 }}>{e.name || `Yield: ${e.ibro}`}</span>
+                <span style={{ fontWeight: 700 }}>{e.name || t('whatif_yield', { p0: e.ibro })}</span>
                 {e.comment && <span style={{ color: '#64748b' }}> — {e.comment}</span>}
               </div>
             ))}
             {peForMonth.map(e => (
               <div key={e.id} style={{ fontSize: 11, color: '#f97316', marginBottom: 3 }}>
-                <span style={{ fontWeight: 700 }}>{e.name || 'Pricing'}</span>
+                <span style={{ fontWeight: 700 }}>{e.name || t('whatif_pricing')}</span>
                 {e.comment && <span style={{ color: '#64748b' }}> — {e.comment}</span>}
               </div>
             ))}
@@ -1969,8 +1969,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             <Activity size={28} className="text-slate-400" />
           </div>
           <h2 className="text-xl font-semibold text-slate-900">{t('whatif_no_baseline_forecast_yet')}</h2>
-          <p className="text-sm text-slate-500">{t('whatif_complete')}<strong>{t('whatif_step_1_baseline_forecast')}</strong> and save at least one forecast before
-            applying market events. The baseline IBRO series will appear here automatically.
+          <p className="text-sm text-slate-500">{t('whatif_complete')}<strong>{t('whatif_step_1_baseline_forecast')}</strong> {t('whatif_and_save_at_least_one_forecast_before_applyin')}
           </p>
           <button
             onClick={() => setActiveView('standard')}
@@ -2028,9 +2027,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             <Info size={15} className="shrink-0 mt-0.5 text-amber-500" />
             <span>
               <strong>{t('common_missing_months_detected_in_historical_data')}</strong>{' '}
-              The following {missingMonths.length === 1 ? 'month is' : 'months are'} absent from this cohort's history:{' '}
+              
+              {t('whatif_the_following')}{missingMonths.length === 1 ? t('whatif_month_is') : t('whatif_months_are')} {t('whatif_absent_from_this_cohort_s_history')}{' '}
               <span className="font-mono">{missingMonths.join(', ')}</span>.
-              {' '}Gaps can bias level and trend initialisation — the forecast may be unreliable.
+              {' '}{t('whatif_gaps_can_bias_level_and_trend_initialisation')}
             </span>
           </div>
         )}
@@ -2332,10 +2332,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         </div>
         {/* Phase 4 — in-UI guidance: when to reach for the combined card vs the
             three single-dimension ones. */}
-        <p className="text-xs text-slate-500 -mt-2">{t('whatif_use')}<strong className="text-slate-600">{t('whatif_promotion')}</strong> for one combined scenario anchored on a volume
-          movement (with an optional mix and/or price change). Use <strong className="text-slate-600">{t('common_volume')}</strong>,{' '}
-          <strong className="text-slate-600">{t('common_value')}</strong>, or <strong className="text-slate-600">{t('whatif_pricing')}</strong> for
-          single-dimension events with no volume assumption — e.g. a pure base-wide price rise.
+        <p className="text-xs text-slate-500 -mt-2">{t('whatif_use')}<strong className="text-slate-600">{t('whatif_promotion')}</strong> {t('whatif_for_one_combined_scenario_anchored_on_a_volum')}<strong className="text-slate-600">{t('common_volume')}</strong>,{' '}
+          <strong className="text-slate-600">{t('common_value')}</strong>{t('whatif_or')}<strong className="text-slate-600">{t('whatif_pricing')}</strong> {t('whatif_for_single_dimension_events_with_no_volume_as')}
         </p>
 
         {/* ── Tariff scoping control (Phase 2b) — pick the tariffs to plan with.
@@ -2540,7 +2538,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 {/* Phase 3 P4 — visible confirmation of the auto-populate default */}
                 {!newEvent.arpu && cohortAvgArpu != null && (
                   <p className="mt-1 text-[10px] text-slate-400 leading-snug">
-                    Left blank, uses the cohort's trailing 3-month average: {cohortAvgArpu.toFixed(2)}
+                    
+                    {t('whatif_left_blank_uses_the_cohort_s_trailing_3_month')}{cohortAvgArpu.toFixed(2)}
                   </p>
                 )}
               </div>
@@ -2635,7 +2634,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             {Array.from({ length: spreadMonths }, (_, i) => {
                               const monthLabel = baseDate && isValid(baseDate)
                                 ? format(addMonths(baseDate, i), 'MMM yyyy')
-                                : `Month ${i + 1}`;
+                                : t('whatif_month', { p0: i + 1 });
                               const fraction  = pcts[i] / (pctTotal || 1);
                               const vol       = Math.round(totalVol * fraction);
                               return (
@@ -2665,7 +2664,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           </div>
                           {spreadDistType === 'custom' && !pctOk && (
                             <p className="mt-2 text-[10px] text-amber-600 font-medium">
-                              Percentages sum to {pctTotal.toFixed(1)}% — they will be normalised to 100% on add.
+                              
+                              {t('whatif_percentages_sum_to')}{pctTotal.toFixed(1)}{t('whatif_pct_they_will_be_normalised_to_100pct_on_add')}
                             </p>
                           )}
                         </div>
@@ -2680,7 +2680,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             {editingCampaign ? (
               <div className="mt-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium flex items-center gap-2">
                 <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
-                Editing campaign "{editingCampaign}" — saving will replace all of its events with the values above.
+                
+                {t('whatif_editing_campaign')}{editingCampaign}{t('whatif_saving_will_replace_all_of_its_events_with_th')}
               </div>
             ) : editingEventId ? (
               <div className="mt-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium flex items-center gap-2">
@@ -2727,7 +2728,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   disabled={!newEvent.date || newEvent.subscriberVolume === undefined}
                   className="shrink-0 bg-[#e60000] text-white text-sm font-semibold py-2 px-6 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {spreadEnabled ? `Add ${spreadMonths} Events` : t('whatif_add_event')}
+                  {spreadEnabled ? t('whatif_add_events', { p0: spreadMonths }) : t('whatif_add_event')}
                 </button>
               )}
             </div>
@@ -2812,7 +2813,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                     type="button"
                                     onClick={(e) => { e.stopPropagation(); handleEditCampaignStart(campaignLabel); }}
                                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full hover:bg-[#e60000]/15 transition-colors cursor-pointer"
-                                    title={`Edit campaign "${campaignLabel}" (${group.rows.length} event${group.rows.length === 1 ? '' : 's'})`}
+                                    title={t('whatif_edit_campaign_event', { p0: campaignLabel, p1: group.rows.length, p2: group.rows.length === 1 ? '' : 's' })}
                                   >
                                     <Pencil size={11} className="shrink-0" />
                                     {campaignLabel}
@@ -2906,8 +2907,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             <tr className="bg-amber-50">
                               <td colSpan={wiTariffL1Col ? 14 : 13} className="px-5 py-2 text-xs text-amber-700 flex items-center gap-2">
                                 <AlertTriangle size={12} className="text-amber-500 shrink-0 inline mr-1" />
-                                Retention volume ({formatNumber(event.subscriberVolume)}) exceeds forecast Outflow for {fmtMonth(event.date)}.
-                                The retained volume will be clamped to the available Outflow — reduce the event volume to avoid over-retention.
+                                
+                                {t('whatif_retention_volume')}{formatNumber(event.subscriberVolume)}{t('whatif_exceeds_forecast_outflow_for')}{fmtMonth(event.date)}{t('whatif_the_retained_volume_will_be_clamped_to_the_av')}
                               </td>
                             </tr>
                           )}
@@ -2973,7 +2974,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         <td className="px-5 py-2.5 text-center">
                           {isOk
                             ? <CheckCircle2 size={16} className="text-emerald-500 inline" />
-                            : <XCircle size={16} className="text-rose-500 inline" title={`Expected ${expected.toFixed(2)}`} />
+                            : <XCircle size={16} className="text-rose-500 inline" title={t('whatif_expected', { p0: expected.toFixed(2) })} />
                           }
                         </td>
                       </tr>
@@ -3140,7 +3141,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         value={newPricingEvent.amount ?? 0}
                         onChange={e => setNewPricingEvent({ ...newPricingEvent, amount: Number(e.target.value) })}
                         className="flex-1 text-sm px-3 py-2 bg-white outline-none min-w-0"
-                        placeholder={newPricingEvent.inputMode === 'percentage' ? '+5 or -10' : '+2.50 or -1.00'}
+                        placeholder={newPricingEvent.inputMode === 'percentage' ? t('whatif_5_or_10') : t('whatif_2_50_or_1_00')}
                       />
                     </div>
                     <p className="text-[10px] text-slate-400 mt-1">
@@ -3179,8 +3180,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     </div>
                     <p className="text-[10px] text-slate-400 mt-1">
                       {newPricingEvent.target === 'cohorts' ? t('whatif_new_inflow_retention_cohorts_only')
-                       : newPricingEvent.target === 'base-only' ? 'Existing base stock only — excludes new cohorts'
-                       : 'All subscribers including existing base'}
+                       : newPricingEvent.target === 'base-only' ? t('whatif_existing_base_stock_only_excludes_new_cohorts')
+                       : t('whatif_all_subscribers_including_existing_base')}
                     </p>
                     {(newPricingEvent.target === 'cohorts' || newPricingEvent.target === 'cohorts+base') && (
                       <div className="mt-2 pt-2 border-t border-slate-100">
@@ -3622,7 +3623,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               {Array.from({ length: promoSpreadMonths }, (_, i) => {
                                 const monthLabel = baseDate && isValid(baseDate)
                                   ? format(addMonths(baseDate, i), 'MMM yyyy')
-                                  : `Month ${i + 1}`;
+                                  : t('whatif_month', { p0: i + 1 });
                                 const fraction = pcts[i] / (pctTotal || 1);
                                 const vol = Math.round(totalVol * fraction);
                                 return (
@@ -3650,7 +3651,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             </div>
                             {promoSpreadDistType === 'custom' && !pctOk && (
                               <p className="mt-2 text-[10px] text-amber-600 font-medium">
-                                Percentages sum to {pctTotal.toFixed(1)}% — they will be normalised to 100% on add.
+                                
+                                {t('whatif_percentages_sum_to')}{pctTotal.toFixed(1)}{t('whatif_pct_they_will_be_normalised_to_100pct_on_add')}
                               </p>
                             )}
                           </div>
@@ -3673,8 +3675,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   </label>
                   <p className="text-[10px] text-slate-400 mt-1 ml-6">
                     {promoTarget === 'Inflow'
-                      ? 'Describes the composition of the incoming volume. Does not re-mix the existing base.'
-                      : "Describes the terms the retained volume is re-contracted on — its blended ARPU reflects the new composition, not the previous one. The untouched base is not re-mixed."}
+                      ? t('whatif_describes_the_composition_of_the_incoming_vol')
+                      : t('whatif_describes_the_terms_the_retained_volume_is_re')}
                   </p>
 
                   {promoMixEnabled && (
@@ -3701,10 +3703,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       {promoTierData.length === 0 ? (
                         <div className="py-6 text-center text-sm text-slate-400 border border-dashed border-slate-200 rounded-xl">
                           {(!wiValueCol || (!wiRevenueCol && !wiArpuCol))
-                            ? 'Map a Volume column and a Revenue (or ARPU) column in Data Mapping to enable mix sliders'
+                            ? t('whatif_map_a_volume_column_and_a_revenue_or_arpu_col')
                             : promoMixAxis === 'tariff'
-                              ? 'Select dimensions above to load tariff mix data (or select tariffs in "Tariffs in scope")'
-                              : 'Select dimensions above to load value tier data'}
+                              ? t('whatif_select_dimensions_above_to_load_tariff_mix_da')
+                              : t('whatif_select_dimensions_above_to_load_value_tier_da')}
                         </div>
                       ) : (
                         <div>
@@ -3724,7 +3726,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 >{t('whatif_forecast_arpu')}</button>
                               </div>
                               <span className={`text-xs font-semibold tabular-nums ${Math.abs((Object.values(promoDraftMix) as number[]).reduce((s, v) => s + v, 0) - 100) < 0.2 ? 'text-emerald-600' : 'text-amber-500'}`}>
-                                Sum: {(Object.values(promoDraftMix) as number[]).reduce((s, v) => s + v, 0).toFixed(1)}%
+                                
+                                {t('whatif_sum')}{(Object.values(promoDraftMix) as number[]).reduce((s, v) => s + v, 0).toFixed(1)}%
                               </span>
                             </div>
                           </div>
@@ -3809,7 +3812,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           value={promoPricingAmount || ''}
                           onChange={e => setPromoPricingAmount(Number(e.target.value))}
                           className="flex-1 text-sm px-3 py-2 bg-white outline-none min-w-0"
-                          placeholder={promoPricingMode === 'percentage' ? '+5 or -10' : '+2.50 or -1.00'}
+                          placeholder={promoPricingMode === 'percentage' ? t('whatif_5_or_10') : t('whatif_2_50_or_1_00')}
                         />
                       </div>
                       <p className="text-[10px] text-slate-400 mt-1">
@@ -3823,7 +3826,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 {editingPromoCampaign ? (
                   <div className="mt-5 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium flex items-center gap-2">
                     <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
-                    Editing campaign "{editingPromoCampaign}" — saving will replace all of its events with the values above.
+                    
+                    {t('whatif_editing_campaign')}{editingPromoCampaign}{t('whatif_saving_will_replace_all_of_its_events_with_th')}
                   </div>
                 ) : editingPromoId ? (
                   <div className="mt-5 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium flex items-center gap-2">
@@ -3901,7 +3905,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           || (editingPromoCampaign !== null && e.campaignName === editingPromoCampaign);
                         const campaignLabel = e.campaignName || '';
                         const group = campaignLabel ? promoCampaignGroups.get(campaignLabel) : undefined;
-                        const arms = [e.promoMix ? 'Mix' : null, e.promoPricingAmount !== undefined ? 'Pricing' : null].filter(Boolean).join(' + ');
+                        const arms = [e.promoMix ? t('whatif_mix') : null, e.promoPricingAmount !== undefined ? t('whatif_pricing') : null].filter(Boolean).join(' + ');
                         return (
                           <tr key={e.id} className={`border-b border-slate-50 hover:bg-slate-50 transition-colors ${isEditingRow ? 'bg-amber-50/60 ring-1 ring-inset ring-amber-300' : ''}`}>
                             <td className="px-5 py-3 text-xs max-w-[160px]">
@@ -3911,7 +3915,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                     type="button"
                                     onClick={(ev) => { ev.stopPropagation(); handleEditPromoCampaignStart(campaignLabel); }}
                                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full hover:bg-[#e60000]/15 transition-colors cursor-pointer"
-                                    title={`Edit campaign "${campaignLabel}" (${group.rows.length} event${group.rows.length === 1 ? '' : 's'})`}
+                                    title={t('whatif_edit_campaign_event', { p0: campaignLabel, p1: group.rows.length, p2: group.rows.length === 1 ? '' : 's' })}
                                   >
                                     <Pencil size={11} className="shrink-0" />
                                     {campaignLabel}
@@ -4088,12 +4092,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 {yieldTierData.length === 0 ? (
                   <div className="py-6 text-center text-sm text-slate-400 border border-dashed border-slate-200 rounded-xl">
                     {(!wiValueCol || (!wiRevenueCol && !wiArpuCol))
-                      ? 'Map a Volume column and a Revenue (or ARPU) column in Data Mapping to enable mix sliders'
+                      ? t('whatif_map_a_volume_column_and_a_revenue_or_arpu_col')
                       : mixAxis === 'tariff'
-                        ? 'Select dimensions above to load tariff mix data (or select tariffs in "Tariffs in scope")'
+                        ? t('whatif_select_dimensions_above_to_load_tariff_mix_da')
                         : wiProductL2Col
-                          ? 'Select dimensions above to load value tier data'
-                          : 'Map a Product L2 column in Data Mapping to enable value mix sliders'}
+                          ? t('whatif_select_dimensions_above_to_load_value_tier_da')
+                          : t('whatif_map_a_product_l2_column_in_data_mapping_to_en')}
                   </div>
                 ) : (
                   <div className="mb-5">
@@ -4120,7 +4124,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           </div>
                         </div>
                         <span className={`text-xs font-semibold tabular-nums ${Math.abs((Object.values(draftMix) as number[]).reduce((s, v) => s + v, 0) - 100) < 0.2 ? 'text-emerald-600' : 'text-amber-500'}`}>
-                          Sum: {(Object.values(draftMix) as number[]).reduce((s, v) => s + v, 0).toFixed(1)}%
+                          
+                          {t('whatif_sum')}{(Object.values(draftMix) as number[]).reduce((s, v) => s + v, 0).toFixed(1)}%
                         </span>
                       </div>
                     </div>
@@ -4207,8 +4212,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     </p>
                     <p className="text-[10px] text-slate-400 mt-0.5">
                       {newYieldEvent.rollForward
-                        ? 'Every future Inflow/Retention cohort for this segment will adopt this mix, continuously driving the Blended Base ARPU'
-                        : 'The updated Blended Base ARPU carries forward naturally through base math, but next month\'s cohorts revert to their baseline mix'}
+                        ? t('whatif_every_future_inflow_retention_cohort_for_this')
+                        : t('whatif_the_updated_blended_base_arpu_carries_forward')}
                     </p>
                   </div>
                 </div>
@@ -4256,7 +4261,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       {allYieldTiers.map(tier => (
                         <React.Fragment key={tier}>
                           <th className="px-4 py-3 font-semibold text-right">
-                            {tier} Mix%
+                            {tier} {t('whatif_mixpct')}
                           </th>
                           <th className="px-4 py-3 font-semibold text-right">
                             {tier} ARPU

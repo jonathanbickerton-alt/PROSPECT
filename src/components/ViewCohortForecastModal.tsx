@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { format, isValid } from 'date-fns';
@@ -42,6 +43,7 @@ export const ViewCohortForecastModal: React.FC<ViewCohortForecastModalProps> = (
   savedForecasts,
   wiDateCol
 }) => {
+  const { t } = useTranslation();
   if (!viewingCohort) return null;
 
   return (
@@ -68,14 +70,14 @@ export const ViewCohortForecastModal: React.FC<ViewCohortForecastModalProps> = (
                 if (isWhatIf) {
                   return {
                     ...row,
-                    date: isValid(row.date) ? format(row.date, 'yyyy-MM') : isValid(dateObj) ? format(dateObj, 'yyyy-MM') : 'Invalid Date',
+                    date: isValid(row.date) ? format(row.date, 'yyyy-MM') : isValid(dateObj) ? format(dateObj, 'yyyy-MM') : t('viewcohort_invalid_date'),
                     timestamp: row.timestamp || (isValid(dateObj) ? dateObj.getTime() : 0),
                   };
                 }
 
                 return {
                   ...row,
-                  date: isValid(dateObj) ? format(dateObj, 'yyyy-MM') : 'Invalid Date',
+                  date: isValid(dateObj) ? format(dateObj, 'yyyy-MM') : t('viewcohort_invalid_date'),
                   timestamp: isValid(dateObj) ? dateObj.getTime() : 0,
                   Historical: row.Type === 'Historical' ? row['Mean (Base)'] : null,
                   'Mean (Base)': row.Type === 'Forecast' ? row['Mean (Base)'] : null,
@@ -94,10 +96,10 @@ export const ViewCohortForecastModal: React.FC<ViewCohortForecastModalProps> = (
                 <Legend iconType="circle" wrapperStyle={{ paddingTop: '24px', fontSize: '12px' }} />
                 {viewingCohort.forecastType.startsWith('What-If Analysis') ? (
                   (() => {
-                    const metricLabel = viewingCohort.scenario === 'Inflow' ? 'Inflow Volume' :
-                                        viewingCohort.scenario === 'Outflow' ? 'Outflow Volume' :
-                                        viewingCohort.scenario === 'Retention' ? 'Retention Volume' :
-                                        'Base Volume';
+                    const metricLabel = viewingCohort.scenario === 'Inflow' ? t('viewcohort_inflow_volume') :
+                                        viewingCohort.scenario === 'Outflow' ? t('viewcohort_outflow_volume') :
+                                        viewingCohort.scenario === 'Retention' ? t('viewcohort_retention_volume') :
+                                        t('viewcohort_base_volume');
                     return (
                       <>
                         <Line type="monotone" name={`${metricLabel} (Baseline)`} dataKey={`${metricLabel} (Baseline)`} stroke="#cbd5e1" strokeWidth={2} dot={{ r: 3, fill: '#cbd5e1', strokeWidth: 0 }} activeDot={{ r: 6 }} connectNulls />

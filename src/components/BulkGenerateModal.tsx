@@ -120,7 +120,7 @@ export function BulkGenerateModal({
                 <div>
                   <h2 className="text-base font-bold text-slate-900">{t('bulk_apply_to_all_remaining_combinations')}</h2>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    {missingCount} combination{missingCount !== 1 ? 's' : ''} {missingCount !== 1 ? 'don\'t' : 'doesn\'t'} have a forecast yet
+                    {missingCount} combination{missingCount !== 1 ? 's' : ''} {missingCount !== 1 ? t('bulk_don_t') : t('bulk_doesn_t')} {t('bulk_have_a_forecast_yet')}
                   </p>
                 </div>
               </div>
@@ -195,7 +195,8 @@ export function BulkGenerateModal({
             <div className="mx-6 mb-5 border border-slate-100 rounded-xl overflow-hidden">
               <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100">
                 <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                  Settings to be applied to all {missingCount} remaining
+                  
+                  {t('bulk_settings_to_be_applied_to_all')}{missingCount} remaining
                 </p>
               </div>
               <div className="divide-y divide-slate-50">
@@ -203,7 +204,7 @@ export function BulkGenerateModal({
                   { label: t('bulk_algorithm'), value: autoModel ? t('bulk_auto_selected_per_cohort') : currentModel },
                   { label: t('bulk_pre_horizon_z_score'), value: autoConfidence ? t('bulk_auto_configured_per_cohort') : `${params.preHorizonUncertainty}` },
                   { label: t('bulk_post_horizon_band_multiplier'), value: autoConfidence ? t('bulk_auto_configured_per_cohort') : `${params.postHorizonExpansionRate}×` },
-                  { label: t('bulk_confidence_horizon'), value: autoConfidence ? t('bulk_auto_configured_per_cohort') : `${params.confidenceHorizon} month${params.confidenceHorizon !== 1 ? 's' : ''}` },
+                  { label: t('bulk_confidence_horizon'), value: autoConfidence ? t('bulk_auto_configured_per_cohort') : t('bulk_month', { p0: params.confidenceHorizon, p1: params.confidenceHorizon !== 1 ? 's' : '' }) },
                   { label: 'Forecast Length', value: `${params.forecastLength} months` },
                 ].map(row => (
                   <div key={row.label} className="flex items-center justify-between px-4 py-2 text-xs">
@@ -223,7 +224,7 @@ export function BulkGenerateModal({
                   type="text"
                   value={runName}
                   onChange={e => setRunName(e.target.value)}
-                  placeholder={`Bulk Run — ${new Date().toLocaleDateString()}`}
+                  placeholder={t('bulk_bulk_run', { p0: new Date().toLocaleDateString() })}
                   className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-[#e60000]/20 focus:border-[#e60000]/40"
                 />
               </div>
@@ -360,7 +361,7 @@ function BulkCompletePanel({
                 <AlertTriangle size={15} className="text-amber-500 shrink-0" />
                 <span>
                   <strong className="text-amber-800">{failed}</strong>
-                  <span className="text-amber-700"> skipped — insufficient data points</span>
+                  <span className="text-amber-700"> {t('bulk_skipped_insufficient_data_points')}</span>
                 </span>
               </div>
             )}

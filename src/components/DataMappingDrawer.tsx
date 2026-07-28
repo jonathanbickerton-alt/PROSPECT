@@ -62,6 +62,7 @@ function MetricSelectRow({
 }: {
   label: string; value: string; onChange: (v: string) => void; options: string[];
 }) {
+  const { t } = useTranslation();
   return (
     <div>
       <label className="block text-xs font-semibold text-slate-700 mb-1">{label}</label>
@@ -70,7 +71,7 @@ function MetricSelectRow({
         onChange={e => onChange(e.target.value)}
         className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 outline-none focus:border-[#e60000]/50 focus:ring-2 focus:ring-[#e60000]/10"
       >
-        <option value="">— Select —</option>
+        <option value="">{t('mapping_select')}</option>
         {options.map(m => <option key={m} value={m}>{m}</option>)}
       </select>
     </div>
@@ -157,8 +158,8 @@ export function DataMappingDrawer({
               ? <CheckCircle2 size={13} className="shrink-0" />
               : <AlertCircle size={13} className="shrink-0" />}
             {coreOk
-              ? 'Core mapping complete — ready to forecast'
-              : 'Complete core mapping below to enable forecasting'}
+              ? t('mapping_core_mapping_complete_ready_to_forecast')
+              : t('mapping_complete_core_mapping_below_to_enable_forecas')}
           </div>
         </div>
 
@@ -168,7 +169,8 @@ export function DataMappingDrawer({
           {/* ── 1. Column mapping ── */}
           <section>
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">
-              1 · Column Mapping
+              
+              {t('mapping_1_column_mapping')}
             </h3>
             <div className="space-y-3">
               <SelectRow label={t('mapping_date_column')} value={wiDateCol} onChange={setWiDateCol} columns={columns} />
@@ -186,7 +188,8 @@ export function DataMappingDrawer({
           {wiMetricCol && (
             <section>
               <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">
-                2 · Metric Identifiers
+                
+                {t('mapping_2_metric_identifiers')}
               </h3>
               <div className="space-y-3">
                 <MetricSelectRow label="Inflow Identifier" value={wiInflowVal} onChange={setWiInflowVal} options={uniqueMetrics} />
@@ -200,7 +203,8 @@ export function DataMappingDrawer({
           {/* ── 3. Segmentation ── */}
           <section>
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">
-              3 · Segmentation Columns
+              
+              {t('mapping_3_segmentation_columns')}
             </h3>
             <p className="text-[11px] text-slate-400 mb-3">{t('mapping_optional_map_dimension_columns_to_enable_per')}</p>
             <div className="space-y-3">

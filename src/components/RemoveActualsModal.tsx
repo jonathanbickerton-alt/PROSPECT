@@ -178,7 +178,7 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
 
           {/* Dimension filters */}
           <section>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">{t('removeactuals_dimension_filters')}<span className="normal-case font-normal text-slate-400">(optional — leave All to match every cohort)</span>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">{t('removeactuals_dimension_filters')}<span className="normal-case font-normal text-slate-400">{t('removeactuals_optional_leave_all_to_match_every_cohort')}</span>
             </p>
             <div className="flex flex-wrap gap-3">
               <div className="flex items-center gap-1.5">
@@ -225,8 +225,8 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
               : 'bg-red-50 text-[#e60000]'
           }`}>
             {removedCount === 0
-              ? 'No rows match the current selection'
-              : `${removedCount.toLocaleString()} row${removedCount !== 1 ? 's' : ''} will be removed`}
+              ? t('removeactuals_no_rows_match_the_current_selection')
+              : t('removeactuals_row_will_be_removed', { p0: removedCount.toLocaleString(), p1: removedCount !== 1 ? 's' : '' })}
           </div>
 
           {/* All-data warning */}
@@ -235,7 +235,8 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
               <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5" />
               <p className="text-xs text-amber-800 leading-relaxed">
                 <span className="font-bold">{t('removeactuals_this_will_remove_all_actuals_data')}</span>{' '}
-                The Actuals Review tab will show no comparisons until new actuals are imported.
+                
+                {t('removeactuals_the_actuals_review_tab_will_show_no_compariso')}
               </p>
             </div>
           )}
@@ -274,7 +275,7 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
                 </table>
                 {previewOverflow > 0 && (
                   <div className="bg-slate-50 border-t border-slate-200 px-3 py-2 text-xs text-slate-400">
-                    +{previewOverflow.toLocaleString()} more cohort-month combinations not shown
+                    +{previewOverflow.toLocaleString()} {t('removeactuals_more_cohort_month_combinations_not_shown')}
                   </div>
                 )}
               </div>

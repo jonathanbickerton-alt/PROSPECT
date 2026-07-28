@@ -3060,7 +3060,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
             <div>
               <h2 className="text-2xl font-bold text-slate-900">{t('actuals_actuals_review')}</h2>
               <p className="text-sm text-slate-500 mt-0.5">
-                Forecast vs actuals comparison
+                
+                {t('actuals_forecast_vs_actuals_comparison')}
                 {usingAdjusted && (
                   <span className="ml-2 text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">{t('actuals_using_adjusted_forecast')}</span>
                 )}
@@ -3108,7 +3109,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                   : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
               }`}
             >
-              AutoML Challenger Analysis
+              
+              {t('actuals_automl_challenger_analysis')}
               {challengerGroups.length > 0 && (
                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
                   activeSubView === 'challenger'
@@ -3176,14 +3178,16 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
             <div>
               <p className="text-sm font-semibold text-amber-900 mb-1">{t('actuals_no_actuals_data_found_for_this_combination')}</p>
               <p className="text-xs text-amber-700 leading-relaxed">
-                Your dataset contains actuals records, but none match the forecast scope (
+                
+                {t('actuals_your_dataset_contains_actuals_records_but_non')}
                 {[
-                  activeFilter?.segment && activeFilter.segment !== 'All' ? `Segment = ${activeFilter.segment}` : cohort.segment !== 'All' ? `Segment = ${cohort.segment}` : null,
-                  activeFilter?.product.l1 ? `Product = ${productDisplayStr(activeFilter.product)}` : cohort.product !== 'All' ? `Product = ${cohort.product}` : null,
-                  activeFilter?.channel.l1 ? `Channel = ${productDisplayStr(activeFilter.channel)}` : cohort.channel !== 'All' ? `Channel = ${cohort.channel}` : null,
-                  `Scenario = ${cohort.scenario}`,
+                  activeFilter?.segment && activeFilter.segment !== 'All' ? t('actuals_segment', { p0: activeFilter.segment }) : cohort.segment !== 'All' ? t('actuals_segment', { p0: cohort.segment }) : null,
+                  activeFilter?.product.l1 ? t('actuals_product', { p0: productDisplayStr(activeFilter.product) }) : cohort.product !== 'All' ? t('actuals_product', { p0: cohort.product }) : null,
+                  activeFilter?.channel.l1 ? t('actuals_channel', { p0: productDisplayStr(activeFilter.channel) }) : cohort.channel !== 'All' ? t('actuals_channel', { p0: cohort.channel }) : null,
+                  t('actuals_scenario', { p0: cohort.scenario }),
                 ].filter(Boolean).join(', ')}
-                ). Upload or import actuals data that covers this combination to enable the variance comparison.
+                
+                {t('actuals_upload_or_import_actuals_data_that_covers_thi')}
               </p>
             </div>
           </div>
@@ -3316,7 +3320,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               if (chartView !== 'value') return ['auto', 'auto'];
               const vals: number[] = [];
               const arpuKeys = activeArpuScenarios.flatMap(sc =>
-                [`${sc}_actual`, `${sc}_baseline`, `${sc}_opt`, `${sc}_pess`]
+                [t('actuals_actual', { p0: sc }), t('actuals_baseline', { p0: sc }), t('actuals_opt', { p0: sc }), t('actuals_pess', { p0: sc })]
               );
               for (const row of multiChartData) {
                 for (const k of arpuKeys) {
@@ -3414,12 +3418,12 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
             )}
             {(chartView === 'volume' ? activeVolumeScenarios : activeArpuScenarios).map(sc => {
               const prefix = chartView === 'volume' ? sc : sc;
-              const tableRows = multiChartData.filter(r => r[`${prefix}_actual` as keyof MultiChartRow] !== undefined && r[`${prefix}_baseline` as keyof MultiChartRow] !== undefined);
+              const tableRows = multiChartData.filter(r => r[t('actuals_actual', { p0: prefix }) as keyof MultiChartRow] !== undefined && r[t('actuals_baseline', { p0: prefix }) as keyof MultiChartRow] !== undefined);
               if (tableRows.length === 0) return null;
               return (
                 <details key={sc} open className="border-b border-slate-100 last:border-0">
                   <summary className="px-6 py-3 bg-slate-50/50 flex items-center justify-between cursor-pointer select-none">
-                    <h4 className="text-sm font-semibold text-slate-700">{SCENARIO_LABELS[sc]} — Monthly Variance</h4>
+                    <h4 className="text-sm font-semibold text-slate-700">{SCENARIO_LABELS[sc]} {t('actuals_monthly_variance')}</h4>
                     <span className="text-xs text-slate-400">{tableRows.length} month{tableRows.length !== 1 ? 's' : ''} with actuals</span>
                   </summary>
                   <div className="overflow-x-auto">
@@ -3430,16 +3434,16 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                           <th className="px-4 py-2.5 text-right font-medium">{t('actuals_actual')}</th>
                           <th className="px-4 py-2.5 text-right font-medium">{t('actuals_baseline')}</th>
                           <th className="px-4 py-2.5 text-right font-medium">{t('actuals_variance')}</th>
-                          <th className="px-4 py-2.5 text-right font-medium">Var %</th>
+                          <th className="px-4 py-2.5 text-right font-medium">{t('actuals_var_pct')}</th>
                           <th className="px-4 py-2.5 text-center font-medium">{t('actuals_in_band')}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {tableRows.map(row => {
-                          const actualVal   = row[`${prefix}_actual` as keyof MultiChartRow] as number;
-                          const baselineVal = row[`${prefix}_baseline` as keyof MultiChartRow] as number ?? 0;
-                          const optVal      = row[`${prefix}_opt` as keyof MultiChartRow] as number | undefined ?? null;
-                          const pessVal     = row[`${prefix}_pess` as keyof MultiChartRow] as number | undefined ?? null;
+                          const actualVal   = row[t('actuals_actual', { p0: prefix }) as keyof MultiChartRow] as number;
+                          const baselineVal = row[t('actuals_baseline', { p0: prefix }) as keyof MultiChartRow] as number ?? 0;
+                          const optVal      = row[t('actuals_opt', { p0: prefix }) as keyof MultiChartRow] as number | undefined ?? null;
+                          const pessVal     = row[t('actuals_pess', { p0: prefix }) as keyof MultiChartRow] as number | undefined ?? null;
                           const variance = actualVal - baselineVal;
                           const varPct = actualVal !== 0 ? (variance / Math.abs(actualVal)) * 100 : 0;
                           const inBand = optVal !== null && pessVal !== null
@@ -3549,17 +3553,17 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                           <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-3 bg-slate-800 text-white text-[10px] rounded-lg opacity-0 group-hover/tip:opacity-100 pointer-events-none transition-opacity z-20 leading-relaxed shadow-xl whitespace-normal">
                             <p className="font-semibold mb-1">{lbl} volume accuracy</p>
                             <p>{t('actuals_score_0_100_based_on_deviation_from_forecast')}</p>
-                            <p className="mt-1 text-slate-300">↑↓ = directional bias · arrow = trend</p>
+                            <p className="mt-1 text-slate-300">{t('actuals_directional_bias_arrow_trend')}</p>
                           </div>
                         </div>
                       </th>
                     ))}
                     {/* Per-scenario ARPU columns */}
                     {([
-                      ['Inf ARPU',  'Inflow ARPU'],
-                      ['Out ARPU',  'Outflow ARPU'],
-                      ['Ret ARPU',  'Retention ARPU'],
-                      ['Base ARPU', 'Base ARPU'],
+                      [t('actuals_inf_arpu'),  t('actuals_inflow_arpu')],
+                      [t('actuals_out_arpu'),  t('actuals_outflow_arpu')],
+                      [t('actuals_ret_arpu'),  t('actuals_retention_arpu')],
+                      [t('actuals_base_arpu'), t('actuals_base_arpu')],
                     ] as const).map(([short, full]) => (
                       <th key={short} className="px-2 py-3 text-center font-medium min-w-[80px]">
                         <div className="relative inline-flex items-center gap-1 group/tip">
@@ -3567,8 +3571,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                           <Info size={9} className="text-slate-400 cursor-help" />
                           <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-3 bg-slate-800 text-white text-[10px] rounded-lg opacity-0 group-hover/tip:opacity-100 pointer-events-none transition-opacity z-20 leading-relaxed shadow-xl whitespace-normal">
                             <p className="font-semibold mb-1">{full} accuracy</p>
-                            <p>Score 0–100: how closely actual {full.toLowerCase()} tracks the per-scenario ARPU forecast cone.</p>
-                            <p className="mt-1 text-slate-300">↑↓ = directional bias · arrow = trend</p>
+                            <p>{t('actuals_score_0_100_how_closely_actual')}{full.toLowerCase()} {t('actuals_tracks_the_per_scenario_arpu_forecast_cone')}</p>
+                            <p className="mt-1 text-slate-300">{t('actuals_directional_bias_arrow_trend')}</p>
                           </div>
                         </div>
                       </th>
@@ -3605,9 +3609,9 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                           </span>
                           <div className="flex items-center gap-1.5 mt-0.5">
                             {bias === 'above'
-                              ? <span className="text-[9px] text-emerald-600 font-semibold leading-none">↑ Over</span>
+                              ? <span className="text-[9px] text-emerald-600 font-semibold leading-none">{t('actuals_over')}</span>
                               : bias === 'below'
-                                ? <span className="text-[9px] text-rose-500 font-semibold leading-none">↓ Under</span>
+                                ? <span className="text-[9px] text-rose-500 font-semibold leading-none">{t('actuals_under')}</span>
                                 : <span className="text-[9px] text-slate-300 leading-none">—</span>
                             }
                             {trend === 'improving'
@@ -3688,7 +3692,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                   }).length === 0 && (
                     <tr>
                       <td colSpan={10} className="px-4 py-8 text-center text-xs text-slate-400">
-                        No cohorts match &ldquo;{cohortSearch}&rdquo;
+                        
+                        {t('actuals_no_cohorts_match_andldquo')}{cohortSearch}{t('actuals_andrdquo')}
                       </td>
                     </tr>
                   )}
@@ -3732,8 +3737,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                   <h3 className="text-sm font-semibold text-slate-900">{t('common_automl_challenger_evaluation')}</h3>
                   <p className="text-xs text-slate-500 mt-0.5">
                     {challengerShowAll
-                      ? 'Showing all cohorts — threshold override active'
-                      : 'Cohorts scoring below 85 on the accuracy index'}
+                      ? t('actuals_showing_all_cohorts_threshold_override_active')
+                      : t('actuals_cohorts_scoring_below_85_on_the_accuracy_inde')}
                   </p>
                 </div>
               </div>
@@ -3756,7 +3761,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               wiChannelCol={wiChannelCol}
               wiChannelL2Col={wiChannelL2Col}
               count={challengerGroups.length}
-              countLabel="cohort to review"
+              countLabel={t('actuals_cohort_to_review')}
             />
 
             {/* ── Body — fills remaining height ── */}
@@ -3869,7 +3874,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                               </span>
                             ) : (
                               <p className="text-[10px] text-indigo-600 font-medium mt-0.5">
-                                Best: {g.bestModel.name}
+                                
+                                {t('actuals_best')}{g.bestModel.name}
                               </p>
                             )}
                           </div>
@@ -3948,14 +3954,15 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                     </h4>
                                   </div>
                                   <p className={`text-xs leading-relaxed ${challengerBetter ? 'text-emerald-700' : 'text-amber-700'}`}>
-                                    Current ({selectedChallengerGroup.chosenModel}) MAPE:{' '}
+                                    
+                                    {t('actuals_current')}{selectedChallengerGroup.chosenModel}{t('actuals_mape')}{' '}
                                     <strong className="text-rose-600">{currentPct.toFixed(1)}%</strong>
                                     {' · '}
-                                    {preview.modelUsed} MAPE:{' '}
+                                    {preview.modelUsed} {t('actuals_mape')}{' '}
                                     <strong className={challengerBetter ? 'text-emerald-700' : 'text-amber-700'}>{challengerPct.toFixed(1)}%</strong>
                                     {challengerBetter
-                                      ? ' — challenger performs better on historical data.'
-                                      : ' — current model performs better on historical data.'}
+                                      ? t('actuals_challenger_performs_better_on_historical_data')
+                                      : t('actuals_current_model_performs_better_on_historical_d')}
                                   </p>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
@@ -4030,14 +4037,14 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                     </div>
                                     <p className={`text-xs leading-relaxed ${bannerAmber ? 'text-amber-700' : 'text-slate-500'}`}>
                                       {bannerAmber
-                                        ? <>Model applied from {modelSwitchPoint?.month ?? 'this period'}. Error still above threshold.</>
+                                        ? <>{t('actuals_model_applied_from')}{modelSwitchPoint?.month ?? 'this period'}{t('actuals_error_still_above_threshold')}</>
                                         : alreadyBest
-                                          ? 'Your chosen model is already the best performer for this cohort.'
+                                          ? t('actuals_your_chosen_model_is_already_the_best_perform')
                                           : <>
-                                              The chart below shows estimated trajectories. Click{' '}
-                                              <strong>{t('actuals_run_forecast')}</strong> to compute the real{' '}
-                                              {selectedChallengerGroup.bestModel.name} output for this cohort
-                                              and compare it directly against the current model.
+                                              
+                                              {t('actuals_the_chart_below_shows_estimated_trajectories')}{' '}
+                                              <strong>{t('actuals_run_forecast')}</strong> {t('actuals_to_compute_the_real')}{' '}
+                                              {selectedChallengerGroup.bestModel.name} {t('actuals_output_for_this_cohort_and_compare_it_directl')}
                                             </>
                                       }
                                     </p>
@@ -4056,7 +4063,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white rounded-lg transition-colors disabled:opacity-60 disabled:cursor-wait"
                                             style={{ backgroundColor: m.color }}
                                           >
-                                            {isRunning ? t('actuals_running') : `Run ${m.name}`}
+                                            {isRunning ? t('actuals_running') : t('actuals_run', { p0: m.name })}
                                           </button>
                                         ))}
                                     </div>
@@ -4079,7 +4086,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                             {selectedChallengerGroup.models.map(m => (
                               <span key={m.name} className="flex items-center gap-1.5">
                                 <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: m.color }} />
-                                {m.name} ({m.error.toFixed(1)}% err)
+                                {m.name} ({m.error.toFixed(1)}{t('actuals_pct_err')}
                                 {m.name === selectedChallengerGroup.chosenModel && (
                                   <span className="text-[9px] font-bold bg-slate-200 text-slate-600 px-1 py-0.5 rounded uppercase tracking-wide">current</span>
                                 )}
@@ -4136,8 +4143,9 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
             <div>
               <h4 className="text-base font-semibold text-slate-800 mb-1">{t('common_all_models_performing_well')}</h4>
               <p className="text-sm text-slate-500 max-w-md">
-                No cohorts scored below 85 on the accuracy index.{' '}
-                {baseForecast?.modelUsed ?? 'Holt Linear'} is performing well for all segments at the current dimension grouping.
+                
+                {t('actuals_no_cohorts_scored_below_85_on_the_accuracy_in')}{' '}
+                {baseForecast?.modelUsed ?? 'Holt Linear'} {t('actuals_is_performing_well_for_all_segments_at_the_cu')}
               </p>
             </div>
             {/* Diagnostic note */}
@@ -4175,7 +4183,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                 <div>
                   <h2 className="text-base font-bold text-slate-900">{t('actuals_accept_all_proposed_models')}</h2>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    {acceptAllCandidates.length} cohort{acceptAllCandidates.length !== 1 ? 's' : ''} will be re-forecast with their recommended model
+                    {acceptAllCandidates.length} cohort{acceptAllCandidates.length !== 1 ? 's' : ''} {t('actuals_will_be_re_forecast_with_their_recommended_mo')}
                   </p>
                 </div>
               </div>
@@ -4244,7 +4252,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
         wiChannelCol={wiChannelCol}
         onConfirm={(keepFn, removedCount) => {
           onRemoveActuals(keepFn, removedCount);
-          setRemoveToast(`${removedCount.toLocaleString()} row${removedCount !== 1 ? 's' : ''} removed from actuals`);
+          setRemoveToast(t('actuals_row_removed_from_actuals', { p0: removedCount.toLocaleString(), p1: removedCount !== 1 ? 's' : '' }));
           setShowRemoveModal(false);
         }}
         onCancel={() => setShowRemoveModal(false)}
@@ -4267,23 +4275,23 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
         width: TOOLTIP_W,
         ...(openAbove ? { bottom: window.innerHeight - activeTooltip.y + 8 } : { top: activeTooltip.y + 8 }),
       };
-      const meanColLabel = useAdjustedScoring && adjustedForecast ? 'Adj Mean' : 'Mean';
-      const sourceLabel  = useAdjustedScoring && adjustedForecast ? 'Adjusted Forecast' : 'Baseline Forecast';
+      const meanColLabel = useAdjustedScoring && adjustedForecast ? t('actuals_adj_mean') : t('actuals_mean');
+      const sourceLabel  = useAdjustedScoring && adjustedForecast ? t('actuals_adjusted_forecast') : t('actuals_baseline_forecast');
       if (activeTooltip.payload.kind === 'component') {
         const detail = activeTooltip.payload.detail;
         return (
           <div style={style} className="bg-slate-900 text-white rounded-xl shadow-2xl p-3 pointer-events-none text-left">
             {/* Source indicator */}
-            <p className="text-[9px] font-semibold uppercase tracking-widest text-slate-500 mb-1.5">Source: {sourceLabel}</p>
+            <p className="text-[9px] font-semibold uppercase tracking-widest text-slate-500 mb-1.5">{t('actuals_source')}{sourceLabel}</p>
             <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-700">
               <span className="text-xs font-bold text-white">{detail.label}</span>
               <span className="text-[11px] text-slate-400">
-                {detail.rows.length} month{detail.rows.length !== 1 ? 's' : ''} · avg dev {detail.avgDev.toFixed(1)}%
+                {detail.rows.length} month{detail.rows.length !== 1 ? 's' : ''} {t('actuals_avg_dev')}{detail.avgDev.toFixed(1)}%
               </span>
             </div>
             <div className="font-mono text-[10px] text-slate-400 grid mb-1" style={{ gridTemplateColumns: '60px 60px 60px 48px 42px 54px' }}>
               <span>{t('common_month')}</span><span className="text-right">{t('actuals_actual')}</span><span className="text-right">{meanColLabel}</span>
-              <span className="text-right">Dev%</span><span className="text-center">{t('actuals_band')}</span><span className="text-right">{t('actuals_score')}</span>
+              <span className="text-right">{t('actuals_devpct')}</span><span className="text-center">{t('actuals_band')}</span><span className="text-right">{t('actuals_score')}</span>
             </div>
             {detail.rows.map(r => (
               <div key={r.month} className="font-mono text-[10px] grid py-0.5 border-b border-slate-800 last:border-0" style={{ gridTemplateColumns: '60px 60px 60px 48px 42px 54px' }}>

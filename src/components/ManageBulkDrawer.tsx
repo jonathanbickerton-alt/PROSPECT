@@ -226,13 +226,13 @@ export function ManageBulkDrawer({
           <div className="flex-1 min-w-0">
             <h2 className="text-sm font-bold text-slate-900">
               {phase === 'settings' || phase === 'generating'
-                ? 'Re-apply Settings'
-                : 'Manage Bulk Generations'}
+                ? t('bulkdrawer_re_apply_settings')
+                : t('bulkdrawer_manage_bulk_generations')}
             </h2>
             <p className="text-[11px] text-slate-500 truncate">
               {phase === 'select'
-                ? `${generatedCohorts.length} cohort${generatedCohorts.length !== 1 ? 's' : ''} generated · ${bulkRuns.length} bulk run${bulkRuns.length !== 1 ? 's' : ''}`
-                : `Applying to ${selected.size} cohort${selected.size !== 1 ? 's' : ''}`}
+                ? t('bulkdrawer_cohort_generated_bulk_run', { p0: generatedCohorts.length, p1: generatedCohorts.length !== 1 ? 's' : '', p2: bulkRuns.length, p3: bulkRuns.length !== 1 ? 's' : '' })
+                : t('bulkdrawer_applying_to_cohort', { p0: selected.size, p1: selected.size !== 1 ? 's' : '' })}
             </p>
           </div>
           {phase !== 'generating' && (
@@ -321,7 +321,7 @@ export function ManageBulkDrawer({
                   type="text"
                   value={runName}
                   onChange={e => setRunName(e.target.value)}
-                  placeholder={`Bulk Run — ${new Date().toLocaleDateString()}`}
+                  placeholder={t('bulkdrawer_bulk_run', { p0: new Date().toLocaleDateString() })}
                   disabled={phase === 'generating'}
                   className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-[#e60000]/20 focus:border-[#e60000]/40 disabled:bg-slate-50 disabled:text-slate-400"
                 />
@@ -406,7 +406,8 @@ export function ManageBulkDrawer({
 
               {/* Summary */}
               <div className="bg-slate-50 rounded-lg px-3 py-2.5 text-xs text-slate-600">{t('bulkdrawer_applying_to')}<strong>{selected.size}</strong> cohort{selected.size !== 1 ? 's' : ''}.{' '}
-                Existing forecasts for these cohorts will be overwritten.
+                
+                {t('bulkdrawer_existing_forecasts_for_these_cohorts_will_be')}
               </div>
 
               {phase === 'generating' && (
@@ -440,7 +441,7 @@ export function ManageBulkDrawer({
                     <div className="flex items-center gap-2 bg-amber-50 rounded-lg px-3 py-2.5 text-left">
                       <AlertTriangle size={14} className="text-amber-500 shrink-0" />
                       <span className="text-amber-700">
-                        <strong>{result.failed}</strong> skipped — insufficient data
+                        <strong>{result.failed}</strong> {t('bulkdrawer_skipped_insufficient_data')}
                       </span>
                     </div>
                   )}
@@ -457,8 +458,8 @@ export function ManageBulkDrawer({
             <div className="flex items-center gap-3">
               <span className="text-xs text-slate-500 flex-1">
                 {selected.size > 0
-                  ? `${selected.size} cohort${selected.size !== 1 ? 's' : ''} selected`
-                  : 'Select cohorts above to re-apply'}
+                  ? t('bulkdrawer_cohort_selected', { p0: selected.size, p1: selected.size !== 1 ? 's' : '' })
+                  : t('bulkdrawer_select_cohorts_above_to_re_apply')}
               </span>
               <button
                 onClick={openSettings}
@@ -475,7 +476,8 @@ export function ManageBulkDrawer({
                 onClick={() => setPhase('select')}
                 className="px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
               >
-                ← Back
+                
+                {t('bulkdrawer_back')}
               </button>
               <button
                 onClick={handleGenerate}
@@ -627,7 +629,7 @@ const BulkRunGroup: React.FC<{
               <span>{t('bulkdrawer_model')}<strong className="text-slate-600">{run.settings.model}</strong></span>
               <span>{t('bulkdrawer_horizon')}<strong className="text-slate-600">{run.settings.confidenceHorizon}m</strong></span>
               <span>{t('bulkdrawer_pre_unc')}<strong className="text-slate-600">{run.settings.preHorizonUncertainty}%</strong></span>
-              <span>{t('bulkdrawer_post_exp')}<strong className="text-slate-600">{run.settings.postHorizonExpansionRate}% /mo</strong></span>
+              <span>{t('bulkdrawer_post_exp')}<strong className="text-slate-600">{run.settings.postHorizonExpansionRate}{t('bulkdrawer_pct_mo')}</strong></span>
               <span>
                 <span className={run.generated > 0 ? 'text-emerald-600' : 'text-slate-400'}>
                   {run.generated} generated

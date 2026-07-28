@@ -402,13 +402,14 @@ export const ChallengerModels: React.FC<ChallengerModelsProps> = ({ actuals, for
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <CheckCircle2 className="text-emerald-600" size={20} />
-                      <h4 className="text-emerald-900 font-semibold text-lg">Recommendation: {evaluation.bestModel.name}</h4>
+                      <h4 className="text-emerald-900 font-semibold text-lg">{t('challenger_recommendation')}{evaluation.bestModel.name}</h4>
                     </div>
-                    <p className="text-emerald-700 text-sm">{t('challenger_switching_to')}<strong>{evaluation.bestModel.name}</strong> reduces forecast error from <strong className="text-rose-600">{evaluation.currentModelError.toFixed(1)}%</strong> to <strong className="text-emerald-700">{evaluation.bestModel.error.toFixed(1)}%</strong>.
+                    <p className="text-emerald-700 text-sm">{t('challenger_switching_to')}<strong>{evaluation.bestModel.name}</strong> {t('challenger_reduces_forecast_error_from')}<strong className="text-rose-600">{evaluation.currentModelError.toFixed(1)}%</strong> to <strong className="text-emerald-700">{evaluation.bestModel.error.toFixed(1)}%</strong>.
                     </p>
                     {evaluation.isWhatIf && (
                       <p className="text-emerald-800 text-xs mt-2 font-medium bg-emerald-100/50 inline-block px-2 py-1 rounded">
-                        What-If Logic Preserved: {evaluation.bestModel.name} Baseline + {evaluation.avgUplift > 0 ? '+' : ''}{evaluation.avgUplift.toFixed(1)}% Historical Market Uplift = Proposed Forecast
+                        
+                        {t('challenger_what_if_logic_preserved')}{evaluation.bestModel.name} {t('challenger_baseline')}{evaluation.avgUplift > 0 ? '+' : ''}{evaluation.avgUplift.toFixed(1)}{t('challenger_pct_historical_market_uplift_proposed_forecas')}
                       </p>
                     )}
                   </div>
@@ -426,7 +427,7 @@ export const ChallengerModels: React.FC<ChallengerModelsProps> = ({ actuals, for
                       {evaluation.models.map(m => (
                         <div key={m.dataKey} className="flex items-center gap-1.5">
                           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: m.color }}></div>
-                          <span className="text-xs font-medium text-slate-600">{m.name} ({m.error.toFixed(1)}% err)</span>
+                          <span className="text-xs font-medium text-slate-600">{m.name} ({m.error.toFixed(1)}{t('challenger_pct_err')}</span>
                         </div>
                       ))}
                     </div>

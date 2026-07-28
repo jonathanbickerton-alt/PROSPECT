@@ -4328,7 +4328,7 @@ export default function App() {
       {/* Export filename modal — triggered by any Export button in the app */}
       <ExportFilenameModal
         isOpen={showExportModal}
-        defaultName={`PROSPECT Forecast Save — ${format(new Date(), 'dd MMM yyyy HH:mm')}`}
+        defaultName={t('app_prospect_forecast_save', { p0: format(new Date(), 'dd MMM yyyy HH:mm') })}
         onConfirm={fileName => { exportSession(fileName); setShowExportModal(false); }}
         onClose={() => setShowExportModal(false)}
       />

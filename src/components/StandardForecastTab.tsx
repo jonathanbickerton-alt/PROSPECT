@@ -517,7 +517,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                     <div className="space-y-1.5">
                       <label className="block text-xs font-medium text-slate-700">{t('common_segment')}</label>
                       <select value={segmentValue} onChange={(e) => setSegmentValue(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none">
-                        <option value="">-- Select --</option>
+                        <option value="">{t('baseline_select')}</option>
                         <option value="All (Aggregated)">{t('baseline_all_aggregated')}</option>
                         {Array.from(new Set(data.map(r => String(r[wiSegmentCol])).filter(v => v && v !== 'undefined'))).sort().map(v => (
                           <option key={v} value={v}>{v}</option>
@@ -546,7 +546,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                         />
                       ) : (
                         <select value={productValue} onChange={(e) => setProductValue(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none">
-                          <option value="">-- Select --</option>
+                          <option value="">{t('baseline_select')}</option>
                           <option value="All (Aggregated)">{t('baseline_all_aggregated')}</option>
                           {Array.from(new Set(data.map(r => String(r[wiProductCol])).filter(v => v && v !== 'undefined'))).sort().map(v => (
                             <option key={v} value={v}>{v}</option>
@@ -576,7 +576,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                         />
                       ) : (
                         <select value={channelValue} onChange={(e) => setChannelValue(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none">
-                          <option value="">-- Select --</option>
+                          <option value="">{t('baseline_select')}</option>
                           <option value="All (Aggregated)">{t('baseline_all_aggregated')}</option>
                           {Array.from(new Set(data.map(r => String(r[wiChannelCol])).filter(v => v && v !== 'undefined'))).sort().map(v => (
                             <option key={v} value={v}>{v}</option>
@@ -607,7 +607,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                         />
                       ) : (
                         <select value={tariffValue} onChange={(e) => setTariffValue?.(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none">
-                          <option value="">-- Select --</option>
+                          <option value="">{t('baseline_select')}</option>
                           <option value="All (Aggregated)">{t('baseline_all_aggregated')}</option>
                           {Array.from(new Set(data.map(r => String(r[wiTariffL1Col])).filter(v => v && v !== 'undefined'))).sort().map(v => (
                             <option key={v} value={v}>{v}</option>
@@ -754,10 +754,10 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                     >
                       <div className={`text-sm font-semibold ${selectedForecastModel === m ? 'text-[#e60000]' : 'text-slate-800'}`}>{m}</div>
                       <div className="text-[10px] text-slate-500 mt-0.5 leading-snug">
-                        {m === 'Simple Exponential Smoothing' && 'Level smoothing — α optimised per series'}
-                        {m === 'Holt Linear' && 'Level + trend smoothing — α, β optimised per series'}
-                        {m === 'Damped Trend' && 'Trend damped toward flat — α, β, φ optimised per series'}
-                        {m === 'Holt-Winters' && 'Triple exponential smoothing, multiplicative seasonality — α, β, γ optimised per series'}
+                        {m === 'Simple Exponential Smoothing' && t('baseline_level_smoothing_optimised_per_series')}
+                        {m === 'Holt Linear' && t('baseline_level_trend_smoothing_optimised_per_series')}
+                        {m === 'Damped Trend' && t('baseline_trend_damped_toward_flat_optimised_per_series')}
+                        {m === 'Holt-Winters' && t('baseline_triple_exponential_smoothing_multiplicative_s')}
                       </div>
                     </button>
                   ))}
@@ -953,9 +953,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
 
               {oneOffFormOpen && (
                 <div className="mt-2 p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
-                  <p className="text-[10px] text-slate-500 leading-relaxed">{t('baseline_excludes_an_exceptional_month_e_g_a_one_time')}<strong>and tightens
-                    the confidence bands</strong> for this cohort — the band change is a direct, expected consequence
-                    of flagging, not a separate issue.
+                  <p className="text-[10px] text-slate-500 leading-relaxed">{t('baseline_excludes_an_exceptional_month_e_g_a_one_time')}<strong>{t('baseline_and_tightens_the_confidence_bands')}</strong> {t('baseline_for_this_cohort_the_band_change_is_a_direct_e')}
                   </p>
 
                   <div>
@@ -1097,7 +1095,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   if (stdChartView !== 'value') return ['auto', 'auto'];
                   const vals: number[] = [];
                   for (const row of arpuChartData) {
-                    for (const k of ['Historical', 'Mean (Base)', 'Optimistic', 'Pessimistic']) {
+                    for (const k of [t('baseline_historical'), 'Mean (Base)', 'Optimistic', 'Pessimistic']) {
                       const v = row[k];
                       if (typeof v === 'number' && isFinite(v) && v > 0) vals.push(v);
                     }
@@ -1211,9 +1209,10 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                 <Info size={15} className="shrink-0 mt-0.5 text-amber-500" />
                 <span>
                   <strong>{t('common_missing_months_detected_in_historical_data')}</strong>{' '}
-                  The following {baseForecast.missingMonths.length === 1 ? 'month is' : 'months are'} absent from this cohort's history:{' '}
+                  
+                  {t('baseline_the_following')}{baseForecast.missingMonths.length === 1 ? t('baseline_month_is') : t('baseline_months_are')} {t('baseline_absent_from_this_cohort_s_history')}{' '}
                   <span className="font-mono">{baseForecast.missingMonths.join(', ')}</span>.
-                  {' '}Gaps can bias level and trend initialisation — the forecast may be unreliable.
+                  {' '}{t('baseline_gaps_can_bias_level_and_trend_initialisation')}
                 </span>
               </div>
             )}
@@ -1241,9 +1240,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
               <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-100 rounded-xl text-sm text-amber-800">
                 <Info size={15} className="shrink-0 mt-0.5 text-amber-500" />
                 <span>
-                  <strong>{t('baseline_holt_winters_requires_at_least_24_months_of_d')}</strong> (two full seasonal cycles).
-                  One or more series for this cohort had fewer data points and fell back to Holt Linear automatically.
-                  The fitted parameters below reflect the Holt Linear model used for those series.
+                  <strong>{t('baseline_holt_winters_requires_at_least_24_months_of_d')}</strong> {t('baseline_two_full_seasonal_cycles_one_or_more_series_f')}
                 </span>
               </div>
             )}
@@ -1271,17 +1268,17 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                     <thead>
                       <tr className="border-b border-slate-100">
                         <th className="text-left pb-2 pr-6 text-slate-500 font-semibold uppercase tracking-wide">{t('baseline_series')}</th>
-                        <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">α (level)</th>
-                        <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">β (trend)</th>
+                        <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">{t('baseline_level')}</th>
+                        <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">{t('baseline_trend')}</th>
                         {baseForecast.modelUsed === 'Damped Trend' && (
-                          <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">φ (damping)</th>
+                          <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">{t('baseline_damping')}</th>
                         )}
                         {baseForecast.modelUsed === 'Holt-Winters' && (
-                          <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">γ (seasonal)</th>
+                          <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">{t('baseline_seasonal')}</th>
                         )}
                         <th className="text-right pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">{t('baseline_in_sample_mse')}</th>
                         <th className="text-right pb-2 pl-4 text-slate-500 font-semibold uppercase tracking-wide">
-                          {baseForecast.modelUsed === 'Holt-Winters' ? 'σ (relative)' : 'σ (residual SD)'}
+                          {baseForecast.modelUsed === 'Holt-Winters' ? t('baseline_relative') : t('baseline_residual_sd')}
                         </th>
                       </tr>
                     </thead>
@@ -1302,12 +1299,12 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                               <td className="py-2 px-4 text-center font-mono text-slate-800">{(p.gamma ?? 0.1).toFixed(2)}</td>
                             )}
                             <td className="py-2 px-4 text-right font-mono text-slate-500">
-                              {p.mse > 0 ? p.mse.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—'}
+                              {p.mse > 0 ? p.mse.toLocaleString(t('baseline_en_us'), { maximumFractionDigits: 0 }) : '—'}
                             </td>
                             <td className="py-2 pl-4 text-right font-mono text-slate-500">
                               {baseForecast.modelUsed === 'Holt-Winters'
                                 ? (p.sigma > 0 ? `${(p.sigma * 100).toFixed(1)}%` : '—')
-                                : (p.sigma > 0 ? p.sigma.toLocaleString('en-US', { maximumFractionDigits: 1 }) : '—')
+                                : (p.sigma > 0 ? p.sigma.toLocaleString(t('baseline_en_us'), { maximumFractionDigits: 1 }) : '—')
                               }
                             </td>
                           </tr>

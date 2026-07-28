@@ -98,8 +98,8 @@ export const ImportActualsModal: React.FC<ImportActualsModalProps> = ({ months, 
         <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl flex items-center justify-between gap-4">
           <p className="text-xs text-slate-500">
             {selected.size > 0
-              ? <><strong className="text-slate-700">{totalRows.toLocaleString()}</strong> rows across <strong className="text-slate-700">{selected.size}</strong> month{selected.size !== 1 ? 's' : ''} will be appended{newMonths.length < selected.size ? ' (includes already-loaded months)' : ''}</>
-              : 'No months selected'
+              ? <><strong className="text-slate-700">{totalRows.toLocaleString()}</strong> rows across <strong className="text-slate-700">{selected.size}</strong> month{selected.size !== 1 ? 's' : ''} will be appended{newMonths.length < selected.size ? t('importactuals_includes_already_loaded_months') : ''}</>
+              : t('importactuals_no_months_selected')
             }
           </p>
           <div className="flex gap-2 shrink-0">
@@ -112,7 +112,7 @@ export const ImportActualsModal: React.FC<ImportActualsModalProps> = ({ months, 
               disabled={selected.size === 0}
               className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              Import {selected.size > 0 ? `${selected.size} Month${selected.size !== 1 ? 's' : ''}` : ''}
+              Import {selected.size > 0 ? t('importactuals_month', { p0: selected.size, p1: selected.size !== 1 ? 's' : '' }) : ''}
             </button>
           </div>
         </div>
