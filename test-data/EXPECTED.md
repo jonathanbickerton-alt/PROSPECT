@@ -695,7 +695,16 @@ after any change:
 3. ARPU boundary correction applied on generation (check console log)
 4. What-If engine uses selected model, not hardcoded Holt-Winters
 5. In-band actuals score 80+; scoring is mean-proximity-primary, symmetric
-6. Tooltip inputs match the monthly variance table
+6. Tooltip inputs match the monthly variance table. **The table rendering at
+   all is now also covered by a static check** — `npx tsx scripts/scan-i18n.ts
+   --check` fails the build if a `t()` result is used as a property accessor.
+   The i18n extraction once turned ``row[`${prefix}_actual`]`` into
+   `row[t('actuals_actual', { p0: prefix })]`, the key slug collided with the
+   display header `t('actuals_actual')` = `"Actual"`, and the filter matched
+   nothing — so the whole table silently rendered empty, in English, for every
+   cohort and scenario. A checklist item alone did not catch that; the eye
+   slides over a section that is simply absent. Run the static check as well as
+   this item.
 7. Filters never re-forecast; actuals and forecast filtered at same level
 8. Cohort row click scopes chart only; never filters table or filter bar
 9. Hierarchical Product L1/L2 and Channel L1/L2 filter correctly

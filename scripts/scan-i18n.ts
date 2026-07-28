@@ -48,7 +48,15 @@ function looksUserFacing(s: string): boolean {
   const t = s.trim();
   if (t.length < 2) return false;
   if (!/[A-Za-z]{2}/.test(t)) return false;              // needs real letters
-  if (/^[a-z0-9_\-]+$/.test(t)) return false;            // css-ish / enum-ish token
+  // Reject kebab/snake tokens and known CSS keywords — but NOT plain lowercase
+  // words. The old `^[a-z0-9_-]+$` rejected every all-lowercase string, which
+  // also dropped legitimate display words: 'tier' and 'tariff' at
+  // WhatIfTab.tsx:4107 render to the user and were invisible to this scan.
+  // A bare lowercase word in a rendering position is display text; enum values
+  // and comparison operands are excluded by isRenderingPosition/isIdentifierOperand,
+  // not by shape.
+  if (/^[a-z0-9]+([-_][a-z0-9]+)+$/.test(t)) return false;   // kebab/snake token
+  if (/^(auto|none|inherit|initial|unset|hidden|visible|block|inline|flex|grid|absolute|relative|fixed|sticky|static|normal|bold|italic|center|left|right|top|bottom|middle|start|end|row|column|wrap|nowrap|pointer|default|solid|dashed|dotted|transparent|currentcolor)$/.test(t)) return false;
   if (/^[A-Z_]+$/.test(t)) return false;                 // CONSTANT
   if (/^\w+\.\w+/.test(t)) return false;                 // property path
   if (/^(#|https?:|\/|\.\/|data:)/.test(t)) return false;
@@ -295,7 +303,28 @@ const DEBUG = /^\[|console|cohort=/;
 const CHARTKEY = /^(Inflow|Outflow|Retention|Base|ARPU|Customer|Total) .*(\(Baseline\)|\(Uplifted\)|\(Adjusted\))$/;
 const FRAGMENT = /^[a-z(]|^[A-Z][a-z]*$|'t$/;
 
+/**
+ * Known <Trans> backlog — sites where the surrounding sentence must be converted
+ * as a whole, so the individual strings must NOT be keyed in isolation. Keyed by
+ * `file:line` so the backlog is machine-checked, not just documented prose.
+ *
+ * WhatIfTab.tsx:4107 renders:
+ *   — {n} {axis === 'tariff' ? 'tariff' : 'tier'}{n !== 1 ? 's' : ''}
+ * The trailing `{n !== 1 ? 's' : ''}` is an English-only pluralisation. Most
+ * target locales do not pluralise by appending 's' (German Tarif/Tarife,
+ * French tarif/tarifs but tier/tiers differs, Italian tariffa/tariffe), and
+ * several have more than two plural forms. Keying 'tier' and 'tariff' alone
+ * would bake the suffix ternary in permanently. This needs i18next plural
+ * forms — key_one / key_other with { count } — inside a <Trans>, not four
+ * separate keys.
+ */
+const TRANS_BACKLOG = new Set<string>([
+  'src\\components\\WhatIfTab.tsx:4107',
+  'src/components/WhatIfTab.tsx:4107',
+]);
+
 function bucketOf(h: Hit): string {
+  if (TRANS_BACKLOG.has(`${h.file}:${h.line}`)) return '1b fragment (DEFERRED Trans)';
   const t = h.text.trim();
   if (h.note === 'IDENTIFIER-OPERAND') return 'ident (excluded)';
   if (DATEFMT.test(t) && t.length <= 20) return 'date-format (excluded)';

@@ -267,3 +267,29 @@ occurrence of either internal name.
 a "Forecast Type" column in the Overall Forecast view. If that column prints
 the raw internal value rather than a mapped display label, the internal name
 does surface to the user and needs a display mapping. Confirm before phase 2.
+
+---
+
+## 12. Deferred `<Trans>` backlog
+
+Sentences split across JSX markup cannot be keyed fragment-by-fragment — the
+pieces have no independent translation and word order changes by locale. These
+need `react-i18next`'s `<Trans>` with the inline markup as interpolated
+elements. `scripts/scan-i18n.ts` reports them in the `1b fragment (DEFERRED
+Trans)` bucket, which does not fail `--check`.
+
+**Pluralisation is the sharpest case.** `WhatIfTab.tsx:4107` renders:
+
+```jsx
+— {n} {axis === 'tariff' ? 'tariff' : 'tier'}{n !== 1 ? 's' : ''}
+```
+
+The trailing `{n !== 1 ? 's' : ''}` is English-only. Most target locales do not
+pluralise by appending `s`, and several have more than two plural forms. Keying
+`tier` and `tariff` in isolation would bake that suffix ternary in permanently.
+This needs **i18next plural forms** — `key_one` / `key_other` with `{ count }` —
+inside a `<Trans>`, not four separate keys.
+
+That site is listed in the scanner's `TRANS_BACKLOG`, so it is machine-checked
+rather than only recorded here: the scanner forces it to the deferred bucket and
+will not let it be keyed piecemeal by mistake.
