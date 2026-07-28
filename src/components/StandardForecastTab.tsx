@@ -690,13 +690,13 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                           <span className="font-bold text-indigo-700">{modelRecommendation.recommendedModel}</span>
                         </div>
                         
-                        <p className="text-[11px] leading-relaxed text-slate-650">{modelRecommendation.reason}</p>
+                        <p className="text-[11px] leading-relaxed text-slate-650">{t(modelRecommendation.reason, modelRecommendation.reasonParams)}</p>
 
                         {/* Advisor parameters breakdown */}
                         <div className="grid grid-cols-2 gap-x-2 gap-y-1 pt-2 border-t border-indigo-100/80 text-[10px]">
                           <div>
                             <span className="text-slate-400">{t('baseline_trend')}</span>
-                            <span className="font-semibold text-slate-700">{modelRecommendation.metrics.trendStrengthLabel}</span>
+                            <span className="font-semibold text-slate-700">{t(modelRecommendation.metrics.trendStrengthLabel)}</span>
                           </div>
                           <div>
                             <span className="text-slate-400">{t('baseline_seasonality')}</span>
@@ -706,7 +706,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                           </div>
                           <div>
                             <span className="text-slate-400">{t('baseline_volatility')}</span>
-                            <span className="font-semibold text-slate-700">{modelRecommendation.metrics.volatilityLabel}</span>
+                            <span className="font-semibold text-slate-700">{t(modelRecommendation.metrics.volatilityLabel)}</span>
                           </div>
                           <div>
                             <span className="text-slate-400">{t('baseline_best_error')}</span>
@@ -817,7 +817,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                         <span className="font-bold text-violet-700">{confidenceRecommendation.profile}</span>
                       </div>
                       
-                      <p className="text-[11px] leading-relaxed text-slate-600">{confidenceRecommendation.reason}</p>
+                      <p className="text-[11px] leading-relaxed text-slate-600">{t(confidenceRecommendation.reason, confidenceRecommendation.reasonParams)}</p>
 
                       {/* Display suggested settings values */}
                       <div className="bg-white/80 p-2 rounded-lg border border-violet-100 text-[10px] text-slate-700 space-y-1">

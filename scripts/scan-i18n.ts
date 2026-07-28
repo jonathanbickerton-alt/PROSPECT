@@ -142,7 +142,11 @@ for (const sf of sourceFiles) {
     }
     // 4. .ts utilities — sentence-like literals (candidates, need human review)
     if (!isTsx && (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) || ts.isTemplateExpression(n))) {
-      if (!insideT(n)) {
+      // A string used as an object-literal KEY is a data contract (export column
+      // header, chart series key), never display copy. Translating one silently
+      // changes the shape of exported data.
+      const isObjectKey = n.parent && ts.isPropertyAssignment(n.parent) && n.parent.name === n;
+      if (!insideT(n) && !isObjectKey) {
         let text = '';
         if (ts.isTemplateExpression(n)) text = n.head.text + n.templateSpans.map(s => '{}' + s.literal.text).join('');
         else text = (n as ts.StringLiteral).text;
