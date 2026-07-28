@@ -2132,7 +2132,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               <p className="text-xs font-semibold text-slate-500 mb-1">{t('whatif_active_market_events')}</p>
               <p className="text-2xl font-bold text-slate-700">{impactSummary.eventCount}</p>
               <p className="text-[10px] text-slate-400 mt-1">
-                {impactSummary.eventCount === 0 ? 'Add events below to adjust the forecast' : 'Events applied to adjusted path'}
+                {impactSummary.eventCount === 0 ? t('whatif_add_events_below_to_adjust_the_forecast') : t('whatif_events_applied_to_adjusted_path')}
               </p>
             </div>
           </div>
@@ -2326,7 +2326,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              {tab === 'volume' ? 'Volume' : tab === 'value' ? 'Value' : tab === 'pricing' ? 'Pricing' : 'Promotion'}
+              {tab === 'volume' ? t('whatif_volume') : tab === 'value' ? t('whatif_value') : tab === 'pricing' ? t('whatif_pricing') : t('whatif_promotion')}
             </button>
           ))}
         </div>
@@ -2714,7 +2714,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     disabled={!newEvent.date}
                     className="bg-[#e60000] text-white text-sm font-semibold py-2 px-5 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    {editingCampaign ? 'Save Campaign' : 'Save Changes'}
+                    {editingCampaign ? t('whatif_save_campaign') : t('whatif_save_changes')}
                   </button>
                   <button
                     onClick={handleCancelEdit}
@@ -2727,7 +2727,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   disabled={!newEvent.date || newEvent.subscriberVolume === undefined}
                   className="shrink-0 bg-[#e60000] text-white text-sm font-semibold py-2 px-6 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {spreadEnabled ? `Add ${spreadMonths} Events` : 'Add Event'}
+                  {spreadEnabled ? `Add ${spreadMonths} Events` : t('whatif_add_event')}
                 </button>
               )}
             </div>
@@ -2887,7 +2887,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                     ? 'text-amber-600 bg-amber-100'
                                     : 'text-slate-400 hover:text-[#e60000] hover:bg-[#e60000]/5'
                                 }`}
-                                title={isEditing ? 'Currently editing' : 'Edit event'}
+                                title={isEditing ? t('whatif_currently_editing') : t('whatif_edit_event')}
                               >
                                 <Pencil size={14} />
                               </button>
@@ -3144,7 +3144,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       />
                     </div>
                     <p className="text-[10px] text-slate-400 mt-1">
-                      {newPricingEvent.inputMode === 'percentage' ? 'Positive = price rise, negative = discount' : 'Absolute ARPU change per subscriber'}
+                      {newPricingEvent.inputMode === 'percentage' ? t('whatif_positive_price_rise_negative_discount') : t('whatif_absolute_arpu_change_per_subscriber')}
                     </p>
                   </div>
 
@@ -3178,7 +3178,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       >{t('whatif_base_only')}</button>
                     </div>
                     <p className="text-[10px] text-slate-400 mt-1">
-                      {newPricingEvent.target === 'cohorts' ? 'New Inflow/Retention cohorts only'
+                      {newPricingEvent.target === 'cohorts' ? t('whatif_new_inflow_retention_cohorts_only')
                        : newPricingEvent.target === 'base-only' ? 'Existing base stock only — excludes new cohorts'
                        : 'All subscribers including existing base'}
                     </p>
@@ -3196,7 +3196,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 onChange={() => setNewPricingEvent({ ...newPricingEvent, cohortScope: scope })}
                                 className="accent-[#e60000] w-3 h-3"
                               />
-                              <span className="text-[10px] text-slate-600 capitalize">{scope === 'both' ? 'Both' : scope === 'inflow' ? 'Inflow' : 'Retention'}</span>
+                              <span className="text-[10px] text-slate-600 capitalize">{scope === 'both' ? t('whatif_both') : scope === 'inflow' ? 'Inflow' : 'Retention'}</span>
                             </label>
                           ))}
                         </div>
@@ -3226,7 +3226,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       >{t('whatif_recurring')}</button>
                     </div>
                     <p className="text-[10px] text-slate-400 mt-1">
-                      {newPricingEvent.duration === 'one-off' ? 'Applies to start month only, then reverts' : 'Applies from start month through all subsequent months'}
+                      {newPricingEvent.duration === 'one-off' ? t('whatif_applies_to_start_month_only_then_reverts') : t('whatif_applies_from_start_month_through_all_subseque')}
                     </p>
                   </div>
 
@@ -3353,7 +3353,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                   : pe.target === 'base-only' ? 'bg-amber-100 text-amber-700'
                                   : 'bg-blue-100 text-blue-700'
                                 }`}>
-                                  {pe.target === 'cohorts+base' ? 'Cohorts + Base' : pe.target === 'base-only' ? 'Base Only' : 'Cohorts'}
+                                  {pe.target === 'cohorts+base' ? t('whatif_cohorts_base') : pe.target === 'base-only' ? 'Base Only' : t('whatif_cohorts')}
                                 </span>
                                 {pe.target !== 'base-only' && pe.cohortScope !== 'both' && (
                                   <span className="ml-1 inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500 capitalize">
@@ -3363,7 +3363,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               </td>
                               <td className="px-4 py-2.5">
                                 <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${pe.duration === 'recurring' ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-600'}`}>
-                                  {pe.duration === 'recurring' ? 'Recurring' : 'One-Off'}
+                                  {pe.duration === 'recurring' ? t('whatif_recurring') : t('whatif_one_off')}
                                 </span>
                               </td>
                               <td className="px-4 py-2.5 text-right tabular-nums text-slate-500">{formatNumber(baseArpu)}</td>
@@ -3529,7 +3529,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">
-                      {promoTarget === 'Inflow' ? 'Acquisition Volume' : 'Retained Volume'}
+                      {promoTarget === 'Inflow' ? t('whatif_acquisition_volume') : t('whatif_retained_volume')}
                     </label>
                     <input
                       type="number"
@@ -3710,7 +3710,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         <div>
                           <div className="flex items-center justify-between mb-3">
                             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                              {promoMixAxis === 'tariff' ? 'Tariff Mix' : 'Value Mix (Product L2)'}
+                              {promoMixAxis === 'tariff' ? t('whatif_tariff_mix') : t('whatif_value_mix_product_l2')}
                             </span>
                             <div className="flex items-center gap-3">
                               <div className="flex bg-slate-100 p-0.5 rounded-lg">
@@ -3730,7 +3730,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           </div>
 
                           <div className="grid gap-x-3 mb-1 pr-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider" style={{ gridTemplateColumns: 'minmax(80px,180px) 1fr 52px 90px' }}>
-                            <span>{promoMixAxis === 'tariff' ? 'Tariff' : 'Tier'}</span>
+                            <span>{promoMixAxis === 'tariff' ? t('whatif_tariff') : t('whatif_tier')}</span>
                             <span />
                             <span className="text-right">{t('whatif_mix_pct')}</span>
                             <span className="text-right">{t('whatif_base_arpu')}</span>
@@ -3813,7 +3813,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         />
                       </div>
                       <p className="text-[10px] text-slate-400 mt-1">
-                        {promoPricingMode === 'percentage' ? 'Positive = price rise, negative = discount/promotion' : 'Absolute ARPU change per subscriber'}
+                        {promoPricingMode === 'percentage' ? t('whatif_positive_price_rise_negative_discount_promoti') : t('whatif_absolute_arpu_change_per_subscriber')}
                       </p>
                     </div>
                   )}
@@ -3859,7 +3859,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         disabled={!newPromo.date || !newPromo.subscriberVolume || (promoMixEnabled && promoTierData.length === 0)}
                         className="bg-[#e60000] text-white text-sm font-semibold py-2 px-5 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
-                        {editingPromoCampaign ? 'Save Campaign' : 'Save Changes'}
+                        {editingPromoCampaign ? t('whatif_save_campaign') : t('whatif_save_changes')}
                       </button>
                       <button
                         onClick={handleCancelPromoEdit}
@@ -3940,7 +3940,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 className={`p-1 rounded transition-colors ${
                                   isEditingRow ? 'text-amber-600 bg-amber-100' : 'text-slate-400 hover:text-[#e60000] hover:bg-[#e60000]/5'
                                 }`}
-                                title={isEditingRow ? 'Currently editing' : 'Edit promotion'}
+                                title={isEditingRow ? t('whatif_currently_editing') : t('whatif_edit_promotion')}
                               >
                                 <Pencil size={14} />
                               </button>
@@ -4099,7 +4099,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   <div className="mb-5">
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        {mixAxis === 'tariff' ? 'Tariff Mix' : 'Value Mix (Product L2)'}
+                        {mixAxis === 'tariff' ? t('whatif_tariff_mix') : t('whatif_value_mix_product_l2')}
                         <span className="ml-2 normal-case font-normal text-slate-400">— {yieldTierData.length} {mixAxis === 'tariff' ? 'tariff' : 'tier'}{yieldTierData.length !== 1 ? 's' : ''}</span>
                       </span>
                       <div className="flex items-center gap-3">
@@ -4127,7 +4127,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                     {/* Compact header row */}
                     <div className="grid gap-x-3 mb-1 pr-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider" style={{ gridTemplateColumns: 'minmax(80px,180px) 1fr 52px 90px 80px' }}>
-                      <span>{mixAxis === 'tariff' ? 'Tariff' : 'Tier'}</span>
+                      <span>{mixAxis === 'tariff' ? t('whatif_tariff') : t('whatif_tier')}</span>
                       <span />
                       <span className="text-right">{t('whatif_mix_pct')}</span>
                       <span className="text-right">{t('whatif_base_arpu')}</span>
@@ -4203,7 +4203,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   </label>
                   <div>
                     <p className="text-xs font-medium text-slate-700">
-                      {newYieldEvent.rollForward ? 'Roll forward to all subsequent months' : 'Apply to this cohort month only'}
+                      {newYieldEvent.rollForward ? t('whatif_roll_forward_to_all_subsequent_months') : t('whatif_apply_to_this_cohort_month_only')}
                     </p>
                     <p className="text-[10px] text-slate-400 mt-0.5">
                       {newYieldEvent.rollForward

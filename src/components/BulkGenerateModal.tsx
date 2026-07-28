@@ -200,15 +200,15 @@ export function BulkGenerateModal({
               </div>
               <div className="divide-y divide-slate-50">
                 {[
-                  { label: 'Algorithm', value: autoModel ? 'Auto-selected per cohort' : currentModel },
-                  { label: 'Pre-Horizon z-score', value: autoConfidence ? 'Auto-configured per cohort' : `${params.preHorizonUncertainty}` },
-                  { label: 'Post-Horizon Band Multiplier', value: autoConfidence ? 'Auto-configured per cohort' : `${params.postHorizonExpansionRate}×` },
-                  { label: 'Confidence Horizon', value: autoConfidence ? 'Auto-configured per cohort' : `${params.confidenceHorizon} month${params.confidenceHorizon !== 1 ? 's' : ''}` },
+                  { label: t('bulk_algorithm'), value: autoModel ? t('bulk_auto_selected_per_cohort') : currentModel },
+                  { label: t('bulk_pre_horizon_z_score'), value: autoConfidence ? t('bulk_auto_configured_per_cohort') : `${params.preHorizonUncertainty}` },
+                  { label: t('bulk_post_horizon_band_multiplier'), value: autoConfidence ? t('bulk_auto_configured_per_cohort') : `${params.postHorizonExpansionRate}×` },
+                  { label: t('bulk_confidence_horizon'), value: autoConfidence ? t('bulk_auto_configured_per_cohort') : `${params.confidenceHorizon} month${params.confidenceHorizon !== 1 ? 's' : ''}` },
                   { label: 'Forecast Length', value: `${params.forecastLength} months` },
                 ].map(row => (
                   <div key={row.label} className="flex items-center justify-between px-4 py-2 text-xs">
                     <span className="text-slate-500">{row.label}</span>
-                    <span className={`font-medium ${row.value.startsWith('Auto') ? 'text-[#e60000]' : 'text-slate-800'}`}>{row.value}</span>
+                    <span className={`font-medium ${row.value.startsWith(t('bulk_auto')) ? 'text-[#e60000]' : 'text-slate-800'}`}>{row.value}</span>
                   </div>
                 ))}
               </div>
@@ -301,7 +301,7 @@ function BulkGeneratingPanel({ progress }: { progress?: { current: number; total
         <Loader2 size={26} className="text-[#e60000] animate-spin" />
       </div>
       <div className="w-full max-w-xs">
-        <h3 className="text-base font-semibold text-slate-900 mb-1">{showBar ? 'Generating forecasts…' : 'Preparing forecasts…'}</h3>
+        <h3 className="text-base font-semibold text-slate-900 mb-1">{showBar ? t('bulk_generating_forecasts') : t('bulk_preparing_forecasts')}</h3>
         {showBar ? (
           <>
             <p className="text-sm text-slate-500 mb-3">

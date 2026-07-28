@@ -255,7 +255,7 @@ export function HierarchicalDropdown({
                     {hasChildren ? (
                       <span
                         role="button"
-                        aria-label={isL1Expanded ? 'Collapse' : 'Expand'}
+                        aria-label={isL1Expanded ? t('hierdrop_collapse') : t('hierdrop_expand')}
                         className="shrink-0 p-0.5 rounded hover:bg-slate-200/60"
                         onMouseDown={e => toggleExpand(l1, e)}
                       >

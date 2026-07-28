@@ -701,7 +701,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                           <div>
                             <span className="text-slate-400">{t('baseline_seasonality')}</span>
                             <span className="font-semibold text-slate-700">
-                              {modelRecommendation.metrics.seasonalityLabel === 'Recurring monthly peaks' ? 'Recurring' : 'None'}
+                              {modelRecommendation.metrics.seasonalityLabel === 'Recurring monthly peaks' ? t('baseline_recurring') : t('baseline_none')}
                             </span>
                           </div>
                           <div>
@@ -711,7 +711,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                           <div>
                             <span className="text-slate-400">{t('baseline_best_error')}</span>
                             <span className="font-semibold text-slate-700">
-                              {modelRecommendation.metrics.bestModelByFit === 'Simple Exponential Smoothing' ? 'SES' :
+                              {modelRecommendation.metrics.bestModelByFit === 'Simple Exponential Smoothing' ? t('baseline_ses') :
                                modelRecommendation.metrics.bestModelByFit === 'Holt Linear' ? 'HL' :
                                modelRecommendation.metrics.bestModelByFit === 'Damped Trend' ? 'DT' : 'HW'}
                             </span>
@@ -947,7 +947,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                 onClick={() => setOneOffFormOpen(v => !v)}
                 className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-lg transition-colors"
               >
-                <span>{currentOneOffFlags.length > 0 ? 'Flag another one-off month' : 'Flag a one-off historical month'}</span>
+                <span>{currentOneOffFlags.length > 0 ? t('baseline_flag_another_one_off_month') : t('baseline_flag_a_one_off_historical_month')}</span>
                 <ChevronDown size={13} className={`text-slate-400 transition-transform ${oneOffFormOpen ? 'rotate-180' : ''}`} />
               </button>
 
@@ -1052,7 +1052,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-semibold text-slate-900">
-                  {compareCategories.length > 0 ? 'Forecast Results (Comparison)' : 'Forecast Results'}
+                  {compareCategories.length > 0 ? t('baseline_forecast_results_comparison') : t('baseline_forecast_results')}
                 </h3>
                 <div className="flex flex-col items-end gap-3">
                   <div className="flex items-center gap-4">
@@ -1065,7 +1065,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                             onClick={() => setStdChartView(v)}
                             className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${stdChartView === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                           >
-                            {v === 'volume' ? 'Volume' : 'Value (ARPU)'}
+                            {v === 'volume' ? t('baseline_volume') : t('baseline_value_arpu')}
                           </button>
                         ))}
                       </div>
@@ -1259,7 +1259,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   <span className="text-base font-semibold text-slate-900 flex items-center gap-2">
                     <SlidersHorizontal size={15} className="text-[#e60000]" />{t('baseline_fitted_model_parameters')}</span>
                   <span className="flex items-center gap-1 text-xs font-medium text-slate-500">
-                    {showTechnicalDetails ? 'Hide technical details' : 'Show technical details'}
+                    {showTechnicalDetails ? t('baseline_hide_technical_details') : t('baseline_show_technical_details')}
                     <ChevronDown size={14} className={`text-slate-400 transition-transform ${showTechnicalDetails ? 'rotate-180' : ''}`} />
                   </span>
                 </button>
@@ -1324,7 +1324,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
             {/* Data Preview Table */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
               <h3 className="text-lg font-semibold text-slate-900 mb-4">
-                {stdChartView === 'value' ? 'ARPU Data Preview' : 'Data Preview'}
+                {stdChartView === 'value' ? t('baseline_arpu_data_preview') : t('baseline_data_preview')}
               </h3>
               <div className="overflow-x-auto rounded-xl border border-slate-200 max-h-[400px]">
                 <table className="w-full text-sm text-left relative">
@@ -1361,7 +1361,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                         <td className="px-6 py-4 font-medium text-slate-900">{row.date}</td>
                         {stdChartView === 'value' ? (
                           <>
-                            <td className="px-6 py-4 text-slate-600">{row['Historical'] != null ? formatNumber(row['Historical']) : '—'}</td>
+                            <td className="px-6 py-4 text-slate-600">{row[t('baseline_historical')] != null ? formatNumber(row[t('baseline_historical')]) : '—'}</td>
                             <td className="px-6 py-4 text-slate-600">{row['Mean (Base)'] != null ? formatNumber(row['Mean (Base)']) : '—'}</td>
                             <td className="px-6 py-4 text-emerald-600">{row['Optimistic'] != null ? formatNumber(row['Optimistic']) : '—'}</td>
                             <td className="px-6 py-4 text-rose-600">{row['Pessimistic'] != null ? formatNumber(row['Pessimistic']) : '—'}</td>

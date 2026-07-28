@@ -241,7 +241,7 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
           </div>
           <label className="px-4 py-2 bg-[#e60000] hover:bg-[#cc0000] text-white font-medium text-sm rounded-lg shadow-sm transition-colors cursor-pointer flex items-center gap-2">
             <UploadCloud size={18} />
-            {isLoading ? 'Processing...' : 'Load Session File (Max 4)'}
+            {isLoading ? t('compare_processing') : t('compare_load_session_file_max_4')}
             <input type="file" multiple accept=".xlsx" className="hidden" onChange={handleFiles} disabled={isLoading || parsedSessions.length >= 4} />
           </label>
         </div>
@@ -406,7 +406,7 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
             </div>
 
             <div className="flex-1 bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-0">
-              <h3 className="font-semibold text-slate-800 mb-4 shrink-0">{chartView === 'volume' ? 'Subscriber Volumes' : 'ARPU'}</h3>
+              <h3 className="font-semibold text-slate-800 mb-4 shrink-0">{chartView === 'volume' ? t('compare_subscriber_volumes') : 'ARPU'}</h3>
               {chartData.length > 0 ? (
                 <div className="flex-1 min-h-0">
                   <ResponsiveContainer width="100%" height="100%">
@@ -488,7 +488,7 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
                 </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
-                  {parsedSessions.some(s => activeScenarios[s.fileName]) ? 'No data for selected filters.' : 'Check at least one scenario below to display data.'}
+                  {parsedSessions.some(s => activeScenarios[s.fileName]) ? t('compare_no_data_for_selected_filters') : t('compare_check_at_least_one_scenario_below_to_display')}
                 </div>
               )}
             </div>

@@ -538,6 +538,7 @@ const CohortGroup: React.FC<{
   onToggleCohort: (id: string) => void;
   onToggleGroupAll: () => void;
 }> = ({ groupId: _groupId, title, count, isExpanded, onToggle, cohorts, selected, onToggleCohort, onToggleGroupAll }) => {
+  const { t } = useTranslation();
   const allSel = cohorts.length > 0 && cohorts.every(c => selected.has(c.id));
   const someSel = cohorts.some(c => selected.has(c.id));
 
@@ -557,7 +558,7 @@ const CohortGroup: React.FC<{
           onClick={onToggleGroupAll}
           className="px-3 py-3 text-[10px] font-semibold text-indigo-600 hover:text-indigo-700 shrink-0 transition-colors"
         >
-          {allSel ? 'Deselect' : someSel ? 'Select all' : 'Select all'}
+          {allSel ? t('bulkdrawer_deselect') : someSel ? t('bulkdrawer_select_all') : t('bulkdrawer_select_all')}
         </button>
         <span className="pr-4 text-xs text-slate-400 shrink-0">{count}</span>
       </div>
@@ -613,7 +614,7 @@ const BulkRunGroup: React.FC<{
           onClick={onToggleGroupAll}
           className="px-3 py-3 text-[10px] font-semibold text-indigo-600 hover:text-indigo-700 shrink-0 transition-colors"
         >
-          {allSel ? 'Deselect' : someSel ? 'Select all' : 'Select all'}
+          {allSel ? t('bulkdrawer_deselect') : someSel ? t('bulkdrawer_select_all') : t('bulkdrawer_select_all')}
         </button>
         <span className="pr-4 text-xs text-slate-400 shrink-0">{cohorts.length}</span>
       </div>

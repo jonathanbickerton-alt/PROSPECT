@@ -269,8 +269,8 @@ export const ChallengerModels: React.FC<ChallengerModelsProps> = ({ actuals, for
         currentModel.dataKey = 'Mean (Base)';
       }
     } else if (hasBaseline) {
-      models.push({ name: 'Baseline', error: totalActual ? (baselineError / totalActual) * 100 : 0, dataKey: 'Baseline', color: '#6366f1', strokeDasharray: '0' });
-      models.push({ name: 'Uplifted Baseline', error: totalActual ? (upliftedError / totalActual) * 100 : 0, dataKey: 'Uplifted Baseline', color: '#ec4899', strokeDasharray: '0' });
+      models.push({ name: t('challenger_baseline'), error: totalActual ? (baselineError / totalActual) * 100 : 0, dataKey: t('challenger_baseline'), color: '#6366f1', strokeDasharray: '0' });
+      models.push({ name: t('challenger_uplifted_baseline'), error: totalActual ? (upliftedError / totalActual) * 100 : 0, dataKey: t('challenger_uplifted_baseline'), color: '#ec4899', strokeDasharray: '0' });
       const currentIdx = models.findIndex(m => m.name === 'Current Model');
       if (currentIdx !== -1) models.splice(currentIdx, 1);
     }
@@ -334,19 +334,19 @@ export const ChallengerModels: React.FC<ChallengerModelsProps> = ({ actuals, for
             <span className="text-xs font-semibold text-slate-500 uppercase">{t('challenger_filters')}</span>
           </div>
           <select value={segmentFilter} onChange={e => setSegmentFilter(e.target.value)} className="appearance-none text-sm border border-slate-200 rounded-lg bg-white outline-none text-slate-700 font-medium cursor-pointer px-2 py-1">
-            {uniqueSegments.map(s => <option key={s} value={s}>{s === 'All' ? 'All Segments' : s}</option>)}
+            {uniqueSegments.map(s => <option key={s} value={s}>{s === 'All' ? t('challenger_all_segments') : s}</option>)}
           </select>
           <select value={productFilter} onChange={e => setProductFilter(e.target.value)} className="appearance-none text-sm border border-slate-200 rounded-lg bg-white outline-none text-slate-700 font-medium cursor-pointer px-2 py-1">
-            {uniqueProducts.map(p => <option key={p} value={p}>{p === 'All' ? 'All Products' : p}</option>)}
+            {uniqueProducts.map(p => <option key={p} value={p}>{p === 'All' ? t('challenger_all_products') : p}</option>)}
           </select>
           <select value={channelFilter} onChange={e => setChannelFilter(e.target.value)} className="appearance-none text-sm border border-slate-200 rounded-lg bg-white outline-none text-slate-700 font-medium cursor-pointer px-2 py-1">
-            {uniqueChannels.map(c => <option key={c} value={c}>{c === 'All' ? 'All Channels' : c}</option>)}
+            {uniqueChannels.map(c => <option key={c} value={c}>{c === 'All' ? t('challenger_all_channels') : c}</option>)}
           </select>
           <select value={scenarioFilter} onChange={e => setScenarioFilter(e.target.value)} className="appearance-none text-sm border border-slate-200 rounded-lg bg-white outline-none text-slate-700 font-medium cursor-pointer px-2 py-1">
-            {uniqueScenarios.map(s => <option key={s} value={s}>{s === 'All' ? 'All Scenarios' : s}</option>)}
+            {uniqueScenarios.map(s => <option key={s} value={s}>{s === 'All' ? t('challenger_all_scenarios') : s}</option>)}
           </select>
           <select value={forecastTypeFilter} onChange={e => setForecastTypeFilter(e.target.value)} className="appearance-none text-sm border border-slate-200 rounded-lg bg-white outline-none text-slate-700 font-medium cursor-pointer px-2 py-1">
-            {uniqueForecastTypes.map(t => <option key={t} value={t}>{t === 'All' ? 'All Forecast Types' : t}</option>)}
+            {uniqueForecastTypes.map(t => <option key={t} value={t}>{t === 'All' ? t('challenger_all_forecast_types') : t}</option>)}
           </select>
         </div>
       </div>

@@ -3205,7 +3205,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                     {summaryMape.monthsWithActuals} month{summaryMape.monthsWithActuals !== 1 ? 's' : ''} compared
                   </p>
                   <p className="text-[9px] font-medium text-slate-300 mt-0.5 uppercase tracking-wide">
-                    {useAdjustedScoring && adjustedForecast ? 'Adjusted' : 'Baseline'}
+                    {useAdjustedScoring && adjustedForecast ? t('actuals_adjusted') : t('actuals_baseline')}
                   </p>
                 </div>
               );
@@ -3225,7 +3225,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                     {summaryMape.monthsWithActuals} month{summaryMape.monthsWithActuals !== 1 ? 's' : ''} compared
                   </p>
                   <p className="text-[9px] font-medium text-slate-300 mt-0.5 uppercase tracking-wide">
-                    {useAdjustedScoring && adjustedForecast ? 'Adjusted' : 'Baseline'}
+                    {useAdjustedScoring && adjustedForecast ? t('actuals_adjusted') : t('actuals_baseline')}
                   </p>
                 </div>
               );
@@ -4025,7 +4025,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                     <div className="flex items-center gap-2 mb-1">
                                       <Info className={bannerAmber ? 'text-amber-600' : 'text-slate-500'} size={15} />
                                       <h4 className={`font-semibold text-sm ${bannerAmber ? 'text-amber-900' : 'text-slate-700'}`}>
-                                        {bannerAmber ? 'Best model applied — still outside threshold' : 'Illustration — run a real forecast to compare'}
+                                        {bannerAmber ? t('actuals_best_model_applied_still_outside_threshold') : t('actuals_illustration_run_a_real_forecast_to_compare')}
                                       </h4>
                                     </div>
                                     <p className={`text-xs leading-relaxed ${bannerAmber ? 'text-amber-700' : 'text-slate-500'}`}>
@@ -4056,7 +4056,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white rounded-lg transition-colors disabled:opacity-60 disabled:cursor-wait"
                                             style={{ backgroundColor: m.color }}
                                           >
-                                            {isRunning ? 'Running…' : `Run ${m.name}`}
+                                            {isRunning ? t('actuals_running') : `Run ${m.name}`}
                                           </button>
                                         ))}
                                     </div>

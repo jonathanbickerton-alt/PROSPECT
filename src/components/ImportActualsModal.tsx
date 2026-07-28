@@ -68,7 +68,7 @@ export const ImportActualsModal: React.FC<ImportActualsModalProps> = ({ months, 
               ? <CheckSquare size={16} className="text-emerald-600 shrink-0" />
               : <Square size={16} className="text-slate-400 shrink-0" />
             }
-            {allSelected ? 'Deselect all' : 'Select all'}
+            {allSelected ? t('importactuals_deselect_all') : t('importactuals_select_all')}
             <span className="ml-auto text-xs text-slate-400">{months.length} months</span>
           </button>
 

@@ -178,7 +178,7 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
               disabled={isGeneratingMissing}
               className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors shadow-sm ${isGeneratingMissing ? 'bg-slate-400 cursor-not-allowed' : 'bg-[#e60000] hover:bg-[#cc0000]'}`}
             >
-              {isGeneratingMissing ? 'Generating...' : 'Generate Missing'}
+              {isGeneratingMissing ? t('overall_generating') : t('overall_generate_missing')}
             </button>
           </div>
         </div>
