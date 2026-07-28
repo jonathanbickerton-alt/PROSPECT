@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { CheckCircle2, Zap, X, AlertTriangle, Loader2 } from 'lucide-react';
 import type { ForecastModel } from '../types/forecast';
 
@@ -59,6 +60,7 @@ export function BulkGenerateModal({
   generationProgress,
   onConfirm,
 }: BulkGenerateModalProps) {
+  const { t } = useTranslation();
   const [phase, setPhase] = useState<Phase>('confirm');
   const [summary, setSummary] = useState<{ generated: number; failed: number } | null>(null);
   const [runName, setRunName] = useState('');
@@ -116,9 +118,9 @@ export function BulkGenerateModal({
                   <Zap size={20} className="text-[#e60000]" />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-slate-900">Apply to All Remaining Combinations?</h2>
+                  <h2 className="text-base font-bold text-slate-900">{t('bulk_apply_to_all_remaining_combinations')}</h2>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    {missingCount} combination{missingCount !== 1 ? 's' : ''} {missingCount !== 1 ? 'don\'t' : 'doesn\'t'} have a forecast yet
+                    {missingCount} combination{missingCount !== 1 ? 's' : ''} {missingCount !== 1 ? t('bulk_don_t') : t('bulk_doesn_t')} {t('bulk_have_a_forecast_yet')}
                   </p>
                 </div>
               </div>
@@ -134,7 +136,7 @@ export function BulkGenerateModal({
             {cohortStr && (
               <div className="px-6 pb-3">
                 <div className="bg-slate-50 rounded-lg px-4 py-2.5 text-xs flex items-center gap-2">
-                  <span className="text-slate-400">Just generated:</span>
+                  <span className="text-slate-400">{t('bulk_just_generated')}</span>
                   <span className="font-semibold text-slate-700">{cohortStr}</span>
                   <span className="text-slate-400 ml-1">· {sourceCohort?.scenario}</span>
                 </div>
@@ -143,10 +145,10 @@ export function BulkGenerateModal({
 
             {/* Model strategy */}
             <div className="mx-6 mb-4">
-              <p className="text-xs font-semibold text-slate-700 mb-2">Forecast Model</p>
+              <p className="text-xs font-semibold text-slate-700 mb-2">{t('common_forecast_model')}</p>
               <div className="space-y-2">
                 {([
-                  { auto: true,  label: 'Auto-select best model per cohort', desc: 'Analyses each cohort\'s history independently — volatile, trending, and seasonal cohorts each get the most appropriate model' },
+                  { auto: true,  label: t('bulk_auto_select_best_model_per_cohort'), desc: t('bulk_analyses_each_cohort_s_history_independently') },
                   { auto: false, label: `Use ${currentModel} for all cohorts`, desc: null },
                 ] as const).map(opt => (
                   <label key={String(opt.auto)} className={`flex items-start gap-3 cursor-pointer rounded-lg px-3 py-2 border transition-colors ${autoModel === opt.auto ? 'bg-[#e60000]/5 border-[#e60000]/20' : 'border-slate-100 hover:border-slate-200'}`}>
@@ -167,11 +169,11 @@ export function BulkGenerateModal({
 
             {/* Confidence strategy */}
             <div className="mx-6 mb-5">
-              <p className="text-xs font-semibold text-slate-700 mb-2">Confidence Band Width</p>
+              <p className="text-xs font-semibold text-slate-700 mb-2">{t('bulk_confidence_band_width')}</p>
               <div className="space-y-2">
                 {([
-                  { auto: true,  label: 'Auto-configure confidence per cohort', desc: 'Sets band width based on each cohort\'s volatility — stable cohorts get tighter bands, uncertain ones get wider' },
-                  { auto: false, label: 'Use current settings for all cohorts', desc: null },
+                  { auto: true,  label: t('bulk_auto_configure_confidence_per_cohort'), desc: t('bulk_sets_band_width_based_on_each_cohort_s_volati') },
+                  { auto: false, label: t('bulk_use_current_settings_for_all_cohorts'), desc: null },
                 ] as const).map(opt => (
                   <label key={String(opt.auto)} className={`flex items-start gap-3 cursor-pointer rounded-lg px-3 py-2 border transition-colors ${autoConfidence === opt.auto ? 'bg-[#e60000]/5 border-[#e60000]/20' : 'border-slate-100 hover:border-slate-200'}`}>
                     <input
@@ -193,20 +195,21 @@ export function BulkGenerateModal({
             <div className="mx-6 mb-5 border border-slate-100 rounded-xl overflow-hidden">
               <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100">
                 <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                  Settings to be applied to all {missingCount} remaining
+                  
+                  {t('bulk_settings_to_be_applied_to_all')}{missingCount} remaining
                 </p>
               </div>
               <div className="divide-y divide-slate-50">
                 {[
-                  { label: 'Algorithm', value: autoModel ? 'Auto-selected per cohort' : currentModel },
-                  { label: 'Pre-Horizon z-score', value: autoConfidence ? 'Auto-configured per cohort' : `${params.preHorizonUncertainty}` },
-                  { label: 'Post-Horizon Band Multiplier', value: autoConfidence ? 'Auto-configured per cohort' : `${params.postHorizonExpansionRate}×` },
-                  { label: 'Confidence Horizon', value: autoConfidence ? 'Auto-configured per cohort' : `${params.confidenceHorizon} month${params.confidenceHorizon !== 1 ? 's' : ''}` },
-                  { label: 'Forecast Length', value: `${params.forecastLength} months` },
+                  { label: t('bulk_algorithm'), value: autoModel ? t('bulk_auto_selected_per_cohort') : currentModel },
+                  { label: t('bulk_pre_horizon_z_score'), value: autoConfidence ? t('bulk_auto_configured_per_cohort') : `${params.preHorizonUncertainty}` },
+                  { label: t('bulk_post_horizon_band_multiplier'), value: autoConfidence ? t('bulk_auto_configured_per_cohort') : `${params.postHorizonExpansionRate}×` },
+                  { label: t('bulk_confidence_horizon'), value: autoConfidence ? t('bulk_auto_configured_per_cohort') : t('bulk_month', { p0: params.confidenceHorizon, p1: params.confidenceHorizon !== 1 ? 's' : '' }) },
+                  { label: t('bulk_forecast_length'), value: `${params.forecastLength} months` },
                 ].map(row => (
                   <div key={row.label} className="flex items-center justify-between px-4 py-2 text-xs">
                     <span className="text-slate-500">{row.label}</span>
-                    <span className={`font-medium ${row.value.startsWith('Auto') ? 'text-[#e60000]' : 'text-slate-800'}`}>{row.value}</span>
+                    <span className={`font-medium ${row.value.startsWith(t('bulk_auto')) ? 'text-[#e60000]' : 'text-slate-800'}`}>{row.value}</span>
                   </div>
                 ))}
               </div>
@@ -215,25 +218,23 @@ export function BulkGenerateModal({
             {/* Run name + comment */}
             <div className="mx-6 mb-4 space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Run Name <span className="font-normal text-slate-400">(optional)</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('common_run_name')}<span className="font-normal text-slate-400">{t('bulk_optional')}</span>
                 </label>
                 <input
                   type="text"
                   value={runName}
                   onChange={e => setRunName(e.target.value)}
-                  placeholder={`Bulk Run — ${new Date().toLocaleDateString()}`}
+                  placeholder={t('bulk_bulk_run', { p0: new Date().toLocaleDateString() })}
                   className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-[#e60000]/20 focus:border-[#e60000]/40"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Comment <span className="font-normal text-slate-400">(optional)</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('common_comment')}<span className="font-normal text-slate-400">{t('bulk_optional')}</span>
                 </label>
                 <textarea
                   value={runComment}
                   onChange={e => setRunComment(e.target.value)}
-                  placeholder="e.g. Quarterly pricing review, updated confidence settings…"
+                  placeholder={t('common_e_g_quarterly_pricing_review_updated_confiden')}
                   rows={2}
                   className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#e60000]/20 focus:border-[#e60000]/40 resize-none"
                 />
@@ -243,10 +244,7 @@ export function BulkGenerateModal({
             {/* Note */}
             <div className="mx-6 mb-5 flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
               <AlertTriangle size={13} className="shrink-0 mt-0.5 text-amber-500" />
-              <span>
-                Combinations that already have a saved forecast will be skipped.
-                Combinations with fewer than 4 data points cannot be forecast and will also be skipped.
-              </span>
+              <span>{t('bulk_combinations_that_already_have_a_saved_foreca')}</span>
             </div>
 
             </div>{/* end scrollable body */}
@@ -256,9 +254,7 @@ export function BulkGenerateModal({
               <button
                 onClick={handleClose}
                 className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
-              >
-                Skip for now
-              </button>
+              >{t('bulk_skip_for_now')}</button>
               <button
                 onClick={handleConfirm}
                 className="px-5 py-2 bg-[#e60000] hover:bg-[#cc0000] text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
@@ -294,6 +290,7 @@ export function BulkGenerateModal({
 // ---------------------------------------------------------------------------
 
 function BulkGeneratingPanel({ progress }: { progress?: { current: number; total: number } }) {
+  const { t } = useTranslation();
   const pct = progress && progress.total > 0
     ? Math.round((progress.current / progress.total) * 100)
     : 0;
@@ -305,7 +302,7 @@ function BulkGeneratingPanel({ progress }: { progress?: { current: number; total
         <Loader2 size={26} className="text-[#e60000] animate-spin" />
       </div>
       <div className="w-full max-w-xs">
-        <h3 className="text-base font-semibold text-slate-900 mb-1">{showBar ? 'Generating forecasts…' : 'Preparing forecasts…'}</h3>
+        <h3 className="text-base font-semibold text-slate-900 mb-1">{showBar ? t('bulk_generating_forecasts') : t('bulk_preparing_forecasts')}</h3>
         {showBar ? (
           <>
             <p className="text-sm text-slate-500 mb-3">
@@ -320,9 +317,7 @@ function BulkGeneratingPanel({ progress }: { progress?: { current: number; total
             <p className="text-xs text-slate-400 mt-1.5">{pct}%</p>
           </>
         ) : (
-          <p className="text-sm text-slate-500">
-            Preparing cohorts — enumerating the combinations that have data…
-          </p>
+          <p className="text-sm text-slate-500">{t('bulk_preparing_cohorts_enumerating_the_combination')}</p>
         )}
       </div>
     </div>
@@ -338,6 +333,7 @@ function BulkCompletePanel({
   failed: number;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const allSucceeded = failed === 0;
 
   return (
@@ -348,7 +344,7 @@ function BulkCompletePanel({
         </div>
 
         <div>
-          <h3 className="text-lg font-bold text-slate-900 mb-3">Bulk Generation Complete</h3>
+          <h3 className="text-lg font-bold text-slate-900 mb-3">{t('bulk_bulk_generation_complete')}</h3>
 
           {/* Result rows */}
           <div className="space-y-2 text-sm text-left max-w-xs mx-auto">
@@ -365,7 +361,7 @@ function BulkCompletePanel({
                 <AlertTriangle size={15} className="text-amber-500 shrink-0" />
                 <span>
                   <strong className="text-amber-800">{failed}</strong>
-                  <span className="text-amber-700"> skipped — insufficient data points</span>
+                  <span className="text-amber-700"> {t('bulk_skipped_insufficient_data_points')}</span>
                 </span>
               </div>
             )}
@@ -377,9 +373,7 @@ function BulkCompletePanel({
         <button
           onClick={onClose}
           className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-sm font-semibold transition-colors"
-        >
-          Done
-        </button>
+        >{t('bulk_done')}</button>
       </div>
     </>
   );

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Download } from 'lucide-react';
 
 interface Cohort {
@@ -61,68 +62,69 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
   generationProgress,
   setGenerationProgress
 }) => {
+  const { t } = useTranslation();
   return (
     <div className="flex-1 overflow-auto p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-2xl font-bold text-slate-900">Overall Forecast View</h2>
+          <h2 className="text-2xl font-bold text-slate-900">{t('overall_overall_forecast_view')}</h2>
         </div>
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-slate-700">Segment:</label>
+              <label className="text-sm font-medium text-slate-700">{t('common_segment')}</label>
               <select 
                 value={overallSegmentFilter} 
                 onChange={(e) => setOverallSegmentFilter(e.target.value)}
                 className="appearance-none text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none"
               >
-                <option value="All">All Segments</option>
+                <option value="All">{t('common_all_segments')}</option>
                 {Array.from(new Set(allCohorts.map(c => c.segment))).map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-slate-700">Product:</label>
+              <label className="text-sm font-medium text-slate-700">{t('common_product')}</label>
               <select 
                 value={overallProductFilter} 
                 onChange={(e) => setOverallProductFilter(e.target.value)}
                 className="appearance-none text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none"
               >
-                <option value="All">All Products</option>
+                <option value="All">{t('common_all_products')}</option>
                 {Array.from(new Set(allCohorts.map(c => c.product))).map(p => <option key={p} value={p}>{p}</option>)}
               </select>
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-slate-700">Channel:</label>
+              <label className="text-sm font-medium text-slate-700">{t('overall_channel')}</label>
               <select 
                 value={overallChannelFilter} 
                 onChange={(e) => setOverallChannelFilter(e.target.value)}
                 className="appearance-none text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none"
               >
-                <option value="All">All Channels</option>
+                <option value="All">{t('common_all_channels')}</option>
                 {Array.from(new Set(allCohorts.map(c => c.channel))).map(ch => <option key={ch as string} value={ch as string}>{ch as string}</option>)}
               </select>
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-slate-700">Forecast Type:</label>
+              <label className="text-sm font-medium text-slate-700">{t('common_forecast_type')}</label>
               <select 
                 value={overallTypeFilter} 
                 onChange={(e) => setOverallTypeFilter(e.target.value)}
                 className="appearance-none text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none"
               >
-                <option value="All">All Types</option>
+                <option value="All">{t('overall_all_types')}</option>
                 {Array.from(new Set(allCohorts.map(c => c.forecastType))).map(t => <option key={t as string} value={t as string}>{t as string}</option>)}
               </select>
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-slate-700">Status:</label>
+              <label className="text-sm font-medium text-slate-700">{t('overall_status')}</label>
               <select 
                 value={overallStatusFilter} 
                 onChange={(e) => setOverallStatusFilter(e.target.value)}
                 className="appearance-none text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none"
               >
-                <option value="All">All Statuses</option>
-                <option value="forecasted">Forecasted</option>
-                <option value="missing">Missing Forecast</option>
+                <option value="All">{t('overall_all_statuses')}</option>
+                <option value="forecasted">{t('overall_forecasted')}</option>
+                <option value="missing">{t('overall_missing_forecast')}</option>
               </select>
             </div>
           </div>
@@ -131,16 +133,13 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
               onClick={exportToExcel}
               className="px-4 py-2 text-sm font-medium bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors shadow-sm flex items-center gap-2"
             >
-              <Download size={18} /> Export to Excel
-            </button>
+              <Download size={18} />{t('common_export_to_excel')}</button>
             <button 
               onClick={() => {
                 setSavedForecasts({});
               }}
               className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
-            >
-              Clear All
-            </button>
+            >{t('overall_clear_all')}</button>
             <button 
               onClick={async () => {
                 // Skip genuinely-empty combinations (tariff is collinear with
@@ -179,7 +178,7 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
               disabled={isGeneratingMissing}
               className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors shadow-sm ${isGeneratingMissing ? 'bg-slate-400 cursor-not-allowed' : 'bg-[#e60000] hover:bg-[#cc0000]'}`}
             >
-              {isGeneratingMissing ? 'Generating...' : 'Generate Missing'}
+              {isGeneratingMissing ? t('overall_generating') : t('overall_generate_missing')}
             </button>
           </div>
         </div>
@@ -187,7 +186,7 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
         {isGeneratingMissing && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
             <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium text-slate-700">Generating Forecasts...</span>
+              <span className="text-sm font-medium text-slate-700">{t('overall_generating_forecasts')}</span>
               <span className="text-sm font-bold text-slate-900">{generationProgress.current} / {generationProgress.total} ({Math.round((generationProgress.current / generationProgress.total) * 100)}%)</span>
             </div>
             <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
@@ -203,13 +202,13 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-500">
               <tr>
-                <th className="px-6 py-4 font-semibold">Customer Segment</th>
-                <th className="px-6 py-4 font-semibold">Product</th>
-                <th className="px-6 py-4 font-semibold">Channel</th>
-                <th className="px-6 py-4 font-semibold">Forecast Type</th>
+                <th className="px-6 py-4 font-semibold">{t('common_customer_segment')}</th>
+                <th className="px-6 py-4 font-semibold">{t('common_product')}</th>
+                <th className="px-6 py-4 font-semibold">{t('common_channel')}</th>
+                <th className="px-6 py-4 font-semibold">{t('overall_forecast_type')}</th>
                 <th className="px-6 py-4 font-semibold">IBRO Scenario</th>
-                <th className="px-6 py-4 font-semibold">Status</th>
-                <th className="px-6 py-4 font-semibold text-right">Actions</th>
+                <th className="px-6 py-4 font-semibold">{t('overall_status')}</th>
+                <th className="px-6 py-4 font-semibold text-right">{t('overall_actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -231,14 +230,10 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
                   <td className="px-6 py-4">
                     {cohort.hasForecast ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-                        Forecasted
-                      </span>
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>{t('overall_forecasted')}</span>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                        <div className="w-1.5 h-1.5 rounded-full bg-amber-500"></div>
-                        Missing
-                      </span>
+                        <div className="w-1.5 h-1.5 rounded-full bg-amber-500"></div>{t('overall_missing')}</span>
                     )}
                   </td>
                   <td className="px-6 py-4 text-right">
@@ -246,17 +241,13 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
                       <button 
                         onClick={() => setGeneratingCohort(cohort)}
                         className="text-sm font-medium text-[#e60000] hover:text-[#cc0000] transition-colors"
-                      >
-                        Generate Forecast
-                      </button>
+                      >{t('common_generate_forecast')}</button>
                     ) : (
                       <div className="flex justify-end gap-3">
                         <button 
                           onClick={() => setViewingCohort(cohort)}
                           className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
-                        >
-                          View
-                        </button>
+                        >{t('overall_view')}</button>
                         <button 
                           onClick={() => {
                             const newForecasts = { ...savedForecasts };
@@ -264,9 +255,7 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
                             setSavedForecasts(newForecasts);
                           }}
                           className="text-sm font-medium text-slate-500 hover:text-slate-700 transition-colors"
-                        >
-                          Clear
-                        </button>
+                        >{t('overall_clear')}</button>
                       </div>
                     )}
                   </td>
@@ -274,9 +263,7 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
               ))}
               {allCohorts.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
-                    No cohorts found. Please upload data and map columns in the Standard Forecast or What-If Analysis tabs.
-                  </td>
+                  <td colSpan={6} className="px-6 py-8 text-center text-slate-500">{t('overall_no_cohorts_found_please_upload_data_and_map_c')}</td>
                 </tr>
               )}
             </tbody>

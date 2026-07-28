@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight, X } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -51,6 +52,7 @@ export function HierarchicalDropdown({
   className = '',
   variant = 'dark',
 }: HierarchicalDropdownProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   // Track which L1 nodes are expanded in the panel
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -201,7 +203,7 @@ export function HierarchicalDropdown({
           {value.l1 && (
             <span
               role="button"
-              aria-label="Clear selection"
+              aria-label={t('hierdrop_clear_selection')}
               className="ml-0.5 text-slate-400 hover:text-white shrink-0"
               onMouseDown={e => { e.stopPropagation(); onChange({ l1: null, l2: null }); }}
             >
@@ -227,7 +229,7 @@ export function HierarchicalDropdown({
                 ${focusIdx === 0 ? 'bg-slate-100' : ''}
                 ${!value.l1 ? 'bg-slate-800 text-white' : 'text-slate-700 hover:bg-slate-50'}`}
             >
-              <span className="font-semibold">All</span>
+              <span className="font-semibold">{t('hierdrop_all')}</span>
             </button>
 
             {/* L1 / L2 nodes */}
@@ -253,7 +255,7 @@ export function HierarchicalDropdown({
                     {hasChildren ? (
                       <span
                         role="button"
-                        aria-label={isL1Expanded ? 'Collapse' : 'Expand'}
+                        aria-label={isL1Expanded ? t('hierdrop_collapse') : t('hierdrop_expand')}
                         className="shrink-0 p-0.5 rounded hover:bg-slate-200/60"
                         onMouseDown={e => toggleExpand(l1, e)}
                       >

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { UploadCloud, X, AlertTriangle, FileSpreadsheet, ChevronDown } from 'lucide-react'; // ChevronDown used in Segment select
 import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Line, Brush } from 'recharts';
 import type { ParsedSession } from '../workers/scenarioParser.worker';
@@ -16,6 +17,7 @@ interface ScenarioCompareTabProps {
 }
 
 export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSegments = [], globalProductTree = new Map(), globalChannelTree = new Map(), globalTariffTree = new Map() }) => {
+  const { t } = useTranslation();
   const [parsedSessions, setParsedSessions] = useState<ParsedSession[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [warningMsg, setWarningMsg] = useState<string | null>(null);
@@ -234,12 +236,12 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
       <div className="max-w-[1400px] mx-auto w-full flex flex-col h-full">
         <div className="flex items-center justify-between mb-4 shrink-0">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">Scenario Compare</h2>
-            <p className="text-slate-500 text-sm mt-1">Upload multiple session files to compare their adjusted Base & ARPU trajectories.</p>
+            <h2 className="text-2xl font-bold text-slate-900">{t('compare_scenario_compare')}</h2>
+            <p className="text-slate-500 text-sm mt-1">{t('compare_upload_multiple_session_files_to_compare_thei')}</p>
           </div>
           <label className="px-4 py-2 bg-[#e60000] hover:bg-[#cc0000] text-white font-medium text-sm rounded-lg shadow-sm transition-colors cursor-pointer flex items-center gap-2">
             <UploadCloud size={18} />
-            {isLoading ? 'Processing...' : 'Load Session File (Max 4)'}
+            {isLoading ? t('compare_processing') : t('compare_load_session_file_max_4')}
             <input type="file" multiple accept=".xlsx" className="hidden" onChange={handleFiles} disabled={isLoading || parsedSessions.length >= 4} />
           </label>
         </div>
@@ -254,8 +256,8 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
         {parsedSessions.length === 0 && !isLoading && (
           <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-xl bg-white/50">
             <FileSpreadsheet size={48} className="text-slate-300 mb-4" />
-            <p className="text-slate-500 font-medium">No session files loaded</p>
-            <p className="text-slate-400 text-sm max-w-sm text-center mt-2">Export your adjusted forecasts via actuals review, then upload them here to compare.</p>
+            <p className="text-slate-500 font-medium">{t('compare_no_session_files_loaded')}</p>
+            <p className="text-slate-400 text-sm max-w-sm text-center mt-2">{t('compare_export_your_adjusted_forecasts_via_actuals_re')}</p>
           </div>
         )}
 
@@ -267,7 +269,7 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
                   <label className="text-xs font-semibold text-slate-500 uppercase flex justify-between">
                     Segment
                     {viewSegment !== 'All' && (
-                      <button onClick={() => setViewSegment('All')} className="text-[#e60000] hover:underline text-[10px]">Clear</button>
+                      <button onClick={() => setViewSegment('All')} className="text-[#e60000] hover:underline text-[10px]">{t('compare_clear')}</button>
                     )}
                   </label>
                   <div className="relative">
@@ -276,21 +278,21 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
                       onChange={e => setViewSegment(e.target.value)}
                       className="w-full appearance-none bg-white border border-slate-200 text-sm pl-3 pr-8 py-1.5 rounded-lg text-slate-700 outline-none focus:border-[#e60000] transition-colors"
                     >
-                      <option value="All">All Segments</option>
+                      <option value="All">{t('common_all_segments')}</option>
                       {dims.segments.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                     <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   </div>
                 </div>
                 <HierarchicalDropdown
-                  label="Product"
+                  label={t('common_product')}
                   tree={dims.productTree}
                   value={viewProduct}
                   onChange={setViewProduct}
                   variant="light"
                 />
                 <HierarchicalDropdown
-                  label="Channel"
+                  label={t('common_channel')}
                   tree={dims.channelTree}
                   value={viewChannel}
                   onChange={setViewChannel}
@@ -298,7 +300,7 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
                 />
                 {dims.tariffTree.size > 0 && (
                   <HierarchicalDropdown
-                    label="Tariff"
+                    label={t('common_tariff')}
                     tree={dims.tariffTree}
                     value={viewTariff}
                     onChange={setViewTariff}
@@ -309,7 +311,7 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
                 <div className="ml-auto flex flex-col gap-2 items-end">
                   <div className="flex items-center gap-2">
                     <input type="checkbox" id="sc_bl" checked={showBaseline} onChange={e => setShowBaseline(e.target.checked)} className="rounded border-slate-300 text-[#e60000] focus:ring-[#e60000]" />
-                    <label htmlFor="sc_bl" className="text-sm font-medium text-slate-700 select-none cursor-pointer">Show Baseline (Dotted)</label>
+                    <label htmlFor="sc_bl" className="text-sm font-medium text-slate-700 select-none cursor-pointer">{t('compare_show_baseline_dotted')}</label>
                   </div>
                 </div>
               </div>
@@ -317,28 +319,22 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
               {parsedSessions.every(s => s.marketEvents.length === 0) && (
                 <div className="flex items-center gap-4 bg-amber-50 border border-amber-200 p-2 rounded-lg mt-2">
                   <AlertTriangle className="text-amber-600" size={16} />
-                  <span className="text-sm text-amber-800 font-medium">No market events found in loaded sessions.</span>
+                  <span className="text-sm text-amber-800 font-medium">{t('compare_no_market_events_found_in_loaded_sessions')}</span>
                   
                   <div className="flex items-center gap-3 ml-auto">
-                    <span className="text-xs font-semibold text-amber-700 uppercase">Populate Filters From:</span>
+                    <span className="text-xs font-semibold text-amber-700 uppercase">{t('compare_populate_filters_from')}</span>
                     <label className="flex items-center gap-1.5 text-xs text-amber-900 cursor-pointer">
-                      <input type="radio" value="baseline" checked={dimSource === 'baseline' || parsedSessions.every(s => s.marketEvents.length === 0)} onChange={() => setDimSource('baseline')} className="accent-amber-600 w-3.5 h-3.5" />
-                      Baseline Forecasts
-                    </label>
+                      <input type="radio" value="baseline" checked={dimSource === 'baseline' || parsedSessions.every(s => s.marketEvents.length === 0)} onChange={() => setDimSource('baseline')} className="accent-amber-600 w-3.5 h-3.5" />{t('compare_baseline_forecasts')}</label>
                   </div>
                 </div>
               )}
               {parsedSessions.some(s => s.marketEvents.length > 0) && (
                 <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
-                  <span className="text-xs font-semibold text-slate-500 uppercase">Populate Filters From:</span>
+                  <span className="text-xs font-semibold text-slate-500 uppercase">{t('compare_populate_filters_from')}</span>
                   <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
-                    <input type="radio" value="events" checked={dimSource === 'events'} onChange={() => setDimSource('events')} className="accent-[#e60000] w-3.5 h-3.5" />
-                    Market Events Only
-                  </label>
+                    <input type="radio" value="events" checked={dimSource === 'events'} onChange={() => setDimSource('events')} className="accent-[#e60000] w-3.5 h-3.5" />{t('compare_market_events_only')}</label>
                   <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
-                    <input type="radio" value="baseline" checked={dimSource === 'baseline'} onChange={() => setDimSource('baseline')} className="accent-[#e60000] w-3.5 h-3.5" />
-                    Baseline Forecasts (All)
-                  </label>
+                    <input type="radio" value="baseline" checked={dimSource === 'baseline'} onChange={() => setDimSource('baseline')} className="accent-[#e60000] w-3.5 h-3.5" />{t('compare_baseline_forecasts_all')}</label>
                 </div>
               )}
             </div>
@@ -363,15 +359,11 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
                 <button
                   onClick={() => setChartView('volume')}
                   className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors ${chartView === 'volume' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                  Volumes
-                </button>
+                >{t('compare_volumes')}</button>
                 <button
                   onClick={() => setChartView('value')}
                   className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-colors ${chartView === 'value' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                  Value
-                </button>
+                >{t('common_value')}</button>
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -414,7 +406,7 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
             </div>
 
             <div className="flex-1 bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-0">
-              <h3 className="font-semibold text-slate-800 mb-4 shrink-0">{chartView === 'volume' ? 'Subscriber Volumes' : 'ARPU'}</h3>
+              <h3 className="font-semibold text-slate-800 mb-4 shrink-0">{chartView === 'volume' ? t('compare_subscriber_volumes') : 'ARPU'}</h3>
               {chartData.length > 0 ? (
                 <div className="flex-1 min-h-0">
                   <ResponsiveContainer width="100%" height="100%">
@@ -496,7 +488,7 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
                 </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
-                  {parsedSessions.some(s => activeScenarios[s.fileName]) ? 'No data for selected filters.' : 'Check at least one scenario below to display data.'}
+                  {parsedSessions.some(s => activeScenarios[s.fileName]) ? t('compare_no_data_for_selected_filters') : t('compare_check_at_least_one_scenario_below_to_display')}
                 </div>
               )}
             </div>
@@ -521,13 +513,13 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
                         onChange={e => setActiveScenarios(prev => ({...prev, [s.fileName]: e.target.checked}))}
                         className="rounded border-slate-300 text-[#e60000] focus:ring-[#e60000] cursor-pointer w-3.5 h-3.5"
                       />
-                      <label htmlFor={`show_${s.fileName}`} className="text-[10px] text-slate-500 select-none cursor-pointer">Plot on chart</label>
+                      <label htmlFor={`show_${s.fileName}`} className="text-[10px] text-slate-500 select-none cursor-pointer">{t('compare_plot_on_chart')}</label>
                     </div>
                   </div>
                   <button 
                     onClick={() => removeSession(s.fileName)}
                     className="absolute right-2 top-2 p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="Remove session"
+                    title={t('compare_remove_session')}
                   >
                     <X size={14} />
                   </button>

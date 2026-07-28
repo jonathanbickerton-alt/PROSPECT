@@ -1510,7 +1510,7 @@ export function computeWhatIfData(
     !wiBaseVal ||
     !wiRetentionVal
   ) {
-    return { error: 'Please select Date, Metric, and Value columns, and map all identifiers.' };
+    return { error: 'error_please_select_date_metric_and_value_columns_a' };
   }
 
   // Filter events for this segment/product/channel combo
@@ -1630,7 +1630,7 @@ export function computeWhatIfData(
 
   if (aggregatedData.length < 4) {
     return {
-      error: 'Not enough valid data points to generate a forecast (need at least 4 months of data).',
+      error: 'error_not_enough_valid_data_points_to_generate_a_fo',
     };
   }
 
@@ -1993,7 +1993,9 @@ export function computeWhatIfData(
 
 export interface ModelRecommendation {
   recommendedModel: ForecastModel;
+  /** i18n key — resolve with t(reason, reasonParams) in the component. */
   reason: string;
+  reasonParams?: Record<string, unknown>;
   confidence: 'Low' | 'Medium' | 'High';
   metrics: {
     historyLength: number;
@@ -2026,13 +2028,13 @@ export function analyzeAndRecommendModel(
   if (len < 4) {
     return {
       recommendedModel: 'Simple Exponential Smoothing',
-      reason: 'Extremely limited history (fewer than 4 observations) is available. A simple, level-only model is recommended to prevent over-fitting.',
+      reason: 'advisor_extremely_limited_history_fewer_than_4_observ',
       confidence: 'Low',
       metrics: {
         historyLength: len,
-        trendStrengthLabel: 'No pattern detected (insufficient data)',
-        trendStabilityLabel: 'Not stable (insufficient data)',
-        seasonalityLabel: 'No pattern detected (insufficient data)',
+        trendStrengthLabel: 'advisor_no_pattern_detected_insufficient_data',
+        trendStabilityLabel: 'advisor_not_stable_insufficient_data',
+        seasonalityLabel: 'advisor_no_pattern_detected_insufficient_data',
         volatilityLabel: 'N/A',
         bestModelByFit: 'Simple Exponential Smoothing',
         fitMapeValues: {
@@ -2165,35 +2167,36 @@ export function analyzeAndRecommendModel(
   // 5. Apply primary selection logic and construct recommendation
   let recommended: ForecastModel = 'Simple Exponential Smoothing';
   let reason = '';
+  let reasonParams: Record<string, unknown> | undefined;
   let confidence: 'Low' | 'Medium' | 'High' = 'High';
 
   if (len < 6) {
     recommended = 'Simple Exponential Smoothing';
-    reason = `Short history of ${len} months detected. A simple level-only model is recommended to prevent over-fitting.`;
+    reason = 'advisor_short_history_of_months_detected_a_simple_lev'; reasonParams = { len };
     confidence = 'Low';
   } else if (seasonalityDetected && len >= 12) {
     recommended = len >= 24 ? 'Holt-Winters' : 'Holt Linear';
     if (len >= 24) {
-      reason = 'Recurring monthly peaks and seasonal cycles detected over a solid multi-year history. Holt-Winters triple exponential smoothing is ideal here.';
+      reason = 'advisor_recurring_monthly_peaks_and_seasonal_cycles_d';
       confidence = 'High';
     } else {
-      reason = 'Seasonal monthly peaks identified, but history is too brief for a full 24-month Holt-Winters cycle. Holt Linear is recommended as a robust alternative.';
+      reason = 'advisor_seasonal_monthly_peaks_identified_but_history';
       confidence = 'Medium';
     }
   } else if (clearTrend) {
     if (trendIsStable && hlOpt.mse <= dtOpt.mse) {
       recommended = 'Holt Linear';
-      reason = `Clear growth pattern detected with a stable, consistent direction over the last ${len} months.`;
+      reason = 'advisor_clear_growth_pattern_detected_with_a_stable_c'; reasonParams = { len };
       confidence = 'High';
     } else {
       recommended = 'Damped Trend';
-      reason = `Consistent growth pattern is visible, but exhibits standard fluctuations or potential flattening. Damped Trend will safely taper off over-projections.`;
+      reason = 'advisor_consistent_growth_pattern_is_visible_but_exhi';
       confidence = 'Medium';
     }
   } else {
     // Stable / level series
     recommended = 'Simple Exponential Smoothing';
-    reason = 'Flat or highly stable series with no strong pattern detected over the available history.';
+    reason = 'advisor_flat_or_highly_stable_series_with_no_strong_p';
     confidence = 'High';
   }
 
@@ -2208,21 +2211,22 @@ export function analyzeAndRecommendModel(
       const isHWAllowed = bestFitModel !== 'Holt-Winters' || len >= 24;
       if (isHWAllowed) {
         recommended = bestFitModel;
-        reason = `Refined by historical backtesting: "${bestFitModel}" achieved the lowest fitted error of ${minMape.toFixed(1)}% (improving upon original heuristic error of ${currentMape.toFixed(1)}%).`;
+        reason = 'advisor_refined_by_historical_backtesting_achieved_th'; reasonParams = { model: bestFitModel, best: minMape.toFixed(1), current: currentMape.toFixed(1) };
         confidence = 'High';
       }
     }
   }
 
   // Labels for metrics panel
-  const trendStrengthLabel = trendStrength > 0.65 ? 'Consistent' : trendStrength > 0.3 ? 'Moderate' : 'No clear trend';
-  const trendStabilityLabel = trendIsStable ? 'Stable direction' : 'Expected to flatten or fluctuate';
+  const trendStrengthLabel = trendStrength > 0.65 ? 'advisor_consistent' : trendStrength > 0.3 ? 'advisor_moderate' : 'advisor_no_clear_trend';
+  const trendStabilityLabel = trendIsStable ? 'advisor_stable_direction' : 'advisor_expected_to_flatten';
   const seasonalityLabel = seasonalityDetected ? 'Recurring monthly peaks' : 'No strong pattern detected';
-  const volatilityLabel = relVolatility > 0.25 ? 'High volatility' : relVolatility > 0.1 ? 'Moderate volatility' : 'Low volatility';
+  const volatilityLabel = relVolatility > 0.25 ? 'advisor_high_volatility' : relVolatility > 0.1 ? 'advisor_moderate_volatility' : 'advisor_low_volatility';
 
   return {
     recommendedModel: recommended,
     reason,
+    reasonParams,
     confidence,
     metrics: {
       historyLength: len,
@@ -2267,7 +2271,7 @@ export function analyzeAndRecommendConfidence(
       preHorizonZ: 1.96,
       postHorizonMultiplier: 2.0,
       confidenceHorizon: 2,
-      reason: 'This segment has limited history and higher month-to-month movement, so a wider forecast range is recommended.',
+      reason: 'advisor_this_segment_has_limited_history_and_higher_m',
       strength: 'Low',
     };
   }
@@ -2343,43 +2347,43 @@ export function analyzeAndRecommendConfidence(
 
   if (len < 6) {
     profile = 'Cautious';
-    reason = 'This segment has limited history and higher month-to-month movement, so a wider forecast range is recommended.';
+    reason = 'advisor_this_segment_has_limited_history_and_higher_m';
     strength = 'High';
   } else if (len >= 6 && len < 12) {
     if (isLowVolatility) {
       profile = 'Balanced';
-      reason = 'This segment has some usable history but moderate duration, and exhibits stable volatility. A balanced forecast range is recommended.';
+      reason = 'advisor_this_segment_has_some_usable_history_but_mode';
       strength = 'Medium';
     } else {
       profile = 'Cautious';
-      reason = 'This segment has limited history and higher month-to-month movement, so a wider forecast range is recommended.';
+      reason = 'advisor_this_segment_has_limited_history_and_higher_m';
       strength = 'High';
     }
   } else if (isHighVolatility) {
     profile = 'Cautious';
-    reason = 'This segment has limited history and higher month-to-month movement, so a wider forecast range is recommended.';
+    reason = 'advisor_this_segment_has_limited_history_and_higher_m';
     strength = 'High';
   } else if (isLowVolume) {
     if (isHighVolatility || hasZeroOrNegative) {
       profile = 'Cautious';
-      reason = 'This segment has limited history and higher month-to-month movement, so a wider forecast range is recommended.';
+      reason = 'advisor_this_segment_has_limited_history_and_higher_m';
       strength = 'Medium';
     } else {
       profile = 'Balanced';
-      reason = 'This segment has enough history, but some month-to-month movement is present. A balanced forecast range is recommended.';
+      reason = 'advisor_this_segment_has_enough_history_but_some_mont';
       strength = 'Medium';
     }
   } else if (isHighError) {
     profile = 'Cautious';
-    reason = 'Previous forecasts were less reliable for this segment, so the optimistic and pessimistic range should be wider.';
+    reason = 'advisor_previous_forecasts_were_less_reliable_for_thi';
     strength = 'High';
   } else if (isLowError && isLowVolatility && len >= 12 && !hasZeroOrNegative) {
     profile = 'Stable';
-    reason = 'This segment has a stable historical pattern and previous forecasts were close to actuals, so a narrower forecast range is suitable.';
+    reason = 'advisor_this_segment_has_a_stable_historical_pattern';
     strength = 'High';
   } else {
     profile = 'Balanced';
-    reason = 'This segment has enough history, but some month-to-month movement is present. A balanced forecast range is recommended.';
+    reason = 'advisor_this_segment_has_enough_history_but_some_mont';
     strength = 'Medium';
   }
 

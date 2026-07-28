@@ -38,6 +38,7 @@ function ExportFilenameModal({
   onConfirm: (name: string) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const [value, setValue] = React.useState(defaultName);
 
   // Re-sync default when modal is re-opened (timestamp changes each time)
@@ -62,17 +63,15 @@ function ExportFilenameModal({
               <FileSpreadsheet size={20} className="text-emerald-600" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900">Export Session</h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Full save-point — 7 sheets including actuals, forecasts, events and audit log
-              </p>
+              <h2 className="text-base font-bold text-slate-900">{t('common_export_session')}</h2>
+              <p className="text-xs text-slate-500 mt-0.5">{t('app_full_save_point_7_sheets_including_actuals_fo')}</p>
             </div>
           </div>
         </div>
 
         {/* Filename input */}
         <div className="mx-6 mb-5">
-          <label className="block text-xs font-semibold text-slate-700 mb-1.5">File Name</label>
+          <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('app_file_name')}</label>
           <input
             type="text"
             value={value}
@@ -81,21 +80,17 @@ function ExportFilenameModal({
             autoFocus
             className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/40"
           />
-          <p className="text-[10px] text-slate-400 mt-1.5">Characters \\ / : * ? " &lt; &gt; | will be stripped automatically. The .xlsx extension is added automatically.</p>
+          <p className="text-[10px] text-slate-400 mt-1.5">{t('app_characters_andlt_andgt_will_be_stripped_autom')}</p>
         </div>
 
         {/* Actions */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 bg-slate-50 border-t border-slate-100">
-          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors">
-            Cancel
-          </button>
+          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors">{t('common_cancel')}</button>
           <button
             onClick={handleConfirm}
             className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
           >
-            <FileSpreadsheet size={14} />
-            Download
-          </button>
+            <FileSpreadsheet size={14} />{t('app_download')}</button>
         </div>
       </div>
     </div>
@@ -4333,7 +4328,7 @@ export default function App() {
       {/* Export filename modal — triggered by any Export button in the app */}
       <ExportFilenameModal
         isOpen={showExportModal}
-        defaultName={`PROSPECT Forecast Save — ${format(new Date(), 'dd MMM yyyy HH:mm')}`}
+        defaultName={t('app_prospect_forecast_save', { p0: format(new Date(), 'dd MMM yyyy HH:mm') })}
         onConfirm={fileName => { exportSession(fileName); setShowExportModal(false); }}
         onClose={() => setShowExportModal(false)}
       />

@@ -37,3 +37,6 @@ coverage/
 # nginx (see Dockerfile/nginx.conf) and must not ship a Node server. Run it
 # locally with `npm run dev:express`.
 /server.ts
+
+# Regenerable scanner output — the scanner itself is committed at scripts/scan-i18n.ts
+/scan_i18n_report.json

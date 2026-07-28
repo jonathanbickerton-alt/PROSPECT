@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { format, isValid, parseISO } from 'date-fns';
 import { Trash2, ChevronDown, AlertTriangle } from 'lucide-react';
 
@@ -38,6 +39,7 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
   data, wiDateCol, wiSegmentCol, wiProductCol, wiChannelCol,
   onConfirm, onCancel,
 }) => {
+  const { t } = useTranslation();
   // ── Derive dimension lists + sorted month list from data ─────────────────
   const { months, segments, products, channels } = useMemo(() => {
     const mSet = new Set<string>();
@@ -133,8 +135,8 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
             <Trash2 size={18} className="text-[#e60000]" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-slate-900">Remove Actuals</h2>
-            <p className="text-xs text-slate-500">Select the period and cohorts to remove from the dataset</p>
+            <h2 className="text-base font-bold text-slate-900">{t('common_remove_actuals')}</h2>
+            <p className="text-xs text-slate-500">{t('removeactuals_select_the_period_and_cohorts_to_remove_from')}</p>
           </div>
         </div>
 
@@ -143,10 +145,10 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
 
           {/* Period */}
           <section>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Period</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">{t('removeactuals_period')}</p>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500 shrink-0">From</span>
+                <span className="text-xs text-slate-500 shrink-0">{t('removeactuals_from')}</span>
                 <div className="relative">
                   <select
                     value={startMonth}
@@ -159,7 +161,7 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500 shrink-0">To</span>
+                <span className="text-xs text-slate-500 shrink-0">{t('removeactuals_to')}</span>
                 <div className="relative">
                   <select
                     value={endMonth}
@@ -176,15 +178,14 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
 
           {/* Dimension filters */}
           <section>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">
-              Dimension Filters <span className="normal-case font-normal text-slate-400">(optional — leave All to match every cohort)</span>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">{t('removeactuals_dimension_filters')}<span className="normal-case font-normal text-slate-400">{t('removeactuals_optional_leave_all_to_match_every_cohort')}</span>
             </p>
             <div className="flex flex-wrap gap-3">
               <div className="flex items-center gap-1.5">
-                <span className="text-xs text-slate-500">Segment</span>
+                <span className="text-xs text-slate-500">{t('common_segment')}</span>
                 <div className="relative">
                   <select value={segFilter} onChange={e => setSegFilter(e.target.value)} className={selectCls}>
-                    <option value="All">All</option>
+                    <option value="All">{t('removeactuals_all')}</option>
                     {segments.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                   <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -192,10 +193,10 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
               </div>
               {showProducts && (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-slate-500">Product</span>
+                  <span className="text-xs text-slate-500">{t('common_product')}</span>
                   <div className="relative">
                     <select value={prodFilter} onChange={e => setProdFilter(e.target.value)} className={selectCls}>
-                      <option value="All">All</option>
+                      <option value="All">{t('removeactuals_all')}</option>
                       {products.map(p => <option key={p} value={p}>{p}</option>)}
                     </select>
                     <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -204,10 +205,10 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
               )}
               {showChannels && (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-slate-500">Channel</span>
+                  <span className="text-xs text-slate-500">{t('common_channel')}</span>
                   <div className="relative">
                     <select value={chanFilter} onChange={e => setChanFilter(e.target.value)} className={selectCls}>
-                      <option value="All">All</option>
+                      <option value="All">{t('removeactuals_all')}</option>
                       {channels.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                     <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -224,8 +225,8 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
               : 'bg-red-50 text-[#e60000]'
           }`}>
             {removedCount === 0
-              ? 'No rows match the current selection'
-              : `${removedCount.toLocaleString()} row${removedCount !== 1 ? 's' : ''} will be removed`}
+              ? t('removeactuals_no_rows_match_the_current_selection')
+              : t('removeactuals_row_will_be_removed', { p0: removedCount.toLocaleString(), p1: removedCount !== 1 ? 's' : '' })}
           </div>
 
           {/* All-data warning */}
@@ -233,8 +234,9 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
             <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
               <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5" />
               <p className="text-xs text-amber-800 leading-relaxed">
-                <span className="font-bold">This will remove all actuals data.</span>{' '}
-                The Actuals Review tab will show no comparisons until new actuals are imported.
+                <span className="font-bold">{t('removeactuals_this_will_remove_all_actuals_data')}</span>{' '}
+                
+                {t('removeactuals_the_actuals_review_tab_will_show_no_compariso')}
               </p>
             </div>
           )}
@@ -243,7 +245,7 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
           {previewShown.length > 0 && (
             <section>
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">
-                Preview
+                {t('removeactuals_preview')}
                 {previewOverflow > 0 && (
                   <span className="ml-1 normal-case font-normal text-slate-400">
                     (showing 20 of {previewRows.length.toLocaleString()})
@@ -254,10 +256,10 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
                 <table className="w-full text-xs">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
-                      <th className="text-left px-3 py-2 font-semibold text-slate-500">Month</th>
-                      {segments.length > 0 && <th className="text-left px-3 py-2 font-semibold text-slate-500">Segment</th>}
-                      {showProducts && <th className="text-left px-3 py-2 font-semibold text-slate-500">Product</th>}
-                      {showChannels && <th className="text-left px-3 py-2 font-semibold text-slate-500">Channel</th>}
+                      <th className="text-left px-3 py-2 font-semibold text-slate-500">{t('common_month')}</th>
+                      {segments.length > 0 && <th className="text-left px-3 py-2 font-semibold text-slate-500">{t('common_segment')}</th>}
+                      {showProducts && <th className="text-left px-3 py-2 font-semibold text-slate-500">{t('common_product')}</th>}
+                      {showChannels && <th className="text-left px-3 py-2 font-semibold text-slate-500">{t('common_channel')}</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -273,7 +275,7 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
                 </table>
                 {previewOverflow > 0 && (
                   <div className="bg-slate-50 border-t border-slate-200 px-3 py-2 text-xs text-slate-400">
-                    +{previewOverflow.toLocaleString()} more cohort-month combinations not shown
+                    +{previewOverflow.toLocaleString()} {t('removeactuals_more_cohort_month_combinations_not_shown')}
                   </div>
                 )}
               </div>
@@ -286,17 +288,13 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
           <button
             onClick={onCancel}
             className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-800 transition-colors"
-          >
-            Cancel
-          </button>
+          >{t('common_cancel')}</button>
           <button
             onClick={handleConfirm}
             disabled={removedCount === 0}
             className="px-4 py-2 text-sm font-bold text-white bg-[#e60000] rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            <Trash2 size={14} />
-            Remove Actuals
-          </button>
+            <Trash2 size={14} />{t('common_remove_actuals')}</button>
         </div>
       </div>
     </div>

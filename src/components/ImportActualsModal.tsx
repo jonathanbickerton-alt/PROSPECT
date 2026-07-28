@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Upload, X, CheckSquare, Square, Calendar } from 'lucide-react';
 
 interface MonthEntry {
@@ -14,6 +15,7 @@ interface ImportActualsModalProps {
 }
 
 export const ImportActualsModal: React.FC<ImportActualsModalProps> = ({ months, onConfirm, onCancel }) => {
+  const { t } = useTranslation();
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(months.filter(m => !m.alreadyLoaded).map(m => m.label))
   );
@@ -46,8 +48,8 @@ export const ImportActualsModal: React.FC<ImportActualsModalProps> = ({ months, 
               <Upload size={16} className="text-emerald-600" />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-slate-900">Import Actuals</h2>
-              <p className="text-xs text-slate-500">Select which months to append to the current dataset</p>
+              <h2 className="text-base font-semibold text-slate-900">{t('common_import_actuals')}</h2>
+              <p className="text-xs text-slate-500">{t('importactuals_select_which_months_to_append_to_the_current')}</p>
             </div>
           </div>
           <button onClick={onCancel} className="text-slate-400 hover:text-slate-600 transition-colors">
@@ -66,7 +68,7 @@ export const ImportActualsModal: React.FC<ImportActualsModalProps> = ({ months, 
               ? <CheckSquare size={16} className="text-emerald-600 shrink-0" />
               : <Square size={16} className="text-slate-400 shrink-0" />
             }
-            {allSelected ? 'Deselect all' : 'Select all'}
+            {allSelected ? t('importactuals_deselect_all') : t('importactuals_select_all')}
             <span className="ml-auto text-xs text-slate-400">{months.length} months</span>
           </button>
 
@@ -85,9 +87,7 @@ export const ImportActualsModal: React.FC<ImportActualsModalProps> = ({ months, 
               <Calendar size={14} className="text-slate-400 shrink-0" />
               <span className="text-sm font-medium text-slate-800">{m.label}</span>
               {m.alreadyLoaded && (
-                <span className="ml-2 text-[10px] font-semibold uppercase tracking-wider text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
-                  Already loaded
-                </span>
+                <span className="ml-2 text-[10px] font-semibold uppercase tracking-wider text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">{t('importactuals_already_loaded')}</span>
               )}
               <span className="ml-auto text-xs text-slate-400">{m.count.toLocaleString()} rows</span>
             </button>
@@ -98,23 +98,23 @@ export const ImportActualsModal: React.FC<ImportActualsModalProps> = ({ months, 
         <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl flex items-center justify-between gap-4">
           <p className="text-xs text-slate-500">
             {selected.size > 0
-              ? <><strong className="text-slate-700">{totalRows.toLocaleString()}</strong> rows across <strong className="text-slate-700">{selected.size}</strong> month{selected.size !== 1 ? 's' : ''} will be appended{newMonths.length < selected.size ? ' (includes already-loaded months)' : ''}</>
-              : 'No months selected'
+              ? <><strong className="text-slate-700">{totalRows.toLocaleString()}</strong> rows across <strong className="text-slate-700">{selected.size}</strong> month{selected.size !== 1 ? 's' : ''} will be appended{newMonths.length < selected.size ? t('importactuals_includes_already_loaded_months') : ''}</>
+              : t('importactuals_no_months_selected')
             }
           </p>
           <div className="flex gap-2 shrink-0">
             <button
               onClick={onCancel}
               className="px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
-            >
-              Cancel
-            </button>
+            >{t('common_cancel')}</button>
             <button
               onClick={() => onConfirm(selected)}
               disabled={selected.size === 0}
               className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              Import {selected.size > 0 ? `${selected.size} Month${selected.size !== 1 ? 's' : ''}` : ''}
+              {selected.size > 0
+                ? t('importactuals_import_count_months', { count: selected.size })
+                : t('importactuals_import')}
             </button>
           </div>
         </div>

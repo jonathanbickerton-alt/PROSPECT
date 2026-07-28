@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { calculateForecastVsActualsVariance } from '../utils/varianceEngine';
 import { CheckCircle2, ChevronRight, Cpu, Filter } from 'lucide-react';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Line, Legend, Brush, ReferenceLine } from 'recharts';
@@ -10,6 +11,7 @@ interface ChallengerModelsProps {
 }
 
 export const ChallengerModels: React.FC<ChallengerModelsProps> = ({ actuals, forecasts }) => {
+  const { t } = useTranslation();
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
@@ -267,8 +269,8 @@ export const ChallengerModels: React.FC<ChallengerModelsProps> = ({ actuals, for
         currentModel.dataKey = 'Mean (Base)';
       }
     } else if (hasBaseline) {
-      models.push({ name: 'Baseline', error: totalActual ? (baselineError / totalActual) * 100 : 0, dataKey: 'Baseline', color: '#6366f1', strokeDasharray: '0' });
-      models.push({ name: 'Uplifted Baseline', error: totalActual ? (upliftedError / totalActual) * 100 : 0, dataKey: 'Uplifted Baseline', color: '#ec4899', strokeDasharray: '0' });
+      models.push({ name: t('challenger_baseline'), error: totalActual ? (baselineError / totalActual) * 100 : 0, dataKey: t('challenger_baseline'), color: '#6366f1', strokeDasharray: '0' });
+      models.push({ name: t('challenger_uplifted_baseline'), error: totalActual ? (upliftedError / totalActual) * 100 : 0, dataKey: t('challenger_uplifted_baseline'), color: '#ec4899', strokeDasharray: '0' });
       const currentIdx = models.findIndex(m => m.name === 'Current Model');
       if (currentIdx !== -1) models.splice(currentIdx, 1);
     }
@@ -320,8 +322,8 @@ export const ChallengerModels: React.FC<ChallengerModelsProps> = ({ actuals, for
             <Cpu className="text-indigo-600" size={24} />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">AutoML Challenger Evaluation</h3>
-            <p className="text-sm text-slate-500">Automatically evaluating alternative models for underperforming segments (&gt;5% variance)</p>
+            <h3 className="text-lg font-semibold text-slate-900">{t('common_automl_challenger_evaluation')}</h3>
+            <p className="text-sm text-slate-500">{t('challenger_automatically_evaluating_alternative_models_f')}</p>
           </div>
         </div>
         
@@ -329,22 +331,22 @@ export const ChallengerModels: React.FC<ChallengerModelsProps> = ({ actuals, for
         <div className="flex flex-wrap items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
           <div className="flex items-center gap-2 px-2 border-r border-slate-100">
             <Filter size={16} className="text-slate-400" />
-            <span className="text-xs font-semibold text-slate-500 uppercase">Filters</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase">{t('challenger_filters')}</span>
           </div>
           <select value={segmentFilter} onChange={e => setSegmentFilter(e.target.value)} className="appearance-none text-sm border border-slate-200 rounded-lg bg-white outline-none text-slate-700 font-medium cursor-pointer px-2 py-1">
-            {uniqueSegments.map(s => <option key={s} value={s}>{s === 'All' ? 'All Segments' : s}</option>)}
+            {uniqueSegments.map(s => <option key={s} value={s}>{s === 'All' ? t('challenger_all_segments') : s}</option>)}
           </select>
           <select value={productFilter} onChange={e => setProductFilter(e.target.value)} className="appearance-none text-sm border border-slate-200 rounded-lg bg-white outline-none text-slate-700 font-medium cursor-pointer px-2 py-1">
-            {uniqueProducts.map(p => <option key={p} value={p}>{p === 'All' ? 'All Products' : p}</option>)}
+            {uniqueProducts.map(p => <option key={p} value={p}>{p === 'All' ? t('challenger_all_products') : p}</option>)}
           </select>
           <select value={channelFilter} onChange={e => setChannelFilter(e.target.value)} className="appearance-none text-sm border border-slate-200 rounded-lg bg-white outline-none text-slate-700 font-medium cursor-pointer px-2 py-1">
-            {uniqueChannels.map(c => <option key={c} value={c}>{c === 'All' ? 'All Channels' : c}</option>)}
+            {uniqueChannels.map(c => <option key={c} value={c}>{c === 'All' ? t('challenger_all_channels') : c}</option>)}
           </select>
           <select value={scenarioFilter} onChange={e => setScenarioFilter(e.target.value)} className="appearance-none text-sm border border-slate-200 rounded-lg bg-white outline-none text-slate-700 font-medium cursor-pointer px-2 py-1">
-            {uniqueScenarios.map(s => <option key={s} value={s}>{s === 'All' ? 'All Scenarios' : s}</option>)}
+            {uniqueScenarios.map(s => <option key={s} value={s}>{s === 'All' ? t('challenger_all_scenarios') : s}</option>)}
           </select>
           <select value={forecastTypeFilter} onChange={e => setForecastTypeFilter(e.target.value)} className="appearance-none text-sm border border-slate-200 rounded-lg bg-white outline-none text-slate-700 font-medium cursor-pointer px-2 py-1">
-            {uniqueForecastTypes.map(t => <option key={t} value={t}>{t === 'All' ? 'All Forecast Types' : t}</option>)}
+            {uniqueForecastTypes.map(t => <option key={t} value={t}>{t === 'All' ? t('challenger_all_forecast_types') : t}</option>)}
           </select>
         </div>
       </div>
@@ -354,15 +356,15 @@ export const ChallengerModels: React.FC<ChallengerModelsProps> = ({ actuals, for
           <div className="bg-slate-50 p-4 rounded-full mb-4">
             <CheckCircle2 className="text-emerald-500" size={40} />
           </div>
-          <h3 className="text-xl font-semibold text-slate-900 mb-2">All Models Performing Well</h3>
-          <p className="text-slate-500 max-w-md">No segments or products missed their forecast by more than 5% for the selected filters. The current models are highly accurate.</p>
+          <h3 className="text-xl font-semibold text-slate-900 mb-2">{t('common_all_models_performing_well')}</h3>
+          <p className="text-slate-500 max-w-md">{t('challenger_no_segments_or_products_missed_their_forecast')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[500px]">
           {/* Left Column: Master List */}
           <div className="lg:col-span-4 border-r border-slate-100 bg-slate-50/30 flex flex-col">
             <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-white">
-              <h4 className="text-sm font-semibold text-slate-700">Segments to Review</h4>
+              <h4 className="text-sm font-semibold text-slate-700">{t('challenger_segments_to_review')}</h4>
               <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2 py-1 rounded-full">{groups.length}</span>
             </div>
             <div className="overflow-y-auto flex-1 p-3 space-y-2 max-h-[600px] custom-scrollbar">
@@ -400,34 +402,32 @@ export const ChallengerModels: React.FC<ChallengerModelsProps> = ({ actuals, for
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <CheckCircle2 className="text-emerald-600" size={20} />
-                      <h4 className="text-emerald-900 font-semibold text-lg">Recommendation: {evaluation.bestModel.name}</h4>
+                      <h4 className="text-emerald-900 font-semibold text-lg">{t('challenger_recommendation')}{evaluation.bestModel.name}</h4>
                     </div>
-                    <p className="text-emerald-700 text-sm">
-                      Switching to <strong>{evaluation.bestModel.name}</strong> reduces forecast error from <strong className="text-rose-600">{evaluation.currentModelError.toFixed(1)}%</strong> to <strong className="text-emerald-700">{evaluation.bestModel.error.toFixed(1)}%</strong>.
+                    <p className="text-emerald-700 text-sm">{t('challenger_switching_to')}<strong>{evaluation.bestModel.name}</strong> {t('challenger_reduces_forecast_error_from')}<strong className="text-rose-600">{evaluation.currentModelError.toFixed(1)}%</strong> to <strong className="text-emerald-700">{evaluation.bestModel.error.toFixed(1)}%</strong>.
                     </p>
                     {evaluation.isWhatIf && (
                       <p className="text-emerald-800 text-xs mt-2 font-medium bg-emerald-100/50 inline-block px-2 py-1 rounded">
-                        What-If Logic Preserved: {evaluation.bestModel.name} Baseline + {evaluation.avgUplift > 0 ? '+' : ''}{evaluation.avgUplift.toFixed(1)}% Historical Market Uplift = Proposed Forecast
+                        
+                        {t('challenger_what_if_logic_preserved')}{evaluation.bestModel.name} {t('challenger_baseline')}{evaluation.avgUplift > 0 ? '+' : ''}{evaluation.avgUplift.toFixed(1)}{t('challenger_pct_historical_market_uplift_proposed_forecas')}
                       </p>
                     )}
                   </div>
-                  <button onClick={handleAccept} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap shadow-sm flex items-center gap-2">
-                    Accept Model
-                  </button>
+                  <button onClick={handleAccept} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors whitespace-nowrap shadow-sm flex items-center gap-2">{t('challenger_accept_model')}</button>
                 </div>
 
                 {/* Chart */}
                 <div className="flex-1 min-h-[350px] border border-slate-100 rounded-xl p-5 bg-white shadow-sm flex flex-col">
                   <div className="flex justify-between items-center mb-6">
                     <div>
-                      <h4 className="text-base font-semibold text-slate-800">Model Fit Comparison</h4>
+                      <h4 className="text-base font-semibold text-slate-800">{t('challenger_model_fit_comparison')}</h4>
                       <p className="text-xs text-slate-500 mt-0.5">{selectedGroup.segment} • {selectedGroup.product} • {selectedGroup.scenario} • {selectedGroup.forecastType}</p>
                     </div>
                     <div className="flex gap-4 flex-wrap justify-end">
                       {evaluation.models.map(m => (
                         <div key={m.dataKey} className="flex items-center gap-1.5">
                           <div className="w-3 h-3 rounded-full" style={{ backgroundColor: m.color }}></div>
-                          <span className="text-xs font-medium text-slate-600">{m.name} ({m.error.toFixed(1)}% err)</span>
+                          <span className="text-xs font-medium text-slate-600">{m.name} ({m.error.toFixed(1)}{t('challenger_pct_err')}</span>
                         </div>
                       ))}
                     </div>

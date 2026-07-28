@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useForecast } from '../context/ForecastContext';
 import { Settings, Filter, Info, Download, LayersIcon, Database, CheckCircle2, AlertCircle, SlidersHorizontal, X, ChevronDown } from 'lucide-react';
 import type { ForecastModel } from '../types/forecast';
@@ -159,6 +160,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
   setOneOffMonths,
   shortLeafWarnings = {},
 }) => {
+  const { t } = useTranslation();
   const [showDataMappingDrawer, setShowDataMappingDrawer] = useState(false);
   const [stdChartView, setStdChartView] = useState<'volume' | 'value'>('volume');
   const [dismissedCohortKey, setDismissedCohortKey] = useState<string | null>(null);
@@ -468,27 +470,23 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
     <>
       <div className="w-80 bg-white border-r border-slate-200 flex flex-col shadow-sm z-10 overflow-y-auto p-6 space-y-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">Standard Forecast</h2>
+          <h2 className="text-lg font-semibold text-slate-900">{t('baseline_standard_forecast')}</h2>
           <button
             onClick={onOpenManageBulk}
-            title="Manage Bulk Generations"
+            title={t('baseline_manage_bulk_generations')}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
           >
-            <LayersIcon size={13} />
-            Manage
-          </button>
+            <LayersIcon size={13} />{t('baseline_manage')}</button>
         </div>
         
         {data.length === 0 ? (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 space-y-2">
-            <p className="font-semibold">No data loaded</p>
-            <p className="text-xs">Upload an IBRO data file from the Home page to get started.</p>
+            <p className="font-semibold">{t('baseline_no_data_loaded')}</p>
+            <p className="text-xs">{t('baseline_upload_an_ibro_data_file_from_the_home_page_t')}</p>
             <button
               onClick={() => setActiveView('home')}
               className="mt-1 text-xs font-semibold text-amber-900 underline underline-offset-2"
-            >
-              Go to Home →
-            </button>
+            >{t('baseline_go_to_home')}</button>
           </div>
         ) : (
           <>
@@ -499,17 +497,13 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                 className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors"
               >
                 <span className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                  <Database size={15} className="text-slate-500" />
-                  Data Mapping &amp; Segmentation
-                </span>
+                  <Database size={15} className="text-slate-500" />{t('common_data_mapping_and_segmentation')}</span>
                 {mappingComplete
                   ? <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
                   : <AlertCircle size={15} className="text-amber-400 shrink-0" />}
               </button>
               {!mappingComplete && (
-                <p className="text-[11px] text-amber-600 mt-1.5 px-1">
-                  Complete column mapping to enable forecasting
-                </p>
+                <p className="text-[11px] text-amber-600 mt-1.5 px-1">{t('baseline_complete_column_mapping_to_enable_forecasting')}</p>
               )}
             </div>
 
@@ -517,15 +511,14 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
             {(wiSegmentCol || wiProductCol || wiChannelCol || wiTariffL1Col) && (
               <div className="space-y-4 pt-2 border-t border-slate-100">
                 <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                  <Filter size={16} /> Filters
-                </h3>
+                  <Filter size={16} />{t('baseline_filters')}</h3>
                 <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
                   {wiSegmentCol && (
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-medium text-slate-700">Segment</label>
+                      <label className="block text-xs font-medium text-slate-700">{t('common_segment')}</label>
                       <select value={segmentValue} onChange={(e) => setSegmentValue(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none">
-                        <option value="">-- Select --</option>
-                        <option value="All (Aggregated)">All (Aggregated)</option>
+                        <option value="">{t('baseline_select')}</option>
+                        <option value="All (Aggregated)">{t('baseline_all_aggregated')}</option>
                         {Array.from(new Set(data.map(r => String(r[wiSegmentCol])).filter(v => v && v !== 'undefined'))).sort().map(v => (
                           <option key={v} value={v}>{v}</option>
                         ))}
@@ -535,7 +528,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
 
                   {wiProductCol && (
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-medium text-slate-700">Product</label>
+                      <label className="block text-xs font-medium text-slate-700">{t('common_product')}</label>
                       {productTree && productTree.size > 0 ? (
                         <HierarchicalDropdown
                           label=""
@@ -553,8 +546,8 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                         />
                       ) : (
                         <select value={productValue} onChange={(e) => setProductValue(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none">
-                          <option value="">-- Select --</option>
-                          <option value="All (Aggregated)">All (Aggregated)</option>
+                          <option value="">{t('baseline_select')}</option>
+                          <option value="All (Aggregated)">{t('baseline_all_aggregated')}</option>
                           {Array.from(new Set(data.map(r => String(r[wiProductCol])).filter(v => v && v !== 'undefined'))).sort().map(v => (
                             <option key={v} value={v}>{v}</option>
                           ))}
@@ -565,7 +558,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
 
                   {wiChannelCol && (
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-medium text-slate-700">Channel</label>
+                      <label className="block text-xs font-medium text-slate-700">{t('common_channel')}</label>
                       {channelTree && channelTree.size > 0 ? (
                         <HierarchicalDropdown
                           label=""
@@ -583,8 +576,8 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                         />
                       ) : (
                         <select value={channelValue} onChange={(e) => setChannelValue(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none">
-                          <option value="">-- Select --</option>
-                          <option value="All (Aggregated)">All (Aggregated)</option>
+                          <option value="">{t('baseline_select')}</option>
+                          <option value="All (Aggregated)">{t('baseline_all_aggregated')}</option>
                           {Array.from(new Set(data.map(r => String(r[wiChannelCol])).filter(v => v && v !== 'undefined'))).sort().map(v => (
                             <option key={v} value={v}>{v}</option>
                           ))}
@@ -596,7 +589,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   {/* Tariff dimension (Phase 2a) — only shown when a tariff column is mapped */}
                   {wiTariffL1Col && (
                     <div className="space-y-1.5">
-                      <label className="block text-xs font-medium text-slate-700">Tariff</label>
+                      <label className="block text-xs font-medium text-slate-700">{t('common_tariff')}</label>
                       {tariffTree && tariffTree.size > 0 ? (
                         <HierarchicalDropdown
                           label=""
@@ -614,8 +607,8 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                         />
                       ) : (
                         <select value={tariffValue} onChange={(e) => setTariffValue?.(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none">
-                          <option value="">-- Select --</option>
-                          <option value="All (Aggregated)">All (Aggregated)</option>
+                          <option value="">{t('baseline_select')}</option>
+                          <option value="All (Aggregated)">{t('baseline_all_aggregated')}</option>
                           {Array.from(new Set(data.map(r => String(r[wiTariffL1Col])).filter(v => v && v !== 'undefined'))).sort().map(v => (
                             <option key={v} value={v}>{v}</option>
                           ))}
@@ -629,8 +622,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
 
             <div className="space-y-4 pt-4 border-t border-slate-100">
               <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                <Settings size={16} /> Scenario Tweaks
-              </h3>
+                <Settings size={16} />{t('baseline_scenario_tweaks')}</h3>
               <div>
                 <label className="block text-xs font-semibold text-slate-900 mb-1">IBRO Scenario</label>
                 <select value={stdScenario} onChange={(e) => setStdScenario(e.target.value)} className="w-full text-sm border border-slate-200 rounded-lg p-2.5 bg-slate-50 outline-none">
@@ -642,7 +634,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-900 mb-2">Forecast Model</label>
+                <label className="block text-xs font-semibold text-slate-900 mb-2">{t('common_forecast_model')}</label>
 
                 {/* Empty-cohort state — keep the Model Advisor's visual footprint
                     but faded and non-interactive, with the explanation on hover,
@@ -651,25 +643,21 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   <div className="mb-4 relative group">
                     <div className="p-3 bg-indigo-50/40 border border-indigo-100 rounded-xl space-y-2 opacity-60 select-none">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-600">Model Advisor</span>
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-500">Unavailable</span>
+                        <span className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-600">{t('baseline_model_advisor')}</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-500">{t('baseline_unavailable')}</span>
                       </div>
                       <div className="text-xs text-slate-500">
-                        <span className="font-semibold text-slate-700">Recommended: </span>
+                        <span className="font-semibold text-slate-700">{t('baseline_recommended')}</span>
                         <span className="font-bold text-slate-400">—</span>
                       </div>
-                      <p className="text-[11px] leading-relaxed text-slate-400">Needs historical data for this cohort to recommend a model.</p>
+                      <p className="text-[11px] leading-relaxed text-slate-400">{t('baseline_needs_historical_data_for_this_cohort_to_reco')}</p>
                       <button
                         type="button"
                         disabled
                         className="w-full text-center px-2.5 py-1.5 bg-slate-200 text-slate-400 rounded-lg text-[10px] font-bold cursor-not-allowed"
-                      >
-                        Apply Recommended Model
-                      </button>
+                      >{t('baseline_apply_recommended_model')}</button>
                     </div>
-                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-60 bg-slate-800 text-white text-[10px] rounded-lg px-2.5 py-2 z-50 leading-snug pointer-events-none">
-                      No historical data for this cohort. This exact combination of filters returns no rows, so the Model and Confidence advisors can't recommend settings and a forecast can't be generated. Adjust the filters — often the L2 or tariff selections — to a combination present in your data.
-                    </span>
+                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-60 bg-slate-800 text-white text-[10px] rounded-lg px-2.5 py-2 z-50 leading-snug pointer-events-none">{t('baseline_no_historical_data_for_this_cohort_this_exact')}</span>
                   </div>
                 )}
 
@@ -682,12 +670,12 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                           type="button"
                           onClick={() => setDismissedCohortKey(currentCohortKey)}
                           className="absolute top-2 right-2 p-1 text-slate-400 hover:text-slate-600 rounded transition-colors"
-                          title="Ignore Recommendation"
+                          title={t('baseline_ignore_recommendation')}
                         >
                           <X size={14} />
                         </button>
                         <div className="flex items-center justify-between pr-4">
-                          <span className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-600">Model Advisor</span>
+                          <span className="text-[10px] font-extrabold uppercase tracking-widest text-indigo-600">{t('baseline_model_advisor')}</span>
                           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
                             modelRecommendation.confidence === 'High' ? 'bg-emerald-100 text-emerald-800' :
                             modelRecommendation.confidence === 'Medium' ? 'bg-amber-100 text-amber-800' :
@@ -698,32 +686,32 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                         </div>
                         
                         <div className="text-xs text-slate-700">
-                          <span className="font-semibold text-slate-900">Recommended: </span>
+                          <span className="font-semibold text-slate-900">{t('baseline_recommended')}</span>
                           <span className="font-bold text-indigo-700">{modelRecommendation.recommendedModel}</span>
                         </div>
                         
-                        <p className="text-[11px] leading-relaxed text-slate-650">{modelRecommendation.reason}</p>
+                        <p className="text-[11px] leading-relaxed text-slate-650">{t(modelRecommendation.reason, modelRecommendation.reasonParams)}</p>
 
                         {/* Advisor parameters breakdown */}
                         <div className="grid grid-cols-2 gap-x-2 gap-y-1 pt-2 border-t border-indigo-100/80 text-[10px]">
                           <div>
-                            <span className="text-slate-400">Trend: </span>
-                            <span className="font-semibold text-slate-700">{modelRecommendation.metrics.trendStrengthLabel}</span>
+                            <span className="text-slate-400">{t('baseline_trend')}</span>
+                            <span className="font-semibold text-slate-700">{t(modelRecommendation.metrics.trendStrengthLabel)}</span>
                           </div>
                           <div>
-                            <span className="text-slate-400">Seasonality: </span>
+                            <span className="text-slate-400">{t('baseline_seasonality')}</span>
                             <span className="font-semibold text-slate-700">
-                              {modelRecommendation.metrics.seasonalityLabel === 'Recurring monthly peaks' ? 'Recurring' : 'None'}
+                              {modelRecommendation.metrics.seasonalityLabel === 'Recurring monthly peaks' ? t('baseline_recurring') : t('baseline_none')}
                             </span>
                           </div>
                           <div>
-                            <span className="text-slate-400">Volatility: </span>
-                            <span className="font-semibold text-slate-700">{modelRecommendation.metrics.volatilityLabel}</span>
+                            <span className="text-slate-400">{t('baseline_volatility')}</span>
+                            <span className="font-semibold text-slate-700">{t(modelRecommendation.metrics.volatilityLabel)}</span>
                           </div>
                           <div>
-                            <span className="text-slate-400">Best error: </span>
+                            <span className="text-slate-400">{t('baseline_best_error')}</span>
                             <span className="font-semibold text-slate-700">
-                              {modelRecommendation.metrics.bestModelByFit === 'Simple Exponential Smoothing' ? 'SES' :
+                              {modelRecommendation.metrics.bestModelByFit === 'Simple Exponential Smoothing' ? t('baseline_ses') :
                                modelRecommendation.metrics.bestModelByFit === 'Holt Linear' ? 'HL' :
                                modelRecommendation.metrics.bestModelByFit === 'Damped Trend' ? 'DT' : 'HW'}
                             </span>
@@ -736,9 +724,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                               type="button"
                               onClick={() => setSelectedForecastModel(modelRecommendation.recommendedModel)}
                               className="w-full text-center px-2.5 py-1.5 bg-[#e60000] hover:bg-[#cc0000] text-white rounded-lg text-[10px] font-bold transition-colors shadow-sm"
-                            >
-                              Apply Recommended Model
-                            </button>
+                            >{t('baseline_apply_recommended_model')}</button>
                           </div>
                         )}
                       </div>
@@ -748,9 +734,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                           type="button"
                           onClick={() => setDismissedCohortKey(null)}
                           className="text-[10px] text-slate-500 hover:text-slate-700 font-semibold underline"
-                        >
-                          Show Model Recommendation
-                        </button>
+                        >{t('baseline_show_model_recommendation')}</button>
                       </div>
                     )}
                   </div>
@@ -770,10 +754,10 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                     >
                       <div className={`text-sm font-semibold ${selectedForecastModel === m ? 'text-[#e60000]' : 'text-slate-800'}`}>{m}</div>
                       <div className="text-[10px] text-slate-500 mt-0.5 leading-snug">
-                        {m === 'Simple Exponential Smoothing' && 'Level smoothing — α optimised per series'}
-                        {m === 'Holt Linear' && 'Level + trend smoothing — α, β optimised per series'}
-                        {m === 'Damped Trend' && 'Trend damped toward flat — α, β, φ optimised per series'}
-                        {m === 'Holt-Winters' && 'Triple exponential smoothing, multiplicative seasonality — α, β, γ optimised per series'}
+                        {m === 'Simple Exponential Smoothing' && t('baseline_level_smoothing_optimised_per_series')}
+                        {m === 'Holt Linear' && t('baseline_level_trend_smoothing_optimised_per_series')}
+                        {m === 'Damped Trend' && t('baseline_trend_damped_toward_flat_optimised_per_series')}
+                        {m === 'Holt-Winters' && t('baseline_triple_exponential_smoothing_multiplicative_s')}
                       </div>
                     </button>
                   ))}
@@ -786,25 +770,21 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                 <div className="mb-4 relative group">
                   <div className="p-3 bg-violet-50/40 border border-violet-100 rounded-xl space-y-2 opacity-60 select-none">
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-extrabold uppercase tracking-widest text-violet-600">Confidence Advisor</span>
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-500">Unavailable</span>
+                      <span className="text-[10px] font-extrabold uppercase tracking-widest text-violet-600">{t('baseline_confidence_advisor')}</span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-500">{t('baseline_unavailable')}</span>
                     </div>
                     <div className="text-xs text-slate-500">
-                      <span>Recommended Profile: </span>
+                      <span>{t('baseline_recommended_profile')}</span>
                       <span className="font-bold text-slate-400">—</span>
                     </div>
-                    <p className="text-[11px] leading-relaxed text-slate-400">Needs historical data for this cohort to recommend a confidence profile.</p>
+                    <p className="text-[11px] leading-relaxed text-slate-400">{t('baseline_needs_historical_data_for_this_cohort_to_reco')}</p>
                     <button
                       type="button"
                       disabled
                       className="w-full text-center px-2.5 py-1.5 bg-slate-200 text-slate-400 rounded-lg text-[10px] font-bold cursor-not-allowed"
-                    >
-                      Apply Recommended Settings
-                    </button>
+                    >{t('baseline_apply_recommended_settings')}</button>
                   </div>
-                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-60 bg-slate-800 text-white text-[10px] rounded-lg px-2.5 py-2 z-50 leading-snug pointer-events-none">
-                    No historical data for this cohort. This exact combination of filters returns no rows, so the Model and Confidence advisors can't recommend settings and a forecast can't be generated. Adjust the filters — often the L2 or tariff selections — to a combination present in your data.
-                  </span>
+                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-60 bg-slate-800 text-white text-[10px] rounded-lg px-2.5 py-2 z-50 leading-snug pointer-events-none">{t('baseline_no_historical_data_for_this_cohort_this_exact')}</span>
                 </div>
               )}
 
@@ -817,12 +797,12 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                         type="button"
                         onClick={() => setDismissedConfidenceCohortKey(currentCohortKey)}
                         className="absolute top-2 right-2 p-1 text-slate-400 hover:text-slate-600 rounded transition-colors"
-                        title="Ignore Recommendation"
+                        title={t('baseline_ignore_recommendation')}
                       >
                         <X size={14} />
                       </button>
                       <div className="flex items-center justify-between pr-4">
-                        <span className="text-[10px] font-extrabold uppercase tracking-widest text-violet-600">Confidence Advisor</span>
+                        <span className="text-[10px] font-extrabold uppercase tracking-widest text-violet-600">{t('baseline_confidence_advisor')}</span>
                         <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
                           confidenceRecommendation.strength === 'High' ? 'bg-emerald-100 text-emerald-800' :
                           confidenceRecommendation.strength === 'Medium' ? 'bg-amber-100 text-amber-800' :
@@ -833,25 +813,25 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                       </div>
                       
                       <div className="text-xs text-slate-700 font-medium">
-                        <span>Recommended Profile: </span>
+                        <span>{t('baseline_recommended_profile')}</span>
                         <span className="font-bold text-violet-700">{confidenceRecommendation.profile}</span>
                       </div>
                       
-                      <p className="text-[11px] leading-relaxed text-slate-600">{confidenceRecommendation.reason}</p>
+                      <p className="text-[11px] leading-relaxed text-slate-600">{t(confidenceRecommendation.reason, confidenceRecommendation.reasonParams)}</p>
 
                       {/* Display suggested settings values */}
                       <div className="bg-white/80 p-2 rounded-lg border border-violet-100 text-[10px] text-slate-700 space-y-1">
-                        <div className="font-bold text-slate-500 uppercase tracking-widest text-[9px] mb-0.5">Suggested values:</div>
+                        <div className="font-bold text-slate-500 uppercase tracking-widest text-[9px] mb-0.5">{t('baseline_suggested_values')}</div>
                         <div className="flex justify-between items-center">
-                          <span>Pre-Horizon z-score:</span>
+                          <span>{t('baseline_pre_horizon_z_score')}</span>
                           <span className="font-mono font-bold text-slate-900">{confidenceRecommendation.preHorizonZ.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between items-center">
-                          <span>Post-Horizon Band Multiplier:</span>
+                          <span>{t('baseline_post_horizon_band_multiplier')}</span>
                           <span className="font-mono font-bold text-slate-900">{confidenceRecommendation.postHorizonMultiplier.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between items-center">
-                          <span>Confidence Horizon (Months):</span>
+                          <span>{t('baseline_confidence_horizon_months')}</span>
                           <span className="font-mono font-bold text-slate-900">{confidenceRecommendation.confidenceHorizon}</span>
                         </div>
                       </div>
@@ -868,9 +848,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                               setConfidenceHorizon(confidenceRecommendation.confidenceHorizon);
                             }}
                             className="w-full text-center px-2.5 py-1.5 bg-[#e60000] hover:bg-[#cc0000] text-white rounded-lg text-[10px] font-bold transition-colors shadow-sm"
-                          >
-                            Apply Recommended Settings
-                          </button>
+                          >{t('baseline_apply_recommended_settings')}</button>
                         </div>
                       )}
                     </div>
@@ -880,9 +858,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                         type="button"
                         onClick={() => setDismissedConfidenceCohortKey(null)}
                         className="text-[10px] text-slate-500 hover:text-slate-700 font-semibold underline"
-                      >
-                        Show Confidence Recommendation
-                      </button>
+                      >{t('baseline_show_confidence_recommendation')}</button>
                     </div>
                   )}
                 </div>
@@ -891,10 +867,10 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
               <div>
                 <div className="flex justify-between mb-1">
                   <div className="flex items-center gap-1">
-                    <label className="text-xs font-medium text-slate-700">Pre-Horizon z-score</label>
+                    <label className="text-xs font-medium text-slate-700">{t('baseline_pre_horizon_z_score')}</label>
                     <span className="relative group cursor-help text-slate-400 hover:text-slate-600 transition-colors">
                       <Info size={11} />
-                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-48 text-[10px] text-white bg-slate-700 rounded px-2 py-1 hidden group-hover:block z-50 leading-snug">Controls how wide the optimistic and pessimistic forecast range is before the confidence horizon. Higher values create a wider range.</span>
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-48 text-[10px] text-white bg-slate-700 rounded px-2 py-1 hidden group-hover:block z-50 leading-snug">{t('baseline_controls_how_wide_the_optimistic_and_pessimis')}</span>
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -912,10 +888,10 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
               <div>
                 <div className="flex justify-between mb-1">
                   <div className="flex items-center gap-1">
-                    <label className="text-xs font-medium text-slate-700">Post-Horizon Band Multiplier</label>
+                    <label className="text-xs font-medium text-slate-700">{t('baseline_post_horizon_band_multiplier')}</label>
                     <span className="relative group cursor-help text-slate-400 hover:text-slate-600 transition-colors">
                       <Info size={11} />
-                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-48 text-[10px] text-white bg-slate-700 rounded px-2 py-1 hidden group-hover:block z-50 leading-snug">Controls how much wider the forecast range becomes after the confidence horizon. Higher values show more uncertainty further into the future.</span>
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-48 text-[10px] text-white bg-slate-700 rounded px-2 py-1 hidden group-hover:block z-50 leading-snug">{t('baseline_controls_how_much_wider_the_forecast_range_be')}</span>
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -933,10 +909,10 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
               <div>
                 <div className="flex justify-between mb-1">
                   <div className="flex items-center gap-1">
-                    <label className="text-xs font-medium text-slate-700">Confidence Horizon (Months)</label>
+                    <label className="text-xs font-medium text-slate-700">{t('baseline_confidence_horizon_months')}</label>
                     <span className="relative group cursor-help text-slate-400 hover:text-slate-600 transition-colors">
                       <Info size={11} />
-                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-48 text-[10px] text-white bg-slate-700 rounded px-2 py-1 hidden group-hover:block z-50 leading-snug">Controls how many forecast months use the initial forecast range before the post-horizon multiplier is applied.</span>
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-48 text-[10px] text-white bg-slate-700 rounded px-2 py-1 hidden group-hover:block z-50 leading-snug">{t('baseline_controls_how_many_forecast_months_use_the_ini')}</span>
                     </span>
                   </div>
                   <span className="text-xs font-semibold text-slate-600">{confidenceHorizon}</span>
@@ -957,7 +933,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                         type="button"
                         onClick={() => handleRemoveOneOff(f.month)}
                         className="text-amber-500 hover:text-amber-700 transition-colors shrink-0"
-                        title="Remove flag"
+                        title={t('baseline_remove_flag')}
                       >
                         <X size={12} />
                       </button>
@@ -971,39 +947,35 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                 onClick={() => setOneOffFormOpen(v => !v)}
                 className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-lg transition-colors"
               >
-                <span>{currentOneOffFlags.length > 0 ? 'Flag another one-off month' : 'Flag a one-off historical month'}</span>
+                <span>{currentOneOffFlags.length > 0 ? t('baseline_flag_another_one_off_month') : t('baseline_flag_a_one_off_historical_month')}</span>
                 <ChevronDown size={13} className={`text-slate-400 transition-transform ${oneOffFormOpen ? 'rotate-180' : ''}`} />
               </button>
 
               {oneOffFormOpen && (
                 <div className="mt-2 p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
-                  <p className="text-[10px] text-slate-500 leading-relaxed">
-                    Excludes an exceptional month (e.g. a one-time bulk subscriber load-in) from the seasonal fit, so
-                    Holt-Winters doesn't learn it as a recurring pattern. Cleans the seasonal fit <strong>and tightens
-                    the confidence bands</strong> for this cohort — the band change is a direct, expected consequence
-                    of flagging, not a separate issue.
+                  <p className="text-[10px] text-slate-500 leading-relaxed">{t('baseline_excludes_an_exceptional_month_e_g_a_one_time')}<strong>{t('baseline_and_tightens_the_confidence_bands')}</strong> {t('baseline_for_this_cohort_the_band_change_is_a_direct_e')}
                   </p>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">Month</label>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">{t('common_month')}</label>
                     <select
                       value={draftOneOffMonth}
                       onChange={e => setDraftOneOffMonth(e.target.value)}
                       disabled={oneOffAvailableMonths.length === 0}
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000] disabled:opacity-50"
                     >
-                      <option value="">Select a month…</option>
+                      <option value="">{t('baseline_select_a_month')}</option>
                       {oneOffAvailableMonths.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">Reason (optional)</label>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">{t('baseline_reason_optional')}</label>
                     <input
                       type="text"
                       value={draftOneOffReason}
                       onChange={e => setDraftOneOffReason(e.target.value)}
-                      placeholder="e.g. one-time fleet update"
+                      placeholder={t('baseline_e_g_one_time_fleet_update')}
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                     />
                   </div>
@@ -1012,10 +984,8 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                       the anomaly, computed by the same substituteOneOffValue the engine
                       calls — lets the user sanity-check the heuristic before committing. */}
                   {draftOneOffPreview && (
-                    <div className="px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-600">
-                      File value: <span className="font-mono font-semibold text-slate-800">{formatNumber(draftOneOffPreview.fileValue)}</span>
-                      <span className="mx-1.5 text-slate-300">·</span>
-                      Model will use: <span className="font-mono font-semibold text-emerald-700">{formatNumber(draftOneOffPreview.modelWillUse)}</span>
+                    <div className="px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-600">{t('baseline_file_value')}<span className="font-mono font-semibold text-slate-800">{formatNumber(draftOneOffPreview.fileValue)}</span>
+                      <span className="mx-1.5 text-slate-300">·</span>{t('baseline_model_will_use')}<span className="font-mono font-semibold text-emerald-700">{formatNumber(draftOneOffPreview.modelWillUse)}</span>
                       <span className="text-slate-400"> (trend and seasonal-consistent)</span>
                     </div>
                   )}
@@ -1025,16 +995,12 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                     onClick={handleAddOneOff}
                     disabled={!draftOneOffMonth}
                     className="w-full text-center px-2.5 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    Add Flag
-                  </button>
+                  >{t('baseline_add_flag')}</button>
                 </div>
               )}
             </div>
 
-            <button onClick={generateStandardForecast} className="w-full bg-[#e60000] hover:bg-[#cc0000] text-white font-medium py-2.5 px-4 rounded-lg transition-colors shadow-sm mt-4">
-              Generate Forecast
-            </button>
+            <button onClick={generateStandardForecast} className="w-full bg-[#e60000] hover:bg-[#cc0000] text-white font-medium py-2.5 px-4 rounded-lg transition-colors shadow-sm mt-4">{t('common_generate_forecast')}</button>
           </>
         )}
       </div>
@@ -1049,7 +1015,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
             {manualCohortEntries.length > 0 && (
               <div className="w-48 shrink-0 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col self-start" style={{ maxHeight: 520 }}>
                 <div className="px-3 py-2.5 border-b border-slate-100 flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Generated</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{t('baseline_generated')}</span>
                   <span className="text-[10px] font-bold text-slate-400">{manualCohortEntries.length}</span>
                 </div>
                 <div className="overflow-y-auto flex-1">
@@ -1084,7 +1050,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-lg font-semibold text-slate-900">
-                  {compareCategories.length > 0 ? 'Forecast Results (Comparison)' : 'Forecast Results'}
+                  {compareCategories.length > 0 ? t('baseline_forecast_results_comparison') : t('baseline_forecast_results')}
                 </h3>
                 <div className="flex flex-col items-end gap-3">
                   <div className="flex items-center gap-4">
@@ -1097,13 +1063,13 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                             onClick={() => setStdChartView(v)}
                             className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${stdChartView === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                           >
-                            {v === 'volume' ? 'Volume' : 'Value (ARPU)'}
+                            {v === 'volume' ? t('baseline_volume') : t('baseline_value_arpu')}
                           </button>
                         ))}
                       </div>
                     )}
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] uppercase font-bold text-slate-400">Window Size</span>
+                      <span className="text-[10px] uppercase font-bold text-slate-400">{t('baseline_window_size')}</span>
                       <div className="flex bg-slate-100 p-1 rounded-lg">
                         {[6, 12, 18, 24].map(size => (
                           <button
@@ -1119,8 +1085,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                       </div>
                     </div>
                     <button onClick={() => downloadExcel(forecastData, 'standard_forecast.xlsx')} className="flex items-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-medium py-2 px-4 rounded-lg transition-colors shadow-sm">
-                      <Download size={16} /> Export to Excel
-                    </button>
+                      <Download size={16} />{t('common_export_to_excel')}</button>
                   </div>
                 </div>
               </div>
@@ -1243,10 +1208,11 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
               <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-100 rounded-xl text-sm text-amber-800">
                 <Info size={15} className="shrink-0 mt-0.5 text-amber-500" />
                 <span>
-                  <strong>Missing months detected in historical data.</strong>{' '}
-                  The following {baseForecast.missingMonths.length === 1 ? 'month is' : 'months are'} absent from this cohort's history:{' '}
+                  <strong>{t('common_missing_months_detected_in_historical_data')}</strong>{' '}
+                  
+                  {t('baseline_the_following')}{baseForecast.missingMonths.length === 1 ? t('baseline_month_is') : t('baseline_months_are')} {t('baseline_absent_from_this_cohort_s_history')}{' '}
                   <span className="font-mono">{baseForecast.missingMonths.join(', ')}</span>.
-                  {' '}Gaps can bias level and trend initialisation — the forecast may be unreliable.
+                  {' '}{t('baseline_gaps_can_bias_level_and_trend_initialisation')}
                 </span>
               </div>
             )}
@@ -1259,7 +1225,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
               <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-100 rounded-xl text-sm text-amber-800">
                 <Info size={15} className="shrink-0 mt-0.5 text-amber-500" />
                 <span>
-                  <strong>Seasonality may be understated for this aggregate.</strong>{' '}
+                  <strong>{t('baseline_seasonality_may_be_understated_for_this_aggre')}</strong>{' '}
                   {activeShortLeafWarning.shortLeaves} of {activeShortLeafWarning.totalLeaves} constituent cohorts
                   ({(activeShortLeafWarning.share * 100).toFixed(0)}%) have fewer than 24 months of history, so they
                   cannot fit a seasonal pattern. This aggregate is the sum of its cohorts, so its seasonal peaks and
@@ -1274,9 +1240,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
               <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-100 rounded-xl text-sm text-amber-800">
                 <Info size={15} className="shrink-0 mt-0.5 text-amber-500" />
                 <span>
-                  <strong>Holt-Winters requires at least 24 months of data</strong> (two full seasonal cycles).
-                  One or more series for this cohort had fewer data points and fell back to Holt Linear automatically.
-                  The fitted parameters below reflect the Holt Linear model used for those series.
+                  <strong>{t('baseline_holt_winters_requires_at_least_24_months_of_d')}</strong> {t('baseline_two_full_seasonal_cycles_one_or_more_series_f')}
                 </span>
               </div>
             )}
@@ -1290,36 +1254,31 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   className="w-full flex items-center justify-between gap-2 px-6 py-4 text-left rounded-2xl hover:bg-slate-50 transition-colors"
                 >
                   <span className="text-base font-semibold text-slate-900 flex items-center gap-2">
-                    <SlidersHorizontal size={15} className="text-[#e60000]" />
-                    Fitted Model Parameters
-                  </span>
+                    <SlidersHorizontal size={15} className="text-[#e60000]" />{t('baseline_fitted_model_parameters')}</span>
                   <span className="flex items-center gap-1 text-xs font-medium text-slate-500">
-                    {showTechnicalDetails ? 'Hide technical details' : 'Show technical details'}
+                    {showTechnicalDetails ? t('baseline_hide_technical_details') : t('baseline_show_technical_details')}
                     <ChevronDown size={14} className={`text-slate-400 transition-transform ${showTechnicalDetails ? 'rotate-180' : ''}`} />
                   </span>
                 </button>
               {showTechnicalDetails && (
               <div className="px-6 pb-6">
-                <p className="text-[11px] text-slate-400 mb-4">
-                  Parameters chosen independently per series by MSE grid search on in-sample one-step-ahead fitted values.
-                  For Holt-Winters, σ is the relative residual SD used for proportional bands; for other models it is the absolute residual SD.
-                </p>
+                <p className="text-[11px] text-slate-400 mb-4">{t('baseline_parameters_chosen_independently_per_series_by')}</p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="border-b border-slate-100">
-                        <th className="text-left pb-2 pr-6 text-slate-500 font-semibold uppercase tracking-wide">Series</th>
-                        <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">α (level)</th>
-                        <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">β (trend)</th>
+                        <th className="text-left pb-2 pr-6 text-slate-500 font-semibold uppercase tracking-wide">{t('baseline_series')}</th>
+                        <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">{t('baseline_level')}</th>
+                        <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">{t('baseline_trend')}</th>
                         {baseForecast.modelUsed === 'Damped Trend' && (
-                          <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">φ (damping)</th>
+                          <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">{t('baseline_damping')}</th>
                         )}
                         {baseForecast.modelUsed === 'Holt-Winters' && (
-                          <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">γ (seasonal)</th>
+                          <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">{t('baseline_seasonal')}</th>
                         )}
-                        <th className="text-right pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">In-sample MSE</th>
+                        <th className="text-right pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">{t('baseline_in_sample_mse')}</th>
                         <th className="text-right pb-2 pl-4 text-slate-500 font-semibold uppercase tracking-wide">
-                          {baseForecast.modelUsed === 'Holt-Winters' ? 'σ (relative)' : 'σ (residual SD)'}
+                          {baseForecast.modelUsed === 'Holt-Winters' ? t('baseline_relative') : t('baseline_residual_sd')}
                         </th>
                       </tr>
                     </thead>
@@ -1340,12 +1299,12 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                               <td className="py-2 px-4 text-center font-mono text-slate-800">{(p.gamma ?? 0.1).toFixed(2)}</td>
                             )}
                             <td className="py-2 px-4 text-right font-mono text-slate-500">
-                              {p.mse > 0 ? p.mse.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—'}
+                              {p.mse > 0 ? p.mse.toLocaleString(t('baseline_en_us'), { maximumFractionDigits: 0 }) : '—'}
                             </td>
                             <td className="py-2 pl-4 text-right font-mono text-slate-500">
                               {baseForecast.modelUsed === 'Holt-Winters'
                                 ? (p.sigma > 0 ? `${(p.sigma * 100).toFixed(1)}%` : '—')
-                                : (p.sigma > 0 ? p.sigma.toLocaleString('en-US', { maximumFractionDigits: 1 }) : '—')
+                                : (p.sigma > 0 ? p.sigma.toLocaleString(t('baseline_en_us'), { maximumFractionDigits: 1 }) : '—')
                               }
                             </td>
                           </tr>
@@ -1362,19 +1321,19 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
             {/* Data Preview Table */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
               <h3 className="text-lg font-semibold text-slate-900 mb-4">
-                {stdChartView === 'value' ? 'ARPU Data Preview' : 'Data Preview'}
+                {stdChartView === 'value' ? t('baseline_arpu_data_preview') : t('baseline_data_preview')}
               </h3>
               <div className="overflow-x-auto rounded-xl border border-slate-200 max-h-[400px]">
                 <table className="w-full text-sm text-left relative">
                   <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
                     <tr>
-                      <th className="px-6 py-4 font-semibold">Date</th>
+                      <th className="px-6 py-4 font-semibold">{t('baseline_date')}</th>
                       {stdChartView === 'value' ? (
                         <>
-                          <th className="px-6 py-4 font-semibold">Historical ARPU</th>
-                          <th className="px-6 py-4 font-semibold">Mean (Base)</th>
-                          <th className="px-6 py-4 font-semibold">Optimistic</th>
-                          <th className="px-6 py-4 font-semibold">Pessimistic</th>
+                          <th className="px-6 py-4 font-semibold">{t('common_historical_arpu')}</th>
+                          <th className="px-6 py-4 font-semibold">{t('baseline_mean_base')}</th>
+                          <th className="px-6 py-4 font-semibold">{t('baseline_optimistic')}</th>
+                          <th className="px-6 py-4 font-semibold">{t('baseline_pessimistic')}</th>
                         </>
                       ) : compareCategories.length > 0 ? (
                         compareCategories.map(cat => (
@@ -1385,10 +1344,10 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                         ))
                       ) : (
                         <>
-                          <th className="px-6 py-4 font-semibold">Historical</th>
-                          <th className="px-6 py-4 font-semibold">Mean (Base)</th>
-                          <th className="px-6 py-4 font-semibold">Optimistic</th>
-                          <th className="px-6 py-4 font-semibold">Pessimistic</th>
+                          <th className="px-6 py-4 font-semibold">{t('baseline_historical')}</th>
+                          <th className="px-6 py-4 font-semibold">{t('baseline_mean_base')}</th>
+                          <th className="px-6 py-4 font-semibold">{t('baseline_optimistic')}</th>
+                          <th className="px-6 py-4 font-semibold">{t('baseline_pessimistic')}</th>
                         </>
                       )}
                     </tr>
@@ -1435,39 +1394,25 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
               </div>
               {data.length === 0 ? (
                 <>
-                  <h3 className="text-lg font-semibold text-slate-800 mb-2">Upload data first</h3>
-                  <p className="text-sm text-slate-500 mb-4">
-                    Go to the Home page and upload an IBRO Excel file to begin forecasting.
-                  </p>
+                  <h3 className="text-lg font-semibold text-slate-800 mb-2">{t('baseline_upload_data_first')}</h3>
+                  <p className="text-sm text-slate-500 mb-4">{t('baseline_go_to_the_home_page_and_upload_an_ibro_excel')}</p>
                   <button
                     onClick={() => setActiveView('home')}
                     className="px-5 py-2.5 bg-[#e60000] text-white rounded-lg text-sm font-semibold hover:bg-[#cc0000] transition-colors"
-                  >
-                    Go to Home
-                  </button>
+                  >{t('baseline_go_to_home')}</button>
                 </>
               ) : emptyCohortSelection ? (
                 <>
-                  <h3 className="text-lg font-semibold text-slate-800 mb-2">No data for this selection</h3>
-                  <p className="text-sm text-slate-500 mb-1">
-                    The current cohort filters return no rows in your data, so there's nothing to forecast
-                    and no model can be recommended.
-                  </p>
-                  <p className="text-xs text-slate-400 mt-2">
-                    Adjust the dimension filters — often the L2 or tariff selections — to a combination that
-                    exists in your data.
-                  </p>
+                  <h3 className="text-lg font-semibold text-slate-800 mb-2">{t('baseline_no_data_for_this_selection')}</h3>
+                  <p className="text-sm text-slate-500 mb-1">{t('baseline_the_current_cohort_filters_return_no_rows_in')}</p>
+                  <p className="text-xs text-slate-400 mt-2">{t('baseline_adjust_the_dimension_filters_often_the_l2_or')}</p>
                 </>
               ) : (
                 <>
-                  <h3 className="text-lg font-semibold text-slate-800 mb-2">Ready to forecast</h3>
-                  <p className="text-sm text-slate-500 mb-1">
-                    Configure the data mapping and dimension filters in the panel on the left, then click
-                  </p>
-                  <p className="text-sm font-semibold text-[#e60000] mb-4">Generate Forecast</p>
-                  <p className="text-xs text-slate-400">
-                    The forecast will appear here once generated. Save it to unlock Step 2.
-                  </p>
+                  <h3 className="text-lg font-semibold text-slate-800 mb-2">{t('baseline_ready_to_forecast')}</h3>
+                  <p className="text-sm text-slate-500 mb-1">{t('baseline_configure_the_data_mapping_and_dimension_filt')}</p>
+                  <p className="text-sm font-semibold text-[#e60000] mb-4">{t('common_generate_forecast')}</p>
+                  <p className="text-xs text-slate-400">{t('baseline_the_forecast_will_appear_here_once_generated')}</p>
                 </>
               )}
             </div>

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronDown, Search } from 'lucide-react';
 
 interface MultiSelectDropdownProps {
@@ -27,10 +28,11 @@ export function MultiSelectDropdown({
   options,
   selected,
   onChange,
-  placeholder = 'Select…',
+  placeholder,
   noun = 'item',
   className = '',
 }: MultiSelectDropdownProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -62,8 +64,10 @@ export function MultiSelectDropdown({
 
   const allSelected = options.length > 0 && selected.length === options.length;
 
+  // Resolved here, not as a default parameter: default params are evaluated in
+  // signature scope, before useTranslation() has run, so t is not yet in scope.
   const summary = selected.length === 0
-    ? placeholder
+    ? (placeholder ?? t('multiselect_select'))
     : allSelected
       ? `All ${options.length} ${noun}${options.length === 1 ? '' : 's'}`
       : selected.length <= 2
@@ -100,7 +104,7 @@ export function MultiSelectDropdown({
                 type="text"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
-                placeholder={`Search ${noun}s…`}
+                placeholder={t('multiselect_search_s', { p0: noun })}
                 className="w-full pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded-md bg-white placeholder-slate-400 outline-none focus:border-[#e60000]"
               />
             </div>
@@ -113,23 +117,19 @@ export function MultiSelectDropdown({
               onClick={() => onChange(options.slice())}
               disabled={allSelected}
               className="text-[11px] font-medium text-slate-600 hover:text-[#e60000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-slate-600"
-            >
-              Select all
-            </button>
+            >{t('common_select_all')}</button>
             <button
               type="button"
               onClick={() => onChange([])}
               disabled={selected.length === 0}
               className="text-[11px] font-medium text-slate-500 hover:text-[#e60000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-slate-500"
-            >
-              Clear
-            </button>
+            >{t('multiselect_clear')}</button>
           </div>
 
           {/* Option list */}
           <div className="max-h-56 overflow-y-auto py-1">
             {filtered.length === 0 ? (
-              <div className="px-3 py-3 text-xs text-slate-400 italic text-center">No matches</div>
+              <div className="px-3 py-3 text-xs text-slate-400 italic text-center">{t('multiselect_no_matches')}</div>
             ) : (
               filtered.map(opt => {
                 const on = selected.includes(opt);

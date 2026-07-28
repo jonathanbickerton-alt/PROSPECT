@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 
 interface GenerateCohortForecastModalProps {
@@ -44,13 +45,14 @@ export const GenerateCohortForecastModal: React.FC<GenerateCohortForecastModalPr
   genManualOverrides,
   generateCohortForecast
 }) => {
+  const { t } = useTranslation();
   if (!generatingCohort) return null;
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
-          <h3 className="text-lg font-semibold text-slate-900">Generate Forecast</h3>
+          <h3 className="text-lg font-semibold text-slate-900">{t('common_generate_forecast')}</h3>
           <button onClick={() => setGeneratingCohort(null)} className="text-slate-400 hover:text-slate-600">
             <X size={20} />
           </button>
@@ -58,15 +60,15 @@ export const GenerateCohortForecastModal: React.FC<GenerateCohortForecastModalPr
         <div className="p-6 space-y-6">
           <div className="bg-slate-50 p-4 rounded-lg space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="text-slate-500">Segment:</span>
+              <span className="text-slate-500">{t('common_segment')}</span>
               <span className="font-medium text-slate-900">{generatingCohort.segment}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-slate-500">Product:</span>
+              <span className="text-slate-500">{t('common_product')}</span>
               <span className="font-medium text-slate-900">{generatingCohort.product}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-slate-500">Forecast Type:</span>
+              <span className="text-slate-500">{t('common_forecast_type')}</span>
               <span className="font-medium text-slate-900">{generatingCohort.forecastType}</span>
             </div>
           </div>
@@ -103,7 +105,7 @@ export const GenerateCohortForecastModal: React.FC<GenerateCohortForecastModalPr
               <>
                 <div>
                   <div className="flex justify-between mb-1">
-                    <label className="text-sm font-semibold text-slate-900">Pre-Horizon Uncertainty (%)</label>
+                    <label className="text-sm font-semibold text-slate-900">{t('gencohort_pre_horizon_uncertainty_pct')}</label>
                     <span className="text-sm font-medium text-[#e60000]">{genPreHorizonUncertainty.toFixed(1)}%</span>
                   </div>
                   <input type="range" min="0" max="20" step="0.5" value={genPreHorizonUncertainty} onChange={(e) => setGenPreHorizonUncertainty(Number(e.target.value))} className="w-full accent-[#e60000]" />
@@ -111,7 +113,7 @@ export const GenerateCohortForecastModal: React.FC<GenerateCohortForecastModalPr
 
                 <div>
                   <div className="flex justify-between mb-1">
-                    <label className="text-sm font-semibold text-slate-900">Post-Horizon Expansion Rate (%)</label>
+                    <label className="text-sm font-semibold text-slate-900">{t('gencohort_post_horizon_expansion_rate_pct')}</label>
                     <span className="text-sm font-medium text-slate-500">{genPostHorizonExpansionRate.toFixed(1)}%</span>
                   </div>
                   <input type="range" min="0" max="20" step="0.5" value={genPostHorizonExpansionRate} onChange={(e) => setGenPostHorizonExpansionRate(Number(e.target.value))} className="w-full accent-slate-400" />
@@ -121,9 +123,7 @@ export const GenerateCohortForecastModal: React.FC<GenerateCohortForecastModalPr
           </div>
 
           <div className="pt-4 flex justify-end gap-3">
-            <button onClick={() => setGeneratingCohort(null)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
-              Cancel
-            </button>
+            <button onClick={() => setGeneratingCohort(null)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">{t('common_cancel')}</button>
             <button 
               onClick={() => generateCohortForecast(generatingCohort, {
                 inflowUplift: genInflowUplift,
@@ -135,9 +135,7 @@ export const GenerateCohortForecastModal: React.FC<GenerateCohortForecastModalPr
                 manualOverrides: genManualOverrides
               })}
               className="px-4 py-2 text-sm font-medium bg-[#e60000] hover:bg-[#cc0000] text-white rounded-lg transition-colors shadow-sm"
-            >
-              Generate
-            </button>
+            >{t('gencohort_generate')}</button>
           </div>
         </div>
       </div>
