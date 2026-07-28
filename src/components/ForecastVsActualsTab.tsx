@@ -3320,7 +3320,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               if (chartView !== 'value') return ['auto', 'auto'];
               const vals: number[] = [];
               const arpuKeys = activeArpuScenarios.flatMap(sc =>
-                [t('actuals_actual', { p0: sc }), t('actuals_baseline', { p0: sc }), t('actuals_opt', { p0: sc }), t('actuals_pess', { p0: sc })]
+                [`${sc}_actual`, `${sc}_baseline`, `${sc}_opt`, `${sc}_pess`]
               );
               for (const row of multiChartData) {
                 for (const k of arpuKeys) {
@@ -3418,7 +3418,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
             )}
             {(chartView === 'volume' ? activeVolumeScenarios : activeArpuScenarios).map(sc => {
               const prefix = chartView === 'volume' ? sc : sc;
-              const tableRows = multiChartData.filter(r => r[t('actuals_actual', { p0: prefix }) as keyof MultiChartRow] !== undefined && r[t('actuals_baseline', { p0: prefix }) as keyof MultiChartRow] !== undefined);
+              const tableRows = multiChartData.filter(r => r[`${prefix}_actual` as keyof MultiChartRow] !== undefined && r[`${prefix}_baseline` as keyof MultiChartRow] !== undefined);
               if (tableRows.length === 0) return null;
               return (
                 <details key={sc} open className="border-b border-slate-100 last:border-0">
@@ -3440,10 +3440,10 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {tableRows.map(row => {
-                          const actualVal   = row[t('actuals_actual', { p0: prefix }) as keyof MultiChartRow] as number;
-                          const baselineVal = row[t('actuals_baseline', { p0: prefix }) as keyof MultiChartRow] as number ?? 0;
-                          const optVal      = row[t('actuals_opt', { p0: prefix }) as keyof MultiChartRow] as number | undefined ?? null;
-                          const pessVal     = row[t('actuals_pess', { p0: prefix }) as keyof MultiChartRow] as number | undefined ?? null;
+                          const actualVal   = row[`${prefix}_actual` as keyof MultiChartRow] as number;
+                          const baselineVal = row[`${prefix}_baseline` as keyof MultiChartRow] as number ?? 0;
+                          const optVal      = row[`${prefix}_opt` as keyof MultiChartRow] as number | undefined ?? null;
+                          const pessVal     = row[`${prefix}_pess` as keyof MultiChartRow] as number | undefined ?? null;
                           const variance = actualVal - baselineVal;
                           const varPct = actualVal !== 0 ? (variance / Math.abs(actualVal)) * 100 : 0;
                           const inBand = optVal !== null && pessVal !== null

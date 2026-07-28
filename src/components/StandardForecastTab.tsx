@@ -1095,7 +1095,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   if (stdChartView !== 'value') return ['auto', 'auto'];
                   const vals: number[] = [];
                   for (const row of arpuChartData) {
-                    for (const k of [t('baseline_historical'), 'Mean (Base)', 'Optimistic', 'Pessimistic']) {
+                    for (const k of ['Historical', 'Mean (Base)', 'Optimistic', 'Pessimistic']) {
                       const v = row[k];
                       if (typeof v === 'number' && isFinite(v) && v > 0) vals.push(v);
                     }
@@ -1358,7 +1358,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                         <td className="px-6 py-4 font-medium text-slate-900">{row.date}</td>
                         {stdChartView === 'value' ? (
                           <>
-                            <td className="px-6 py-4 text-slate-600">{row[t('baseline_historical')] != null ? formatNumber(row[t('baseline_historical')]) : '—'}</td>
+                            <td className="px-6 py-4 text-slate-600">{row['Historical'] != null ? formatNumber(row['Historical']) : '—'}</td>
                             <td className="px-6 py-4 text-slate-600">{row['Mean (Base)'] != null ? formatNumber(row['Mean (Base)']) : '—'}</td>
                             <td className="px-6 py-4 text-emerald-600">{row['Optimistic'] != null ? formatNumber(row['Optimistic']) : '—'}</td>
                             <td className="px-6 py-4 text-rose-600">{row['Pessimistic'] != null ? formatNumber(row['Pessimistic']) : '—'}</td>

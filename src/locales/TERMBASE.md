@@ -185,9 +185,30 @@ DE and FR is required before the locale work is considered complete.
 
 ## 11. Display strings vs identifiers — the split rule
 
-A string that is **both displayed and used as an identifier** must be split:
-a stable English key for the lookup, a separate translated label for display.
-**Never one string doing both jobs.**
+**Any string used as an identifier must never be a `t()` result** — regardless of
+whether it also happens to be displayed. An identifier position is any of:
+
+- a cohort-key component
+- a comparison operand (`===`, `!==`, a `switch` case)
+- a property accessor — `row[…]`, `payload[…]`
+- an index key, including one laundered through an array (`const keys = [t(…)]`,
+  `for (const k of [t(…)])`)
+- an export column name or sheet name
+- an object-literal key
+
+Where a string does both jobs, **the identifier stays a literal and the display
+form is keyed separately.** Never one string doing both.
+
+This is not a translation-time risk only. The Monthly Variance regression was
+live in English: the extraction turned `row[\`${prefix}_actual\`]` into
+`row[t('actuals_actual', { p0: prefix })]`, and the key slug collided with the
+display header `t('actuals_actual')` = `"Actual"`, so the accessor looked up a
+field that never existed and the table silently rendered nothing.
+
+`scripts/scan-i18n.ts` enforces this: a `t()` result in an identifier position is
+a hard **error**, not a candidate, and fails `--check`. A rule in this document
+is not enough — four instances of this class shipped before the static check
+existed (`Base Case`, `All`, the `Field` export names, and property accessors).
 
 Where splitting is not cheap, **the identifier wins** — the string stays
 English and a comment records why.

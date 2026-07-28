@@ -498,8 +498,6 @@
   "actuals_product": "Product = {{p0}}",
   "actuals_channel": "Channel = {{p0}}",
   "actuals_scenario": "Scenario = {{p0}}",
-  "actuals_opt": "{{p0}}_opt",
-  "actuals_pess": "{{p0}}_pess",
   "actuals_inf_arpu": "Inf ARPU",
   "actuals_inflow_arpu": "Inflow ARPU",
   "actuals_out_arpu": "Out ARPU",

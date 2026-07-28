@@ -93,6 +93,82 @@ function isIdentifierOperand(n: ts.Node): boolean {
   return false;
 }
 
+/**
+ * Is this literal in a position that actually RENDERS, rather than merely sitting
+ * somewhere beneath a JSX node? Only pass-through syntax may separate it from the
+ * JsxExpression — ternary branches, &&/||/?? guards, parentheses. Anything else
+ * (element access, call argument, object property) means the value is data or an
+ * identifier, not display text.
+ */
+function isRenderingPosition(n: ts.Node): boolean {
+  let cur: ts.Node = n;
+  let p: ts.Node | undefined = n.parent;
+  while (p) {
+    if (ts.isJsxExpression(p)) return true;
+    if (ts.isParenthesizedExpression(p)) { cur = p; p = p.parent; continue; }
+    if (ts.isConditionalExpression(p) && (p.whenTrue === cur || p.whenFalse === cur)) { cur = p; p = p.parent; continue; }
+    if (ts.isBinaryExpression(p)) {
+      const k = p.operatorToken.kind;
+      if (k === ts.SyntaxKind.AmpersandAmpersandToken || k === ts.SyntaxKind.BarBarToken ||
+          k === ts.SyntaxKind.QuestionQuestionToken) { cur = p; p = p.parent; continue; }
+    }
+    return false;
+  }
+  return false;
+}
+
+/**
+ * A t() result used where an IDENTIFIER is required — property accessor, computed
+ * key, comparison operand, switch case. Always an error, never a candidate: the
+ * lookup silently stops matching the moment the value is actually translated.
+ * Fourth instance of this class after Base Case, All and the Field export names.
+ */
+function tCallInIdentifierPosition(n: ts.Node): string | null {
+  if (!ts.isCallExpression(n)) return null;
+  const e = n.expression;
+  const isT = (ts.isIdentifier(e) && e.text === 't') ||
+              (ts.isPropertyAccessExpression(e) && e.name.text === 't');
+  if (!isT) return null;
+  let node: ts.Node = n;
+  while (node.parent && (ts.isAsExpression(node.parent) || ts.isParenthesizedExpression(node.parent) ||
+         ts.isNonNullExpression(node.parent))) node = node.parent;
+  const p = node.parent;
+  if (!p) return null;
+  if (ts.isElementAccessExpression(p) && p.argumentExpression === node) return 'property accessor';
+  // Laundered through an array: `const keys = [t('a')]` then `row[k]`, or
+  // `for (const k of [t('a')])`. The parent is an ArrayLiteralExpression, so the
+  // direct check above misses it — this is how the ARPU y-axis domain instance
+  // survived. Only flag arrays that BECOME key lists: bound to a variable, or
+  // iterated by for-of. An array that is .map()ed or .join()ed straight into JSX
+  // is a list of display strings and is fine.
+  if (ts.isArrayLiteralExpression(p)) {
+    let q: ts.Node | undefined = p;
+    while (q) {
+      if (ts.isJsxExpression(q)) return null;                       // renders — safe
+      if (ts.isForOfStatement(q) && q.expression) return 'for-of key list';
+      if (ts.isVariableDeclaration(q)) return 'array bound as key list';
+      // `.join(...)` / `.map(...)` turn the array into display output, not a key
+      // list, even when the result is bound to a variable.
+      if (ts.isPropertyAccessExpression(q) && /^(join|map)$/.test(q.name.text)) return null;
+      if (ts.isArrowFunction(q) || ts.isCallExpression(q) ||
+          ts.isPropertyAccessExpression(q) || ts.isArrayLiteralExpression(q) ||
+          ts.isParenthesizedExpression(q) || ts.isAsExpression(q)) { q = q.parent; continue; }
+      return null;
+    }
+  }
+  if (ts.isComputedPropertyName(p)) return 'computed object key';
+  if (ts.isCaseClause(p)) return 'switch case';
+  if (ts.isBinaryExpression(p)) {
+    const k = p.operatorToken.kind;
+    if (k === ts.SyntaxKind.EqualsEqualsEqualsToken || k === ts.SyntaxKind.ExclamationEqualsEqualsToken ||
+        k === ts.SyntaxKind.EqualsEqualsToken || k === ts.SyntaxKind.ExclamationEqualsToken)
+      return 'comparison operand';
+  }
+  return null;
+}
+
+const identErrors: { file: string; line: number; kind: string; text: string }[] = [];
+
 for (const sf of sourceFiles) {
   if (sf.isDeclarationFile || !/[\\/]src[\\/]/.test(sf.fileName)) continue;
   const rel = path.relative(process.cwd(), sf.fileName);
@@ -107,6 +183,12 @@ for (const sf of sourceFiles) {
   };
 
   (function visit(n: ts.Node) {
+    // 0. t() used where an identifier is required — hard error, not a candidate.
+    const idPos = tCallInIdentifierPosition(n);
+    if (idPos) {
+      const { line } = sf.getLineAndCharacterOfPosition(n.getStart(sf));
+      identErrors.push({ file: rel, line: line + 1, kind: idPos, text: n.getText(sf).slice(0, 80) });
+    }
     // 1. JSX text between tags
     if (ts.isJsxText(n)) {
       const t = n.text.replace(/\s+/g, ' ').trim();
@@ -122,8 +204,13 @@ for (const sf of sourceFiles) {
     }
     // 3. string / template literals inside JSX expression containers
     else if (isTsx && (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) || ts.isTemplateExpression(n))) {
-      let inJsxExpr = false, p: ts.Node | undefined = n.parent;
-      while (p) { if (ts.isJsxExpression(p)) { inJsxExpr = true; break; } p = p.parent; }
+      // A literal is in a RENDERING position only if nothing but pass-through
+      // syntax separates it from the JsxExpression. Walking the parent chain
+      // unconditionally is wrong: a property accessor inside a {...map()} block
+      // has a JsxExpression somewhere above it but is an identifier, not text.
+      // That bug produced `countLabel=t(...)` and, worse, the Monthly Variance
+      // regression where row[`${prefix}_actual`] became row[t('actuals_actual')].
+      const inJsxExpr = isRenderingPosition(n);
       if (inJsxExpr && !insideT(n)) {
         let text = '';
         if (ts.isTemplateExpression(n)) {
@@ -249,8 +336,24 @@ if (straddled.size) console.log(`  (${straddled.size} straddling container(s): 1
 fs.writeFileSync('scan_i18n_report.json', JSON.stringify(bucketed, null, 2));
 console.log('\nfull inventory -> scan_i18n_report.json');
 
+// ---------------------------------------------------------------------------
+// t() in an identifier position. Reported ALWAYS, and always an error — a
+// translated value doing an identifier's job breaks lookups silently the moment
+// it is translated, and in the Monthly Variance case it was already broken in
+// English because the key slug collided with a display string.
+// ---------------------------------------------------------------------------
+console.log(`\nt() IN IDENTIFIER POSITION: ${identErrors.length}`);
+for (const e of identErrors) console.log(`  ${e.file}:${e.line}  [${e.kind}]  ${e.text}`);
+
 const mustKey = bucketed.filter(b => b.bucket.includes('MUST KEY'));
 if (process.argv.includes('--check')) {
+  if (identErrors.length) {
+    console.error(`\nFAIL: ${identErrors.length} t() call(s) used where an identifier is required.`);
+    console.error('A translated value must never be a property accessor, computed key,');
+    console.error('comparison operand or switch case. Keep the identifier a literal and key');
+    console.error('the display form separately (TERMBASE §11).');
+    process.exit(1);
+  }
   if (mustKey.length) {
     console.error(`\nFAIL: ${mustKey.length} user-facing string(s) sit outside a translation key.`);
     for (const m of mustKey.slice(0, 25))
