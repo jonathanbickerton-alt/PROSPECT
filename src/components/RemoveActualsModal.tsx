@@ -245,7 +245,7 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
           {previewShown.length > 0 && (
             <section>
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">
-                Preview
+                {t('removeactuals_preview')}
                 {previewOverflow > 0 && (
                   <span className="ml-1 normal-case font-normal text-slate-400">
                     (showing 20 of {previewRows.length.toLocaleString()})

@@ -660,5 +660,9 @@
   "cohortdims_required": "(required)",
   "cohortdims_not_mapped": "(not mapped)",
   "bulk_analyses_each_cohort_s_history_independently": "Analyses each cohort's history independently — volatile, trending, and seasonal cohorts each get the most appropriate model",
-  "bulk_sets_band_width_based_on_each_cohort_s_volati": "Sets band width based on each cohort's volatility — stable cohorts get tighter bands, uncertain ones get wider"
+  "bulk_sets_band_width_based_on_each_cohort_s_volati": "Sets band width based on each cohort's volatility — stable cohorts get tighter bands, uncertain ones get wider",
+  "multiselect_select": "Select…",
+  "importactuals_import_count_months": "Import {{count}} months",
+  "importactuals_import": "Import",
+  "removeactuals_preview": "Preview"
 }

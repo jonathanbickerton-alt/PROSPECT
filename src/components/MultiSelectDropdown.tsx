@@ -28,7 +28,7 @@ export function MultiSelectDropdown({
   options,
   selected,
   onChange,
-  placeholder = 'Select…',  // TODO(i18n): default param is outside hook scope; needs `placeholder ?? t(...)` at use site
+  placeholder,
   noun = 'item',
   className = '',
 }: MultiSelectDropdownProps) {
@@ -64,8 +64,10 @@ export function MultiSelectDropdown({
 
   const allSelected = options.length > 0 && selected.length === options.length;
 
+  // Resolved here, not as a default parameter: default params are evaluated in
+  // signature scope, before useTranslation() has run, so t is not yet in scope.
   const summary = selected.length === 0
-    ? placeholder
+    ? (placeholder ?? t('multiselect_select'))
     : allSelected
       ? `All ${options.length} ${noun}${options.length === 1 ? '' : 's'}`
       : selected.length <= 2

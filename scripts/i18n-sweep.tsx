@@ -45,6 +45,10 @@ const NEVER = ['IBRO', 'ARPU', 'Inflow', 'Outflow', 'Retention', 'Base', 'PROSPE
   'Pre-Horizon', 'Post-Horizon', 'Customer Volume', 'N/A'];
 const DATA = /^(Corporate|Large Enterprise|MNC|SME|SOHO|Mobile Voice|Mobile Data|IoT Connectivity|Fixed Connectivity|Fixed Voice|Fixed Data|RED [LMS]|SIM Only|(High|Medium|Low) Value|All|Direct|Indirect|Retail|Online|Partner|Telesales)$/;
 const NUM = /^[\d\s.,%£$€+\-–—:/()]*$/;
+// Month labels are produced by date formatting, not translation keys. Locale-aware
+// date rendering is tracked as its own follow-up; excluding here keeps this sweep
+// about key coverage rather than re-reporting a known, separately-scoped gap.
+const MONTH = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}$/;
 
 function sweepDom(label: string): Result {
   const root = document.getElementById('root');
@@ -53,7 +57,7 @@ function sweepDom(label: string): Result {
     .filter(e => e.children.length === 0)
     .map(e => (e.textContent || '').trim())
     .filter(x => x && /[A-Za-z]{2}/.test(x))
-    .filter(x => !x.includes(MARK) && !NEVER.some(n => x.includes(n)) && !DATA.test(x) && !NUM.test(x) && !/_/.test(x))
+    .filter(x => !x.includes(MARK) && !NEVER.some(n => x.includes(n)) && !DATA.test(x) && !NUM.test(x) && !MONTH.test(x) && !/_/.test(x))
     .map(x => x.slice(0, 60)))];
   return un.length
     ? { state: label, status: 'unkeyed', count: un.length, samples: un.slice(0, 10) }
@@ -123,6 +127,85 @@ async function main() {
   const months = [...new Set(rows.map(r => String(r[C.date]).slice(0, 7)))].sort();
   const noop = () => {};
 
+
+  // Trees and event-state stubs for WhatIfTab. Built from the fixture so the tab
+  // renders populated dropdowns rather than an empty shell.
+  const uniq = (col: string) => [...new Set(rows.map(r => String(r[col])).filter(v => v && v !== 'undefined'))];
+  const treeOf = (l1: string, l2: string) => {
+    const m = new Map<string, string[]>();
+    for (const r of rows.slice(0, 4000)) {
+      const a = String(r[l1]), b = String(r[l2]);
+      if (!a || a === 'undefined') continue;
+      if (!m.has(a)) m.set(a, []);
+      if (b && b !== 'undefined' && !m.get(a)!.includes(b)) m.get(a)!.push(b);
+    }
+    return m;
+  };
+  const whatIfProps = () => ({
+    data: rows.slice(0, 4000),
+    wiDateCol: C.date, wiSegmentCol: C.seg, wiProductCol: C.prod, wiProductL2Col: C.prodL2,
+    wiChannelCol: C.chan, wiChannelL2Col: C.chanL2, wiMetricCol: C.metric,
+    wiInflowVal: 'Inflow', wiRetentionVal: 'Retention',
+    wiValueCol: C.val, wiRevenueCol: C.rev, wiArpuCol: '',
+    productTree: treeOf(C.prod, C.prodL2), channelTree: treeOf(C.chan, C.chanL2),
+    tariffTree: new Map<string, string[]>(),
+    selectedTariffs: [], setSelectedTariffs: noop,
+    cohortAvgArpu: 11.6,
+    newEvent: {}, setNewEvent: noop, marketEvents: [], setMarketEvents: noop,
+    addMarketEvent: noop, removeMarketEvent: noop, updateMarketEvent: noop,
+    yieldEvents: [], newYieldEvent: {}, setNewYieldEvent: noop, addYieldEvent: noop,
+    removeYieldEvent: noop, clearAllYieldEvents: noop,
+    pricingEvents: [], newPricingEvent: {}, setNewPricingEvent: noop, addPricingEvent: noop,
+    removePricingEvent: noop, clearAllPricingEvents: noop,
+    downloadExcel: noop, formatNumber: (v: any) => String(v), setActiveView: noop,
+    missingMonths: [],
+  } as any);
+
+
+  // ---------------------------------------------------------- baseline forecast
+  // WhatIfTab reads ForecastContext. Build ONE aggregate cohort's forecast from the
+  // fixture rather than running bulk generation — the sweep needs a populated app,
+  // not scale.
+  const { ForecastProvider } = await import('../src/context/ForecastContext.tsx');
+  let baseForecast: any = null;
+  try {
+    const fc: any = await import('../src/utils/forecasting.ts');
+    const map = fc.buildCohortDataMap(
+      rows.map((r: any) => ({ ...r, _parsedDate: new Date(r[C.date]) }))
+          .filter((r: any) => !isNaN(r._parsedDate.getTime())),
+      C.date, C.seg, C.prod, C.prodL2, C.chan, C.chanL2, 'tariff_tier_l1', 'tariff_tier_l2');
+    const SEG = 'Corporate';
+    const acc = new Map<number, any>();
+    for (const [k, bucket] of map) {
+      if (String(k).split('|')[0] !== SEG) continue;
+      for (const row of bucket as any[]) {
+        const t = row._parsedDate.getTime();
+        if (!acc.has(t)) acc.set(t, { _parsedDate: row._parsedDate, inflow: 0, outflow: 0, retention: 0,
+          arpu: 0, inflowArpu: 0, outflowArpu: 0, retentionArpu: 0, baseArpu: 0 });
+        const e = acc.get(t)!, m = String(row[C.metric]), v = Number(row[C.val]) || 0;
+        if (m === 'Inflow') e.inflow += v; else if (m === 'Outflow') e.outflow += v;
+        else if (m === 'Retention') e.retention += v;
+      }
+    }
+    const seriesArr = [...acc.values()].sort((a, b) => a._parsedDate - b._parsedDate);
+    baseForecast = fc.calculateBaseForecast(seriesArr,
+      { segment: SEG, product: 'All', productL2: 'All', channel: 'All', channelL2: 'All',
+        tariffL1: 'All', tariffL2: 'All', scenario: 'Base Case' },
+      10000, 12, 1.0, 1.5, 3, 'Holt Linear');
+    console.log(`baseline forecast built: ${baseForecast?.months?.length ?? 0} months (cohort ${SEG})\n`);
+  } catch (e: any) {
+    console.error('BASELINE BUILD FAILED —', (e?.message || e));
+    console.error('WhatIfTab states will be reported UNREACHABLE, not clean.\n');
+  }
+
+  const withProvider = (child: any) => React.createElement(ForecastProvider as any, {
+    baseForecast, setBaseForecast: noop,
+    adjustedForecast: null, setAdjustedForecast: noop,
+    forecastStore: new Map(), setForecastStore: noop,
+    hasLegacyBaseline: !!baseForecast, updatedAt: new Date().toISOString(),
+    bulkRuns: [], setBulkRuns: noop,
+  }, child);
+
   // ------------------------------------------------------------ modals/drawers
   const cases: [string, () => Promise<any>][] = [
     ['ImportActualsModal', async () => {
@@ -146,16 +229,47 @@ async function main() {
     ['BulkGenerateModal', async () => {
       const M: any = pick(await import('../src/components/BulkGenerateModal.tsx'), 'BulkGenerateModal');
       return React.createElement(M, {
-        isOpen: true, cohorts: [{ segment: 'Corporate', product: 'Mobile Voice', channel: 'Direct' }],
+        isOpen: true, onClose: noop,
+        sourceCohort: { segment: 'Corporate', product: 'Mobile Voice', channel: 'Direct' },
+        missingCount: 42,
         params: { preHorizonUncertainty: 1, postHorizonExpansionRate: 1.5, confidenceHorizon: 3, forecastLength: 12 },
-        onConfirm: async () => ({ generated: 0, failed: 0 }), onClose: noop, onCancel: noop,
+        currentModel: 'Holt Linear',
+        onConfirm: async () => ({ generated: 0, failed: 0 }),
+      } as any);
+    }],
+    ['BulkGenerateModal — in-progress state', async () => {
+      const M: any = pick(await import('../src/components/BulkGenerateModal.tsx'), 'BulkGenerateModal');
+      return React.createElement(M, {
+        isOpen: true, onClose: noop,
+        sourceCohort: { segment: 'Corporate', product: 'Mobile Voice', channel: 'Direct' },
+        missingCount: 42,
+        params: { preHorizonUncertainty: 1, postHorizonExpansionRate: 1.5, confidenceHorizon: 3, forecastLength: 12 },
+        currentModel: 'Holt Linear',
+        generationProgress: { current: 7, total: 42 },
+        onConfirm: async () => ({ generated: 0, failed: 0 }),
       } as any);
     }],
     ['ManageBulkDrawer', async () => {
       const M: any = pick(await import('../src/components/ManageBulkDrawer.tsx'), 'ManageBulkDrawer');
       return React.createElement(M, {
-        isOpen: true, runs: [], onClose: noop,
-        onReApply: async () => ({ generated: 0, failed: 0 }), onDelete: noop,
+        isOpen: true, onClose: noop,
+        allCohorts: [{ segment: 'Corporate', product: 'Mobile Voice', channel: 'Direct',
+                       forecastType: 'Standard Forecast', scenario: 'Base Case' }],
+        bulkRuns: [{ id: 'run-1', name: 'Q3 run', comment: 'seeded', timestamp: new Date().toISOString(),
+                     generated: 12, failed: 1, model: 'Holt Linear', autoModel: false, autoConfidence: false,
+                     cohortIds: ['Corporate|Mobile Voice|Direct|Standard Forecast|Base Case'] }],
+        onReApply: async () => ({ generated: 0, failed: 0 }),
+        defaultModel: 'Holt Linear', defaultPreHorizonUncertainty: 1,
+        defaultPostHorizonExpansionRate: 1.5, defaultConfidenceHorizon: 3,
+      } as any);
+    }],
+    ['ManageBulkDrawer — empty state', async () => {
+      const M: any = pick(await import('../src/components/ManageBulkDrawer.tsx'), 'ManageBulkDrawer');
+      return React.createElement(M, {
+        isOpen: true, onClose: noop, allCohorts: [], bulkRuns: [],
+        onReApply: async () => ({ generated: 0, failed: 0 }),
+        defaultModel: 'Holt Linear', defaultPreHorizonUncertainty: 1,
+        defaultPostHorizonExpansionRate: 1.5, defaultConfidenceHorizon: 3,
       } as any);
     }],
     ['DataMappingDrawer', async () => {
@@ -172,6 +286,11 @@ async function main() {
         setGeneratingCohort: noop, genInflowUplift: 0, setGenInflowUplift: noop,
         genInflowLag: 0, setGenInflowLag: noop, genRetentionUplift: 0, setGenRetentionUplift: noop,
         genRetentionLag: 0, setGenRetentionLag: noop, genArpuUplift: 0, setGenArpuUplift: noop,
+        genPreHorizonUncertainty: 1.0, setGenPreHorizonUncertainty: noop,
+        genPostHorizonExpansionRate: 1.5, setGenPostHorizonExpansionRate: noop,
+        genConfidenceHorizon: 3, setGenConfidenceHorizon: noop,
+        genForecastLength: 12, setGenForecastLength: noop,
+        genModel: 'Holt Linear', setGenModel: noop,
         onGenerate: noop, onCancel: noop, onClose: noop,
       } as any);
     }],
@@ -192,6 +311,23 @@ async function main() {
       const M: any = pick(await import('../src/components/CohortDimCheckboxes.tsx'), 'CohortDimCheckboxes');
       return React.createElement(M, { dims: {}, setDims: noop, columnsMapped: {} } as any);
     }],
+    ['WhatIfTab — no data (empty state)', async () => {
+      const M: any = pick(await import('../src/components/WhatIfTab.tsx'), 'WhatIfTab');
+      return withProvider(React.createElement(M, { ...whatIfProps(), data: [] }));
+    }],
+    ['DataMappingDrawer — nothing mapped (error state)', async () => {
+      const M: any = pick(await import('../src/components/DataMappingDrawer.tsx'), 'DataMappingDrawer');
+      return React.createElement(M, {
+        isOpen: true, open: true, columns: [], data: [], onClose: noop, onChange: noop,
+      } as any);
+    }],
+    ['DataMappingDrawer — unmappable file (error state)', async () => {
+      const M: any = pick(await import('../src/components/DataMappingDrawer.tsx'), 'DataMappingDrawer');
+      return React.createElement(M, {
+        isOpen: true, open: true, columns: ['col_a', 'col_b'],
+        data: [{ col_a: 'x', col_b: 'y' }], onClose: noop, onChange: noop,
+      } as any);
+    }],
   ];
 
   for (const [label, build] of cases) {
@@ -202,6 +338,39 @@ async function main() {
       continue;
     }
     results.push(await mount(label, el));
+  }
+
+
+  // ---------------------------------------------------- WhatIfTab event cards
+  // There is no initialTab prop — the card is internal useState, so the four cards
+  // must be reached by clicking the real tab controls. Mount once, click, sweep.
+  try {
+    const M: any = pick(await import('../src/components/WhatIfTab.tsx'), 'WhatIfTab');
+    const host = document.getElementById('root')!;
+    host.replaceChildren();
+    const container = document.createElement('div');
+    host.appendChild(container);
+    const r2 = createRoot(container);
+    await (act as any)(async () => { r2.render(withProvider(React.createElement(M, whatIfProps()))); });
+
+    const norm = (t: string) => (t || '').replace(/»/g, '').trim();
+    for (const card of ['Volume', 'Value', 'Pricing', 'Promotion']) {
+      const btn = [...container.querySelectorAll('button')]
+        .find(b => norm(b.textContent || '') === card) as any;
+      if (!btn) {
+        // RULE: cannot reach it -> UNREACHABLE, never clean
+        results.push({ state: `WhatIfTab — ${card} card`, status: 'UNREACHABLE',
+                       reason: `no tab control matching "${card}" found after mount` });
+        continue;
+      }
+      await (act as any)(async () => { btn.click(); });
+      results.push(sweepDom(`WhatIfTab — ${card} card`));
+    }
+    await (act as any)(async () => { r2.unmount(); });
+  } catch (e: any) {
+    for (const card of ['Volume', 'Value', 'Pricing', 'Promotion'])
+      results.push({ state: `WhatIfTab — ${card} card`, status: 'UNREACHABLE',
+                     reason: (e?.message || String(e)).slice(0, 130) });
   }
 
   // ------------------------------------------------------------------- report

@@ -112,7 +112,9 @@ export const ImportActualsModal: React.FC<ImportActualsModalProps> = ({ months, 
               disabled={selected.size === 0}
               className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              Import {selected.size > 0 ? t('importactuals_month', { p0: selected.size, p1: selected.size !== 1 ? 's' : '' }) : ''}
+              {selected.size > 0
+                ? t('importactuals_import_count_months', { count: selected.size })
+                : t('importactuals_import')}
             </button>
           </div>
         </div>
