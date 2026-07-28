@@ -68,6 +68,22 @@ You never change code. You detect inconsistencies and report them.
    If the scanner reports a string you believe is genuinely not user-facing,
    the fix is to add it to the scanner's exclusion sets and say so in your
    report — never to skip the check or explain the number away.
+
+   **A scanner PASS is NOT evidence of i18n coverage.** Static analysis
+   cannot follow a string through an arbitrary data structure into JSX. A
+   label defined in a config object at component scope and rendered later
+   via `.map()` occupies no JSX position, so no static walker keyed to JSX
+   sees it — that is exactly how BulkGenerateModal's option labels passed
+   as clean while being wholly unkeyed. The scanner now also reports object
+   -literal string values, but only as a REVIEW bucket, because that same
+   position is full of config, enum tokens and export field names.
+
+   Eight successive blind spots were found this way, each only after the
+   previous one was fixed. Treat the scanner as necessary and never as
+   sufficient: it is the check that stops NEW strings accumulating, and the
+   runtime sweep below is the check that proves what actually renders. The
+   two catch different classes and BOTH are required. Report both, and if
+   they disagree, the runtime result wins.
 7. Hook dependency-array integrity. For every `useMemo`/`useCallback` whose
    body was moved, extracted or extended, list the values the body now
    READS and compare that against the dependency array. **Textual parity

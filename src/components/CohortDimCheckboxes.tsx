@@ -68,7 +68,7 @@ export function CohortDimCheckboxes({
           className="accent-[#e60000] h-3.5 w-3.5"
         />
         <span className="text-xs font-medium text-slate-600">{t('common_customer_segment')}</span>
-        <span className="text-[9px] text-slate-400 uppercase tracking-wide ml-0.5">(required)</span>
+        <span className="text-[9px] text-slate-400 uppercase tracking-wide ml-0.5">{t('cohortdims_required')}</span>
       </label>
 
       {/* Product L1 */}
@@ -90,7 +90,7 @@ export function CohortDimCheckboxes({
         <label className="flex items-center gap-1.5 cursor-not-allowed opacity-40 select-none">
           <input type="checkbox" disabled className="h-3.5 w-3.5" />
           <span className="text-xs font-medium text-slate-500">{t('common_product_l1')}</span>
-          <span className="text-[9px] text-slate-400">(not mapped)</span>
+          <span className="text-[9px] text-slate-400">{t('cohortdims_not_mapped')}</span>
         </label>
       )}
 
@@ -117,7 +117,7 @@ export function CohortDimCheckboxes({
         <label className="flex items-center gap-1.5 cursor-not-allowed opacity-25 select-none">
           <input type="checkbox" disabled className="h-3.5 w-3.5" />
           <span className="text-xs font-medium text-slate-500">{t('common_product_l2')}</span>
-          <span className="text-[9px] text-slate-400">(not mapped)</span>
+          <span className="text-[9px] text-slate-400">{t('cohortdims_not_mapped')}</span>
         </label>
       )}
 
@@ -139,7 +139,7 @@ export function CohortDimCheckboxes({
         <label className="flex items-center gap-1.5 cursor-not-allowed opacity-40 select-none">
           <input type="checkbox" disabled className="h-3.5 w-3.5" />
           <span className="text-xs font-medium text-slate-500">{t('common_channel_l1')}</span>
-          <span className="text-[9px] text-slate-400">(not mapped)</span>
+          <span className="text-[9px] text-slate-400">{t('cohortdims_not_mapped')}</span>
         </label>
       )}
 
@@ -172,7 +172,7 @@ export function CohortDimCheckboxes({
         >
           <input type="checkbox" disabled className="h-3.5 w-3.5" />
           <span className="text-xs font-medium text-slate-500">{t('cohortdims_channel_l2')}</span>
-          <span className="text-[9px] text-slate-400">(not mapped)</span>
+          <span className="text-[9px] text-slate-400">{t('cohortdims_not_mapped')}</span>
         </label>
       )}
 
@@ -194,7 +194,7 @@ export function CohortDimCheckboxes({
         <label className="flex items-center gap-1.5 cursor-not-allowed opacity-40 select-none">
           <input type="checkbox" disabled className="h-3.5 w-3.5" />
           <span className="text-xs font-medium text-slate-500">{t('cohortdims_tariff_l1')}</span>
-          <span className="text-[9px] text-slate-400">(not mapped)</span>
+          <span className="text-[9px] text-slate-400">{t('cohortdims_not_mapped')}</span>
         </label>
       )}
 
@@ -227,7 +227,7 @@ export function CohortDimCheckboxes({
         >
           <input type="checkbox" disabled className="h-3.5 w-3.5" />
           <span className="text-xs font-medium text-slate-500">{t('cohortdims_tariff_l2')}</span>
-          <span className="text-[9px] text-slate-400">(not mapped)</span>
+          <span className="text-[9px] text-slate-400">{t('cohortdims_not_mapped')}</span>
         </label>
       )}
 

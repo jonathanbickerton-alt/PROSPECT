@@ -148,7 +148,7 @@ export function BulkGenerateModal({
               <p className="text-xs font-semibold text-slate-700 mb-2">{t('common_forecast_model')}</p>
               <div className="space-y-2">
                 {([
-                  { auto: true,  label: 'Auto-select best model per cohort', desc: 'Analyses each cohort\'s history independently — volatile, trending, and seasonal cohorts each get the most appropriate model' },
+                  { auto: true,  label: t('bulk_auto_select_best_model_per_cohort'), desc: t('bulk_analyses_each_cohort_s_history_independently') },
                   { auto: false, label: `Use ${currentModel} for all cohorts`, desc: null },
                 ] as const).map(opt => (
                   <label key={String(opt.auto)} className={`flex items-start gap-3 cursor-pointer rounded-lg px-3 py-2 border transition-colors ${autoModel === opt.auto ? 'bg-[#e60000]/5 border-[#e60000]/20' : 'border-slate-100 hover:border-slate-200'}`}>
@@ -172,8 +172,8 @@ export function BulkGenerateModal({
               <p className="text-xs font-semibold text-slate-700 mb-2">{t('bulk_confidence_band_width')}</p>
               <div className="space-y-2">
                 {([
-                  { auto: true,  label: 'Auto-configure confidence per cohort', desc: 'Sets band width based on each cohort\'s volatility — stable cohorts get tighter bands, uncertain ones get wider' },
-                  { auto: false, label: 'Use current settings for all cohorts', desc: null },
+                  { auto: true,  label: t('bulk_auto_configure_confidence_per_cohort'), desc: t('bulk_sets_band_width_based_on_each_cohort_s_volati') },
+                  { auto: false, label: t('bulk_use_current_settings_for_all_cohorts'), desc: null },
                 ] as const).map(opt => (
                   <label key={String(opt.auto)} className={`flex items-start gap-3 cursor-pointer rounded-lg px-3 py-2 border transition-colors ${autoConfidence === opt.auto ? 'bg-[#e60000]/5 border-[#e60000]/20' : 'border-slate-100 hover:border-slate-200'}`}>
                     <input
@@ -205,7 +205,7 @@ export function BulkGenerateModal({
                   { label: t('bulk_pre_horizon_z_score'), value: autoConfidence ? t('bulk_auto_configured_per_cohort') : `${params.preHorizonUncertainty}` },
                   { label: t('bulk_post_horizon_band_multiplier'), value: autoConfidence ? t('bulk_auto_configured_per_cohort') : `${params.postHorizonExpansionRate}×` },
                   { label: t('bulk_confidence_horizon'), value: autoConfidence ? t('bulk_auto_configured_per_cohort') : t('bulk_month', { p0: params.confidenceHorizon, p1: params.confidenceHorizon !== 1 ? 's' : '' }) },
-                  { label: 'Forecast Length', value: `${params.forecastLength} months` },
+                  { label: t('bulk_forecast_length'), value: `${params.forecastLength} months` },
                 ].map(row => (
                   <div key={row.label} className="flex items-center justify-between px-4 py-2 text-xs">
                     <span className="text-slate-500">{row.label}</span>
@@ -218,7 +218,7 @@ export function BulkGenerateModal({
             {/* Run name + comment */}
             <div className="mx-6 mb-4 space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('common_run_name')}<span className="font-normal text-slate-400">(optional)</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('common_run_name')}<span className="font-normal text-slate-400">{t('bulk_optional')}</span>
                 </label>
                 <input
                   type="text"
@@ -229,7 +229,7 @@ export function BulkGenerateModal({
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('common_comment')}<span className="font-normal text-slate-400">(optional)</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('common_comment')}<span className="font-normal text-slate-400">{t('bulk_optional')}</span>
                 </label>
                 <textarea
                   value={runComment}

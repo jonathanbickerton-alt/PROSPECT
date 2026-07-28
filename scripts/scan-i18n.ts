@@ -140,6 +140,21 @@ for (const sf of sourceFiles) {
         }
       }
     }
+    // 3b. .tsx object-literal string VALUES. Strings defined in a config object at
+    // component scope and rendered later via .map() never appear in a JSX position,
+    // so the JSX walk above cannot see them — this is the class that let
+    // BulkGenerateModal's option labels pass as clean. Bucketed for review because
+    // object values are also full of config, enum-like tokens and CSS.
+    if (isTsx && ts.isStringLiteral(n) && n.parent && ts.isPropertyAssignment(n.parent) &&
+        n.parent.initializer === n && !insideT(n)) {
+      let inJsx = false, q: ts.Node | undefined = n.parent;
+      while (q) { if (ts.isJsxExpression(q)) { inJsx = true; break; } q = q.parent; }
+      const propName = ts.isIdentifier(n.parent.name) || ts.isStringLiteral(n.parent.name)
+        ? (n.parent.name as any).text : '';
+      const t = n.text;
+      if (!inJsx && !SKIP_ATTRS.has(propName) && looksUserFacing(t) && !NEVER.has(t.trim()))
+        push(n, 'ObjLiteral', t, propName);
+    }
     // 4. .ts utilities — sentence-like literals (candidates, need human review)
     if (!isTsx && (ts.isStringLiteral(n) || ts.isNoSubstitutionTemplateLiteral(n) || ts.isTemplateExpression(n))) {
       // A string used as an object-literal KEY is a data contract (export column
@@ -199,6 +214,7 @@ function bucketOf(h: Hit): string {
   if (DATEFMT.test(t) && t.length <= 20) return 'date-format (excluded)';
   if (DEBUG.test(t)) return 'debug-log (excluded)';
   if (CHARTKEY.test(t)) return '5 chart-series-key (DEFERRED displayLabel)';
+  if (h.kind === 'ObjLiteral') return '8 object-literal (REVIEW)';
   if (h.kind === 'JSXExpr:template') return '6 interpolated (MUST KEY)';
   if (h.kind === 'TS-literal') return '7 ts-utility (MUST KEY)';
   if (h.kind === 'JSXText' && FRAGMENT.test(t) && t.split(/\s+/).length <= 3) return '1b fragment (DEFERRED Trans)';

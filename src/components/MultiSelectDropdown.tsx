@@ -28,7 +28,7 @@ export function MultiSelectDropdown({
   options,
   selected,
   onChange,
-  placeholder = 'Select…',
+  placeholder = 'Select…',  // TODO(i18n): default param is outside hook scope; needs `placeholder ?? t(...)` at use site
   noun = 'item',
   className = '',
 }: MultiSelectDropdownProps) {

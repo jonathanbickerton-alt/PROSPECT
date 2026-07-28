@@ -651,5 +651,14 @@
   "advisor_this_segment_has_some_usable_history_but_mode": "This segment has some usable history but moderate duration, and exhibits stable volatility. A balanced forecast range is recommended.",
   "advisor_this_segment_has_enough_history_but_some_mont": "This segment has enough history, but some month-to-month movement is present. A balanced forecast range is recommended.",
   "advisor_previous_forecasts_were_less_reliable_for_thi": "Previous forecasts were less reliable for this segment, so the optimistic and pessimistic range should be wider.",
-  "advisor_this_segment_has_a_stable_historical_pattern": "This segment has a stable historical pattern and previous forecasts were close to actuals, so a narrower forecast range is suitable."
+  "advisor_this_segment_has_a_stable_historical_pattern": "This segment has a stable historical pattern and previous forecasts were close to actuals, so a narrower forecast range is suitable.",
+  "bulk_auto_select_best_model_per_cohort": "Auto-select best model per cohort",
+  "bulk_auto_configure_confidence_per_cohort": "Auto-configure confidence per cohort",
+  "bulk_use_current_settings_for_all_cohorts": "Use current settings for all cohorts",
+  "bulk_forecast_length": "Forecast Length",
+  "bulk_optional": "(optional)",
+  "cohortdims_required": "(required)",
+  "cohortdims_not_mapped": "(not mapped)",
+  "bulk_analyses_each_cohort_s_history_independently": "Analyses each cohort's history independently — volatile, trending, and seasonal cohorts each get the most appropriate model",
+  "bulk_sets_band_width_based_on_each_cohort_s_volati": "Sets band width based on each cohort's volatility — stable cohorts get tighter bands, uncertain ones get wider"
 }
