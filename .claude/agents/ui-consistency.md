@@ -41,15 +41,33 @@ You never change code. You detect inconsistencies and report them.
 3. Compare the new element against it point by point
 4. Run npm run lint and npm run build to confirm nothing is broken
 5. Report any divergence from the established pattern
-6. i18n conformance — ABSOLUTE, NOT DIFF-SCOPED. Do not limit this to what
-   changed. For every page or component you touch, and for the file it
-   lives in as a whole, report the count of hardcoded user-facing strings
-   and whether the file calls `useTranslation` at all. A file with zero
-   `t()` calls is wholly untranslated regardless of whether this change
-   touched it. Report the count even when the diff added nothing — a clean
-   diff against an untranslated page is still a FAIL for that page, and
-   saying "no new hardcoded strings" without that count is the exact
-   phrasing that lets an untranslated page pass unnoticed.
+6. i18n conformance — RUN THE SCANNER. Do not pattern-match by hand and do
+   not write your own regex; regex cannot parse JSX and provably missed six
+   distinct classes of string here (under four characters, text beside an
+   icon, multi-line JSX, literals inside JSX expressions, strings in `.ts`
+   utilities, and interpolated template literals). The repo ships an
+   AST-based scanner built on the TypeScript compiler API:
+
+   ```
+   npx tsx scripts/scan-i18n.ts --check
+   ```
+
+   It walks JSXText, JSX attribute values, string and template literals in
+   JSX expression positions, and user-facing literals in `.ts` files, then
+   buckets every hit. It exits non-zero if ANY string sits in a MUST KEY
+   bucket — that is a FAIL, and you report the file:line list it prints.
+   Buckets marked DEFERRED (`<Trans>` fragments, chart-series keys awaiting
+   the displayLabel helper) and the excluded buckets (identifiers, date
+   formats, debug logs, TERMBASE §1 vocabulary) do not fail the check.
+
+   This check is ABSOLUTE, not diff-scoped: it scans the whole tree every
+   run, so a clean diff against an untranslated file is still a FAIL. That
+   is the point — it is what stops new hardcoded strings accumulating
+   unnoticed, which is how this codebase reached 592 of them.
+
+   If the scanner reports a string you believe is genuinely not user-facing,
+   the fix is to add it to the scanner's exclusion sets and say so in your
+   report — never to skip the check or explain the number away.
 7. Hook dependency-array integrity. For every `useMemo`/`useCallback` whose
    body was moved, extracted or extended, list the values the body now
    READS and compare that against the dependency array. **Textual parity
@@ -72,9 +90,23 @@ You never change code. You detect inconsistencies and report them.
    Method: import the running app's i18n instance, copy the `en` bundle
    with every value prefixed by a marker, register it as another locale,
    switch to it through the REAL language switcher, then walk the DOM and
-   report every visible string lacking the marker. Do this on each page you
-   can reach, and state plainly which pages you could not reach and why —
-   a page verified only statically is weaker evidence, not equivalent.
+   report every visible string lacking the marker.
+
+   **Loading a page is not enough, and a page-level pass is NOT evidence
+   that the components on it are keyed.** A sweep that only visited pages
+   once reported every page clean while the bulk-generate and Import
+   Actuals modals were almost entirely unkeyed — because nothing had opened
+   them. The sweep must therefore exercise:
+   - every modal and every drawer, opened
+   - empty states (no data loaded, no results after filtering)
+   - error states (invalid file, missing mapping, insufficient data)
+   - conditional branches — both arms of ternaries that swap labels, both
+     sides of toggles, disabled as well as enabled controls
+   - tables and dropdowns after data is loaded, not only before
+
+   State explicitly which interactive states you exercised AND which you
+   could not reach, with the reason. "All pages clean" without that list is
+   not a result.
 
 ## How you report
 A list of consistency checks with PASS or FAIL. For each FAIL, name the new
