@@ -1,220 +1,248 @@
-# PROSPECT Termbase
+# PROSPECT — Translation Termbase
 
-Governs the locale values in this directory. Extracted from the multilingual
-user guide: **where a term appears in the guide, the app must use the guide's
-translation**, so the interface and the documentation agree. A term that
-renders one way in the guide and another way in the UI is a defect in both.
+Extracted from the multilingual user guide. **This file governs the app's
+locale values.** Where a term appears here, the app must use the same
+translation, so the interface and the guide agree.
 
-**Status:** the rules, categories and term inventory below are settled and in
-force. The per-locale translation columns are populated **only where a value
-has been confirmed from the guide** — everything else is marked `— from guide`
-and must be filled from the guide before phase 2 (locale commissioning)
-begins. Do not invent a value to fill a gap; an invented translation is the
-exact drift this file exists to prevent.
-
-Phase 1 (extraction and wiring) uses English values throughout, so no gap here
-blocks it.
+The relationship is bidirectional: if a translator finds a better rendering,
+change it here **and** in both the app locale files and the guide, rather than
+letting them drift.
 
 ---
 
-## 1. Never translate
+## 1. Keep in English — never translate
 
-These stay English in every locale, including inside translated sentences.
+Per the business ruling. These carry no translation in any locale.
 
-**IBRO components** — `Inflow`, `Base`, `Retention`, `Outflow`
-**Metric** — `ARPU`
-**Scenario type** — `IBRO`, `IBRO Scenario`, `IBRO Type`
-**Product name** — `PROSPECT`
-**Model names** — `Simple Exponential Smoothing`, `Holt Linear`,
-`Damped Trend`, `Holt-Winters`, `AutoML`
-
-Tight labels built directly on an IBRO component or ARPU also stay English,
-because they name a field rather than describe one:
-
-`Inflow Identifier`, `Outflow Identifier`, `Base Identifier`,
-`Retention Identifier`, `ARPU Column`, `ARPU Uplift %`, `Inflow Uplift %`,
-`Retention Uplift %`, `Inflow Lag (Months)`, `Retention Lag (Months)`,
-`Pricing Events — ARPU Override`
+| Category | Terms |
+|---|---|
+| IBRO components | `Inflow` `Base` `Retention` `Outflow` — including compounds such as Inflow Identifier, Retention Uplift %, Inflow Lag (Months) |
+| Revenue metric | `ARPU` |
+| Framework | `IBRO` `IBRO Scenario` |
+| Product name | `PROSPECT` |
+| Model names | `Simple Exponential Smoothing` `Holt Linear` `Damped Trend` `Holt-Winters` `AutoML` |
+| Statistical acronym | `MAPE` (translate the expansion, keep the acronym — see §4) |
+| Formulae & symbols | `Base[t] = Base[t-1] + Inflow[t-1] − Outflow[t-1]`, `ARPU Δ`, `Base Δ`, `ARPU (+/−)` |
 
 ---
 
-## 2. The three compound categories
+## 2. Compound handling — the three categories
 
-A string containing a never-translate term is **not** automatically exempt.
-Which of the three it falls into decides its treatment.
+**(a) Sentence mentioning a domain term → translate the sentence, keep the term.**
 
-### (a) Sentences that mention a domain term → **translate; term stays English**
+> EN: Base reflects Inflow / Outflow from the prior month — an event in month T first appears in Base in T+1
+> DE: Base spiegelt Inflow / Outflow des Vormonats wider — ein Ereignis in Monat T erscheint erstmals in T+1 in Base
 
-The sentence is prose. Only the term is vocabulary. Leaving these English
-strands whole help paragraphs untranslated.
+**(b) Modifier + domain term → translate the modifier, keep the noun.**
 
-> `Holt-Winters requires at least 24 months of data`
-> → *Holt-Winters erfordert mindestens 24 Monate an Daten*
-
-> `Go to the Home page and upload an IBRO Excel file to begin forecasting.`
-> → term `IBRO` stays; the rest translates.
-
-> `Base reflects Inflow / Outflow from the prior month — an event in month T
-> first appears in Base in T+1`
-> → `Base`, `Inflow`, `Outflow` stay; the sentence around them translates.
-
-### (b) Modifier + domain term → **translate the modifier, keep the domain noun**
-
-Confirmed precedent from the guide:
-
-| English | de | es | fr | it |
-|---|---|---|---|---|
-| Blended ARPU | gemischter ARPU | ARPU combinado | ARPU mixte | ARPU medio |
-
-So `Baseline ARPU` → *ARPU de référence*, **not** wholly English.
-
-Members of this category in the app: `Baseline ARPU`, `Blended ARPU`,
-`New Blended ARPU`, `Baseline Blended ARPU`, `Promo blended ARPU`,
-`Historical ARPU`, `Forecast ARPU`, `Adjusted ARPU`, `Base ARPU`,
-`Mean (Base)`, `Acquisition (Inflow)`, `Base Only`, `Base (Adj)`,
-`Base (Baseline)`, `Cohorts + Base`, `Value (ARPU)`, `Seed Base`,
-`Inflow (Adj)`, `Outflow (Adj)`, `Retention (Adj)`,
-`Base Volume Delta (end of period)`, `ARPU Delta (end of period)`
-
-### (c) Formulae and symbols → **verbatim, identical in all six**
-
-Confirmed: the guide keeps this byte-identical across every locale.
-
-```
-Base[t] = Base[t-1] + Inflow[t-1] − Outflow[t-1]
-```
-
-Also verbatim: `ARPU Δ`, `Base Δ`, `Inflow Δ`, `Outflow Δ`, `Retention Δ`,
-`ARPU (+/−)`, `Var %`, `Dev%`
-
----
-
-## 3. Feature names — translated
-
-The product's own feature names are translated, matching the guide.
-
-| English | de | es | fr | it | pt |
+| EN | DE | ES | FR | IT | PT |
 |---|---|---|---|---|---|
-| Baseline Forecast | — from guide | — from guide | — from guide | — from guide | — from guide |
-| Market Events | — from guide | — from guide | — from guide | — from guide | — from guide |
-| Actuals Review | — from guide | — from guide | — from guide | — from guide | — from guide |
-| Scenario Compare | — from guide | — from guide | — from guide | — from guide | — from guide |
-| Standard Forecast | — from guide | — from guide | — from guide | — from guide | — from guide |
-| Overall Forecast View | — from guide | — from guide | — from guide | — from guide | — from guide |
-| Custom Promotion | — from guide | — from guide | — from guide | — from guide | — from guide |
-| Data Mapping & Segmentation | — from guide | — from guide | — from guide | — from guide | — from guide |
-| AutoML Challenger Evaluation | — from guide (`AutoML` stays) | — | — | — | — |
-| Model Advisor | — from guide | — from guide | — from guide | — from guide | — from guide |
-| Confidence Advisor | — from guide | — from guide | — from guide | — from guide | — from guide |
+| Blended ARPU | gemischter ARPU | ARPU combinado | ARPU mixte | ARPU medio | ARPU combinado |
+| Baseline ARPU | Basis-ARPU | ARPU base | ARPU de référence | ARPU di base | ARPU base |
+| Historical ARPU | historischer ARPU | ARPU histórico | ARPU historique | ARPU storico | ARPU histórico |
+| Forecast ARPU | prognostizierter ARPU | ARPU previsto | ARPU prévu | ARPU previsto | ARPU previsto |
+| Mean (Base) | Mittelwert (Base) | Media (Base) | Moyenne (Base) | Media (Base) | Média (Base) |
+| Acquisition (Inflow) | Akquisition (Inflow) | Captación (Inflow) | Acquisition (Inflow) | Acquisizione (Inflow) | Angariação (Inflow) |
+| Value (ARPU) | Wert (ARPU) | Valor (ARPU) | Valeur (ARPU) | Valore (ARPU) | Valor (ARPU) |
+
+> **German note:** adjective forms like *gemischter ARPU* decline by case. In a
+> standalone UI label the nominative is correct. Flag to translators that these
+> are labels, not sentence fragments.
+
+**(c) Formulae and symbols → verbatim, no translation.**
 
 ---
 
-## 4. Core vocabulary — translated
+## 3. Feature names — must match the guide exactly
 
-`Baseline`, `Forecast`, `Forecasted`, `Historical`, `Actual`, `Actuals`,
-`Adjusted`, `Scenario`, `Campaign`, `Promotion`, `Pricing`, `Cohort`,
-`Volume`, `Value`, `Month`, `Period`, `Horizon`, `Model`, `Session`
+These are the product's own names and appear throughout the guide.
 
----
-
-## 5. Dimensions — translated
-
-Per the business ruling, dimension names are translated even though they mirror
-uploaded spreadsheet column headers.
-
-`Segment`, `Customer Segment`, `Product`, `Channel`, `Tariff`, `Cohort`,
-`Product L1`, `Product L2`, `Channel L1`, `Channel L2`, `Tariff L1`,
-`Tariff L2`, `All Segments`, `All Products`, `All Channels`,
-`All (Aggregated)`
-
-> **Watch:** the `L1`/`L2` suffixes are level markers, not words. Keep them as
-> `L1`/`L2` in every locale; translate only the dimension noun.
+| EN | DE | ES | FR | IT | PT |
+|---|---|---|---|---|---|
+| Baseline Forecast | Basisprognose | Previsión base | Prévision de référence | Previsione di base | Previsão base |
+| Market Events | Marktereignisse | Eventos de mercado | Événements de marché | Eventi di mercato | Eventos de mercado |
+| Actuals Review | Ist-Abgleich | Revisión de valores reales | Revue des données réelles | Revisione dei dati effettivi | Revisão de dados reais |
+| Adjusted Forecast | Angepasste Prognose | Previsión ajustada | Prévision ajustée | Previsione rettificata | Previsão ajustada |
+| Custom Promotion | Individuelle Promotion | Promoción personalizada | Promotion personnalisée | Promozione personalizzata | Promoção personalizada |
+| Scenario | Szenario | Escenario | Scénario | Scenario | Cenário |
+| Base Case | Basisfall | Caso base | Cas de base | Caso base | Caso base |
 
 ---
 
-## 6. Event mechanics — translated
+## 4. Core vocabulary
 
-`Contract Length`, `Duration`, `Distribution`, `Even`, `Custom %`,
-`Campaign Name`, `Event Name`, `Ramp`, `Decay`, `Mix %`,
-`Distribute mix across`, `Tariffs in scope`, `Target`, `Amount`,
-`Active Market Events`, `Events this month`, `Exclude Market Events`,
-`Include Market Events`, `Adjusted vs Baseline`
-
----
-
-## 7. Forecast operations — translated
-
-`Generate Forecast`, `Run Forecast`, `Re-apply to selected`,
-`Apply Recommended Model`, `Apply Recommended Settings`,
-`Ignore Recommendation`, `Accept Model`, `Keep Current`, `Already optimal`,
-`Model applied`, `Bulk Generation Complete`, `Manage Bulk Generations`,
-`Import Actuals`, `Remove Actuals`, `Export Session`, `Export to Excel`,
-`Generating Forecasts…`
+| EN | DE | ES | FR | IT | PT |
+|---|---|---|---|---|---|
+| Actuals | Ist-Werte | Valores reales | Données réelles | Dati effettivi | Dados reais |
+| Cohort | Kohorte | Cohorte | Cohorte | Coorte | Coorte |
+| Leaf cohort | Blattkohorte | Cohorte hoja | Cohorte feuille | Coorte foglia | Coorte folha |
+| Aggregate | Aggregat | Agregado | Agrégat | Aggregato | Agregado |
+| Reconciliation | Übereinstimmung | Conciliación | Rapprochement | Quadratura | Conciliação |
+| Confidence band | Konfidenzband | Banda de confianza | Intervalle de confiance | Banda di confidenza | Banda de confiança |
+| Optimistic | Optimistisch | Optimista | Optimiste | Ottimistico | Otimista |
+| Pessimistic | Pessimistisch | Pesimista | Pessimiste | Pessimistico | Pessimista |
+| Variance | Abweichung | Desviación | Écart | Scostamento | Desvio |
+| In Band | Im Band | En banda | Dans l'intervalle | Nella banda | Dentro da banda |
+| Score | Bewertung | Puntuación | Note | Punteggio | Pontuação |
+| Mean Absolute Percentage Error | Mittlerer absoluter prozentualer Fehler | Error porcentual absoluto medio | Erreur absolue moyenne en pourcentage | Errore percentuale medio assoluto | Erro percentual absoluto médio |
 
 ---
 
-## 8. Score and confidence labels — translated
+## 5. Dimensions
 
-`Score`, `Overall Score`, `Component score`, `Average`, `Variance`,
-`In Band`, `Band`, `Optimistic`, `Pessimistic`, `Window Size`,
-`Fitted Model Parameters`, `In-sample MSE`, `Confidence Band Width`,
-`Confidence Horizon (Months)`, `Pre-Horizon z-score`,
-`Post-Horizon Band Multiplier`, `Pre-Horizon Uncertainty (%)`,
-`Action Required`, `Best Model Applied`, `All Models Performing Well`
+| EN | DE | ES | FR | IT | PT |
+|---|---|---|---|---|---|
+| Customer Segment | Kundensegment | Segmento de cliente | Segment client | Segmento cliente | Segmento de cliente |
+| Product | Produkt | Producto | Produit | Prodotto | Produto |
+| Channel | Kanal | Canal | Canal | Canale | Canal |
+| Tariff | Tarif | Tarifa | Tarif | Tariffa | Tarifário |
+| All | Alle | Todos | Tous | Tutti | Todos |
+| Month | Monat | Mes | Mois | Mese | Mês |
+| Volume | Volumen | Volumen | Volume | Volume | Volume |
 
-> `z-score` and `MSE` are statistical notation — keep as-is inside the
-> translated label, as with the IBRO components.
+> L1 / L2 suffixes stay as-is: *Produkt L1*, *Producto L2*, *Tarif L1*.
+> Dimension **values** (Corporate, SME, SOHO, Mobile Data, RED L, SIM Only,
+> High/Medium/Low Value) are data, not UI copy — never translated.
 
 ---
 
-## 9. Placeholder hints — translated, including the abbreviation
+## 6. Event mechanics
 
-The `e.g.` abbreviation itself changes per locale.
+| EN | DE | ES | FR | IT | PT |
+|---|---|---|---|---|---|
+| Campaign name | Kampagnenname | Nombre de campaña | Nom de campagne | Nome di campagna | Nome de campanha |
+| Ramp | Anlauf | Progresión | Montée en charge | Avvio graduale | Progressão |
+| Decay | Abklingen | Decaimiento | Atténuation | Attenuazione | Atenuação |
+| Mix | Mix | Mix | Mix | Mix | Mix |
+| Value mix | Wertmix | Mix de valor | Mix de valeur | Mix di valore | Mix de valor |
+| Tariff mix | Tarifmix | Mix de tarifa | Mix tarifaire | Mix tariffario | Mix tarifário |
+| Acquisition | Akquisition | Captación | Acquisition | Acquisizione | Angariação |
+| Re-contracting | Neuvertragsbindung | Renovación de contrato | Réengagement | Rinnovo contrattuale | Renovação contratual |
+| Pro-rata distribution | Anteilige Verteilung | Distribución proporcional | Répartition proportionnelle | Distribuzione proporzionale | Distribuição proporcional |
 
-| en | de | es | fr | it | pt |
+---
+
+## 7. Forecast operations
+
+| EN | DE | ES | FR | IT | PT |
+|---|---|---|---|---|---|
+| Bulk generation | Massenerstellung | Generación masiva | Génération en masse | Generazione massiva | Geração em massa |
+| Auto model selection | Automatische Modellauswahl | Selección automática de modelo | Sélection automatique de modèle | Selezione automatica del modello | Seleção automática de modelo |
+| Gap detection | Lückenerkennung | Detección de huecos | Détection de lacunes | Rilevamento lacune | Deteção de lacunas |
+| One-off flag | Einmal-Kennzeichnung | Marca de evento puntual | Signalement ponctuel | Contrassegno occasionale | Marcação pontual |
+| Substituted value | Ersatzwert | Valor sustituido | Valeur de substitution | Valore sostitutivo | Valor substituto |
+| Export Session | Sitzung exportieren | Exportar sesión | Exporter la session | Esporta sessione | Exportar sessão |
+| Import Actuals | Ist-Werte importieren | Importar valores reales | Importer les données réelles | Importa dati effettivi | Importar dados reais |
+| Remove Actuals | Ist-Werte entfernen | Eliminar valores reales | Supprimer les données réelles | Rimuovi dati effettivi | Remover dados reais |
+
+---
+
+## 8. Score colours and directional labels
+
+| EN | DE | ES | FR | IT | PT |
+|---|---|---|---|---|---|
+| Green | Grün | Verde | Vert | Verde | Verde |
+| Amber | Gelb | Ámbar | Orange clair | Ambra | Âmbar |
+| Orange | Orange | Naranja | Orange | Arancione | Laranja |
+| Red | Rot | Rojo | Rouge | Rosso | Vermelho |
+| Over | Über | Por encima | Au-dessus | Sopra | Acima |
+| Under | Unter | Por debajo | En dessous | Sotto | Abaixo |
+
+> `Over` / `Under` are the shortened directional labels in the accuracy table.
+> They must stay short — the column is narrow and DE/FR run longer. If a
+> translation cannot fit, raise it rather than silently truncating.
+
+---
+
+## 9. Placeholder hints
+
+Translate, including the abbreviation:
+
+| EN | DE | ES | FR | IT | PT |
 |---|---|---|---|---|---|
 | e.g. | z. B. | p. ej. | p. ex. | per es. | p. ex. |
 
-Applies to: `e.g. Summer Promo 2026`, `e.g. CPI Rise Jan 2026`,
-`e.g. Q3 Promo Mix`, `e.g. one-time fleet update`,
-`e.g. Quarterly pricing review, updated confidence settings…`
-
-> Example content inside the hint (`Summer Promo 2026`) is illustrative and
-> should be localised to read naturally, not transliterated.
+Example values inside hints (`Summer Promo 2026`, `CPI Rise Jan 2026`) should be
+localised to plausible local equivalents, not left English.
 
 ---
 
-## 10. Layout risk list
+## 10. Layout risk — read before translating
 
-German and French run roughly 20–30% longer than English; Italian and
-Portuguese somewhat less. These elements are width-constrained and must be
-re-checked visually in **de** and **fr** before any locale ships.
+German and French run 20–30% longer than English. The pressure points, in order:
 
-| Element | Risk |
-|---|---|
-| Step indicator labels (`Baseline Forecast`, `Market Events`, `Actuals Review`) | Three across a fixed-width bar; wrapping breaks alignment |
-| Table column headers in Actuals Review | Sticky headers with narrow columns |
-| Score band labels | Sit inside coloured pills of fixed width |
-| Primary action buttons (`Apply Recommended Model`, `Apply Recommended Settings`) | Already long in English |
-| Dropdown option text (`All (Aggregated)`, `All Segments`) | Constrained by the control width |
-| Modal titles | `Data Mapping & Segmentation`, `Bulk Generation Complete` |
-| Filter chips | Sized to content, wrap awkwardly at small widths |
-| `Distribute mix across` / `Tariffs in scope` | Inline labels beside controls |
+1. **Accuracy table** — score badges with Over/Under beneath, in narrow columns.
+2. **Hierarchical dropdown triggers** — already show `L1 — L2` compounds.
+3. **Buttons in the Actuals Review header** — Import / Remove / Export sit in a row.
+4. **Tariff selection control** — multi-select with select-all.
+5. **MAPE cards** — five across the page width.
+
+Where a translation cannot fit, raise it for a shortened alternative rather
+than allowing truncation or wrapping that breaks the layout. A UI review in
+DE and FR is required before the locale work is considered complete.
 
 ---
 
-## 11. Using this file
+## 11. Display strings vs identifiers — the split rule
 
-**During extraction (phase 1):** cross-check each string against the sections
-above. A string matching a termbase entry gets a key so phase 2 picks up the
-guide's value. A string that has no entry but plausibly belongs in the guide is
-flagged rather than keyed silently — the guide may need extending so the two do
-not drift.
+A string that is **both displayed and used as an identifier** must be split:
+a stable English key for the lookup, a separate translated label for display.
+**Never one string doing both jobs.**
 
-**During commissioning (phase 2):** the termbase value wins over a translator's
-preference. Where the guide and the app disagree, that is a bug to reconcile,
-not a style choice.
+Where splitting is not cheap, **the identifier wins** — the string stays
+English and a comment records why.
 
-Translator context notes for strings that cannot be disambiguated from the
-English alone — `View`, `Use`, `Record`, `Clear`, `Done` and similar — live in
-`_context.json` in this directory, keyed identically to `translation.json`.
+Translating an identifier fails silently rather than loudly: cohort IDs
+written under one locale simply stop matching those written under another,
+so saved sessions and scenario comparisons break with no error.
+
+### Worked example 1 — `Base Case` (§3)
+
+Listed above as a feature name with translations, but in code it is also an
+identifier:
+
+```
+App.tsx   cohortId: `${Segment}|${Product}|${Channel}|Standard Forecast|${Scenario ?? 'Base Case'}`
+App.tsx   } else if (wiScen === 'Base Case') {
+```
+
+It sits inside a composite cohort key *and* an equality comparison. Until it
+is split, **the literal stays English**; the §3 translations apply only to a
+separately-keyed display label.
+
+### Worked example 2 — `All` (§5)
+
+The clearest case, because it looks like ordinary vocabulary. `All` is listed
+in Dimensions with full translations, but in code it is a **sentinel** serving
+thirteen dimension comparisons and select values in WhatIfTab alone:
+
+```
+event.productL2 !== 'All'                    // comparison
+value={newPricingEvent.segment ?? 'All'}     // select value
+```
+
+Translating the sentinel breaks every dimension filter. The sentinel stays
+English; the §5 translations apply to the separately-keyed **display** label
+only. A user sees *Alle*; the code still compares `'All'`.
+
+### Entries in this termbase carrying the constraint
+
+| Term | Section | Identifier use | Treatment |
+|---|---|---|---|
+| `Base Case` | §3 | cohortId key + equality comparison | Literal stays English; translations are display-only |
+| `All` | §5 | 13+ dimension comparisons and select values | Literal stays English; translations are display-only |
+| `Optimistic` | §4 | scenario band identifier | Literal stays English; translations are display-only |
+| `Pessimistic` | §4 | scenario band identifier | Literal stays English; translations are display-only |
+
+### Already correctly split — no action
+
+`Standard Forecast` and `What-If Analysis` are the code's **internal**
+forecast-type names and appear only in composite keys and comparisons, never
+as display text. The user-facing equivalents are the separately-keyed §3
+entries *Baseline Forecast* and *Market Events*. Verified: no JSX text
+occurrence of either internal name.
+
+**Open question — needs confirmation:** `forecastType` values are rendered in
+a "Forecast Type" column in the Overall Forecast view. If that column prints
+the raw internal value rather than a mapped display label, the internal name
+does surface to the user and needs a display mapping. Confirm before phase 2.
