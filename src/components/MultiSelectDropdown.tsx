@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronDown, Search } from 'lucide-react';
 
 interface MultiSelectDropdownProps {
@@ -31,6 +32,7 @@ export function MultiSelectDropdown({
   noun = 'item',
   className = '',
 }: MultiSelectDropdownProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -113,23 +115,19 @@ export function MultiSelectDropdown({
               onClick={() => onChange(options.slice())}
               disabled={allSelected}
               className="text-[11px] font-medium text-slate-600 hover:text-[#e60000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-slate-600"
-            >
-              Select all
-            </button>
+            >{t('common_select_all')}</button>
             <button
               type="button"
               onClick={() => onChange([])}
               disabled={selected.length === 0}
               className="text-[11px] font-medium text-slate-500 hover:text-[#e60000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-slate-500"
-            >
-              Clear
-            </button>
+            >{t('multiselect_clear')}</button>
           </div>
 
           {/* Option list */}
           <div className="max-h-56 overflow-y-auto py-1">
             {filtered.length === 0 ? (
-              <div className="px-3 py-3 text-xs text-slate-400 italic text-center">No matches</div>
+              <div className="px-3 py-3 text-xs text-slate-400 italic text-center">{t('multiselect_no_matches')}</div>
             ) : (
               filtered.map(opt => {
                 const on = selected.includes(opt);

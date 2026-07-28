@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, Database, CheckCircle2, AlertCircle } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -39,6 +40,7 @@ function SelectRow({
   label: string; value: string; onChange: (v: string) => void;
   columns: string[]; includeNone?: boolean; hint?: string;
 }) {
+  const { t } = useTranslation();
   return (
     <div>
       <label className="block text-xs font-semibold text-slate-700 mb-1">{label}</label>
@@ -48,7 +50,7 @@ function SelectRow({
         onChange={e => onChange(e.target.value)}
         className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 outline-none focus:border-[#e60000]/50 focus:ring-2 focus:ring-[#e60000]/10"
       >
-        {includeNone && <option value="">None</option>}
+        {includeNone && <option value="">{t('mapping_none')}</option>}
         {columns.map(c => <option key={c} value={c}>{c}</option>)}
       </select>
     </div>
@@ -97,6 +99,7 @@ export function DataMappingDrawer({
   wiChannelCol, setWiChannelCol,
   wiChannelL2Col = '', setWiChannelL2Col,
 }: DataMappingDrawerProps) {
+  const { t } = useTranslation();
 
   const uniqueMetrics = React.useMemo(
     () => wiMetricCol
@@ -131,8 +134,8 @@ export function DataMappingDrawer({
               <Database size={17} className="text-slate-600" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-slate-900">Data Mapping &amp; Segmentation</h2>
-              <p className="text-[11px] text-slate-500 mt-0.5">Map columns once — auto-detected on upload</p>
+              <h2 className="text-sm font-bold text-slate-900">{t('common_data_mapping_and_segmentation')}</h2>
+              <p className="text-[11px] text-slate-500 mt-0.5">{t('mapping_map_columns_once_auto_detected_on_upload')}</p>
             </div>
           </div>
           <button
@@ -168,13 +171,13 @@ export function DataMappingDrawer({
               1 · Column Mapping
             </h3>
             <div className="space-y-3">
-              <SelectRow label="Date Column" value={wiDateCol} onChange={setWiDateCol} columns={columns} />
-              <SelectRow label="Metric / Dimension Column" value={wiMetricCol} onChange={setWiMetricCol} columns={columns}
+              <SelectRow label={t('mapping_date_column')} value={wiDateCol} onChange={setWiDateCol} columns={columns} />
+              <SelectRow label={t('mapping_metric_dimension_column')} value={wiMetricCol} onChange={setWiMetricCol} columns={columns}
                 hint="The column that holds values like 'Inflow', 'Outflow', etc." />
-              <SelectRow label="Subscriber Volume Column" value={wiValueCol} onChange={setWiValueCol} columns={columns} />
+              <SelectRow label={t('mapping_subscriber_volume_column')} value={wiValueCol} onChange={setWiValueCol} columns={columns} />
               <SelectRow label="ARPU Column" value={wiArpuCol} onChange={setWiArpuCol} columns={columns} includeNone
                 hint="Optional — used to compute revenue-weighted ARPU" />
-              <SelectRow label="Revenue Column" value={wiRevenueCol} onChange={setWiRevenueCol} columns={columns} includeNone
+              <SelectRow label={t('mapping_revenue_column')} value={wiRevenueCol} onChange={setWiRevenueCol} columns={columns} includeNone
                 hint="Optional — alternative to ARPU × volume" />
             </div>
           </section>
@@ -199,18 +202,16 @@ export function DataMappingDrawer({
             <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">
               3 · Segmentation Columns
             </h3>
-            <p className="text-[11px] text-slate-400 mb-3">
-              Optional — map dimension columns to enable per-cohort forecasting.
-            </p>
+            <p className="text-[11px] text-slate-400 mb-3">{t('mapping_optional_map_dimension_columns_to_enable_per')}</p>
             <div className="space-y-3">
-              <SelectRow label="Customer Segment" value={wiSegmentCol} onChange={v => { setWiSegmentCol(v); }} columns={columns} includeNone />
-              <SelectRow label="Product L1" value={wiProductCol} onChange={v => { setWiProductCol(v); }} columns={columns} includeNone />
+              <SelectRow label={t('common_customer_segment')} value={wiSegmentCol} onChange={v => { setWiSegmentCol(v); }} columns={columns} includeNone />
+              <SelectRow label={t('common_product_l1')} value={wiProductCol} onChange={v => { setWiProductCol(v); }} columns={columns} includeNone />
               {wiProductCol && (
-                <SelectRow label="Product L2 (optional)" value={wiProductL2Col} onChange={v => setWiProductL2Col?.(v)} columns={columns} includeNone />
+                <SelectRow label={t('mapping_product_l2_optional')} value={wiProductL2Col} onChange={v => setWiProductL2Col?.(v)} columns={columns} includeNone />
               )}
-              <SelectRow label="Channel L1" value={wiChannelCol} onChange={v => { setWiChannelCol(v); }} columns={columns} includeNone />
+              <SelectRow label={t('common_channel_l1')} value={wiChannelCol} onChange={v => { setWiChannelCol(v); }} columns={columns} includeNone />
               {wiChannelCol && (
-                <SelectRow label="Channel L2 (optional)" value={wiChannelL2Col} onChange={v => setWiChannelL2Col?.(v)} columns={columns} includeNone />
+                <SelectRow label={t('mapping_channel_l2_optional')} value={wiChannelL2Col} onChange={v => setWiChannelL2Col?.(v)} columns={columns} includeNone />
               )}
             </div>
           </section>
@@ -221,9 +222,7 @@ export function DataMappingDrawer({
           <button
             onClick={onClose}
             className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-semibold transition-colors"
-          >
-            Done
-          </button>
+          >{t('mapping_done')}</button>
         </div>
       </div>
     </>

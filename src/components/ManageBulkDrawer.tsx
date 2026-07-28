@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   X, ChevronDown, ChevronRight, Zap, ArrowLeft,
   CheckCircle2, AlertTriangle, Loader2, LayersIcon,
@@ -96,6 +97,7 @@ export function ManageBulkDrawer({
   defaultPostHorizonExpansionRate,
   defaultConfidenceHorizon,
 }: ManageBulkDrawerProps) {
+  const { t } = useTranslation();
   const [phase, setPhase] = useState<Phase>('select');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['manual']));
@@ -255,16 +257,12 @@ export function ManageBulkDrawer({
                 <button
                   onClick={() => setSelected(new Set(generatedCohorts.map(c => c.id)))}
                   className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 transition-colors"
-                >
-                  Select all
-                </button>
+                >{t('common_select_all')}</button>
                 <span className="text-slate-200 select-none">|</span>
                 <button
                   onClick={() => setSelected(new Set())}
                   className="text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors"
-                >
-                  Deselect all
-                </button>
+                >{t('bulkdrawer_deselect_all')}</button>
                 {selected.size > 0 && (
                   <span className="ml-auto text-xs text-slate-400">
                     {selected.size} selected
@@ -274,16 +272,14 @@ export function ManageBulkDrawer({
 
               {/* Empty state */}
               {generatedCohorts.length === 0 && (
-                <div className="text-center py-16 text-slate-400 text-sm">
-                  No cohort forecasts have been generated yet.
-                </div>
+                <div className="text-center py-16 text-slate-400 text-sm">{t('bulkdrawer_no_cohort_forecasts_have_been_generated_yet')}</div>
               )}
 
               {/* Manually generated group */}
               {manualCohorts.length > 0 && (
                 <CohortGroup
                   groupId="manual"
-                  title="Manually Generated"
+                  title={t('bulkdrawer_manually_generated')}
                   count={manualCohorts.length}
                   isExpanded={expandedGroups.has('manual')}
                   onToggle={() => toggleGroup('manual')}
@@ -319,8 +315,7 @@ export function ManageBulkDrawer({
 
               {/* Run name */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Run Name <span className="font-normal text-slate-400">(optional)</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('common_run_name')}<span className="font-normal text-slate-400">(optional)</span>
                 </label>
                 <input
                   type="text"
@@ -334,13 +329,12 @@ export function ManageBulkDrawer({
 
               {/* Comment */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Comment <span className="font-normal text-slate-400">(optional)</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('common_comment')}<span className="font-normal text-slate-400">(optional)</span>
                 </label>
                 <textarea
                   value={runComment}
                   onChange={e => setRunComment(e.target.value)}
-                  placeholder="e.g. Quarterly pricing review, updated confidence settings…"
+                  placeholder={t('common_e_g_quarterly_pricing_review_updated_confiden')}
                   rows={2}
                   disabled={phase === 'generating'}
                   className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#e60000]/20 focus:border-[#e60000]/40 resize-none disabled:bg-slate-50 disabled:text-slate-400"
@@ -348,13 +342,11 @@ export function ManageBulkDrawer({
               </div>
 
               <div className="border-t border-slate-100 pt-4 space-y-4">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Forecast Settings
-                </p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{t('bulkdrawer_forecast_settings')}</p>
 
                 {/* Model */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-2">Model</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-2">{t('bulkdrawer_model')}</label>
                   <div className="space-y-2">
                     {MODELS.map(m => (
                       <button
@@ -413,16 +405,13 @@ export function ManageBulkDrawer({
               </div>
 
               {/* Summary */}
-              <div className="bg-slate-50 rounded-lg px-3 py-2.5 text-xs text-slate-600">
-                Applying to <strong>{selected.size}</strong> cohort{selected.size !== 1 ? 's' : ''}.{' '}
+              <div className="bg-slate-50 rounded-lg px-3 py-2.5 text-xs text-slate-600">{t('bulkdrawer_applying_to')}<strong>{selected.size}</strong> cohort{selected.size !== 1 ? 's' : ''}.{' '}
                 Existing forecasts for these cohorts will be overwritten.
               </div>
 
               {phase === 'generating' && (
                 <div className="flex items-center gap-2.5 text-sm text-slate-600">
-                  <Loader2 size={16} className="animate-spin text-[#e60000] shrink-0" />
-                  Generating forecasts…
-                </div>
+                  <Loader2 size={16} className="animate-spin text-[#e60000] shrink-0" />{t('bulkdrawer_generating_forecasts')}</div>
               )}
             </div>
           )}
@@ -439,7 +428,7 @@ export function ManageBulkDrawer({
                 />
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-900 mb-4">Re-apply Complete</h3>
+                <h3 className="text-base font-bold text-slate-900 mb-4">{t('bulkdrawer_re_apply_complete')}</h3>
                 <div className="space-y-2 text-sm max-w-xs mx-auto">
                   <div className="flex items-center gap-2 bg-emerald-50 rounded-lg px-3 py-2.5 text-left">
                     <CheckCircle2 size={14} className="text-emerald-500 shrink-0" />
@@ -476,8 +465,7 @@ export function ManageBulkDrawer({
                 disabled={selected.size === 0}
                 className="px-4 py-2 bg-[#e60000] hover:bg-[#cc0000] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
               >
-                <Zap size={14} /> Re-apply to selected
-              </button>
+                <Zap size={14} />{t('bulkdrawer_re_apply_to_selected')}</button>
             </div>
           )}
 
@@ -503,15 +491,11 @@ export function ManageBulkDrawer({
               <button
                 onClick={resetToSelect}
                 className="text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
-              >
-                Back to list
-              </button>
+              >{t('bulkdrawer_back_to_list')}</button>
               <button
                 onClick={handleClose}
                 className="flex-1 px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-sm font-semibold transition-colors"
-              >
-                Done
-              </button>
+              >{t('bulkdrawer_done')}</button>
             </div>
           )}
         </div>
@@ -602,6 +586,7 @@ const BulkRunGroup: React.FC<{
   onToggleCohort: (id: string) => void;
   onToggleGroupAll: () => void;
 }> = ({ run, cohorts, isExpanded, onToggle, selected, onToggleCohort, onToggleGroupAll }) => {
+  const { t } = useTranslation();
   const allSel = cohorts.length > 0 && cohorts.every(c => selected.has(c.id));
   const someSel = cohorts.some(c => selected.has(c.id));
 
@@ -638,10 +623,10 @@ const BulkRunGroup: React.FC<{
           {/* Run metadata */}
           <div className="px-4 py-3 bg-white border-b border-slate-100">
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-400">
-              <span>Model: <strong className="text-slate-600">{run.settings.model}</strong></span>
-              <span>Horizon: <strong className="text-slate-600">{run.settings.confidenceHorizon}m</strong></span>
-              <span>Pre-Unc: <strong className="text-slate-600">{run.settings.preHorizonUncertainty}%</strong></span>
-              <span>Post-Exp: <strong className="text-slate-600">{run.settings.postHorizonExpansionRate}% /mo</strong></span>
+              <span>{t('bulkdrawer_model')}<strong className="text-slate-600">{run.settings.model}</strong></span>
+              <span>{t('bulkdrawer_horizon')}<strong className="text-slate-600">{run.settings.confidenceHorizon}m</strong></span>
+              <span>{t('bulkdrawer_pre_unc')}<strong className="text-slate-600">{run.settings.preHorizonUncertainty}%</strong></span>
+              <span>{t('bulkdrawer_post_exp')}<strong className="text-slate-600">{run.settings.postHorizonExpansionRate}% /mo</strong></span>
               <span>
                 <span className={run.generated > 0 ? 'text-emerald-600' : 'text-slate-400'}>
                   {run.generated} generated
@@ -666,9 +651,7 @@ const BulkRunGroup: React.FC<{
               ))}
             </div>
           ) : (
-            <div className="px-4 py-3 text-xs text-slate-400 italic">
-              No cohorts from this run are currently loaded.
-            </div>
+            <div className="px-4 py-3 text-xs text-slate-400 italic">{t('bulkdrawer_no_cohorts_from_this_run_are_currently_loaded')}</div>
           )}
         </>
       )}

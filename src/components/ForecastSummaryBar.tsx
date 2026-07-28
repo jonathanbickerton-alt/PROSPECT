@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Calendar, Users, Clock, Tag } from 'lucide-react';
 import { useForecast } from '../context/ForecastContext';
 
@@ -13,6 +14,7 @@ import { useForecast } from '../context/ForecastContext';
  *  • Last updated timestamp
  */
 export function ForecastSummaryBar() {
+  const { t } = useTranslation();
   const { baseForecast, adjustedForecast, updatedAt } = useForecast();
 
   if (!baseForecast) return null;
@@ -51,7 +53,7 @@ export function ForecastSummaryBar() {
             </span>
           ))
         ) : (
-          <span className="text-slate-400">All cohorts</span>
+          <span className="text-slate-400">{t('summarybar_all_cohorts')}</span>
         )}
       </div>
 
@@ -60,7 +62,7 @@ export function ForecastSummaryBar() {
       {/* Base volume */}
       <div className="flex items-center gap-1.5 shrink-0">
         <Users size={13} className="text-slate-400" />
-        <span className="text-slate-400">Seed Base:</span>
+        <span className="text-slate-400">{t('summarybar_seed_base')}</span>
         <span className="font-semibold text-white">{fmt(seedBaseVolume)}</span>
       </div>
 
@@ -69,7 +71,7 @@ export function ForecastSummaryBar() {
       {/* Forecast period */}
       <div className="flex items-center gap-1.5 shrink-0">
         <Calendar size={13} className="text-slate-400" />
-        <span className="text-slate-400">Period:</span>
+        <span className="text-slate-400">{t('summarybar_period')}</span>
         <span className="font-medium text-slate-200">{forecastPeriod}</span>
         <span className="text-slate-500">({months.length} months)</span>
       </div>
@@ -93,7 +95,7 @@ export function ForecastSummaryBar() {
       {updatedAt && (
         <div className="flex items-center gap-1.5 shrink-0 ml-auto">
           <Clock size={13} className="text-slate-400" />
-          <span className="text-slate-400">Updated:</span>
+          <span className="text-slate-400">{t('summarybar_updated')}</span>
           <span className="text-slate-300">{updatedAt}</span>
         </div>
       )}

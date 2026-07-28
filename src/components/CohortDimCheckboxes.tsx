@@ -1,5 +1,6 @@
 import React from 'react';
 
+import { useTranslation } from 'react-i18next';
 export interface CohortDims {
   product: boolean;
   /** Product L2 — only meaningful when product is true */
@@ -53,11 +54,10 @@ export function CohortDimCheckboxes({
   count,
   countLabel = 'cohort',
 }: Props) {
+  const { t } = useTranslation();
   return (
     <div className="px-6 py-3 border-b border-slate-100 bg-white flex flex-wrap items-center gap-5">
-      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0">
-        Group by
-      </span>
+      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0">{t('cohortdims_group_by')}</span>
 
       {/* Customer Segment — always checked, cannot be deselected */}
       <label className="flex items-center gap-1.5 cursor-not-allowed select-none">
@@ -67,7 +67,7 @@ export function CohortDimCheckboxes({
           disabled
           className="accent-[#e60000] h-3.5 w-3.5"
         />
-        <span className="text-xs font-medium text-slate-600">Customer Segment</span>
+        <span className="text-xs font-medium text-slate-600">{t('common_customer_segment')}</span>
         <span className="text-[9px] text-slate-400 uppercase tracking-wide ml-0.5">(required)</span>
       </label>
 
@@ -84,12 +84,12 @@ export function CohortDimCheckboxes({
             }}
             className="accent-[#e60000] h-3.5 w-3.5"
           />
-          <span className="text-xs font-medium text-slate-700">Product L1</span>
+          <span className="text-xs font-medium text-slate-700">{t('common_product_l1')}</span>
         </label>
       ) : (
         <label className="flex items-center gap-1.5 cursor-not-allowed opacity-40 select-none">
           <input type="checkbox" disabled className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium text-slate-500">Product L1</span>
+          <span className="text-xs font-medium text-slate-500">{t('common_product_l1')}</span>
           <span className="text-[9px] text-slate-400">(not mapped)</span>
         </label>
       )}
@@ -108,7 +108,7 @@ export function CohortDimCheckboxes({
             onChange={e => onChange({ ...dims, productL2: e.target.checked })}
             className="accent-[#e60000] h-3.5 w-3.5"
           />
-          <span className="text-xs font-medium text-slate-700">Product L2</span>
+          <span className="text-xs font-medium text-slate-700">{t('common_product_l2')}</span>
           {!dims.product && (
             <span className="text-[9px] text-slate-400">(requires L1)</span>
           )}
@@ -116,7 +116,7 @@ export function CohortDimCheckboxes({
       ) : (
         <label className="flex items-center gap-1.5 cursor-not-allowed opacity-25 select-none">
           <input type="checkbox" disabled className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium text-slate-500">Product L2</span>
+          <span className="text-xs font-medium text-slate-500">{t('common_product_l2')}</span>
           <span className="text-[9px] text-slate-400">(not mapped)</span>
         </label>
       )}
@@ -133,12 +133,12 @@ export function CohortDimCheckboxes({
             }}
             className="accent-[#e60000] h-3.5 w-3.5"
           />
-          <span className="text-xs font-medium text-slate-700">Channel L1</span>
+          <span className="text-xs font-medium text-slate-700">{t('common_channel_l1')}</span>
         </label>
       ) : (
         <label className="flex items-center gap-1.5 cursor-not-allowed opacity-40 select-none">
           <input type="checkbox" disabled className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium text-slate-500">Channel L1</span>
+          <span className="text-xs font-medium text-slate-500">{t('common_channel_l1')}</span>
           <span className="text-[9px] text-slate-400">(not mapped)</span>
         </label>
       )}
@@ -157,7 +157,7 @@ export function CohortDimCheckboxes({
             onChange={e => onChange({ ...dims, channelL2: e.target.checked })}
             className="accent-[#e60000] h-3.5 w-3.5"
           />
-          <span className="text-xs font-medium text-slate-700">Channel L2</span>
+          <span className="text-xs font-medium text-slate-700">{t('cohortdims_channel_l2')}</span>
           {!dims.channelL1 && (
             <span className="text-[9px] text-slate-400">(requires L1)</span>
           )}
@@ -171,7 +171,7 @@ export function CohortDimCheckboxes({
           }`}
         >
           <input type="checkbox" disabled className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium text-slate-500">Channel L2</span>
+          <span className="text-xs font-medium text-slate-500">{t('cohortdims_channel_l2')}</span>
           <span className="text-[9px] text-slate-400">(not mapped)</span>
         </label>
       )}
@@ -188,12 +188,12 @@ export function CohortDimCheckboxes({
             }}
             className="accent-[#e60000] h-3.5 w-3.5"
           />
-          <span className="text-xs font-medium text-slate-700">Tariff L1</span>
+          <span className="text-xs font-medium text-slate-700">{t('cohortdims_tariff_l1')}</span>
         </label>
       ) : (
         <label className="flex items-center gap-1.5 cursor-not-allowed opacity-40 select-none">
           <input type="checkbox" disabled className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium text-slate-500">Tariff L1</span>
+          <span className="text-xs font-medium text-slate-500">{t('cohortdims_tariff_l1')}</span>
           <span className="text-[9px] text-slate-400">(not mapped)</span>
         </label>
       )}
@@ -212,7 +212,7 @@ export function CohortDimCheckboxes({
             onChange={e => onChange({ ...dims, tariffL2: e.target.checked })}
             className="accent-[#e60000] h-3.5 w-3.5"
           />
-          <span className="text-xs font-medium text-slate-700">Tariff L2</span>
+          <span className="text-xs font-medium text-slate-700">{t('cohortdims_tariff_l2')}</span>
           {!dims.tariffL1 && (
             <span className="text-[9px] text-slate-400">(requires L1)</span>
           )}
@@ -226,7 +226,7 @@ export function CohortDimCheckboxes({
           }`}
         >
           <input type="checkbox" disabled className="h-3.5 w-3.5" />
-          <span className="text-xs font-medium text-slate-500">Tariff L2</span>
+          <span className="text-xs font-medium text-slate-500">{t('cohortdims_tariff_l2')}</span>
           <span className="text-[9px] text-slate-400">(not mapped)</span>
         </label>
       )}

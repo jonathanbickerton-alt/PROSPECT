@@ -1,4 +1,5 @@
 import React, { useMemo, useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Info, Download, Trash2, CheckCircle2, XCircle, Activity, AlertTriangle, Pencil } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip,
@@ -1025,6 +1026,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   setActiveView,
   missingMonths,
 }) => {
+  const { t } = useTranslation();
   const { baseForecast, setAdjustedForecast } = useForecast();
 
   const [selectedKpis, setSelectedKpis] = useState<KpiName[]>(['Inflow', 'Outflow', 'Retention', 'Base']);
@@ -1421,7 +1423,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         ))}
         {hasEvents && (
           <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #f1f5f9' }}>
-            <p style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Events this month</p>
+            <p style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{t('whatif_events_this_month')}</p>
             {meForMonth.map(e => (
               <div key={e.id} style={{ fontSize: 11, color: '#f43f5e', marginBottom: 3 }}>
                 <span style={{ fontWeight: 700 }}>{e.name || e.scenario}</span>
@@ -1966,17 +1968,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto">
             <Activity size={28} className="text-slate-400" />
           </div>
-          <h2 className="text-xl font-semibold text-slate-900">No Baseline Forecast Yet</h2>
-          <p className="text-sm text-slate-500">
-            Complete <strong>Step 1: Baseline Forecast</strong> and save at least one forecast before
+          <h2 className="text-xl font-semibold text-slate-900">{t('whatif_no_baseline_forecast_yet')}</h2>
+          <p className="text-sm text-slate-500">{t('whatif_complete')}<strong>{t('whatif_step_1_baseline_forecast')}</strong> and save at least one forecast before
             applying market events. The baseline IBRO series will appear here automatically.
           </p>
           <button
             onClick={() => setActiveView('standard')}
             className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#e60000] text-white rounded-lg text-sm font-semibold hover:bg-[#cc0000] transition-colors"
           >
-            <ArrowLeft size={16} /> Go to Step 1
-          </button>
+            <ArrowLeft size={16} />{t('common_go_to_step_1')}</button>
         </div>
       </div>
     );
@@ -2012,17 +2012,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-slate-900">Market Events</h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Applying incremental adjustments on top of the baseline IBRO forecast
-            </p>
+            <h2 className="text-xl font-semibold text-slate-900">{t('whatif_market_events')}</h2>
+            <p className="text-xs text-slate-500 mt-0.5">{t('whatif_applying_incremental_adjustments_on_top_of_th')}</p>
           </div>
           <button
             onClick={() => setActiveView('standard')}
             className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 transition-colors"
           >
-            <ArrowLeft size={14} /> Back to Step 1
-          </button>
+            <ArrowLeft size={14} />{t('whatif_back_to_step_1')}</button>
         </div>
 
         {/* Missing-month gap warning */}
@@ -2030,7 +2027,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-100 rounded-xl text-sm text-amber-800">
             <Info size={15} className="shrink-0 mt-0.5 text-amber-500" />
             <span>
-              <strong>Missing months detected in historical data.</strong>{' '}
+              <strong>{t('common_missing_months_detected_in_historical_data')}</strong>{' '}
               The following {missingMonths.length === 1 ? 'month is' : 'months are'} absent from this cohort's history:{' '}
               <span className="font-mono">{missingMonths.join(', ')}</span>.
               {' '}Gaps can bias level and trend initialisation — the forecast may be unreliable.
@@ -2042,17 +2039,17 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         {/* Independent from Step 1 filters — defaults to All on every mount. */}
         {/* Controls event-matching scope and chart KPI focus for this step.  */}
         <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0">View</span>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0">{t('whatif_view')}</span>
 
           {wiSegmentCol && (
             <div className="flex items-center gap-1.5">
-              <label className="text-xs text-slate-500 shrink-0">Segment</label>
+              <label className="text-xs text-slate-500 shrink-0">{t('common_segment')}</label>
               <select
                 value={viewSegment}
                 onChange={e => setViewSegment(e.target.value)}
                 className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-slate-50 outline-none focus:border-[#e60000] min-w-[100px]"
               >
-                <option value="All">All</option>
+                <option value="All">{t('whatif_all')}</option>
                 {segmentOptions.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
@@ -2060,7 +2057,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
           {wiProductCol && productTree.size > 0 && (
             <HierarchicalDropdown
-              label="Product"
+              label={t('common_product')}
               tree={productTree}
               value={viewProduct}
               onChange={setViewProduct}
@@ -2070,7 +2067,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
           {wiChannelCol && channelTree.size > 0 && (
             <HierarchicalDropdown
-              label="Channel"
+              label={t('common_channel')}
               tree={channelTree}
               value={viewChannel}
               onChange={setViewChannel}
@@ -2080,7 +2077,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
           {wiTariffL1Col && tariffTree && tariffTree.size > 0 && (
             <HierarchicalDropdown
-              label="Tariff"
+              label={t('common_tariff')}
               tree={tariffTree}
               value={viewTariff}
               onChange={setViewTariff}
@@ -2095,7 +2092,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               onChange={e => setViewScenario(e.target.value)}
               className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-slate-50 outline-none focus:border-[#e60000] min-w-[100px]"
             >
-              <option value="All">All</option>
+              <option value="All">{t('whatif_all')}</option>
               <option value="Inflow">Inflow</option>
               <option value="Outflow">Outflow</option>
               <option value="Retention">Retention</option>
@@ -2108,35 +2105,31 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             <button
               onClick={() => { setViewSegment('All'); setViewProduct({ l1: null, l2: null }); setViewChannel({ l1: null, l2: null }); setViewTariff({ l1: null, l2: null }); setViewScenario('All'); }}
               className="text-[10px] text-slate-400 hover:text-rose-500 underline underline-offset-2 transition-colors"
-            >
-              Reset
-            </button>
+            >{t('whatif_reset')}</button>
           )}
 
-          <span className="ml-auto text-[10px] text-slate-400 italic hidden lg:block">
-            Scopes chart to matching events — does not affect Step 1 settings
-          </span>
+          <span className="ml-auto text-[10px] text-slate-400 italic hidden lg:block">{t('whatif_scopes_chart_to_matching_events_does_not_affe')}</span>
         </div>
 
         {/* Impact summary cards */}
         {impactSummary && (
           <div className="grid grid-cols-3 gap-4">
             <div className={`p-4 rounded-2xl border ${impactSummary.baseDelta >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
-              <p className="text-xs font-semibold text-slate-500 mb-1">Base Volume Delta (end of period)</p>
+              <p className="text-xs font-semibold text-slate-500 mb-1">{t('whatif_base_volume_delta_end_of_period')}</p>
               <p className={`text-2xl font-bold ${impactSummary.baseDelta >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
                 {impactSummary.baseDelta >= 0 ? '+' : ''}{formatNumber(impactSummary.baseDelta)}
               </p>
-              <p className="text-[10px] text-slate-400 mt-1">Adjusted vs Baseline</p>
+              <p className="text-[10px] text-slate-400 mt-1">{t('whatif_adjusted_vs_baseline')}</p>
             </div>
             <div className={`p-4 rounded-2xl border ${impactSummary.arpuDelta >= 0 ? 'bg-cyan-50 border-cyan-100' : 'bg-rose-50 border-rose-100'}`}>
-              <p className="text-xs font-semibold text-slate-500 mb-1">ARPU Delta (end of period)</p>
+              <p className="text-xs font-semibold text-slate-500 mb-1">{t('whatif_arpu_delta_end_of_period')}</p>
               <p className={`text-2xl font-bold ${impactSummary.arpuDelta >= 0 ? 'text-cyan-700' : 'text-rose-700'}`}>
                 {impactSummary.arpuDelta >= 0 ? '+' : ''}{formatNumber(impactSummary.arpuDelta)}
               </p>
-              <p className="text-[10px] text-slate-400 mt-1">Adjusted vs Baseline</p>
+              <p className="text-[10px] text-slate-400 mt-1">{t('whatif_adjusted_vs_baseline')}</p>
             </div>
             <div className="p-4 rounded-2xl border bg-slate-50 border-slate-100">
-              <p className="text-xs font-semibold text-slate-500 mb-1">Active Market Events</p>
+              <p className="text-xs font-semibold text-slate-500 mb-1">{t('whatif_active_market_events')}</p>
               <p className="text-2xl font-bold text-slate-700">{impactSummary.eventCount}</p>
               <p className="text-[10px] text-slate-400 mt-1">
                 {impactSummary.eventCount === 0 ? 'Add events below to adjust the forecast' : 'Events applied to adjusted path'}
@@ -2148,7 +2141,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         {/* Chart */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-base font-semibold text-slate-900">Baseline vs Adjusted Forecast</h3>
+            <h3 className="text-base font-semibold text-slate-900">{t('whatif_baseline_vs_adjusted_forecast')}</h3>
             <div className="flex items-center gap-3">
               {/* Window size */}
               <div className="flex bg-slate-100 p-1 rounded-lg">
@@ -2166,8 +2159,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 onClick={() => downloadExcel(chartData, 'market_events_adjusted.xlsx')}
                 className="flex items-center gap-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-medium py-1.5 px-3 rounded-lg transition-colors shadow-sm"
               >
-                <Download size={14} /> Export
-              </button>
+                <Download size={14} />{t('whatif_export')}</button>
             </div>
           </div>
 
@@ -2199,9 +2191,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
           {/* Legend hint */}
           <div className="flex items-center gap-4 mb-4 text-[10px] text-slate-400">
-            <span className="flex items-center gap-1.5"><span className="w-6 border-t-2 border-slate-400" /> Baseline (Step 1)</span>
-            <span className="flex items-center gap-1.5"><span className="w-6 border-t-2 border-dashed border-[#e60000]" /> Adjusted (+ Events)</span>
-            <span className="ml-auto italic">Base reflects Inflow / Outflow from the prior month — an event in month T first appears in Base in T+1</span>
+            <span className="flex items-center gap-1.5"><span className="w-6 border-t-2 border-slate-400" />{t('whatif_baseline_step_1')}</span>
+            <span className="flex items-center gap-1.5"><span className="w-6 border-t-2 border-dashed border-[#e60000]" />{t('whatif_adjusted_events')}</span>
+            <span className="ml-auto italic">{t('whatif_base_reflects_inflow_outflow_from_the_prior_m')}</span>
           </div>
 
           <div className="h-[380px]">
@@ -2317,9 +2309,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 </LineChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-full flex items-center justify-center text-slate-400 text-sm">
-                Select at least one KPI above to view the chart.
-              </div>
+              <div className="h-full flex items-center justify-center text-slate-400 text-sm">{t('whatif_select_at_least_one_kpi_above_to_view_the_cha')}</div>
             )}
           </div>
         </div>
@@ -2342,10 +2332,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         </div>
         {/* Phase 4 — in-UI guidance: when to reach for the combined card vs the
             three single-dimension ones. */}
-        <p className="text-xs text-slate-500 -mt-2">
-          Use <strong className="text-slate-600">Promotion</strong> for one combined scenario anchored on a volume
-          movement (with an optional mix and/or price change). Use <strong className="text-slate-600">Volume</strong>,{' '}
-          <strong className="text-slate-600">Value</strong>, or <strong className="text-slate-600">Pricing</strong> for
+        <p className="text-xs text-slate-500 -mt-2">{t('whatif_use')}<strong className="text-slate-600">{t('whatif_promotion')}</strong> for one combined scenario anchored on a volume
+          movement (with an optional mix and/or price change). Use <strong className="text-slate-600">{t('common_volume')}</strong>,{' '}
+          <strong className="text-slate-600">{t('common_value')}</strong>, or <strong className="text-slate-600">{t('whatif_pricing')}</strong> for
           single-dimension events with no volume assumption — e.g. a pure base-wide price rise.
         </p>
 
@@ -2356,25 +2345,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">
-                <h3 className="text-sm font-semibold text-slate-700">Tariffs in scope</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Select the tariffs you want to plan with — tariff targeting and the tariff mix axis use only these.
-                </p>
+                <h3 className="text-sm font-semibold text-slate-700">{t('whatif_tariffs_in_scope')}</h3>
+                <p className="text-xs text-slate-500 mt-0.5">{t('whatif_select_the_tariffs_you_want_to_plan_with_tari')}</p>
               </div>
               <div className="w-64 shrink-0">
                 <MultiSelectDropdown
                   options={Array.from(fullTariffTree.keys())}
                   selected={selectedTariffs}
                   onChange={next => setSelectedTariffs?.(next)}
-                  placeholder="Select tariffs…"
+                  placeholder={t('whatif_select_tariffs')}
                   noun="tariff"
                 />
               </div>
             </div>
             {selectedTariffs.length === 0 && (
-              <p className="mt-3 text-xs text-amber-600 font-medium">
-                No tariffs selected — tariff targeting and the tariff mix axis stay hidden until you select at least one.
-              </p>
+              <p className="mt-3 text-xs text-amber-600 font-medium">{t('whatif_no_tariffs_selected_tariff_targeting_and_the')}</p>
             )}
           </div>
         )}
@@ -2383,17 +2368,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         {activeTab === 'volume' && (<>
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-700">Market Events</h3>
-            <span className="text-xs text-slate-500 bg-white px-2 py-1 rounded border border-slate-200">
-              Events adjust the forecast above in real time
-            </span>
+            <h3 className="text-sm font-semibold text-slate-700">{t('whatif_market_events')}</h3>
+            <span className="text-xs text-slate-500 bg-white px-2 py-1 rounded border border-slate-200">{t('whatif_events_adjust_the_forecast_above_in_real_time')}</span>
           </div>
 
           {/* Add event form */}
           <div className="p-6 border-b border-slate-100 bg-slate-50/30">
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 items-end">
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Scenario</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_scenario')}</label>
                 <select
                   value={newEvent.scenario}
                   onChange={e => setNewEvent({ ...newEvent, scenario: e.target.value as any })}
@@ -2406,20 +2389,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Segment</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_segment')}</label>
                 <select
                   value={newEvent.segment}
                   onChange={e => setNewEvent({ ...newEvent, segment: e.target.value })}
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 >
-                  <option value="All">All Segments</option>
+                  <option value="All">{t('common_all_segments')}</option>
                   {Array.from(new Set(data.map(r => String(r[wiSegmentCol])).filter(v => v && v !== 'undefined'))).sort().map(s => (
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Product</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_product')}</label>
                 {productTree.size > 0 ? (
                   <HierarchicalDropdown
                     label=""
@@ -2442,13 +2425,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     onChange={e => setNewEvent({ ...newEvent, product: e.target.value, productL2: 'All' })}
                     className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                   >
-                    <option value="All">All Products</option>
+                    <option value="All">{t('common_all_products')}</option>
                     {productL1Options.map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
                 )}
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Channel</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_channel')}</label>
                 {channelTree.size > 0 ? (
                   <HierarchicalDropdown
                     label=""
@@ -2471,7 +2454,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     onChange={e => setNewEvent({ ...newEvent, channel: e.target.value, channelL2: 'All' })}
                     className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                   >
-                    <option value="All">All Channels</option>
+                    <option value="All">{t('common_all_channels')}</option>
                     {channelL1Options.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 )}
@@ -2481,7 +2464,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   shown when a tariff column is mapped; options limited to selected tariffs. */}
               {wiTariffL1Col && targetTariffTree.size > 0 && (
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Tariff</label>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_tariff')}</label>
                   <HierarchicalDropdown
                     label=""
                     tree={targetTariffTree}
@@ -2500,7 +2483,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 </div>
               )}
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Month</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_month')}</label>
                 <input
                   type="month"
                   value={newEvent.date}
@@ -2509,7 +2492,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Subscriber Volume (+/−)</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_subscriber_volume')}</label>
                 <input
                   type="number"
                   value={newEvent.subscriberVolume || ''}
@@ -2521,7 +2504,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Customer Volume (+/−)</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_customer_volume')}</label>
                 <input
                   type="number"
                   value={newEvent.customerVolume || ''}
@@ -2530,7 +2513,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Revenue (+/−)</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_revenue')}</label>
                 <input
                   type="number"
                   value={newEvent.revenue || ''}
@@ -2562,13 +2545,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 )}
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">
-                  Contract Length
-                  <span className="relative group text-slate-400 cursor-help">
+                <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">{t('whatif_contract_length')}<span className="relative group text-slate-400 cursor-help">
                     <Info size={11} />
-                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-56 bg-white border border-slate-200 rounded-xl shadow-lg text-xs text-slate-600 p-2.5 z-50 pointer-events-none normal-case font-normal">
-                      This controls how long new subscribers from this event are protected from churn before entering the at-risk pool. Default is 24 months.
-                    </span>
+                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-56 bg-white border border-slate-200 rounded-xl shadow-lg text-xs text-slate-600 p-2.5 z-50 pointer-events-none normal-case font-normal">{t('whatif_this_controls_how_long_new_subscribers_from_t')}</span>
                   </span>
                 </label>
                 <input
@@ -2580,9 +2559,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   onChange={e => setNewEvent({ ...newEvent, contractLength: Math.min(60, Math.max(1, Math.round(Number(e.target.value)))) })}
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
-                <p className="text-[10px] text-slate-400 mt-1 leading-snug">
-                  Months protected from churn (default: 24)
-                </p>
+                <p className="text-[10px] text-slate-400 mt-1 leading-snug">{t('whatif_months_protected_from_churn_default_24')}</p>
               </div>
             </div>
 
@@ -2601,16 +2578,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 >
                   <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors ${spreadEnabled ? 'border-white' : 'border-slate-400'}`}>
                     {spreadEnabled && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
-                  </span>
-                  Spread volume over multiple months
-                </button>
+                  </span>{t('whatif_spread_volume_over_multiple_months')}</button>
 
                 {spreadEnabled && (
                   <div className="mt-3 p-4 bg-white border border-slate-200 rounded-xl">
                     {/* Step 1: Duration */}
                     <div className="flex flex-wrap items-end gap-6 mb-4">
                       <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">Spread duration (months)</label>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_spread_duration_months')}</label>
                         <input
                           type="number"
                           min={2}
@@ -2623,20 +2598,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       </div>
                       {/* Step 2: Distribution type */}
                       <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">Distribution</label>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_distribution')}</label>
                         <div className="flex rounded-lg overflow-hidden border border-slate-200">
                           <button
                             onClick={() => setSpreadDistType('even')}
                             className={`px-4 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
                               spreadDistType === 'even' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
                             }`}
-                          >Even</button>
+                          >{t('whatif_even')}</button>
                           <button
                             onClick={() => setSpreadDistType('custom')}
                             className={`px-4 py-2 text-xs font-semibold transition-colors ${
                               spreadDistType === 'custom' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
                             }`}
-                          >Custom %</button>
+                          >{t('whatif_custom_pct')}</button>
                         </div>
                       </div>
                     </div>
@@ -2654,8 +2629,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       return (
                         <div>
                           <div className="grid gap-1.5" style={{ gridTemplateColumns: `140px 1fr${spreadDistType === 'custom' ? ' 80px' : ''}` }}>
-                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Month</span>
-                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Volume</span>
+                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_month')}</span>
+                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_volume')}</span>
                             {spreadDistType === 'custom' && <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">%</span>}
                             {Array.from({ length: spreadMonths }, (_, i) => {
                               const monthLabel = baseDate && isValid(baseDate)
@@ -2709,26 +2684,24 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               </div>
             ) : editingEventId ? (
               <div className="mt-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium flex items-center gap-2">
-                <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
-                Editing event — modify the fields above then click Save Changes.
-              </div>
+                <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />{t('whatif_editing_event_modify_the_fields_above_then_cl')}</div>
             ) : null}
             <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-end">
               <div className="md:w-56 shrink-0">
-                <label className="block text-xs font-medium text-slate-500 mb-1">Campaign Name</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_campaign_name')}</label>
                 <input
                   type="text"
-                  placeholder="e.g. Summer Promo 2026"
+                  placeholder={t('whatif_e_g_summer_promo_2026')}
                   value={newEvent.campaignName ?? ''}
                   onChange={e => setNewEvent({ ...newEvent, campaignName: e.target.value })}
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
               </div>
               <div className="flex-1">
-                <label className="block text-xs font-medium text-slate-500 mb-1">Comment</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_comment')}</label>
                 <input
                   type="text"
-                  placeholder="Describe the event (e.g., New marketing campaign, Competitor exit...)"
+                  placeholder={t('whatif_describe_the_event_e_g_new_marketing_campaign')}
                   value={newEvent.comment}
                   onChange={e => setNewEvent({ ...newEvent, comment: e.target.value })}
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
@@ -2746,9 +2719,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   <button
                     onClick={handleCancelEdit}
                     className="bg-white border border-slate-200 text-slate-600 text-sm font-semibold py-2 px-4 rounded-lg hover:bg-slate-50 transition-colors"
-                  >
-                    Cancel
-                  </button>
+                  >{t('common_cancel')}</button>
                 </div>
               ) : (
                 <button
@@ -2767,28 +2738,26 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             <table className="w-full text-sm text-left">
               <thead className="text-xs text-slate-500 bg-slate-50 border-b border-slate-200">
                 <tr>
-                  <th className="px-5 py-3 font-semibold">Campaign</th>
-                  <th className="px-5 py-3 font-semibold">Month</th>
-                  <th className="px-5 py-3 font-semibold">Segment</th>
-                  <th className="px-5 py-3 font-semibold">Product</th>
-                  <th className="px-5 py-3 font-semibold">Channel</th>
-                  {wiTariffL1Col && <th className="px-5 py-3 font-semibold">Tariff</th>}
+                  <th className="px-5 py-3 font-semibold">{t('whatif_campaign')}</th>
+                  <th className="px-5 py-3 font-semibold">{t('common_month')}</th>
+                  <th className="px-5 py-3 font-semibold">{t('common_segment')}</th>
+                  <th className="px-5 py-3 font-semibold">{t('common_product')}</th>
+                  <th className="px-5 py-3 font-semibold">{t('common_channel')}</th>
+                  {wiTariffL1Col && <th className="px-5 py-3 font-semibold">{t('common_tariff')}</th>}
                   <th className="px-5 py-3 font-semibold text-right">Inflow Δ</th>
                   <th className="px-5 py-3 font-semibold text-right">Base Δ</th>
                   <th className="px-5 py-3 font-semibold text-right">Retention Δ</th>
                   <th className="px-5 py-3 font-semibold text-right">Outflow Δ</th>
                   <th className="px-5 py-3 font-semibold text-right">ARPU Δ</th>
-                  <th className="px-5 py-3 font-semibold">Comment</th>
-                  <th className="px-5 py-3 font-semibold text-center">Edit</th>
-                  <th className="px-5 py-3 font-semibold text-center">Remove</th>
+                  <th className="px-5 py-3 font-semibold">{t('common_comment')}</th>
+                  <th className="px-5 py-3 font-semibold text-center">{t('whatif_edit')}</th>
+                  <th className="px-5 py-3 font-semibold text-center">{t('whatif_remove')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {marketEvents.length === 0 ? (
                   <tr>
-                    <td colSpan={wiTariffL1Col ? 14 : 13} className="px-5 py-8 text-center text-slate-400 italic text-sm">
-                      No market events yet. Use the form above to add events — they adjust the chart immediately.
-                    </td>
+                    <td colSpan={wiTariffL1Col ? 14 : 13} className="px-5 py-8 text-center text-slate-400 italic text-sm">{t('whatif_no_market_events_yet_use_the_form_above_to_ad')}</td>
                   </tr>
                 ) : (
                   marketEvents
@@ -2872,7 +2841,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               <td className="px-5 py-3 text-slate-600 text-xs">
                                 {event.tariffL1 && event.tariffL1 !== 'All'
                                   ? `${event.tariffL1}${event.tariffL2 && event.tariffL2 !== 'All' ? ` — ${event.tariffL2}` : ''}`
-                                  : <span className="text-slate-300">All</span>}
+                                  : <span className="text-slate-300">{t('whatif_all')}</span>}
                               </td>
                             )}
 
@@ -2956,8 +2925,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 onClick={() => setMarketEvents([])}
                 className="text-xs font-medium text-slate-500 hover:text-rose-600 transition-colors flex items-center gap-1.5"
               >
-                <Trash2 size={12} /> Clear All Events
-              </button>
+                <Trash2 size={12} />{t('whatif_clear_all_events')}</button>
             </div>
           )}
         </div>
@@ -2966,23 +2934,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         {chartData.length > 0 && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-700">Stock-and-Flow Validation</h3>
-              <span className="text-xs text-slate-400 bg-white px-2 py-1 rounded border border-slate-200">
-                Base(t) = Base(t−1) + Inflow(t−1) − Outflow(t−1)
-              </span>
+              <h3 className="text-sm font-semibold text-slate-700">{t('whatif_stock_and_flow_validation')}</h3>
+              <span className="text-xs text-slate-400 bg-white px-2 py-1 rounded border border-slate-200">{t('whatif_base_t_base_t_1_inflow_t_1_outflow_t_1')}</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
                 <thead className="text-xs text-slate-500 bg-slate-50 border-b border-slate-200">
                   <tr>
-                    <th className="px-5 py-3 font-semibold">Month</th>
-                    <th className="px-5 py-3 font-semibold text-right text-blue-600">Inflow (Adj)</th>
-                    <th className="px-5 py-3 font-semibold text-right text-amber-600">Outflow (Adj)</th>
-                    <th className="px-5 py-3 font-semibold text-right text-pink-600">Retention (Adj)</th>
-                    <th className="px-5 py-3 font-semibold text-right text-emerald-600">Base (Adj)</th>
-                    <th className="px-5 py-3 font-semibold text-right text-slate-400">Base (Baseline)</th>
-                    <th className="px-5 py-3 font-semibold text-right">Delta</th>
-                    <th className="px-5 py-3 font-semibold text-center">Valid</th>
+                    <th className="px-5 py-3 font-semibold">{t('common_month')}</th>
+                    <th className="px-5 py-3 font-semibold text-right text-blue-600">{t('whatif_inflow_adj')}</th>
+                    <th className="px-5 py-3 font-semibold text-right text-amber-600">{t('whatif_outflow_adj')}</th>
+                    <th className="px-5 py-3 font-semibold text-right text-pink-600">{t('whatif_retention_adj')}</th>
+                    <th className="px-5 py-3 font-semibold text-right text-emerald-600">{t('whatif_base_adj')}</th>
+                    <th className="px-5 py-3 font-semibold text-right text-slate-400">{t('whatif_base_baseline')}</th>
+                    <th className="px-5 py-3 font-semibold text-right">{t('whatif_delta')}</th>
+                    <th className="px-5 py-3 font-semibold text-center">{t('whatif_valid')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -3029,13 +2995,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-semibold text-slate-700">Pricing Events — ARPU Override</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Apply a price rise, discount, or promotion to a cohort slice. Yield Events are applied first; Pricing Events layer on top.
-                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5">{t('whatif_apply_a_price_rise_discount_or_promotion_to_a')}</p>
                 </div>
-                <span className="text-xs text-slate-400 bg-white px-2 py-1 rounded border border-slate-200 hidden md:block">
-                  Pass 3 · Applied after Yield blending
-                </span>
+                <span className="text-xs text-slate-400 bg-white px-2 py-1 rounded border border-slate-200 hidden md:block">{t('whatif_pass_3_applied_after_yield_blending')}</span>
               </div>
 
               <div className="p-6 border-b border-slate-100">
@@ -3043,40 +3005,40 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-5">
                   {/* Segment */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Segment</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_segment')}</label>
                     <select
                       value={newPricingEvent.segment ?? 'All'}
                       onChange={e => setNewPricingEvent({ ...newPricingEvent, segment: e.target.value })}
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                     >
-                      <option value="All">All Segments</option>
+                      <option value="All">{t('common_all_segments')}</option>
                       {ySegmentOptions.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
 
                   {/* Product L1 */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Product</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_product')}</label>
                     <select
                       value={newPricingEvent.product ?? 'All'}
                       onChange={e => setNewPricingEvent({ ...newPricingEvent, product: e.target.value, productL2: 'All' })}
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                     >
-                      <option value="All">All Products</option>
+                      <option value="All">{t('common_all_products')}</option>
                       {yProductOptions.map(p => <option key={p} value={p}>{p}</option>)}
                     </select>
                   </div>
 
                   {/* Product L2 */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Product L2</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_product_l2')}</label>
                     <select
                       value={newPricingEvent.productL2 ?? 'All'}
                       onChange={e => setNewPricingEvent({ ...newPricingEvent, productL2: e.target.value })}
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                       disabled={pricingProductL2Options.length === 0}
                     >
-                      <option value="All">All Tiers</option>
+                      <option value="All">{t('whatif_all_tiers')}</option>
                       {pricingProductL2Options.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
@@ -3084,7 +3046,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   {/* Channel — hierarchical dropdown */}
                   {channelTree.size > 0 ? (
                     <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">Channel</label>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_channel')}</label>
                       <HierarchicalDropdown
                         label=""
                         tree={channelTree}
@@ -3103,13 +3065,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     </div>
                   ) : (
                     <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">Channel</label>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_channel')}</label>
                       <select
                         value={newPricingEvent.channelL1 ?? 'All'}
                         onChange={e => setNewPricingEvent({ ...newPricingEvent, channelL1: e.target.value, channelL2: 'All' })}
                         className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                       >
-                        <option value="All">All Channels</option>
+                        <option value="All">{t('common_all_channels')}</option>
                         {yChannelL1Options.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                     </div>
@@ -3119,7 +3081,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       only shown when a tariff column is mapped AND tariffs are selected. */}
                   {wiTariffL1Col && targetTariffTree.size > 0 && (
                     <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">Tariff</label>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_tariff')}</label>
                       <HierarchicalDropdown
                         label=""
                         tree={targetTariffTree}
@@ -3140,7 +3102,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                   {/* Month */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Start Month</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_start_month')}</label>
                     <input
                       type="month"
                       value={newPricingEvent.month ?? ''}
@@ -3154,7 +3116,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
                   {/* Input mode + amount */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Amount</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_amount')}</label>
                     <div className="flex rounded-lg overflow-hidden border border-slate-200">
                       <button
                         onClick={() => setNewPricingEvent({ ...newPricingEvent, inputMode: 'percentage' })}
@@ -3188,7 +3150,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                   {/* Target */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Target</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_target')}</label>
                     <div className="flex rounded-lg overflow-hidden border border-slate-200">
                       <button
                         onClick={() => setNewPricingEvent({ ...newPricingEvent, target: 'cohorts' })}
@@ -3197,7 +3159,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             ? 'bg-[#e60000] text-white'
                             : 'bg-white text-slate-500 hover:bg-slate-50'
                         }`}
-                      >Cohorts Only</button>
+                      >{t('whatif_cohorts_only')}</button>
                       <button
                         onClick={() => setNewPricingEvent({ ...newPricingEvent, target: 'cohorts+base' })}
                         className={`flex-1 px-3 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
@@ -3205,7 +3167,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             ? 'bg-[#e60000] text-white'
                             : 'bg-white text-slate-500 hover:bg-slate-50'
                         }`}
-                      >Cohorts + Base</button>
+                      >{t('whatif_cohorts_base')}</button>
                       <button
                         onClick={() => setNewPricingEvent({ ...newPricingEvent, target: 'base-only' })}
                         className={`flex-1 px-3 py-2 text-xs font-semibold transition-colors ${
@@ -3213,7 +3175,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             ? 'bg-[#e60000] text-white'
                             : 'bg-white text-slate-500 hover:bg-slate-50'
                         }`}
-                      >Base Only</button>
+                      >{t('whatif_base_only')}</button>
                     </div>
                     <p className="text-[10px] text-slate-400 mt-1">
                       {newPricingEvent.target === 'cohorts' ? 'New Inflow/Retention cohorts only'
@@ -3222,7 +3184,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     </p>
                     {(newPricingEvent.target === 'cohorts' || newPricingEvent.target === 'cohorts+base') && (
                       <div className="mt-2 pt-2 border-t border-slate-100">
-                        <p className="text-[10px] font-medium text-slate-500 mb-1.5">Cohort Type</p>
+                        <p className="text-[10px] font-medium text-slate-500 mb-1.5">{t('whatif_cohort_type')}</p>
                         <div className="flex gap-3">
                           {(['inflow', 'retention', 'both'] as const).map(scope => (
                             <label key={scope} className="flex items-center gap-1.5 cursor-pointer">
@@ -3244,7 +3206,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                   {/* Duration */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Duration</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_duration')}</label>
                     <div className="flex rounded-lg overflow-hidden border border-slate-200">
                       <button
                         onClick={() => setNewPricingEvent({ ...newPricingEvent, duration: 'one-off' })}
@@ -3253,7 +3215,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             ? 'bg-[#e60000] text-white'
                             : 'bg-white text-slate-500 hover:bg-slate-50'
                         }`}
-                      >One-Off</button>
+                      >{t('whatif_one_off')}</button>
                       <button
                         onClick={() => setNewPricingEvent({ ...newPricingEvent, duration: 'recurring' })}
                         className={`flex-1 px-3 py-2 text-xs font-semibold transition-colors ${
@@ -3261,7 +3223,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             ? 'bg-[#e60000] text-white'
                             : 'bg-white text-slate-500 hover:bg-slate-50'
                         }`}
-                      >Recurring</button>
+                      >{t('whatif_recurring')}</button>
                     </div>
                     <p className="text-[10px] text-slate-400 mt-1">
                       {newPricingEvent.duration === 'one-off' ? 'Applies to start month only, then reverts' : 'Applies from start month through all subsequent months'}
@@ -3270,20 +3232,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                   {/* Preview */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Preview Impact</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_preview_impact')}</label>
                     <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
                       {(() => {
                         const matchRow = chartData.find(r => r.month === newPricingEvent.month);
                         const baseArpu = matchRow ? (matchRow['ARPU (Adjusted)'] as number) : null;
-                        if (baseArpu === null) return <p className="text-xs text-slate-400">Select a month to preview</p>;
+                        if (baseArpu === null) return <p className="text-xs text-slate-400">{t('whatif_select_a_month_to_preview')}</p>;
                         const amt = newPricingEvent.amount ?? 0;
                         const mode = newPricingEvent.inputMode ?? 'percentage';
                         const adjusted = mode === 'percentage' ? baseArpu * (1 + amt / 100) : baseArpu + amt;
                         const delta = adjusted - baseArpu;
                         return (
                           <>
-                            <p className="text-[10px] text-slate-400">Baseline ARPU: <span className="font-medium text-slate-600">{formatNumber(baseArpu)}</span></p>
-                            <p className="text-[10px] text-slate-400 mt-0.5">Adjusted ARPU: <span className={`font-semibold ${delta >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatNumber(Math.max(0, adjusted))}</span></p>
+                            <p className="text-[10px] text-slate-400">{t('whatif_baseline_arpu')}<span className="font-medium text-slate-600">{formatNumber(baseArpu)}</span></p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">{t('whatif_adjusted_arpu')}<span className={`font-semibold ${delta >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatNumber(Math.max(0, adjusted))}</span></p>
                             <p className={`text-[10px] font-medium mt-0.5 ${delta >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                               {delta >= 0 ? '+' : ''}{formatNumber(delta)} ({delta >= 0 ? '+' : ''}{baseArpu !== 0 ? ((delta / baseArpu) * 100).toFixed(1) : '0.0'}%)
                             </p>
@@ -3297,20 +3259,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 {/* Name + Comment + Add button */}
                 <div className="flex flex-wrap gap-3 items-end">
                   <div className="w-48 shrink-0">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Event Name</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_event_name')}</label>
                     <input
                       type="text"
-                      placeholder="e.g. CPI Rise Jan 2026"
+                      placeholder={t('whatif_e_g_cpi_rise_jan_2026')}
                       value={newPricingEvent.name ?? ''}
                       onChange={e => setNewPricingEvent({ ...newPricingEvent, name: e.target.value })}
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                     />
                   </div>
                   <div className="flex-1 min-w-[200px]">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Comment</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_comment')}</label>
                     <input
                       type="text"
-                      placeholder="Describe this pricing change (e.g., CPI +3.9% Jan 2025, competitor promo response)..."
+                      placeholder={t('whatif_describe_this_pricing_change_e_g_cpi_3_9pct_j')}
                       value={newPricingEvent.comment ?? ''}
                       onChange={e => setNewPricingEvent({ ...newPricingEvent, comment: e.target.value })}
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
@@ -3320,9 +3282,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     onClick={handleAddPricingEvent}
                     disabled={!newPricingEvent.month || newPricingEvent.amount === undefined}
                     className="px-6 py-2 bg-[#e60000] text-white text-sm font-semibold rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-                  >
-                    Add Pricing Event
-                  </button>
+                  >{t('whatif_add_pricing_event')}</button>
                 </div>
               </div>
 
@@ -3331,28 +3291,26 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 <table className="w-full text-xs text-left">
                   <thead className="text-[10px] text-slate-500 bg-slate-50 border-b border-slate-200 uppercase tracking-wider">
                     <tr>
-                      <th className="px-4 py-3 font-semibold">Month</th>
-                      <th className="px-4 py-3 font-semibold">Segment</th>
-                      <th className="px-4 py-3 font-semibold">Product</th>
-                      <th className="px-4 py-3 font-semibold">Product L2</th>
-                      <th className="px-4 py-3 font-semibold">Channel</th>
-                      {wiTariffL1Col && <th className="px-4 py-3 font-semibold">Tariff</th>}
-                      <th className="px-4 py-3 font-semibold text-right">Mode</th>
-                      <th className="px-4 py-3 font-semibold text-right">Amount</th>
-                      <th className="px-4 py-3 font-semibold">Target</th>
-                      <th className="px-4 py-3 font-semibold">Duration</th>
-                      <th className="px-4 py-3 font-semibold text-right">Baseline ARPU</th>
-                      <th className="px-4 py-3 font-semibold text-right">Adjusted ARPU</th>
-                      <th className="px-4 py-3 font-semibold">Comment</th>
-                      <th className="px-4 py-3 font-semibold text-center">Remove</th>
+                      <th className="px-4 py-3 font-semibold">{t('common_month')}</th>
+                      <th className="px-4 py-3 font-semibold">{t('common_segment')}</th>
+                      <th className="px-4 py-3 font-semibold">{t('common_product')}</th>
+                      <th className="px-4 py-3 font-semibold">{t('common_product_l2')}</th>
+                      <th className="px-4 py-3 font-semibold">{t('common_channel')}</th>
+                      {wiTariffL1Col && <th className="px-4 py-3 font-semibold">{t('common_tariff')}</th>}
+                      <th className="px-4 py-3 font-semibold text-right">{t('whatif_mode')}</th>
+                      <th className="px-4 py-3 font-semibold text-right">{t('whatif_amount')}</th>
+                      <th className="px-4 py-3 font-semibold">{t('whatif_target')}</th>
+                      <th className="px-4 py-3 font-semibold">{t('whatif_duration')}</th>
+                      <th className="px-4 py-3 font-semibold text-right">{t('whatif_baseline_arpu')}</th>
+                      <th className="px-4 py-3 font-semibold text-right">{t('whatif_adjusted_arpu')}</th>
+                      <th className="px-4 py-3 font-semibold">{t('common_comment')}</th>
+                      <th className="px-4 py-3 font-semibold text-center">{t('whatif_remove')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {pricingEvents.length === 0 ? (
                       <tr>
-                        <td colSpan={wiTariffL1Col ? 14 : 13} className="px-5 py-8 text-center text-slate-400 italic">
-                          No pricing events yet. Use the form above to apply ARPU deltas — changes layer on top of Yield Events in real time.
-                        </td>
+                        <td colSpan={wiTariffL1Col ? 14 : 13} className="px-5 py-8 text-center text-slate-400 italic">{t('whatif_no_pricing_events_yet_use_the_form_above_to_a')}</td>
                       </tr>
                     ) : (
                       pricingEvents
@@ -3378,7 +3336,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 <td className="px-4 py-2.5 text-slate-600">
                                   {pe.tariffL1 && pe.tariffL1 !== 'All'
                                     ? `${pe.tariffL1}${pe.tariffL2 && pe.tariffL2 !== 'All' ? ` / ${pe.tariffL2}` : ''}`
-                                    : <span className="text-slate-300">All</span>}
+                                    : <span className="text-slate-300">{t('whatif_all')}</span>}
                                 </td>
                               )}
                               <td className="px-4 py-2.5 text-right">
@@ -3421,7 +3379,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                   type="button"
                                   onClick={(e) => { e.stopPropagation(); removePricingEvent(pe.id); }}
                                   className="text-slate-300 hover:text-rose-500 transition-colors"
-                                  title="Remove"
+                                  title={t('whatif_remove')}
                                 >
                                   <Trash2 size={14} />
                                 </button>
@@ -3441,8 +3399,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     onClick={(e) => { e.stopPropagation(); clearAllPricingEvents(); }}
                     className="text-xs font-medium text-slate-500 hover:text-rose-600 transition-colors flex items-center gap-1.5"
                   >
-                    <Trash2 size={12} /> Clear All Pricing Events
-                  </button>
+                    <Trash2 size={12} />{t('whatif_clear_all_pricing_events')}</button>
                 </div>
               )}
             </div>
@@ -3458,42 +3415,38 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-700">Custom Promotion</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    One combined promo: a volume ambition, optionally with a mix and/or price change on that volume only.
-                  </p>
+                  <h3 className="text-sm font-semibold text-slate-700">{t('whatif_custom_promotion')}</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">{t('whatif_one_combined_promo_a_volume_ambition_optional')}</p>
                 </div>
-                <span className="text-xs text-slate-400 bg-white px-2 py-1 rounded border border-slate-200 hidden md:block">
-                  Reuses ramp/decay, IBRO mechanics, mix control and ARPU blending
-                </span>
+                <span className="text-xs text-slate-400 bg-white px-2 py-1 rounded border border-slate-200 hidden md:block">{t('whatif_reuses_ramp_decay_ibro_mechanics_mix_control')}</span>
               </div>
 
               <div className="p-6 border-b border-slate-100 bg-slate-50/30">
                 <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 items-end">
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Volume Target</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_volume_target')}</label>
                     <select
                       value={promoTarget}
                       onChange={e => setPromoTarget(e.target.value as 'Inflow' | 'Retention')}
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                     >
-                      <option value="Inflow">Acquisition (Inflow)</option>
+                      <option value="Inflow">{t('whatif_acquisition_inflow')}</option>
                       <option value="Retention">Retention</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Segment</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_segment')}</label>
                     <select
                       value={newPromo.segment}
                       onChange={e => setNewPromo({ ...newPromo, segment: e.target.value })}
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                     >
-                      <option value="All">All Segments</option>
+                      <option value="All">{t('common_all_segments')}</option>
                       {ySegmentOptions.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Product</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_product')}</label>
                     {productTree.size > 0 ? (
                       <HierarchicalDropdown
                         label=""
@@ -3514,13 +3467,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         onChange={e => setNewPromo({ ...newPromo, product: e.target.value, productL2: 'All' })}
                         className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                       >
-                        <option value="All">All Products</option>
+                        <option value="All">{t('common_all_products')}</option>
                         {productL1Options.map(p => <option key={p} value={p}>{p}</option>)}
                       </select>
                     )}
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Channel</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_channel')}</label>
                     {channelTree.size > 0 ? (
                       <HierarchicalDropdown
                         label=""
@@ -3541,7 +3494,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         onChange={e => setNewPromo({ ...newPromo, channel: e.target.value, channelL2: 'All' })}
                         className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                       >
-                        <option value="All">All Channels</option>
+                        <option value="All">{t('common_all_channels')}</option>
                         {channelL1Options.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                     )}
@@ -3549,7 +3502,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   {/* Tariff targeting (Phase 2b) — composes with Product/Channel */}
                   {wiTariffL1Col && targetTariffTree.size > 0 && (
                     <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">Tariff</label>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_tariff')}</label>
                       <HierarchicalDropdown
                         label=""
                         tree={targetTariffTree}
@@ -3566,7 +3519,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     </div>
                   )}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Month</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_month')}</label>
                     <input
                       type="month"
                       value={newPromo.date}
@@ -3587,13 +3540,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">
-                      Contract Length
-                      <span className="relative group text-slate-400 cursor-help">
+                    <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">{t('whatif_contract_length')}<span className="relative group text-slate-400 cursor-help">
                         <Info size={11} />
-                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-56 bg-white border border-slate-200 rounded-xl shadow-lg text-xs text-slate-600 p-2.5 z-50 pointer-events-none normal-case font-normal">
-                          How long this promo's subscribers are protected from churn (or, for Retention, re-contracted) before entering the at-risk pool. Default 24 months.
-                        </span>
+                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-56 bg-white border border-slate-200 rounded-xl shadow-lg text-xs text-slate-600 p-2.5 z-50 pointer-events-none normal-case font-normal">{t('whatif_how_long_this_promo_s_subscribers_are_protect')}</span>
                       </span>
                     </label>
                     <input
@@ -3621,15 +3570,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   >
                     <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors ${promoSpreadEnabled ? 'border-white' : 'border-slate-400'}`}>
                       {promoSpreadEnabled && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
-                    </span>
-                    Ramp volume over multiple months
-                  </button>
+                    </span>{t('whatif_ramp_volume_over_multiple_months')}</button>
 
                   {promoSpreadEnabled && (
                     <div className="mt-3 p-4 bg-white border border-slate-200 rounded-xl">
                       <div className="flex flex-wrap items-end gap-6 mb-4">
                         <div>
-                          <label className="block text-xs font-medium text-slate-500 mb-1">Ramp duration (months)</label>
+                          <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_ramp_duration_months')}</label>
                           <input
                             type="number"
                             min={2}
@@ -3641,20 +3588,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-slate-500 mb-1">Distribution</label>
+                          <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_distribution')}</label>
                           <div className="flex rounded-lg overflow-hidden border border-slate-200">
                             <button
                               onClick={() => setPromoSpreadDistType('even')}
                               className={`px-4 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
                                 promoSpreadDistType === 'even' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
                               }`}
-                            >Even</button>
+                            >{t('whatif_even')}</button>
                             <button
                               onClick={() => setPromoSpreadDistType('custom')}
                               className={`px-4 py-2 text-xs font-semibold transition-colors ${
                                 promoSpreadDistType === 'custom' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
                               }`}
-                            >Custom %</button>
+                            >{t('whatif_custom_pct')}</button>
                           </div>
                         </div>
                       </div>
@@ -3669,8 +3616,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         return (
                           <div>
                             <div className="grid gap-1.5" style={{ gridTemplateColumns: `140px 1fr${promoSpreadDistType === 'custom' ? ' 80px' : ''}` }}>
-                              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Month</span>
-                              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Volume</span>
+                              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_month')}</span>
+                              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_volume')}</span>
                               {promoSpreadDistType === 'custom' && <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">%</span>}
                               {Array.from({ length: promoSpreadMonths }, (_, i) => {
                                 const monthLabel = baseDate && isValid(baseDate)
@@ -3722,7 +3669,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       onChange={e => setPromoMixEnabled(e.target.checked)}
                       className="w-4 h-4 rounded border-slate-300 text-[#e60000] focus:ring-[#e60000]"
                     />
-                    <span className="text-sm font-semibold text-slate-700">Value-mix arm</span>
+                    <span className="text-sm font-semibold text-slate-700">{t('whatif_value_mix_arm')}</span>
                   </label>
                   <p className="text-[10px] text-slate-400 mt-1 ml-6">
                     {promoTarget === 'Inflow'
@@ -3734,19 +3681,19 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     <div className="mt-3 p-4 bg-slate-50/50 border border-slate-200 rounded-xl">
                       {promoTariffAxisAvailable && (
                         <div className="flex items-center gap-2 mb-4">
-                          <span className="text-xs text-slate-500">Distribute mix across</span>
+                          <span className="text-xs text-slate-500">{t('whatif_distribute_mix_across')}</span>
                           <div className="flex bg-slate-100 p-0.5 rounded-lg">
                             <button
                               type="button"
                               onClick={() => setPromoMixAxis('value')}
                               disabled={!valueAxisAvailable}
                               className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed ${promoMixAxis === 'value' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                            >Value</button>
+                            >{t('common_value')}</button>
                             <button
                               type="button"
                               onClick={() => setPromoMixAxis('tariff')}
                               className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all ${promoMixAxis === 'tariff' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                            >Tariff</button>
+                            >{t('common_tariff')}</button>
                           </div>
                         </div>
                       )}
@@ -3770,11 +3717,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 <button
                                   onClick={() => setPromoYieldArpuMode('historical')}
                                   className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition-all ${promoYieldArpuMode === 'historical' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                                >Historical ARPU</button>
+                                >{t('common_historical_arpu')}</button>
                                 <button
                                   onClick={() => setPromoYieldArpuMode('forecast')}
                                   className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition-all ${promoYieldArpuMode === 'forecast' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                                >Forecast ARPU</button>
+                                >{t('whatif_forecast_arpu')}</button>
                               </div>
                               <span className={`text-xs font-semibold tabular-nums ${Math.abs((Object.values(promoDraftMix) as number[]).reduce((s, v) => s + v, 0) - 100) < 0.2 ? 'text-emerald-600' : 'text-amber-500'}`}>
                                 Sum: {(Object.values(promoDraftMix) as number[]).reduce((s, v) => s + v, 0).toFixed(1)}%
@@ -3785,8 +3732,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           <div className="grid gap-x-3 mb-1 pr-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider" style={{ gridTemplateColumns: 'minmax(80px,180px) 1fr 52px 90px' }}>
                             <span>{promoMixAxis === 'tariff' ? 'Tariff' : 'Tier'}</span>
                             <span />
-                            <span className="text-right">Mix %</span>
-                            <span className="text-right">Base ARPU</span>
+                            <span className="text-right">{t('whatif_mix_pct')}</span>
+                            <span className="text-right">{t('whatif_base_arpu')}</span>
                           </div>
                           <div className={`space-y-1.5 pr-1 ${promoTierData.length > 8 ? 'overflow-y-auto max-h-[300px]' : ''}`}>
                             {promoTierData.map(({ tier, baseArpu }) => {
@@ -3819,8 +3766,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               );
                             })}
                           </div>
-                          <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
-                            Promo blended ARPU: <span className="font-semibold text-slate-700">{formatNumber(promoDraftBlendedArpu)}</span>
+                          <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">{t('whatif_promo_blended_arpu')}<span className="font-semibold text-slate-700">{formatNumber(promoDraftBlendedArpu)}</span>
                           </div>
                         </div>
                       )}
@@ -3837,15 +3783,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       onChange={e => setPromoPricingEnabled(e.target.checked)}
                       className="w-4 h-4 rounded border-slate-300 text-[#e60000] focus:ring-[#e60000]"
                     />
-                    <span className="text-sm font-semibold text-slate-700">Pricing arm</span>
+                    <span className="text-sm font-semibold text-slate-700">{t('whatif_pricing_arm')}</span>
                   </label>
-                  <p className="text-[10px] text-slate-400 mt-1 ml-6">
-                    A promo price for this promo's volume only, applied via cohort-weighted ARPU blending. Never shifts base ARPU.
-                  </p>
+                  <p className="text-[10px] text-slate-400 mt-1 ml-6">{t('whatif_a_promo_price_for_this_promo_s_volume_only_ap')}</p>
 
                   {promoPricingEnabled && (
                     <div className="mt-3 p-4 bg-slate-50/50 border border-slate-200 rounded-xl">
-                      <label className="block text-xs font-medium text-slate-500 mb-1">Amount</label>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_amount')}</label>
                       <div className="flex rounded-lg overflow-hidden border border-slate-200 w-full max-w-xs">
                         <button
                           onClick={() => setPromoPricingMode('percentage')}
@@ -3883,28 +3827,26 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   </div>
                 ) : editingPromoId ? (
                   <div className="mt-5 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium flex items-center gap-2">
-                    <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
-                    Editing promotion — modify the fields above then click Save Changes.
-                  </div>
+                    <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />{t('whatif_editing_promotion_modify_the_fields_above_the')}</div>
                 ) : null}
 
                 {/* Campaign + Comment + Add/Save button */}
                 <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-end">
                   <div className="md:w-56 shrink-0">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Campaign Name</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_campaign_name')}</label>
                     <input
                       type="text"
-                      placeholder="e.g. Summer Promo 2026"
+                      placeholder={t('whatif_e_g_summer_promo_2026')}
                       value={newPromo.campaignName}
                       onChange={e => setNewPromo({ ...newPromo, campaignName: e.target.value })}
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                     />
                   </div>
                   <div className="flex-1">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Comment</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_comment')}</label>
                     <input
                       type="text"
-                      placeholder="Describe the promo..."
+                      placeholder={t('whatif_describe_the_promo')}
                       value={newPromo.comment}
                       onChange={e => setNewPromo({ ...newPromo, comment: e.target.value })}
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
@@ -3922,18 +3864,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       <button
                         onClick={handleCancelPromoEdit}
                         className="bg-white border border-slate-200 text-slate-600 text-sm font-semibold py-2 px-4 rounded-lg hover:bg-slate-50 transition-colors"
-                      >
-                        Cancel
-                      </button>
+                      >{t('common_cancel')}</button>
                     </div>
                   ) : (
                     <button
                       onClick={handleAddPromotionEvent}
                       disabled={!newPromo.date || !newPromo.subscriberVolume || (promoMixEnabled && promoTierData.length === 0)}
                       className="bg-[#e60000] text-white text-sm font-semibold py-2 px-5 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-                    >
-                      Add Promotion
-                    </button>
+                    >{t('whatif_add_promotion')}</button>
                   )}
                 </div>
               </div>
@@ -3944,19 +3882,19 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100">
-                      <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Campaign</th>
-                      <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Target</th>
-                      <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Month</th>
-                      <th className="px-5 py-2.5 text-right text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Volume</th>
+                      <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('whatif_campaign')}</th>
+                      <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('whatif_target')}</th>
+                      <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_month')}</th>
+                      <th className="px-5 py-2.5 text-right text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_volume')}</th>
                       <th className="px-5 py-2.5 text-right text-[10px] font-semibold text-slate-400 uppercase tracking-wider">ARPU</th>
-                      <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Arms</th>
+                      <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('whatif_arms')}</th>
                       <th className="px-5 py-2.5" />
                       <th className="px-5 py-2.5" />
                     </tr>
                   </thead>
                   <tbody>
                     {marketEvents.filter(e => e.isPromotion).length === 0 ? (
-                      <tr><td colSpan={8} className="px-5 py-6 text-center text-sm text-slate-400">No promotions added yet</td></tr>
+                      <tr><td colSpan={8} className="px-5 py-6 text-center text-sm text-slate-400">{t('whatif_no_promotions_added_yet')}</td></tr>
                     ) : (
                       marketEvents.filter(e => e.isPromotion).map(e => {
                         const isEditingRow = editingPromoId === e.id
@@ -4030,14 +3968,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-700">Yield Event — Tariff Mix Override</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Rebalance the Product L2 (tariff) mix for a cohort's Inflow or Retention to drive a new Blended ARPU
-                  </p>
+                  <h3 className="text-sm font-semibold text-slate-700">{t('whatif_yield_event_tariff_mix_override')}</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">{t('whatif_rebalance_the_product_l2_tariff_mix_for_a_coh')}</p>
                 </div>
-                <span className="text-xs text-slate-400 bg-white px-2 py-1 rounded border border-slate-200 hidden md:block">
-                  Sliders auto-balance to 100%
-                </span>
+                <span className="text-xs text-slate-400 bg-white px-2 py-1 rounded border border-slate-200 hidden md:block">{t('whatif_sliders_auto_balance_to_100pct')}</span>
               </div>
 
               <div className="p-6 border-b border-slate-100">
@@ -4058,26 +3992,26 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                   {/* Segment */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Segment</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_segment')}</label>
                     <select
                       value={newYieldEvent.segment ?? 'All'}
                       onChange={e => setNewYieldEvent({ ...newYieldEvent, segment: e.target.value })}
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                     >
-                      <option value="All">All Segments</option>
+                      <option value="All">{t('common_all_segments')}</option>
                       {ySegmentOptions.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
 
                   {/* Product L1 */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Product</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_product')}</label>
                     <select
                       value={newYieldEvent.product ?? 'All'}
                       onChange={e => setNewYieldEvent({ ...newYieldEvent, product: e.target.value })}
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                     >
-                      <option value="All">All Products</option>
+                      <option value="All">{t('common_all_products')}</option>
                       {yProductOptions.map(p => <option key={p} value={p}>{p}</option>)}
                     </select>
                   </div>
@@ -4085,7 +4019,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   {/* Channel — hierarchical dropdown (L1 + L2) */}
                   {channelTree.size > 0 ? (
                     <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">Channel</label>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_channel')}</label>
                       <HierarchicalDropdown
                         label=""
                         tree={channelTree}
@@ -4104,13 +4038,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     </div>
                   ) : (
                     <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1">Channel</label>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_channel')}</label>
                       <select
                         value={newYieldEvent.channelL1 ?? 'All'}
                         onChange={e => setNewYieldEvent({ ...newYieldEvent, channelL1: e.target.value, channelL2: 'All' })}
                         className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                       >
-                        <option value="All">All Channels</option>
+                        <option value="All">{t('common_all_channels')}</option>
                         {yChannelL1Options.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                     </div>
@@ -4118,7 +4052,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                   {/* Month */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Activity Month</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_activity_month')}</label>
                     <input
                       type="month"
                       value={newYieldEvent.month ?? ''}
@@ -4133,19 +4067,19 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     Independent axes, never a matrix. Only shown when tariffs are selected. */}
                 {tariffAxisAvailable && (
                   <div className="flex items-center gap-2 mb-4">
-                    <span className="text-xs text-slate-500">Distribute mix across</span>
+                    <span className="text-xs text-slate-500">{t('whatif_distribute_mix_across')}</span>
                     <div className="flex bg-slate-100 p-0.5 rounded-lg">
                       <button
                         type="button"
                         onClick={() => setMixAxis('value')}
                         disabled={!valueAxisAvailable}
                         className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed ${mixAxis === 'value' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                      >Value</button>
+                      >{t('common_value')}</button>
                       <button
                         type="button"
                         onClick={() => setMixAxis('tariff')}
                         className={`px-3 py-1 text-[11px] font-semibold rounded-md transition-all ${mixAxis === 'tariff' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                      >Tariff</button>
+                      >{t('common_tariff')}</button>
                     </div>
                   </div>
                 )}
@@ -4174,19 +4108,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             <button
                               onClick={() => setYieldArpuMode('historical')}
                               className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition-all ${yieldArpuMode === 'historical' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                            >Historical ARPU</button>
-                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-48 bg-white border border-slate-200 rounded-xl shadow-lg text-xs text-slate-600 p-2.5 z-50 pointer-events-none font-normal">
-                              Use raw historical average ARPU per tier.
-                            </span>
+                            >{t('common_historical_arpu')}</button>
+                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-48 bg-white border border-slate-200 rounded-xl shadow-lg text-xs text-slate-600 p-2.5 z-50 pointer-events-none font-normal">{t('whatif_use_raw_historical_average_arpu_per_tier')}</span>
                           </div>
                           <div className="relative group">
                             <button
                               onClick={() => setYieldArpuMode('forecast')}
                               className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition-all ${yieldArpuMode === 'forecast' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                            >Forecast ARPU</button>
-                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-56 bg-white border border-slate-200 rounded-xl shadow-lg text-xs text-slate-600 p-2.5 z-50 pointer-events-none font-normal">
-                              Scale tier ARPUs to match the forecast's per-scenario ARPU for the selected month.
-                            </span>
+                            >{t('whatif_forecast_arpu')}</button>
+                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block w-56 bg-white border border-slate-200 rounded-xl shadow-lg text-xs text-slate-600 p-2.5 z-50 pointer-events-none font-normal">{t('whatif_scale_tier_arpus_to_match_the_forecast_s_per')}</span>
                           </div>
                         </div>
                         <span className={`text-xs font-semibold tabular-nums ${Math.abs((Object.values(draftMix) as number[]).reduce((s, v) => s + v, 0) - 100) < 0.2 ? 'text-emerald-600' : 'text-amber-500'}`}>
@@ -4199,9 +4129,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     <div className="grid gap-x-3 mb-1 pr-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider" style={{ gridTemplateColumns: 'minmax(80px,180px) 1fr 52px 90px 80px' }}>
                       <span>{mixAxis === 'tariff' ? 'Tariff' : 'Tier'}</span>
                       <span />
-                      <span className="text-right">Mix %</span>
-                      <span className="text-right">Base ARPU</span>
-                      <span className="text-right">Yield</span>
+                      <span className="text-right">{t('whatif_mix_pct')}</span>
+                      <span className="text-right">{t('whatif_base_arpu')}</span>
+                      <span className="text-right">{t('whatif_yield')}</span>
                     </div>
 
                     {/* Scrollable tier list — compact rows, max visible ~8 before scroll */}
@@ -4243,12 +4173,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     {/* ARPU summary */}
                     <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-4">
                       <div className="bg-slate-50 rounded-xl p-3">
-                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Baseline Blended ARPU</p>
+                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">{t('whatif_baseline_blended_arpu')}</p>
                         <p className="text-lg font-bold text-slate-700">{formatNumber(baselineBlendedArpu)}</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Equal-weight avg of tier ARPUs</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">{t('whatif_equal_weight_avg_of_tier_arpus')}</p>
                       </div>
                       <div className={`rounded-xl p-3 ${draftBlendedArpu >= baselineBlendedArpu ? 'bg-emerald-50' : 'bg-rose-50'}`}>
-                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">New Blended ARPU</p>
+                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">{t('whatif_new_blended_arpu')}</p>
                         <p className={`text-lg font-bold ${draftBlendedArpu >= baselineBlendedArpu ? 'text-emerald-700' : 'text-rose-700'}`}>
                           {formatNumber(draftBlendedArpu)}
                         </p>
@@ -4286,20 +4216,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 {/* Name + Comment + Add button */}
                 <div className="mt-4 flex flex-wrap gap-3 items-end">
                   <div className="w-48 shrink-0">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Event Name</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_event_name')}</label>
                     <input
                       type="text"
-                      placeholder="e.g. Q3 Promo Mix"
+                      placeholder={t('whatif_e_g_q3_promo_mix')}
                       value={newYieldEvent.name ?? ''}
                       onChange={e => setNewYieldEvent({ ...newYieldEvent, name: e.target.value })}
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                     />
                   </div>
                   <div className="flex-1 min-w-[200px]">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">Comment</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_comment')}</label>
                     <input
                       type="text"
-                      placeholder="Describe this mix change (e.g., Promo pushing High Value tier)..."
+                      placeholder={t('whatif_describe_this_mix_change_e_g_promo_pushing_hi')}
                       value={newYieldEvent.comment ?? ''}
                       onChange={e => setNewYieldEvent({ ...newYieldEvent, comment: e.target.value })}
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
@@ -4309,9 +4239,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     onClick={handleAddYieldEvent}
                     disabled={yieldTierData.length === 0 || !newYieldEvent.month}
                     className="px-6 py-2 bg-[#e60000] text-white text-sm font-semibold rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-                  >
-                    Add Yield Event
-                  </button>
+                  >{t('whatif_add_yield_event')}</button>
                 </div>
               </div>
 
@@ -4320,11 +4248,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 <table className="w-full text-xs text-left">
                   <thead className="text-[10px] text-slate-500 bg-slate-50 border-b border-slate-200 uppercase tracking-wider">
                     <tr>
-                      <th className="px-4 py-3 font-semibold">Month</th>
+                      <th className="px-4 py-3 font-semibold">{t('common_month')}</th>
                       <th className="px-4 py-3 font-semibold">IBRO</th>
-                      <th className="px-4 py-3 font-semibold">Segment</th>
-                      <th className="px-4 py-3 font-semibold">Product</th>
-                      <th className="px-4 py-3 font-semibold">Channel</th>
+                      <th className="px-4 py-3 font-semibold">{t('common_segment')}</th>
+                      <th className="px-4 py-3 font-semibold">{t('common_product')}</th>
+                      <th className="px-4 py-3 font-semibold">{t('common_channel')}</th>
                       {allYieldTiers.map(tier => (
                         <React.Fragment key={tier}>
                           <th className="px-4 py-3 font-semibold text-right">
@@ -4335,18 +4263,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           </th>
                         </React.Fragment>
                       ))}
-                      <th className="px-4 py-3 font-semibold text-right">Blended ARPU</th>
-                      <th className="px-4 py-3 font-semibold text-center">Roll Fwd</th>
-                      <th className="px-4 py-3 font-semibold">Comment</th>
-                      <th className="px-4 py-3 font-semibold text-center">Remove</th>
+                      <th className="px-4 py-3 font-semibold text-right">{t('whatif_blended_arpu')}</th>
+                      <th className="px-4 py-3 font-semibold text-center">{t('whatif_roll_fwd')}</th>
+                      <th className="px-4 py-3 font-semibold">{t('common_comment')}</th>
+                      <th className="px-4 py-3 font-semibold text-center">{t('whatif_remove')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {yieldEvents.length === 0 ? (
                       <tr>
-                        <td colSpan={7 + allYieldTiers.length * 2} className="px-5 py-8 text-center text-slate-400 italic">
-                          No yield events yet. Use the form above to override tariff mix — changes apply to the ARPU waterfall immediately.
-                        </td>
+                        <td colSpan={7 + allYieldTiers.length * 2} className="px-5 py-8 text-center text-slate-400 italic">{t('whatif_no_yield_events_yet_use_the_form_above_to_ove')}</td>
                       </tr>
                     ) : (
                       yieldEvents
@@ -4398,8 +4324,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 </td>
                                 <td className="px-4 py-2.5 text-center text-[10px] text-slate-400" rowSpan={2}>
                                   {evt.rollForward
-                                    ? <span className="inline-block px-1.5 py-0.5 bg-violet-100 text-violet-700 rounded font-semibold">All Fwd</span>
-                                    : <span className="text-slate-400">Once</span>}
+                                    ? <span className="inline-block px-1.5 py-0.5 bg-violet-100 text-violet-700 rounded font-semibold">{t('whatif_all_fwd')}</span>
+                                    : <span className="text-slate-400">{t('whatif_once')}</span>}
                                 </td>
                                 <td className="px-4 py-2.5 text-slate-500 text-xs max-w-[120px] truncate" rowSpan={2} title={evt.comment}>{evt.comment || '—'}</td>
                                 <td className="px-4 py-2.5 text-center" rowSpan={2}>
@@ -4452,8 +4378,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     onClick={(e) => { e.stopPropagation(); clearAllYieldEvents(); }}
                     className="text-xs font-medium text-slate-500 hover:text-rose-600 transition-colors flex items-center gap-1.5"
                   >
-                    <Trash2 size={12} /> Clear All Yield Events
-                  </button>
+                    <Trash2 size={12} />{t('whatif_clear_all_yield_events')}</button>
                 </div>
               )}
             </div>
