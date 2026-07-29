@@ -685,6 +685,52 @@ its distribution is. This is accepted and expected.
 
 ---
 
+## 16b. Known coverage gaps — cannot be measured on the current fixtures
+
+These are not passing checks. They are checks that **cannot be run** with the
+fixtures in `test-data/`, recorded so a future fixture is built to reach them
+rather than the gap being rediscovered.
+
+### Product L2 combined with Tariff — UNMEASURABLE, inferred only
+
+`actualsAggrMap` and `computeForecastMape` both filter actuals to a forecast's
+cohort. Their predicates guard segment, product L1/L2, channel L1/L2 and (since
+2026-07-29) tariff L1/L2. Whether the **L2 and tariff guards compose correctly**
+has never been measured, because the synthetic fixtures are collinear: under
+`Corporate · Mobile Voice · Direct`, each tariff maps to exactly one
+`Product_L2_Value_Tier` / `Channel_Level_2` pair, so no test case exists where
+L2 and tariff vary independently. Correctness there is **inferred** from the
+guards being structurally identical and independently applied — not verified.
+
+**What a future fixture needs:** at least one Segment/Product-L1/Channel-L1
+cohort where two different `Product_L2_Value_Tier` values each appear under two
+or more different `tariff_tier_l1` values. Then assert that filtering to
+(L2 = X, tariff = Y) reads actuals for that intersection only, and that the
+Base actual matches the Base forecast's grain.
+
+### broadAggrSnapshotMap denominator under a tariff-scoped filter — UNMEASURED
+
+`broadAggrSnapshotMap` is the L1-only share denominator for
+`buildCohortAccuracy`. Its `hasL2` gate tests only `productL2`/`channelL2`, never
+tariff, so a cohort that is tariff-specific but L2-`All` bypasses the broad path
+and receives `aggrSnapshotMap` instead — which is a direct projection of
+`actualsAggrMap`, and therefore became **tariff-narrow** when the tariff guard
+was added. The denominator for such a cohort was accidentally broad before that
+fix and is narrow after it.
+
+Whether that shifts share ratios (and so accuracy scores) for cohorts *other
+than* the filtered one is **unmeasured**: reproducing it needs `forecastStore`
+populated with several sibling tariff cohorts so the accuracy table renders
+other-cohort rows. The single-forecast harness used to verify the tariff fix
+cannot reach it.
+
+**What a future check needs:** populate `forecastStore` with every tariff
+sibling under one Segment/Product/Channel, filter the Viewing bar to one tariff,
+and confirm the accuracy-table scores for the *other* tariff rows are unchanged
+versus a run with no tariff filter.
+
+---
+
 ## 17. Regression checklist (the short version)
 
 Every item below was a real bug or a confirmed Phase 1/2 behaviour. Confirm all
