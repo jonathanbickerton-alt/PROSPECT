@@ -662,5 +662,7 @@
   "multiselect_select": "Select…",
   "importactuals_import_count_months": "Import {{count}} months",
   "importactuals_import": "Import",
-  "removeactuals_preview": "Preview"
+  "removeactuals_preview": "Preview",
+  "whatif_focus": "Focus",
+  "whatif_chart_focus_only": "Chart focus only — scope follows the VIEWING bar"
 }

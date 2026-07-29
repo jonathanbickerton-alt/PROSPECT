@@ -1395,15 +1395,32 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // Derive adjusted months from BaseForecast + market events (no HW re-run)
   // -------------------------------------------------------------------------
 
+  // Scope comes from baseForecast.cohort — the LOADED cohort — never from local
+  // view state. The in-page VIEW bar used to drive this, and its output was
+  // written to global adjustedForecast paired with the loaded cohort's identity,
+  // unchecked. Measured on Corporate·Mobile Voice·Direct with a +10,000 Inflow
+  // event: scoped to the loaded cohort the first month upliftedd to 18,461
+  // (baseline 8,461 + the full 10,000); with the VIEW bar narrowed to RED S it
+  // read 8,683 (baseline + RED S's 222 pro-rata share) — an 8.2% divergence over
+  // the horizon, exported under the loaded cohort's label and scored against the
+  // loaded cohort's actuals in Step 3.
+  const cohortScope = useMemo(() => ({
+    seg:  baseForecast?.cohort.segment ?? 'All',
+    prod: { l1: baseForecast?.cohort.product   ?? null, l2: baseForecast?.cohort.productL2 ?? null },
+    chan: { l1: baseForecast?.cohort.channel   ?? null, l2: baseForecast?.cohort.channelL2 ?? null },
+    tar:  { l1: baseForecast?.cohort.tariffL1  ?? null, l2: baseForecast?.cohort.tariffL2  ?? null },
+  }), [baseForecast]);
+
   const { chartData, adjustedMonths, eventShares } = useMemo(() => computeAdjustedForecast({
     baseForecast, marketEvents, yieldEvents, pricingEvents,
-    viewSegment, viewProduct, viewChannel, viewTariff, data,
+    viewSegment: cohortScope.seg, viewProduct: cohortScope.prod,
+    viewChannel: cohortScope.chan, viewTariff: cohortScope.tar, data,
     wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
     wiTariffL1Col, wiTariffL2Col, wiValueCol,
     // data + the column mappings are load-bearing: the pro-rata leaf enumeration
     // reads them to derive each leaf's volume share. Before pro-rata they were
     // unused in this body, which is why they were historically absent here.
-  }), [baseForecast, marketEvents, yieldEvents, pricingEvents, viewSegment, viewProduct, viewChannel, viewTariff,
+  }), [baseForecast, marketEvents, yieldEvents, pricingEvents, cohortScope,
        data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col]);
 
   // ── Custom chart tooltip — shows KPI values + any event names for that month ─
@@ -2035,62 +2052,23 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           </div>
         )}
 
-        {/* ── View filter bar ─────────────────────────────────────────────── */}
-        {/* Independent from Step 1 filters — defaults to All on every mount. */}
-        {/* Controls event-matching scope and chart KPI focus for this step.  */}
+        {/* ── KPI focus ────────────────────────────────────────────────────── */}
+        {/* Cohort dimensions REMOVED. They used to scope computeAdjustedForecast,
+            whose output is written to global adjustedForecast paired with the
+            LOADED cohort's identity — so a narrowed preview silently mislabelled
+            the Adjusted_Forecasts export and mis-scored Step 3. Scope now comes
+            from baseForecast.cohort only; use the dark VIEWING bar to change it.
+            Only the KPI focus survives here — it has no dark-bar equivalent and
+            is display-only. */}
         <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0">{t('whatif_view')}</span>
-
-          {wiSegmentCol && (
-            <div className="flex items-center gap-1.5">
-              <label className="text-xs text-slate-500 shrink-0">{t('common_segment')}</label>
-              <select
-                value={viewSegment}
-                onChange={e => setViewSegment(e.target.value)}
-                className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-slate-50 outline-none focus:border-[#e60000] min-w-[100px]"
-              >
-                <option value="All">{t('whatif_all')}</option>
-                {segmentOptions.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-          )}
-
-          {wiProductCol && productTree.size > 0 && (
-            <HierarchicalDropdown
-              label={t('common_product')}
-              tree={productTree}
-              value={viewProduct}
-              onChange={setViewProduct}
-              variant="light"
-            />
-          )}
-
-          {wiChannelCol && channelTree.size > 0 && (
-            <HierarchicalDropdown
-              label={t('common_channel')}
-              tree={channelTree}
-              value={viewChannel}
-              onChange={setViewChannel}
-              variant="light"
-            />
-          )}
-
-          {wiTariffL1Col && tariffTree && tariffTree.size > 0 && (
-            <HierarchicalDropdown
-              label={t('common_tariff')}
-              tree={tariffTree}
-              value={viewTariff}
-              onChange={setViewTariff}
-              variant="light"
-            />
-          )}
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0">{t('whatif_focus')}</span>
 
           <div className="flex items-center gap-1.5">
             <label className="text-xs text-slate-500 shrink-0">IBRO Scenario</label>
             <select
               value={viewScenario}
               onChange={e => setViewScenario(e.target.value)}
-              className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-slate-50 outline-none focus:border-[#e60000] min-w-[100px]"
+              className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-slate-50 outline-none focus:border-[#e60000]"
             >
               <option value="All">{t('whatif_all')}</option>
               <option value="Inflow">Inflow</option>
@@ -2101,14 +2079,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             </select>
           </div>
 
-          {(viewSegment !== 'All' || viewProduct.l1 !== null || viewChannel.l1 !== null || viewTariff.l1 !== null || viewScenario !== 'All') && (
+          {viewScenario !== 'All' && (
             <button
-              onClick={() => { setViewSegment('All'); setViewProduct({ l1: null, l2: null }); setViewChannel({ l1: null, l2: null }); setViewTariff({ l1: null, l2: null }); setViewScenario('All'); }}
+              onClick={() => setViewScenario('All')}
               className="text-[10px] text-slate-400 hover:text-rose-500 underline underline-offset-2 transition-colors"
             >{t('whatif_reset')}</button>
           )}
 
-          <span className="ml-auto text-[10px] text-slate-400 italic hidden lg:block">{t('whatif_scopes_chart_to_matching_events_does_not_affe')}</span>
+          <span className="ml-auto text-[10px] text-slate-400 italic hidden lg:block">{t('whatif_chart_focus_only')}</span>
         </div>
 
         {/* Impact summary cards */}

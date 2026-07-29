@@ -319,12 +319,16 @@ const FRAGMENT = /^[a-z(]|^[A-Z][a-z]*$|'t$/;
  * separate keys.
  */
 const TRANS_BACKLOG = new Set<string>([
-  'src\\components\\WhatIfTab.tsx:4107',
-  'src/components/WhatIfTab.tsx:4107',
+  // Keyed by file + TEXT, never file + line: line numbers shift whenever anything
+  // above them is edited, which silently un-defers the entry and fails the build
+  // for an unrelated change. Learned when a JSX removal moved this site 4107->4085.
+  'WhatIfTab.tsx::tariff',
+  'WhatIfTab.tsx::tier',
 ]);
 
 function bucketOf(h: Hit): string {
-  if (TRANS_BACKLOG.has(`${h.file}:${h.line}`)) return '1b fragment (DEFERRED Trans)';
+  const base = h.file.split(/[\\/]/).pop() ?? h.file;
+  if (TRANS_BACKLOG.has(`${base}::${h.text.trim()}`)) return '1b fragment (DEFERRED Trans)';
   const t = h.text.trim();
   if (h.note === 'IDENTIFIER-OPERAND') return 'ident (excluded)';
   if (DATEFMT.test(t) && t.length <= 20) return 'date-format (excluded)';
