@@ -1814,24 +1814,20 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   const broadAggrSnapshotMap = useMemo((): Map<string, AggrSnapshot> => {
     if (!data.length || !wiDateCol) return aggrSnapshotMap;
     const cohort = baseForecast?.cohort;
-    // Runs UNCONDITIONALLY. There used to be an `if (!hasL2) return
-    // aggrSnapshotMap` shortcut here, where hasL2 tested productL2/channelL2
-    // only. aggrSnapshotMap is a projection of actualsAggrMap and therefore
-    // activeFilter-scoped, so any cohort without L2 specificity — every
-    // Segment-only, Segment+Channel and tariff-only cohort — got a denominator
-    // that moved with whatever the user was filtered to. SOHO·RED S scored
-    // 66/80/67/90 with the Viewing bar on RED S and 0/0/0/0 with it cleared:
-    // same cohort, same data, different score because of someone else's filter.
+    // If no L2 specificity on the cohort, the narrow map already works — reuse it.
     //
-    // The defect was the existence of the filter-scoped fallback, not which
-    // cohorts reached it, so widening hasL2 (e.g. to consider tariff) would not
-    // have fixed it — see EXPECTED.md §16b.
-    //
-    // Deliberately still L1-ONLY. This is the BROAD denominator: sub-cohort rows
-    // must share a meaningful aggregate even when baseForecast was generated for
-    // an L2- or tariff-specific cohort. Scoping it to all seven cohort fields
-    // would make it as narrow as actualsAggrMap's own cohort branch, collapsing
-    // every share toward 1 and destroying the band-scaling it exists to perform.
+    // NOTE: this early return is the recorded defect (EXPECTED.md §16b) —
+    // aggrSnapshotMap is activeFilter-scoped, so cohorts without L2 specificity
+    // get a denominator that moves with someone else's filter. Removing it
+    // unconditionally was tried and REVERTED: it made 20 of 25 cohorts score
+    // 0/0/0/0, because one L1 denominator taken from the loaded forecast cannot
+    // serve rows from other segments. The real fix is a per-cohort denominator
+    // keyed by each row's own L1 ancestry, tracked separately.
+    const hasL2 = cohort && (
+      (cohort.productL2 && cohort.productL2 !== 'All') ||
+      (cohort.channelL2 && cohort.channelL2 !== 'All')
+    );
+    if (!hasL2) return aggrSnapshotMap;
 
     // Re-aggregate filtered to baseForecast.cohort L1 scope only (no activeFilter).
     // broadAggrSnapshotMap is the share denominator for buildCohortAccuracy which
