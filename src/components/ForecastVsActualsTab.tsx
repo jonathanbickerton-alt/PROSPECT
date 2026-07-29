@@ -1502,6 +1502,17 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
             String(row[wiChannelCol]).trim() !== activeFilter.channel.l1.trim()) return false;
         if (wiChannelL2Col && activeFilter.channel.l2 &&
             String(row[wiChannelL2Col]).trim() !== activeFilter.channel.l2.trim()) return false;
+        // Tariff L1/L2 — added 2026-07-29. Their absence made this predicate
+        // 5-part and tariff-blind, so a tariff-scoped cohort's Base ACTUAL was
+        // summed across every tariff leg while the Baseline it is compared
+        // against comes from forecastStore's full 7-part key. On
+        // Corporate·Mobile Voice·Direct·RED S that read 75,468 against 1,693
+        // (+97.7%) for every month. Guarded on !== 'All' so files with no tariff
+        // column, and All-tariff views, are unaffected.
+        if (wiTariffL1Col && activeFilter.tariff?.l1 && activeFilter.tariff.l1 !== 'All' &&
+            String(row[wiTariffL1Col]).trim() !== activeFilter.tariff.l1.trim()) return false;
+        if (wiTariffL2Col && activeFilter.tariff?.l2 && activeFilter.tariff.l2 !== 'All' &&
+            String(row[wiTariffL2Col]).trim() !== activeFilter.tariff.l2.trim()) return false;
       } else if (cohort) {
         // No activeFilter — use baseForecast.cohort scope as the default.
         if (wiSegmentCol && cohort.segment !== 'All' &&
@@ -1514,6 +1525,13 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
             String(row[wiChannelCol]).trim() !== cohort.channel.trim()) return false;
         if (wiChannelL2Col && cohort.channelL2 && cohort.channelL2 !== 'All' &&
             String(row[wiChannelL2Col]).trim() !== cohort.channelL2.trim()) return false;
+        // Tariff L1/L2 — see the note in the activeFilter branch above. The
+        // truthy check matters here as well as the 'All' check: cohort.tariffL1
+        // is undefined on forecasts saved before Phase 2a introduced tariff.
+        if (wiTariffL1Col && cohort.tariffL1 && cohort.tariffL1 !== 'All' &&
+            String(row[wiTariffL1Col]).trim() !== cohort.tariffL1.trim()) return false;
+        if (wiTariffL2Col && cohort.tariffL2 && cohort.tariffL2 !== 'All' &&
+            String(row[wiTariffL2Col]).trim() !== cohort.tariffL2.trim()) return false;
       }
       return true;
     });
@@ -1563,7 +1581,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     });
 
     return map;
-  }, [data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol, baseForecast, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, activeFilter]);
+  }, [data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol, baseForecast, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, activeFilter]);
 
   // ---------------------------------------------------------------------------
   // 2. Per-cohort actuals per month — keyed by the full seg|prod|chan triple.
@@ -1645,7 +1663,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     }
 
     return map;
-  }, [data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col]);
+  }, [data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col]);
 
   // ---------------------------------------------------------------------------
   // 3. Build month-by-month comparison rows
@@ -2750,7 +2768,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     };
   }, [forecastStore, activeFilter, adjustedMeanMap, data, wiDateCol, wiMetricCol, wiValueCol,
       wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol,
-      wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col]);
+      wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col]);
 
   // ---------------------------------------------------------------------------
   // 6. Per-cohort accuracy (cont.) — AutoML Challenger tab instance
