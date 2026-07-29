@@ -68,6 +68,16 @@ because its absence produced a false pass.
    applied to one path while siblings drift is not a fix. Report any
    additional call site as a blocking finding.
 
+6. **Seed a harness forecast from the cohort's own data, never a fixed
+   constant.** A jsdom harness that passes a hardcoded `seedBaseVolume`
+   produces a Base forecast unrelated to the cohort, and every Base MAPE or
+   variance figure derived from it is an artefact. This produced a 477.2%
+   Base MAPE card that looked like a product defect and was purely the
+   harness: seeded at 10000 against a cohort whose real Base was ~1,700.
+   Re-seeded from that cohort's own last historical Base, the same card read
+   0.9%. Derive the seed from the data you are testing with, and if a figure
+   still looks extreme, suspect the harness before the code.
+
 Write scratch scripts to the scratchpad directory, never into the repo.
 
 ## How you report

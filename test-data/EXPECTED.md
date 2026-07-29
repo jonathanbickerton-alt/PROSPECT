@@ -708,7 +708,46 @@ or more different `tariff_tier_l1` values. Then assert that filtering to
 (L2 = X, tariff = Y) reads actuals for that intersection only, and that the
 Base actual matches the Base forecast's grain.
 
-### broadAggrSnapshotMap denominator under a tariff-scoped filter — UNMEASURED
+### Accuracy-table denominator depends on the active filter — MEASURED, OPEN
+
+**This is a real defect with a reproduction. It pre-dates the tariff fix; that
+fix made it visible rather than causing it.**
+
+The Historical Accuracy table deliberately shows **every** cohort in the dataset
+(`cohortActualsMap` is intentionally unfiltered by `activeFilter`). But its share
+denominator is not. `broadAggrSnapshotMap` only takes its own broad path when
+`hasL2` is true — and `hasL2` tests `productL2`/`channelL2` only, never tariff.
+A tariff-specific, L2-`All` cohort therefore falls through to `aggrSnapshotMap`,
+which is a direct projection of `actualsAggrMap`, which **is** `activeFilter`-
+scoped. Result: cohorts outside the active filter are scored against a
+denominator that has nothing to do with them.
+
+**Reproduction (measured on the tariff fixture, `forecastStore` populated with
+all five tariff siblings under Corporate · Mobile Voice · Direct):**
+
+| Row | Viewing bar filtered to RED S | Tariff filter cleared |
+|---|---|---|
+| `SOHO · RED S` | **66 / 80 / 67 / 90** | **0 / 0 / 0 / 0** |
+| `SOHO · RED M` | **59 / 70 / 59 / 81** | **0 / 0 / 0 / 0** |
+
+Same cohort, same data, same file — two different scores depending on a filter
+that does not apply to it. On `main` both columns read 0/0/0/0; the `0` is the
+"garbage share ratio" symptom the code comment beside `broadAggrSnapshotMap`
+already warns about, so the pre-fix values were not correct either.
+
+**In-filter cohorts are unaffected.** All five `Corporate · RED *` rows score
+identically before and after, filtered and unfiltered (RED S = 85/93/88/91).
+
+**Extending `hasL2` to consider tariff is the WRONG fix.** It would only change
+which fallback fires. The defect is that a filter-scoped denominator is used for
+an unfiltered table — so a tariff-aware `hasL2` would still leave every
+out-of-filter cohort measured against someone else's denominator, just via the
+other branch. The correct fix is to make the denominator independent of
+`activeFilter`. That changes scoring for every cohort and needs its own
+before/after measurement across the full cohort set, which is why it is a
+separate branch rather than a rider on the tariff fix.
+
+### broadAggrSnapshotMap `hasL2` gate — related, unmeasured detail
 
 `broadAggrSnapshotMap` is the L1-only share denominator for
 `buildCohortAccuracy`. Its `hasL2` gate tests only `productL2`/`channelL2`, never
