@@ -2768,7 +2768,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     };
   }, [forecastStore, activeFilter, adjustedMeanMap, data, wiDateCol, wiMetricCol, wiValueCol,
       wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol,
-      wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col]);
+      wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col]);
 
   // ---------------------------------------------------------------------------
   // 6. Per-cohort accuracy (cont.) — AutoML Challenger tab instance
