@@ -1814,12 +1814,24 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   const broadAggrSnapshotMap = useMemo((): Map<string, AggrSnapshot> => {
     if (!data.length || !wiDateCol) return aggrSnapshotMap;
     const cohort = baseForecast?.cohort;
-    // If no L2 specificity on the cohort, the narrow map already works — reuse it.
-    const hasL2 = cohort && (
-      (cohort.productL2 && cohort.productL2 !== 'All') ||
-      (cohort.channelL2 && cohort.channelL2 !== 'All')
-    );
-    if (!hasL2) return aggrSnapshotMap;
+    // Runs UNCONDITIONALLY. There used to be an `if (!hasL2) return
+    // aggrSnapshotMap` shortcut here, where hasL2 tested productL2/channelL2
+    // only. aggrSnapshotMap is a projection of actualsAggrMap and therefore
+    // activeFilter-scoped, so any cohort without L2 specificity — every
+    // Segment-only, Segment+Channel and tariff-only cohort — got a denominator
+    // that moved with whatever the user was filtered to. SOHO·RED S scored
+    // 66/80/67/90 with the Viewing bar on RED S and 0/0/0/0 with it cleared:
+    // same cohort, same data, different score because of someone else's filter.
+    //
+    // The defect was the existence of the filter-scoped fallback, not which
+    // cohorts reached it, so widening hasL2 (e.g. to consider tariff) would not
+    // have fixed it — see EXPECTED.md §16b.
+    //
+    // Deliberately still L1-ONLY. This is the BROAD denominator: sub-cohort rows
+    // must share a meaningful aggregate even when baseForecast was generated for
+    // an L2- or tariff-specific cohort. Scoping it to all seven cohort fields
+    // would make it as narrow as actualsAggrMap's own cohort branch, collapsing
+    // every share toward 1 and destroying the band-scaling it exists to perform.
 
     // Re-aggregate filtered to baseForecast.cohort L1 scope only (no activeFilter).
     // broadAggrSnapshotMap is the share denominator for buildCohortAccuracy which
@@ -1955,7 +1967,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       ];
       for (const month of allMonths) {
         const cohortVal = cohortMonthMap.get(month)?.[kpi] ?? 0;
-        const aggrSnap  = aggrSnapshotMap.get(month);
+        // broadAggrSnapshotMap, not aggrSnapshotMap: the numerator (cohortMonthMap)
+        // is unfiltered, so a filter-scoped denominator makes the share depend on
+        // what someone else is filtered to. Same denominator buildCohortAccuracy
+        // uses, so the chart and the accuracy tooltip cannot disagree.
+        const aggrSnap  = broadAggrSnapshotMap.get(month);
         const aggrVal   = aggrSnap?.[kpi] ?? 0;
         if (cohortVal > 0 && aggrVal > 0) {
           const share = cohortVal / aggrVal;
@@ -1985,7 +2001,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       if (!cohortMonthMap || selectedKpi !== 'base' || specificForecast) return null;
       const inflowShares: number[] = [];
       for (const [month, entry] of cohortMonthMap.entries()) {
-        const aggrSnap = aggrSnapshotMap.get(month);
+        // Broad denominator — see cohortShareMap above.
+        const aggrSnap = broadAggrSnapshotMap.get(month);
         if (!aggrSnap || aggrSnap.inflow === 0 || entry.inflow === 0) continue;
         inflowShares.push(entry.inflow / aggrSnap.inflow);
       }
@@ -1993,6 +2010,13 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       return inflowShares.reduce((s, v) => s + v, 0) / inflowShares.length;
     })();
 
+    // NOT moved to broadAggrSnapshotMap, and this is a known gap rather than an
+    // oversight: AggrSnapshot is { inflow, outflow, retention } and carries no
+    // revenue/volume, so an ARPU denominator cannot be read from it. Widening
+    // that type also widens buildCohortAccuracy's signature, so it is deliberately
+    // out of scope here. This ratio therefore still uses the activeFilter-scoped
+    // actualsAggrMap and retains the same class of defect the broad map just
+    // fixed for the flow metrics. Tracked in EXPECTED.md §16b.
     // ARPU ratio scale — when a cohort is selected but no specific forecast found,
     // scale the aggregate ARPU by the historical cohort/aggregate ARPU ratio.
     // Mirrors the flow-metric share-scaling approach for ARPU so that cohorts
@@ -2308,7 +2332,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     });
 
     return [...histRows, ...fcRows];
-  }, [comparisonRows, baseForecast, actualsAggrMap, aggrSnapshotMap, selectedKpi, usingAdjusted, prevFcMap, modelSwitchPoint, selectedCohortRow, cohortDims, forecastStore, activeFilter, cohortActualsMap]);
+  }, [comparisonRows, baseForecast, actualsAggrMap, aggrSnapshotMap, broadAggrSnapshotMap, selectedKpi, usingAdjusted, prevFcMap, modelSwitchPoint, selectedCohortRow, cohortDims, forecastStore, activeFilter, cohortActualsMap]);
 
   // ---------------------------------------------------------------------------
   // 5a. Multi-scenario chart data for the new Volume/Value 2-tab chart
@@ -2646,7 +2670,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     });
 
     return [...histRows, ...fcRows];
-  }, [baseForecast, comparisonRows, actualsAggrMap, cohortActualsMap, aggrSnapshotMap,
+  }, [baseForecast, comparisonRows, actualsAggrMap, cohortActualsMap, aggrSnapshotMap, broadAggrSnapshotMap,
       selectedCohortRow, cohortDims, forecastStore, activeFilter]);
 
   // True when at least one forecast-month row carries a baseline at the current
