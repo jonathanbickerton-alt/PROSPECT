@@ -1040,10 +1040,6 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // Local view filter — independent from Step 1 selections.
   // Defaults to 'All' on every mount; never reads from baseForecast.cohort.
   // ---------------------------------------------------------------------------
-  const [viewSegment, setViewSegment] = useState('All');
-  const [viewProduct, setViewProduct] = useState<HierarchicalSelection>({ l1: null, l2: null });
-  const [viewChannel, setViewChannel] = useState<HierarchicalSelection>({ l1: null, l2: null });
-  const [viewTariff, setViewTariff] = useState<HierarchicalSelection>({ l1: null, l2: null });
   // 'All' means all KPIs visible; a specific scenario pre-selects that KPI.
   const [viewScenario, setViewScenario] = useState('All');
 
@@ -1114,25 +1110,6 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     }
   }, [viewScenario]);
 
-  // Sync local view filter from the loaded baseForecast's cohort dimensions.
-  // Keeps the page-level VIEW dropdowns aligned with the global VIEWING bar.
-  useEffect(() => {
-    if (!baseForecast) return;
-    const { segment, product, productL2, channel, channelL2, tariffL1, tariffL2 } = baseForecast.cohort;
-    setViewSegment(segment !== 'All' ? segment : 'All');
-    setViewProduct({
-      l1: product !== 'All' ? product : null,
-      l2: productL2 && productL2 !== 'All' ? productL2 : null,
-    });
-    setViewChannel({
-      l1: channel !== 'All' ? channel : null,
-      l2: channelL2 && channelL2 !== 'All' ? channelL2 : null,
-    });
-    setViewTariff({
-      l1: tariffL1 && tariffL1 !== 'All' ? tariffL1 : null,
-      l2: tariffL2 && tariffL2 !== 'All' ? tariffL2 : null,
-    });
-  }, [baseForecast]);
 
   // ── Yield Events form local draft state ──────────────────────────────────
   // draftMix holds the live slider values (always sums to 100).
@@ -1421,7 +1398,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // reads them to derive each leaf's volume share. Before pro-rata they were
     // unused in this body, which is why they were historically absent here.
   }), [baseForecast, marketEvents, yieldEvents, pricingEvents, cohortScope,
-       data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col]);
+       data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiValueCol]);
 
   // ── Custom chart tooltip — shows KPI values + any event names for that month ─
   const renderTooltip = useCallback(({ active, payload, label }: any) => {
