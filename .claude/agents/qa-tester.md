@@ -130,6 +130,30 @@ because its absence produced a false pass.
    A one-directional "it's gone" result is the same observation as "nothing ever
    rendered", and only the round trip separates them.
 
+10. **A criterion asserting a defect is ABSENT must be paired with a baseline
+    showing it PRESENT without the fix.** "Zero filter-dependent rows" is
+    equally consistent with a working fix and with a harness that never
+    reproduced the problem — the two are indistinguishable from the fix-side
+    measurement alone. Always run the same measurement against unmodified
+    `main` first and confirm it FAILS. A criterion that passes on main is
+    measuring nothing.
+
+    This is not the determinism check and determinism will not catch it: a
+    harness that reproduces nothing reproduces nothing identically every time.
+    In the denominator re-test, determinism passed throughout while criterion 3
+    was scoring vacuously; only the main baseline (8 filter-dependent rows
+    there, 0 on the attempt) established that the measurement had teeth.
+
+    Two failure shapes to check for explicitly:
+    - **The condition never arises.** The denominator defect exists only when
+      cohorts lack forecasts; measured fully seeded, every candidate fix looks
+      perfect because nothing reaches the code path at all.
+    - **The predicate never matches.** A `isZero()` written as
+      `/^0\/0\/0\/0$/` against cells that render `0↑ Over/0↑ Over/…` returns
+      false for every input, so "no row became zero" reports PASS while eight
+      rows sit at zero in the same output. Assert your predicate against a
+      known-positive and a known-negative sample before trusting a count of 0.
+
 Write scratch scripts to the scratchpad directory, never into the repo.
 
 ## How you report

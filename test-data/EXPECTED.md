@@ -996,11 +996,30 @@ Two consequences a future session must not inherit:
    flat-map and per-cohort attempts "failed criterion 3 identically, which
    points away from the denominator toward `scaledBandFlow`". That argument
    rested on the same artefact that produced the failures.
-2. **Neither denominator fix had ever had a fair test.** Both the reverted
-   unconditional flat-map change and the per-cohort
-   `Map<cohortL1Key, Map<month, AggrSnapshot>>` design were judged against the
-   under-seeded harness. **This was resolved on 2026-07-30 — see the re-test
-   below.**
+2. **Attempt A had never had a fair test — it has now, and it fails.** The
+   reverted unconditional flat-map change was judged against the under-seeded
+   harness. Re-tested correctly on 2026-07-30, it fails on merit. See below.
+
+   **There is no attempt B to re-test.** An earlier version of this entry said
+   "both attempts were judged against the under-seeded harness", listing a
+   per-cohort `Map<cohortL1Key, Map<month, AggrSnapshot>>` alongside the
+   flat-map change. **That was wrong.** `Map<string, Map<string, AggrSnapshot>>`
+   and `cohortL1Key` appear in **no commit on any branch** — verified with
+   `git log --all -S`. It is an **unbuilt design sketch**, recorded in this file
+   and never written as code, so it was never judged against any harness, fair
+   or otherwise. Do not describe it as shelved, reverted, or previously tried.
+   Implementing it is new work.
+
+#### The defect exists ONLY in the partially-generated window
+
+Re-confirmed by the re-test below: **fully seeded, attempt A changes 0 rows.**
+With every cohort forecast, `matchingBfs` resolves for every row — tier 1 exact
+or tier 2 partial-match-and-sum — so nothing reaches the share-scaled fallback
+and no denominator is consulted. There is nothing there to fix.
+
+Any fix therefore only ever acts on rows whose segment has no forecast. Measure
+every candidate in BOTH conditions; a fully-seeded measurement alone will report
+any change as a no-op and any fix as harmless.
 
 #### RE-TEST 2026-07-30 — attempt A FAILS on merit; attempt B does not exist
 
