@@ -293,3 +293,49 @@ inside a `<Trans>`, not four separate keys.
 That site is listed in the scanner's `TRANS_BACKLOG`, so it is machine-checked
 rather than only recorded here: the scanner forces it to the deferred bucket and
 will not let it be keyed piecemeal by mistake.
+
+---
+
+## 13. English-only keys awaiting phase 2 commissioning
+
+Keys added to `en/translation.json` after the phase 1 sweep, with **no entry in
+`de` / `es` / `fr` / `it` / `pt`**. `src/i18n.ts` sets `fallbackLng: 'en'`, so a
+non-English user sees English text rather than a raw key — a completeness gap,
+not a defect, and not something that fails any check.
+
+**That is exactly why this list exists.** The i18n scanner passes on these (they
+ARE keyed), the pseudo-locale sweep passes (the marker resolves through the `en`
+fallback), and nothing renders visibly broken. Without a written record, phase 2
+would discover them one at a time by reading the diff of every commit since
+phase 1.
+
+| Key | English value | Added |
+|---|---|---|
+| `bulk_no_source_cohort` | Generating every remaining combination in the loaded data. | 2026-07-30, bulk-generate standing trigger |
+| `actuals_show` | Show | 2026-07-30, ARPU/revenue toggle |
+| `actuals_unit_arpu` | ARPU | 2026-07-30, ARPU/revenue toggle |
+| `actuals_unit_revenue` | Total revenue | 2026-07-30, ARPU/revenue toggle |
+| `actuals_revenue_no_band` | Confidence band not shown — revenue has no valid interval | 2026-07-30, ARPU/revenue toggle |
+| `actuals_value_revenue` | Value (Revenue) | 2026-07-30, ARPU/revenue toggle |
+
+### Translation notes for these specific keys
+
+- **`actuals_unit_arpu`** — "ARPU" stays in English per §1 domain vocabulary. Do
+  not expand it to a local-language phrase.
+- **`actuals_unit_revenue`** and **`actuals_value_revenue`** — "Revenue" DOES
+  translate; it is ordinary finance vocabulary, not a PROSPECT term. Note that
+  `scenarioLabel()` in `ForecastVsActualsTab.tsx` substitutes
+  `actuals_unit_revenue` into scenario labels by replacing the literal string
+  `"ARPU"`, producing e.g. "Inflow Total revenue". **Check the result reads
+  naturally in each locale** — a substitution that works in English word order
+  may not, and this is the one key here whose translation is composed rather
+  than displayed directly.
+- **`actuals_revenue_no_band`** — explains why a confidence band is absent. The
+  reason matters more than the brevity; prefer a clear sentence over a terse
+  one, and keep "confidence band" consistent with §8's scoring vocabulary.
+
+### Rule going forward
+
+Any key added to `en` without its five siblings gets a row here **in the same
+commit that adds the key**. A key that is only in `en` and only in the git log
+is invisible to the person doing the commissioning.
