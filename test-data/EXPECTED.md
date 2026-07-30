@@ -130,40 +130,103 @@ Hierarchical child of Tariff L1, mirroring Product L1/L2 and Channel L1/L2.
 
 ## 3. Known ARPU levels by Product L1
 
-ARPU clusters by product type. These are the approximate stable levels seen
-across cohorts and are the anchor for ARPU correctness checks:
+ARPU clusters by product type. **Absolute levels are fixture-specific — the
+invariants below are not.** Read both parts before asserting anything.
 
-| Product L1         | Approx ARPU | Notes |
-|--------------------|-------------|-------|
-| IoT Connectivity   | ~3.3–3.4    | Lowest ARPU product (blended rev/subs across all 4 IBRO types) |
-| Mobile Voice       | ~9.6–9.7    | |
-| Mobile Data        | ~13.7–13.9  | |
-| Fixed Connectivity | ~17.2–17.5  | Highest ARPU product |
-| Blended (All)      | ~12.2–12.5  | |
+**CORRECTED 2026-07-30.** This section previously gave a single set of bands
+(IoT ~3.3–3.4, Mobile Voice ~9.6–9.7, Mobile Data ~13.7–13.9, Fixed
+~17.2–17.5, blended ~12.2–12.5) with no fixture attribution. Measured against
+every fixture in `test-data/`, **only the IoT figure matches anything** — the
+other four match no file present. They are stale, presumably from a data file
+no longer in the repo. An agent checking Mobile Voice against ~9.6–9.7 would
+have read 8.21 on the primary fixture and reported a regression that is not one.
 
-If an ARPU forecast or actual for a cohort falls far outside its product
-band, something is wrong — likely a cohort key mismatch or an aggregation
-error pulling the wrong slice.
+### Measured values — volume-weighted rev/subs, all rows
+
+| Product L1 | ProductL2 (both) | Tariff (both) | Trimmed |
+|---|---|---|---|
+| IoT Connectivity | **3.38** | **3.88** | 5.99 |
+| Mobile Voice | **8.21** | **9.33** | 12.96 |
+| Mobile Data | **11.60** | **13.45** | 34.87 |
+| Fixed Connectivity | **14.44** | **15.81** | 38.33 |
+| Blended (All) | **10.42** | **11.73** | 19.30 |
+
+The Dec 2025 and Jun 2026 variants of each family agree to within 0.02, so one
+column covers both. Restricting to `Base` rows changes nothing beyond the second
+decimal — the blended and Base-only figures are the same to within 0.03.
+
+### Invariants — these DO hold on every fixture, including the trimmed one
+
+1. **Strict ordering:** `IoT Connectivity < Mobile Voice < Mobile Data <
+   Fixed Connectivity`. IoT is always the lowest-ARPU product, Fixed always the
+   highest.
+2. **Blended (All) sits between Mobile Voice and Mobile Data.**
+3. Every product ARPU is finite and strictly positive.
+
+**Assert the invariants, not the absolute levels**, unless you have first
+confirmed which fixture is loaded. A cohort key mismatch or an aggregation
+pulling the wrong slice breaks the ordering, which is what makes it the useful
+check.
+
+### The trimmed fixture is NOT valid for absolute ARPU checks
+
+Its product ARPUs are 1.5×–2.6× the full file's, because it holds 74 of 540
+leaves and the surviving product/tariff mix is not representative. The
+invariants above still hold on it; the levels do not. Use the full file for any
+absolute ARPU assertion. (The *reference cohort* in section 4 is exempt — its
+leaves were preserved whole, so its ARPU is byte-exact.)
 
 ---
 
 ## 4. Known-good reference cohort
 
 **Corporate · IoT Connectivity · Indirect** (the cohort used throughout
-debugging). Approximate values for the comparison window:
+debugging). 2,016 rows on every fixture in `test-data/`.
 
-| Series    | Actual (approx) | Forecast (approx) | Expected MAPE |
-|-----------|-----------------|-------------------|---------------|
-| Inflow    | ~3,450          | ~3,520            | low, <5%      |
-| Outflow   | ~3,165          | ~3,130            | low, <5%      |
-| Retention | ~2,390          | ~2,430            | low, <5%      |
-| Base      | ~31,640         | ~31,740           | low, <2%      |
-| ARPU      | ~3.3–3.4        | ~3.3–3.4          | very low, <1% |
+**CORRECTED 2026-07-30.** This section previously gave one unattributed set of
+approximations while section 1 names four fixtures. Those figures correspond to
+**ProductL2 Dec 2025**, with the flows as means over the last six months and
+Base and ARPU as end-of-window levels — a basis that was never stated. Measured
+on the tariff fixture the same cohort reads 3,696 and 34,927, so a session
+working there would have seen a mismatch against ground truth and could
+reasonably have concluded the app was wrong. Every value below is now measured,
+and states which fixture and which basis it belongs to.
 
-This cohort is stable and well-forecast. Every IBRO component should score
-**85+** and the ARPU MAPE should be near zero. If ARPU shows 0, or any
-component shows a red/orange score for this cohort, a regression has
-occurred.
+### Measured actuals — each value states its fixture and basis
+
+Flows are given as **mean over the last 6 months / value at the last month**.
+Base and ARPU are stocks, so only the last-month level is meaningful.
+
+| Fixture | Last month | Inflow | Outflow | Retention | Base | ARPU |
+|---|---|---|---|---|---|---|
+| ProductL2 Dec 2025 | 2025-12 | 3,483 / 3,711 | 3,198 / 3,260 | 2,428 / 2,584 | **31,596** | **3.397** |
+| ProductL2 Jun 2026 | 2026-06 | 3,699 / 3,758 | 3,388 / 3,470 | 2,583 / 2,627 | **33,460** | **3.445** |
+| Tariff Dec 2025 | 2025-12 | 3,400 / 3,628 | 3,077 / 3,169 | 2,328 / 2,498 | **32,734** | **3.601** |
+| Tariff Jun 2026 | 2026-06 | 3,665 / 3,696 | 3,300 / 3,384 | 2,513 / 2,520 | **34,927** | **3.488** |
+| Trimmed Jun 2026 | 2026-06 | 3,665 / 3,696 | 3,300 / 3,384 | 2,513 / 2,520 | **34,927** | **3.488** |
+
+The historic approximations (~3,450 / ~3,165 / ~2,390 / ~31,640 / ~3.3–3.4) are
+the **ProductL2 Dec 2025** row. They are retained here only so a future session
+recognises where they came from — do not assert against them without loading
+that file.
+
+**The trimmed fixture reproduces the tariff fixture exactly** for this cohort.
+All 12 of its leaves were preserved whole, so the values are byte-identical, not
+approximately equal. This is the one place the trimmed file can be used for
+absolute assertions (contrast section 3, where it cannot).
+
+### Invariants — these hold on any fixture
+
+1. Every IBRO component scores **85+**; this cohort is stable and well-forecast.
+2. **ARPU MAPE is near zero** and ARPU is never 0. A zero ARPU is always a
+   defect — historically a cohort key mismatch or a grouping that lost the
+   volume weighting.
+3. No component shows a red or orange score.
+4. Forecast tracks actual within a few percent on every series (<5% on the
+   flows, <2% on Base, <1% on ARPU).
+
+Assert these regardless of fixture. Assert the table's numbers only after
+confirming which file is loaded.
 
 ---
 
