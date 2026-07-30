@@ -142,6 +142,28 @@ Both halves of this were checkable in seconds when "IBRO Scenario" was
 reported as a new hardcoded string: it is in the scanner's NEVER set per
 TERMBASE §1, and it exists unchanged on main.
 
+## Two checks that keep catching real defects
+
+**A display helper is only applied where you can see it applied.** When a change
+routes a label through a helper so it tracks state (`scenarioLabel(sc)` instead
+of `SCENARIO_LABELS[sc]`), the author almost certainly used find-and-replace,
+and find-and-replace matches the shapes it was written for. A pass that
+converted every `name={...}` prop left the **bare JSX text nodes** untouched —
+so the chart series were relabelled and the legend beside them still read
+"Inflow ARPU" while plotting revenue. Grep for the *original* symbol after the
+change and confirm every surviving occurrence is deliberate. Check every
+rendering position: props, bare text children, `aria-label`, `title`, tooltip
+payloads, and table headings.
+
+**Compare a control against its own tier, not against any control.** PROSPECT
+reserves Vodafone red `#e60000` for primary navigation — the Volume/Value tabs,
+the main action buttons. Secondary segmented controls use `bg-slate-800` active
+with `rounded-md` buttons in a `p-0.5 gap-1` container (the adjusted-scoring
+toggle is the reference). A new secondary control styled red is individually
+plausible and wrong in context: it competes with the primary navigation right
+above it. Find the nearest existing control of the *same* tier and diff against
+that one specifically.
+
 ## How you report
 A list of consistency checks with PASS or FAIL. For each FAIL, name the new
 element, the established pattern it should match, and exactly how it

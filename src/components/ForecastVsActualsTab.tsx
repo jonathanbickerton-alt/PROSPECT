@@ -1428,6 +1428,26 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
 
   const [selectedKpi, setSelectedKpi] = useState<KpiKey>('inflow');
   const [chartView, setChartView] = useState<'volume' | 'value'>('volume');
+  // Presentation only: within the Value view, show per-subscriber ARPU or total
+  // revenue. Never changes what is stored, forecast, or scored — it selects
+  // which already-computed series key the chart and variance table read.
+  const [valueUnit, setValueUnit] = useState<'arpu' | 'revenue'>('arpu');
+  // Maps an ArpuScenario ('inflowArpu') to the series prefix actually rendered.
+  // Revenue keys carry no _opt/_pess, so switching prefix suppresses the band
+  // by construction rather than by a conditional at each draw site.
+  const seriesPrefix = useCallback(
+    (sc: string) => (valueUnit === 'revenue' ? sc.replace('Arpu', 'Rev') : sc),
+    [valueUnit],
+  );
+  // Labels must follow the unit. SCENARIO_LABELS is keyed by ArpuScenario and
+  // reads "Inflow ARPU"; leaving it while plotting revenue would mislabel every
+  // series and legend entry in exactly the way the sequencing was meant to avoid.
+  const scenarioLabel = useCallback(
+    (sc: string) => (valueUnit === 'revenue'
+      ? (SCENARIO_LABELS[sc as ArpuScenario] ?? sc).replace('ARPU', t('actuals_unit_revenue'))
+      : SCENARIO_LABELS[sc as VolumeScenario | ArpuScenario]),
+    [valueUnit, t],
+  );
   const [activeVolumeScenarios, setActiveVolumeScenarios] = useState<VolumeScenario[]>(['inflow', 'outflow', 'retention', 'base']);
   const [activeArpuScenarios, setActiveArpuScenarios] = useState<ArpuScenario[]>(['inflowArpu', 'outflowArpu', 'retentionArpu', 'baseArpu']);
   const [selectedCohortKey, setSelectedCohortKey] = useState<string | null>(null);
@@ -2340,6 +2360,20 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     outflow_baseline?: number; outflow_opt?: number; outflow_pess?: number;
     retention_baseline?: number; retention_opt?: number; retention_pess?: number;
     base_baseline?: number;
+    // Total revenue, for the ARPU/revenue presentation toggle.
+    //
+    // Deliberately NO _opt / _pess counterparts. An ARPU band multiplied by a
+    // volume point estimate is not a confidence interval, and users read bands
+    // as tolerances — so revenue has no band at all. Not computing one is
+    // stronger than not drawing one: it cannot leak into the Y-axis domain or
+    // an "in band" column later, because there is nothing to leak.
+    //
+    // _actual is the EXACT summed Monthly_Revenue_GBP, not arpu x volume. The
+    // accumulator already holds it (act.inflowRev) before dividing it down to a
+    // ratio, so re-deriving would fail to reconcile against the source column.
+    // _baseline is derived, because the forecast side has no revenue at all.
+    inflowRev_actual?: number; outflowRev_actual?: number; retentionRev_actual?: number; baseRev_actual?: number;
+    inflowRev_baseline?: number; outflowRev_baseline?: number; retentionRev_baseline?: number; baseRev_baseline?: number;
     inflowArpu_actual?: number; outflowArpu_actual?: number; retentionArpu_actual?: number; baseArpu_actual?: number;
     inflowArpu_baseline?: number; inflowArpu_opt?: number; inflowArpu_pess?: number;
     outflowArpu_baseline?: number; outflowArpu_opt?: number; outflowArpu_pess?: number;
@@ -2620,6 +2654,13 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       if (act.outflowSubVol > 0 && act.outflowRev > 0) r.outflowArpu_actual = act.outflowRev / act.outflowSubVol;
       if (act.retentionSubVol > 0 && act.retentionRev > 0) r.retentionArpu_actual = act.retentionRev / act.retentionSubVol;
       if (act.baseSubVol > 0 && act.baseRev > 0) r.baseArpu_actual = act.baseRev / act.baseSubVol;
+      // Exact summed revenue, taken before the divide above — NOT arpu x volume.
+      // This is the actuals side, where Monthly_Revenue_GBP genuinely exists, so
+      // a revenue view here must reconcile against the source column exactly.
+      if (act.inflowRev > 0) r.inflowRev_actual = act.inflowRev;
+      if (act.outflowRev > 0) r.outflowRev_actual = act.outflowRev;
+      if (act.retentionRev > 0) r.retentionRev_actual = act.retentionRev;
+      if (act.baseRev > 0) r.baseRev_actual = act.baseRev;
       return r;
     };
 
@@ -2661,6 +2702,22 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           if (bm.baseArpu) { r.baseArpu_baseline = bm.baseArpu.mean; r.baseArpu_opt = bm.baseArpu.optimistic; r.baseArpu_pess = bm.baseArpu.pessimistic; }
         }
         r.base_baseline = row.baseline?.base;
+      }
+      // Forecast-side revenue is DERIVED — the forecast carries no revenue at
+      // all. One derivation for both branches above, so the specific-cohort and
+      // baseForecast-fallback paths cannot drift apart.
+      //
+      // Each ARPU is multiplied by the volume of the SAME scenario. Do not
+      // substitute the blended `arpu` here: its only valid matching volume is
+      // arpuSubVol (total across all four scenarios), and pairing it with any
+      // single scenario's volume yields a plausible, wrong number.
+      // Mean only — see the MultiChartRow comment on why there is no band.
+      for (const sc of ['inflow', 'outflow', 'retention', 'base'] as const) {
+        const arpu = r[`${sc}Arpu_baseline` as keyof MultiChartRow] as number | undefined;
+        const vol  = r[`${sc}_baseline`     as keyof MultiChartRow] as number | undefined;
+        if (typeof arpu === 'number' && typeof vol === 'number') {
+          (r as unknown as Record<string, number>)[`${sc}Rev_baseline`] = arpu * vol;
+        }
       }
       return r;
     });
@@ -3299,7 +3356,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           {/* Chart view tabs: Volume | Value */}
           <div className="flex border-b border-slate-100">
             <button onClick={() => setChartView('volume')} className={`px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${chartView === 'volume' ? 'text-[#e60000] border-[#e60000]' : 'text-slate-500 border-transparent hover:text-slate-700'}`}>{t('common_volume')}</button>
-            <button onClick={() => setChartView('value')} className={`px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${chartView === 'value' ? 'text-[#e60000] border-[#e60000]' : 'text-slate-500 border-transparent hover:text-slate-700'}`}>{t('actuals_value_arpu')}</button>
+            <button onClick={() => setChartView('value')} className={`px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${chartView === 'value' ? 'text-[#e60000] border-[#e60000]' : 'text-slate-500 border-transparent hover:text-slate-700'}`}>{valueUnit === 'revenue' ? t('actuals_value_revenue') : t('actuals_value_arpu')}</button>
           </div>
 
           {/* Selected cohort indicator */}
@@ -3315,6 +3372,30 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                 className="ml-auto flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-600 font-medium transition-colors"
               >
                 <X size={11} />{t('actuals_clear')}</button>
+            </div>
+          )}
+
+          {/* ARPU / total revenue unit toggle — Value view only. Presentation
+              only: it selects which already-computed series the chart reads. */}
+          {chartView === 'value' && (
+            <div className="px-6 pt-4 flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-500">{t('actuals_show')}</span>
+              {/* Matches the adjusted-scoring segmented control below (slate-800
+                  active, rounded-md buttons, gap-1 in a p-0.5 container). Red is
+                  reserved for primary navigation like the Volume/Value tabs; this
+                  is a secondary control and must not compete with them. */}
+              <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
+                {(['arpu', 'revenue'] as const).map(u => (
+                  <button key={u}
+                    onClick={() => setValueUnit(u)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${valueUnit === u ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                    {u === 'arpu' ? t('actuals_unit_arpu') : t('actuals_unit_revenue')}
+                  </button>
+                ))}
+              </div>
+              {valueUnit === 'revenue' && (
+                <span className="text-xs text-slate-400">{t('actuals_revenue_no_band')}</span>
+              )}
             </div>
           )}
 
@@ -3356,11 +3437,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                 <React.Fragment key={sc}>
                   <span className="flex items-center gap-1.5">
                     <span className="inline-block w-5 h-0.5 rounded" style={{ backgroundColor: c.actual }} />
-                    {SCENARIO_LABELS[sc]} Actual
+                    {scenarioLabel(sc)} Actual
                   </span>
                   <span className="flex items-center gap-1.5">
                     <span className="inline-block w-5 border-t-2 border-dashed" style={{ borderColor: c.baseline }} />
-                    {SCENARIO_LABELS[sc]} Forecast
+                    {scenarioLabel(sc)} Forecast
                   </span>
                 </React.Fragment>
               );
@@ -3375,9 +3456,16 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
             const arpuYAxisDomain: [number | string, number | string] = (() => {
               if (chartView !== 'value') return ['auto', 'auto'];
               const vals: number[] = [];
-              const arpuKeys = activeArpuScenarios.flatMap(sc =>
-                [`${sc}_actual`, `${sc}_baseline`, `${sc}_opt`, `${sc}_pess`]
-              );
+              // In revenue mode the band keys do not exist, so the axis scales
+              // to actual/baseline only. Listing them explicitly rather than
+              // relying on the lookup missing keeps the intent auditable: the
+              // axis must never reflect a band that is not drawn.
+              const arpuKeys = activeArpuScenarios.flatMap(sc => {
+                const p = seriesPrefix(sc);
+                return valueUnit === 'revenue'
+                  ? [`${p}_actual`, `${p}_baseline`]
+                  : [`${p}_actual`, `${p}_baseline`, `${p}_opt`, `${p}_pess`];
+              });
               for (const row of multiChartData) {
                 for (const k of arpuKeys) {
                   const v = (row as Record<string, unknown>)[k];
@@ -3422,8 +3510,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                           <React.Fragment key={sc}>
                             <Line type="monotone" dataKey={`${prefix}_opt`} stroke={c.baseline} strokeWidth={1} strokeDasharray="2 3" dot={false} opacity={0.4} legendType="none" connectNulls />
                             <Line type="monotone" dataKey={`${prefix}_pess`} stroke={c.baseline} strokeWidth={1} strokeDasharray="2 3" dot={false} opacity={0.4} legendType="none" connectNulls />
-                            <Line type="monotone" dataKey={`${prefix}_baseline`} name={`${SCENARIO_LABELS[sc]} Forecast`} stroke={c.baseline} strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls />
-                            <Line type="monotone" dataKey={`${prefix}_actual`} name={`${SCENARIO_LABELS[sc]} Actual`} stroke={c.actual} strokeWidth={2.5}
+                            <Line type="monotone" dataKey={`${prefix}_baseline`} name={`${scenarioLabel(sc)} Forecast`} stroke={c.baseline} strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls />
+                            <Line type="monotone" dataKey={`${prefix}_actual`} name={`${scenarioLabel(sc)} Actual`} stroke={c.actual} strokeWidth={2.5}
                               dot={(props: any) => {
                                 const { cx, cy, payload } = props;
                                 const av = payload[`${prefix}_actual`];
@@ -3437,13 +3525,19 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                       })
                     : activeArpuScenarios.map(sc => {
                         const c = ARPU_SCENARIO_COLORS[sc];
-                        const prefix = sc;
+                        const prefix = seriesPrefix(sc);
                         return (
                           <React.Fragment key={sc}>
+                            {/* Band drawn for ARPU only. Revenue has no confidence
+                                interval: multiplying an ARPU band by a volume point
+                                estimate does not produce one, and a drawn band reads
+                                as a tolerance. Suppressed entirely, not relabelled. */}
+                            {valueUnit === 'arpu' && <>
                             <Line type="monotone" dataKey={`${prefix}_opt`} stroke={c.baseline} strokeWidth={1} strokeDasharray="2 3" dot={false} opacity={0.4} legendType="none" connectNulls />
                             <Line type="monotone" dataKey={`${prefix}_pess`} stroke={c.baseline} strokeWidth={1} strokeDasharray="2 3" dot={false} opacity={0.4} legendType="none" connectNulls />
-                            <Line type="monotone" dataKey={`${prefix}_baseline`} name={`${SCENARIO_LABELS[sc]} Forecast`} stroke={c.baseline} strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls />
-                            <Line type="monotone" dataKey={`${prefix}_actual`} name={`${SCENARIO_LABELS[sc]} Actual`} stroke={c.actual} strokeWidth={2.5}
+                            </>}
+                            <Line type="monotone" dataKey={`${prefix}_baseline`} name={`${scenarioLabel(sc)} Forecast`} stroke={c.baseline} strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls />
+                            <Line type="monotone" dataKey={`${prefix}_actual`} name={`${scenarioLabel(sc)} Actual`} stroke={c.actual} strokeWidth={2.5}
                               dot={(props: any) => {
                                 const { cx, cy, payload } = props;
                                 const av = payload[`${prefix}_actual`];
@@ -3473,13 +3567,18 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               </div>
             )}
             {(chartView === 'volume' ? activeVolumeScenarios : activeArpuScenarios).map(sc => {
-              const prefix = chartView === 'volume' ? sc : sc;
+              // In revenue mode this resolves to the *Rev_* keys, which have no
+              // _opt/_pess. optVal/pessVal below therefore come back undefined,
+              // inBand falls to null, and the column renders "—" on its own.
+              // No special-casing: the invalid band cannot be computed because
+              // its inputs do not exist.
+              const prefix = chartView === 'volume' ? sc : seriesPrefix(sc);
               const tableRows = multiChartData.filter(r => r[`${prefix}_actual` as keyof MultiChartRow] !== undefined && r[`${prefix}_baseline` as keyof MultiChartRow] !== undefined);
               if (tableRows.length === 0) return null;
               return (
                 <details key={sc} open className="border-b border-slate-100 last:border-0">
                   <summary className="px-6 py-3 bg-slate-50/50 flex items-center justify-between cursor-pointer select-none">
-                    <h4 className="text-sm font-semibold text-slate-700">{SCENARIO_LABELS[sc]} {t('actuals_monthly_variance')}</h4>
+                    <h4 className="text-sm font-semibold text-slate-700">{scenarioLabel(sc)} {t('actuals_monthly_variance')}</h4>
                     <span className="text-xs text-slate-400">{tableRows.length} month{tableRows.length !== 1 ? 's' : ''} with actuals</span>
                   </summary>
                   <div className="overflow-x-auto">

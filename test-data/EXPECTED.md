@@ -1032,6 +1032,58 @@ It would only change which cohorts reach the already-correct branch. The defect
 is the existence of a filter-scoped fallback, not which cohorts reach it.
 
 
+### `row.arpuScore` — OPEN, and a TRAP for whoever repairs it
+
+`ForecastVsActualsTab.tsx:4380` (the cohort-table tooltip, `kind: 'overall'`)
+renders:
+
+```tsx
+['Base', row.baseScore], ['ARPU', row.arpuScore],
+```
+
+**`arpuScore` appears exactly once in the entire file — at that render site.**
+It is absent from the `CohortAccuracyRow` type, never assigned, and therefore
+`undefined` at runtime, rendering `—`. The type carries only the four
+per-scenario scores (`inflowArpuScore`, `outflowArpuScore`,
+`retentionArpuScore`, `baseArpuScore`); the comment at the type definition
+records that these "replace single blended arpu score".
+
+#### Do not repair it by pairing blended ARPU with a single scenario's volume
+
+The blended `arpu` (`arpuRevSum / arpuSubVol`) is computed across **all four**
+IBRO scenarios. **Its only valid matching volume is `arpuSubVol`** — the total
+across those same four. Pairing it with `inflow`, `outflow`, `retention` or
+`base` volume produces a plausible, wrong number that nothing will flag.
+
+This matters beyond the tooltip. Every current render site pairs ARPU with the
+volume of the **same** scenario, so the hazard is latent rather than live — but
+it goes live the moment a blended figure appears next to per-scenario data.
+Verified 2026-07-30: no site currently displays a blended ARPU beside a single
+scenario's volume.
+
+**Why the warning lives here:** this line sits directly beside the tooltip code
+that the deferred ARPU/revenue tooltip phase would touch. A session widening
+`TooltipPayload` to carry paired volume will read this line, assume `arpuScore`
+is real, and "fix" it — which is exactly when the mismatch becomes shipped
+behaviour.
+
+### Dead code — `varianceEngine.ts` / `ChallengerModels.tsx` are NOT live
+
+`src/utils/varianceEngine.ts:78` and `src/components/ChallengerModels.tsx:112`
+contain a revenue/ARPU variance calculator. **It is dead.** `ChallengerModels`
+is never imported anywhere in `src/`; the live "AutoML Challenger" UI is inline
+inside `ForecastVsActualsTab.tsx` on entirely different state
+(`challengerDims`, `selectedChallengerGroup`).
+
+Recorded because it is a plausible-looking foothold: anyone building a revenue
+view would reasonably find it first and extend it, producing a fifth parallel
+ARPU/revenue implementation that renders nothing. Do not build on it.
+
+The live actuals-side revenue accumulators are in `ForecastVsActualsTab.tsx`
+(`inflowRev`/`inflowSubVol` and siblings), and the arpu↔revenue resolver for
+Market Event definitions is `resolveEventArpuRevenue` in `src/utils/forecasting.ts`
+— a different domain, not reusable for chart series.
+
 ### savedForecasts / forecastStore divergence on delete — OPEN, needs its own pass
 
 **Same class as the "Generate Missing" defect fixed in `ec3c79a`, but a
