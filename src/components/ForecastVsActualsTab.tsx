@@ -1439,6 +1439,15 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     (sc: string) => (valueUnit === 'revenue' ? sc.replace('Arpu', 'Rev') : sc),
     [valueUnit],
   );
+  // Labels must follow the unit. SCENARIO_LABELS is keyed by ArpuScenario and
+  // reads "Inflow ARPU"; leaving it while plotting revenue would mislabel every
+  // series and legend entry in exactly the way the sequencing was meant to avoid.
+  const scenarioLabel = useCallback(
+    (sc: string) => (valueUnit === 'revenue'
+      ? (SCENARIO_LABELS[sc as ArpuScenario] ?? sc).replace('ARPU', t('actuals_unit_revenue'))
+      : SCENARIO_LABELS[sc as VolumeScenario | ArpuScenario]),
+    [valueUnit, t],
+  );
   const [activeVolumeScenarios, setActiveVolumeScenarios] = useState<VolumeScenario[]>(['inflow', 'outflow', 'retention', 'base']);
   const [activeArpuScenarios, setActiveArpuScenarios] = useState<ArpuScenario[]>(['inflowArpu', 'outflowArpu', 'retentionArpu', 'baseArpu']);
   const [selectedCohortKey, setSelectedCohortKey] = useState<string | null>(null);
@@ -3347,7 +3356,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           {/* Chart view tabs: Volume | Value */}
           <div className="flex border-b border-slate-100">
             <button onClick={() => setChartView('volume')} className={`px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${chartView === 'volume' ? 'text-[#e60000] border-[#e60000]' : 'text-slate-500 border-transparent hover:text-slate-700'}`}>{t('common_volume')}</button>
-            <button onClick={() => setChartView('value')} className={`px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${chartView === 'value' ? 'text-[#e60000] border-[#e60000]' : 'text-slate-500 border-transparent hover:text-slate-700'}`}>{t('actuals_value_arpu')}</button>
+            <button onClick={() => setChartView('value')} className={`px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${chartView === 'value' ? 'text-[#e60000] border-[#e60000]' : 'text-slate-500 border-transparent hover:text-slate-700'}`}>{valueUnit === 'revenue' ? t('actuals_value_revenue') : t('actuals_value_arpu')}</button>
           </div>
 
           {/* Selected cohort indicator */}
@@ -3497,8 +3506,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                           <React.Fragment key={sc}>
                             <Line type="monotone" dataKey={`${prefix}_opt`} stroke={c.baseline} strokeWidth={1} strokeDasharray="2 3" dot={false} opacity={0.4} legendType="none" connectNulls />
                             <Line type="monotone" dataKey={`${prefix}_pess`} stroke={c.baseline} strokeWidth={1} strokeDasharray="2 3" dot={false} opacity={0.4} legendType="none" connectNulls />
-                            <Line type="monotone" dataKey={`${prefix}_baseline`} name={`${SCENARIO_LABELS[sc]} Forecast`} stroke={c.baseline} strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls />
-                            <Line type="monotone" dataKey={`${prefix}_actual`} name={`${SCENARIO_LABELS[sc]} Actual`} stroke={c.actual} strokeWidth={2.5}
+                            <Line type="monotone" dataKey={`${prefix}_baseline`} name={`${scenarioLabel(sc)} Forecast`} stroke={c.baseline} strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls />
+                            <Line type="monotone" dataKey={`${prefix}_actual`} name={`${scenarioLabel(sc)} Actual`} stroke={c.actual} strokeWidth={2.5}
                               dot={(props: any) => {
                                 const { cx, cy, payload } = props;
                                 const av = payload[`${prefix}_actual`];
@@ -3523,8 +3532,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                             <Line type="monotone" dataKey={`${prefix}_opt`} stroke={c.baseline} strokeWidth={1} strokeDasharray="2 3" dot={false} opacity={0.4} legendType="none" connectNulls />
                             <Line type="monotone" dataKey={`${prefix}_pess`} stroke={c.baseline} strokeWidth={1} strokeDasharray="2 3" dot={false} opacity={0.4} legendType="none" connectNulls />
                             </>}
-                            <Line type="monotone" dataKey={`${prefix}_baseline`} name={`${SCENARIO_LABELS[sc]} Forecast`} stroke={c.baseline} strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls />
-                            <Line type="monotone" dataKey={`${prefix}_actual`} name={`${SCENARIO_LABELS[sc]} Actual`} stroke={c.actual} strokeWidth={2.5}
+                            <Line type="monotone" dataKey={`${prefix}_baseline`} name={`${scenarioLabel(sc)} Forecast`} stroke={c.baseline} strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls />
+                            <Line type="monotone" dataKey={`${prefix}_actual`} name={`${scenarioLabel(sc)} Actual`} stroke={c.actual} strokeWidth={2.5}
                               dot={(props: any) => {
                                 const { cx, cy, payload } = props;
                                 const av = payload[`${prefix}_actual`];
@@ -3554,13 +3563,18 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               </div>
             )}
             {(chartView === 'volume' ? activeVolumeScenarios : activeArpuScenarios).map(sc => {
-              const prefix = chartView === 'volume' ? sc : sc;
+              // In revenue mode this resolves to the *Rev_* keys, which have no
+              // _opt/_pess. optVal/pessVal below therefore come back undefined,
+              // inBand falls to null, and the column renders "—" on its own.
+              // No special-casing: the invalid band cannot be computed because
+              // its inputs do not exist.
+              const prefix = chartView === 'volume' ? sc : seriesPrefix(sc);
               const tableRows = multiChartData.filter(r => r[`${prefix}_actual` as keyof MultiChartRow] !== undefined && r[`${prefix}_baseline` as keyof MultiChartRow] !== undefined);
               if (tableRows.length === 0) return null;
               return (
                 <details key={sc} open className="border-b border-slate-100 last:border-0">
                   <summary className="px-6 py-3 bg-slate-50/50 flex items-center justify-between cursor-pointer select-none">
-                    <h4 className="text-sm font-semibold text-slate-700">{SCENARIO_LABELS[sc]} {t('actuals_monthly_variance')}</h4>
+                    <h4 className="text-sm font-semibold text-slate-700">{scenarioLabel(sc)} {t('actuals_monthly_variance')}</h4>
                     <span className="text-xs text-slate-400">{tableRows.length} month{tableRows.length !== 1 ? 's' : ''} with actuals</span>
                   </summary>
                   <div className="overflow-x-auto">

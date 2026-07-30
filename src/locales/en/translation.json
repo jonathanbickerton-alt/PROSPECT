@@ -95,6 +95,7 @@
   "actuals_no_actuals_data_found_for_this_combination": "No actuals data found for this combination",
   "common_volume": "Volume",
   "actuals_value_arpu": "Value (ARPU)",
+  "actuals_value_revenue": "Value (Revenue)",
   "actuals_show": "Show",
   "actuals_unit_arpu": "ARPU",
   "actuals_unit_revenue": "Total revenue",
