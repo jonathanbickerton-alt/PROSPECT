@@ -1471,7 +1471,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
 
   // Global tooltip state — single tooltip rendered at a fixed screen position.
   // Avoids z-index / overflow clipping inside the scrollable table container.
-  type TooltipPayload = { kind: 'component'; detail: ComponentDetail } | { kind: 'overall'; row: CohortAccuracyRow };
+  type TooltipPayload = { kind: 'component'; detail: ComponentDetail } | { kind: 'overall'; row: CohortAccuracyRow } | { kind: 'noForecast' };
   const [activeTooltip, setActiveTooltip] = useState<{ payload: TooltipPayload; x: number; y: number } | null>(null);
   const tooltipTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -3826,9 +3826,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                         <div className="inline-flex flex-col items-center gap-0.5">
                           <span
                             className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold tabular-nums ${detail || c.noForecast ? 'cursor-help' : ''} ${scoreBg(score)}`}
-                            title={c.noForecast ? t('actuals_no_forecast_yet_tooltip') : undefined}
-                            onMouseEnter={detail ? e => showTooltip(e, { kind: 'component', detail }) : undefined}
-                            onMouseLeave={detail ? hideTooltip : undefined}
+                            onMouseEnter={
+                              detail ? e => showTooltip(e, { kind: 'component', detail })
+                              : c.noForecast ? e => showTooltip(e, { kind: 'noForecast' })
+                              : undefined}
+                            onMouseLeave={detail || c.noForecast ? hideTooltip : undefined}
                           >
                             {scoreLabel(score)}
                           </span>
@@ -4487,7 +4489,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     {/* ── Global accuracy tooltip — fixed position, never clipped by overflow containers ── */}
     {activeTooltip && (() => {
       const fmtN = (v: number) => Math.abs(v) >= 1000 ? (v / 1000).toFixed(1) + 'K' : v.toFixed(v % 1 === 0 ? 0 : 2);
-      const TOOLTIP_W = activeTooltip.payload.kind === 'component' ? 428 : 228;
+      const TOOLTIP_W = activeTooltip.payload.kind === 'component' ? 428 : activeTooltip.payload.kind === 'noForecast' ? 260 : 228;
       // Clamp horizontal position so tooltip stays within viewport
       const vpW = window.innerWidth;
       const left = Math.min(Math.max(activeTooltip.x - TOOLTIP_W / 2, 8), vpW - TOOLTIP_W - 8);
@@ -4502,6 +4504,16 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       };
       const meanColLabel = useAdjustedScoring && adjustedForecast ? t('actuals_adj_mean') : t('actuals_mean');
       const sourceLabel  = useAdjustedScoring && adjustedForecast ? t('actuals_adjusted_forecast') : t('actuals_baseline_forecast');
+      if (activeTooltip.payload.kind === 'noForecast') {
+        // Same dark card as every other accuracy tooltip. A grey dash with no
+        // explanation reads as a rendering fault rather than a state, and
+        // leaving users to infer why is what produced the original defect.
+        return (
+          <div style={style} className="bg-slate-900 text-white rounded-xl shadow-2xl p-3 pointer-events-none text-left">
+            <p className="text-xs text-slate-200 leading-snug">{t('actuals_no_forecast_yet_tooltip')}</p>
+          </div>
+        );
+      }
       if (activeTooltip.payload.kind === 'component') {
         const detail = activeTooltip.payload.detail;
         return (

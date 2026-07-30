@@ -1063,12 +1063,35 @@ const baseBand = directBand ?? (fallbackBm ? scaledBandFlow(fallbackBm, kpi) : n
 typically actuals extending past the forecast horizon. `avgShare*` is also read
 by the derived-base-band path at `:873-874`.
 
-**This is the same fabrication mechanism at a smaller scale** — the loaded
-cohort's band scaled by a ratio of two cohorts' totals — and it deserves its own
-decision. It was left in place because it is a different trigger with a different
-population, and folding it into this change would have altered rows that DO have
-forecasts, breaking the byte-identical guarantee above. **Its frequency has not
-been measured.** Treat it as open.
+**Measured 2026-07-30 — it never fires. 0 of 4,416 band lookups.**
+
+| Condition | Band lookups | Share-scaled | Rows affected |
+|---|---|---|---|
+| Fully seeded, 12-month horizon | 1,656 | **0 (0.0%)** | 0 |
+| Partially seeded (1 of 5 segments) | 504 | **0** | 0 |
+| Realistic coverage (~50% of cohorts) | 1,152 | **0** | 0 |
+| All three repeated at a 2-month horizon | 1,104 | **0** | 0 |
+
+The second sweep exists because the first looked like it might be vacuous: a
+12-month horizon against a 6-month actuals window cannot produce
+actuals-beyond-horizon. Forcing the horizon to 2 months should have triggered it
+and did not — instead the lookup COUNT fell (1,656 → 552 fully seeded), which is
+the structural answer:
+
+**the comparison iterates `allFcMonths`, derived from `matchingBfs` itself.** So
+when `matchingBfs` is non-empty every iterated month is by construction covered
+by `flowBandMaps`, `directBand` is always defined, and `scaledBandFlow` is
+unreachable. Shortening the horizon shrinks the compared window rather than
+exposing uncovered months.
+
+**So `scaledBandFlow` / `computeAvgShare` now appear to be dead code** — reachable
+only through the empty-`matchingBfs` branch that this change short-circuits.
+They were NOT deleted: `avgShare*` is also read by the derived-base-band path at
+`:873-874`, whose reachability was not separately established, and deleting a
+path on the strength of a measurement that returned zero everywhere is exactly
+the inference qa-tester standard 10 warns about. **Removal needs a
+dependency-mapper pass, not a confident deletion.** Open, but sized: not
+fabricating at scale, and probably not fabricating at all.
 
 #### The defect exists ONLY in the partially-generated window
 
