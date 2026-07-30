@@ -317,6 +317,7 @@ phase 1.
 | `actuals_unit_revenue` | Total revenue | 2026-07-30, ARPU/revenue toggle |
 | `actuals_revenue_no_band` | Confidence band not shown — revenue has no valid interval | 2026-07-30, ARPU/revenue toggle |
 | `actuals_value_revenue` | Value (Revenue) | 2026-07-30, ARPU/revenue toggle |
+| `actuals_no_forecast_yet_tooltip` | No forecast generated for this cohort yet — nothing to score against. | 2026-07-30, unscored no-forecast rows |
 
 ### Translation notes for these specific keys
 
@@ -333,6 +334,11 @@ phase 1.
 - **`actuals_revenue_no_band`** — explains why a confidence band is absent. The
   reason matters more than the brevity; prefer a clear sentence over a terse
   one, and keep "confidence band" consistent with §8's scoring vocabulary.
+- **`actuals_no_forecast_yet_tooltip`** — explains why a row is grey and
+  unscored. Same principle as the band note: the longer form earns its length
+  because a terser label leaves users inferring why, and inference is what the
+  defect it replaces was made of. Keep both halves — the cause ("no forecast
+  generated yet") and the consequence ("nothing to score against").
 
 ### Rule going forward
 
