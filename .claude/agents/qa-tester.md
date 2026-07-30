@@ -111,6 +111,25 @@ because its absence produced a false pass.
    that settles this in one command. Generalise it: any two structures holding
    "the same thing" under different key formats can silently diverge.
 
+9. **A jsdom harness renders no chart unless you give it a box.** jsdom reports
+   0×0 for every element, so Recharts' `ResponsiveContainer` paints nothing and
+   `querySelectorAll('.recharts-line').length` returns **0**. If the thing you
+   are proving is that a change *removes* series — a suppressed confidence band,
+   a hidden scenario — zero is indistinguishable from success and the check
+   passes vacuously.
+
+   Polyfill before asserting: define `offsetWidth`/`clientWidth`/
+   `offsetHeight`/`clientHeight` and `getBoundingClientRect` on
+   `HTMLElement.prototype`, and give `ResizeObserver` a stub that actually
+   invokes its callback with a non-zero `contentRect` (a no-op stub leaves the
+   container at width −1 and still paints nothing). Then confirm a **non-zero**
+   baseline count before trusting any reduced count.
+
+   Generalise it: **prove the absence by demonstrating the presence.** Measure
+   both directions — toggle the feature off and confirm the thing comes back.
+   A one-directional "it's gone" result is the same observation as "nothing ever
+   rendered", and only the round trip separates them.
+
 Write scratch scripts to the scratchpad directory, never into the repo.
 
 ## How you report
