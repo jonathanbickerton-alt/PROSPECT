@@ -516,6 +516,11 @@ type CohortAccuracyRow = {
   outflowArpuDetail:   ComponentDetail | null;
   retentionArpuDetail: ComponentDetail | null;
   baseArpuDetail:      ComponentDetail | null;
+  /** True when forecastStore held nothing covering this row, so there is no
+   *  forecast to score against. Every score/bias/trend/detail above is null.
+   *  Distinguishes "not yet forecast" from "forecast exists and scored badly" —
+   *  both of which previously rendered as a number. See EXPECTED.md §16b. */
+  noForecast?: boolean;
 };
 
 /**
@@ -692,6 +697,66 @@ function buildCohortAccuracy(
       }
       return out;
     })();
+
+    // ── No forecast for this row → UNSCORED, not a fabricated score ──────
+    //
+    // An empty matchingBfs means nothing in forecastStore covers this row: not
+    // an exact key, and not a partial match on its segment either. There is no
+    // forecast to compare the actuals against.
+    //
+    // Everything below this point would otherwise route the row to
+    // scaledBandFlow / computeAvgShare, which scale the LOADED cohort's bands
+    // by a ratio of two unrelated cohorts' totals. That produced a number
+    // — never a blank — and the number moved with whoever's filter was active:
+    // SOHO · RED S read 60/75/61/74 with a tariff filter set and 0/0/0/0 with
+    // it cleared, with the bias label flipping Under to Over in the process.
+    // Neither was a measurement of anything. See EXPECTED.md §16b.
+    //
+    // scoreLabel(null)/scoreBg(null) already render a grey em-dash for exactly
+    // this state, and BiasVal/TrendVal are both nullable, so the honest
+    // rendering needed no new UI — the fallback simply never reached it.
+    //
+    // This is the ONLY behavioural change: a row WITH a forecast never takes
+    // this branch and is untouched.
+    if (!matchingBfs.length) {
+      const labelPartsNF = [d.seg];
+      if (dims.product)   labelPartsNF.push(d.prod);
+      if (dims.productL2) labelPartsNF.push(d.prodL2);
+      if (dims.channelL1) labelPartsNF.push(d.chan);
+      if (dims.channelL2) labelPartsNF.push(d.chanL2);
+      if (dims.tariffL1)  labelPartsNF.push(d.tariffL1);
+      if (dims.tariffL2)  labelPartsNF.push(d.tariffL2);
+      return {
+        cohortKey: activeKey,
+        seg: d.seg, prod: d.prod, prodL2: d.prodL2, chan: d.chan, chanL2: d.chanL2,
+        tariffL1: d.tariffL1, tariffL2: d.tariffL2,
+        label: labelPartsNF.join(' · '),
+        // null MAPE keeps these rows out of the AutoML Challenger's
+        // avgMape > 5% threshold — a cohort with no forecast has nothing for a
+        // challenger model to beat.
+        inflowMape: null, outflowMape: null, retentionMape: null, avgMape: null,
+        inflowScore: null, outflowScore: null, retentionScore: null, baseScore: null,
+        inflowArpuScore: null, outflowArpuScore: null,
+        retentionArpuScore: null, baseArpuScore: null,
+        overallScore: null,
+        // Bias and trend are derived from a score. With no score there is
+        // nothing to be above or below, and nothing to be improving on.
+        inflowBias: null, outflowBias: null, retentionBias: null, baseBias: null,
+        inflowArpuBias: null, outflowArpuBias: null,
+        retentionArpuBias: null, baseArpuBias: null,
+        inflowTrend: null, outflowTrend: null, retentionTrend: null, baseTrend: null,
+        inflowArpuTrend: null, outflowArpuTrend: null,
+        retentionArpuTrend: null, baseArpuTrend: null,
+        worstKpi: 'inflow' as KpiKey,
+        // Actuals are real and are retained: the row still charts on click and
+        // still shows what happened. Only the comparison is absent.
+        monthMap,
+        inflowDetail: null, outflowDetail: null, retentionDetail: null, baseDetail: null,
+        inflowArpuDetail: null, outflowArpuDetail: null,
+        retentionArpuDetail: null, baseArpuDetail: null,
+        noForecast: true,
+      } as CohortAccuracyRow;
+    }
 
     // ── Scope actuals to match matchingBfs forecast coverage ─────────────
     // When matchingBfs covers only a subset of channels/products for this cohort
@@ -1377,7 +1442,11 @@ function buildCohortAccuracy(
   })
   // Keep only cohorts where at least one component produced a valid score —
   // cohorts outside baseForecast scope have no denominator in aggrMap.
-  .filter(row => row.overallScore !== null || row.avgMape !== null)
+  // Keep noForecast rows: they are deliberately unscored, not empty. This filter
+  // predates them and drops anything with no score, which would have silently
+  // hidden every not-yet-forecast cohort — replacing a fabricated score with an
+  // absent row rather than with an honest one.
+  .filter(row => row.overallScore !== null || row.avgMape !== null || row.noForecast)
   .sort((a, b) => (b.overallScore ?? 0) - (a.overallScore ?? 0));
 }
 
@@ -3756,7 +3825,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                       <td key={undefined} className="px-3 py-3 text-center">
                         <div className="inline-flex flex-col items-center gap-0.5">
                           <span
-                            className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold tabular-nums ${detail ? 'cursor-help' : ''} ${scoreBg(score)}`}
+                            className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold tabular-nums ${detail || c.noForecast ? 'cursor-help' : ''} ${scoreBg(score)}`}
+                            title={c.noForecast ? t('actuals_no_forecast_yet_tooltip') : undefined}
                             onMouseEnter={detail ? e => showTooltip(e, { kind: 'component', detail }) : undefined}
                             onMouseLeave={detail ? hideTooltip : undefined}
                           >

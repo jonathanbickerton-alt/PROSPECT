@@ -1010,6 +1010,66 @@ Two consequences a future session must not inherit:
    or otherwise. Do not describe it as shelved, reverted, or previously tried.
    Implementing it is new work.
 
+#### FIXED 2026-07-30 — rows with no forecast render UNSCORED
+
+The fix is not a better denominator. A row on the share-scaled fallback has **no
+forecast behind it at all** — that is definitionally what puts it there — so
+there is nothing to score and any computed number is fabricated. Such rows now
+short-circuit in `buildCohortAccuracy` the moment `matchingBfs` comes back
+empty, returning every score, bias, trend and detail as `null`.
+
+`scoreLabel(null)` and `scoreBg(null)` already rendered a grey em-dash for
+exactly this state, and `BiasVal`/`TrendVal` are both nullable. **No new UI was
+needed — the fallback simply never reached the honest rendering.**
+
+Measured, partially-seeded window, tariff fixture (trimmed):
+
+| | main | after |
+|---|---|---|
+| 8 no-forecast rows, filter set | `60/75/61/74` etc, orange/amber pills, "Under" | unscored, no bias, no trend |
+| 8 no-forecast rows, filter cleared | `0/0/0/0`, rose pills, "Over" | unscored, identical to filtered |
+| 5 forecast-backed rows | — | **byte-identical**, both filter states |
+| Fully seeded (all 13 rows) | — | **byte-identical — nothing reaches the fallback** |
+| Determinism (measured twice) | — | identical |
+
+Two things this exposed that a code reading would not have:
+
+1. **The rows initially vanished instead of rendering unscored.** A pre-existing
+   `.filter(row => row.overallScore !== null || row.avgMape !== null)` at the end
+   of `buildCohortAccuracy` drops anything unscored. It now also retains
+   `row.noForecast`. Replacing a fabricated score with an *absent row* would have
+   been a different kind of dishonesty, and the row-count check caught it —
+   `partSet` fell from 13 rows to 5.
+2. **Criterion 3 passed vacuously twice.** First because `isZero` never matched
+   the rendered `0↑ Over` text; then because the 8 rows were missing entirely, so
+   there was nothing to test. Both times the criterion read PASS. See
+   qa-tester evidence standard 10.
+
+`noForecast` rows carry `null` MAPE, which also keeps them out of the AutoML
+Challenger's `avgMape > 5%` threshold — a cohort with no forecast has nothing for
+a challenger model to beat.
+
+#### The share-scaled fallback SURVIVES — recorded, not deleted
+
+`scaledBandFlow` / `computeAvgShare` are **still reachable**, for a narrower case
+than the one just fixed: a row that HAS a forecast, for a month that forecast
+does not cover. `ForecastVsActualsTab.tsx:1260`:
+
+```ts
+const baseBand = directBand ?? (fallbackBm ? scaledBandFlow(fallbackBm, kpi) : null);
+```
+
+`directBand` is undefined when `flowBandMaps[kpi]` has no entry for that month —
+typically actuals extending past the forecast horizon. `avgShare*` is also read
+by the derived-base-band path at `:873-874`.
+
+**This is the same fabrication mechanism at a smaller scale** — the loaded
+cohort's band scaled by a ratio of two cohorts' totals — and it deserves its own
+decision. It was left in place because it is a different trigger with a different
+population, and folding it into this change would have altered rows that DO have
+forecasts, breaking the byte-identical guarantee above. **Its frequency has not
+been measured.** Treat it as open.
+
 #### The defect exists ONLY in the partially-generated window
 
 Re-confirmed by the re-test below: **fully seeded, attempt A changes 0 rows.**
