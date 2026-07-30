@@ -3380,11 +3380,15 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           {chartView === 'value' && (
             <div className="px-6 pt-4 flex items-center gap-2">
               <span className="text-xs font-medium text-slate-500">{t('actuals_show')}</span>
-              <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden">
+              {/* Matches the adjusted-scoring segmented control below (slate-800
+                  active, rounded-md buttons, gap-1 in a p-0.5 container). Red is
+                  reserved for primary navigation like the Volume/Value tabs; this
+                  is a secondary control and must not compete with them. */}
+              <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5">
                 {(['arpu', 'revenue'] as const).map(u => (
                   <button key={u}
                     onClick={() => setValueUnit(u)}
-                    className={`px-3 py-1.5 text-xs font-semibold transition-colors ${valueUnit === u ? 'bg-[#e60000] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                    className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${valueUnit === u ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
                     {u === 'arpu' ? t('actuals_unit_arpu') : t('actuals_unit_revenue')}
                   </button>
                 ))}
@@ -3433,11 +3437,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                 <React.Fragment key={sc}>
                   <span className="flex items-center gap-1.5">
                     <span className="inline-block w-5 h-0.5 rounded" style={{ backgroundColor: c.actual }} />
-                    {SCENARIO_LABELS[sc]} Actual
+                    {scenarioLabel(sc)} Actual
                   </span>
                   <span className="flex items-center gap-1.5">
                     <span className="inline-block w-5 border-t-2 border-dashed" style={{ borderColor: c.baseline }} />
-                    {SCENARIO_LABELS[sc]} Forecast
+                    {scenarioLabel(sc)} Forecast
                   </span>
                 </React.Fragment>
               );
