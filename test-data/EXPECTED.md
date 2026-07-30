@@ -708,44 +708,218 @@ or more different `tariff_tier_l1` values. Then assert that filtering to
 (L2 = X, tariff = Y) reads actuals for that intersection only, and that the
 Base actual matches the Base forecast's grain.
 
-### Accuracy-table denominator depends on the active filter — MEASURED, OPEN
+### Accuracy-table denominator depends on the active filter — MEASURED, OPEN, BRANCH PARKED
 
-**This is a real defect with a reproduction. It pre-dates the tariff fix; that
-fix made it visible rather than causing it.**
+**Correction history — read before citing any figure in this entry.**
 
-The Historical Accuracy table deliberately shows **every** cohort in the dataset
-(`cohortActualsMap` is intentionally unfiltered by `activeFilter`). But its share
-denominator is not. `broadAggrSnapshotMap` only takes its own broad path when
-`hasL2` is true — and `hasL2` tests `productL2`/`channelL2` only, never tariff.
-A tariff-specific, L2-`All` cohort therefore falls through to `aggrSnapshotMap`,
-which is a direct projection of `actualsAggrMap`, which **is** `activeFilter`-
-scoped. Result: cohorts outside the active filter are scored against a
-denominator that has nothing to do with them.
-
-**Reproduction (measured on the tariff fixture, `forecastStore` populated with
-all five tariff siblings under Corporate · Mobile Voice · Direct):**
-
-| Row | Viewing bar filtered to RED S | Tariff filter cleared |
+| Date | Recorded blast radius | Status |
 |---|---|---|
-| `SOHO · RED S` | **66 / 80 / 67 / 90** | **0 / 0 / 0 / 0** |
-| `SOHO · RED M` | **59 / 70 / 59 / 81** | **0 / 0 / 0 / 0** |
+| 2026-07-28 | 20 of 25 rows | **WRONG** — artefact of a harness seeding only 5 Corporate siblings |
+| 2026-07-29 | 2 of 25 rows | **WRONG** — artefact of a harness generating only the Mobile Voice / Direct slice |
+| 2026-07-30 | ~99% of rows in a typical session | **WRONG** — assumed `matchingBfs` required an exact key match; it does not |
+| 2026-07-30 | 0% fully generated → ~80% with one of five segments generated | current |
 
-Same cohort, same data, same file — two different scores depending on a filter
-that does not apply to it. On `main` both columns read 0/0/0/0; the `0` is the
-"garbage share ratio" symptom the code comment beside `broadAggrSnapshotMap`
-already warns about, so the pre-fix values were not correct either.
+**Both prior reproductions were harness artefacts.** Neither the 20-row nor the
+2-row figure describes app behaviour. Both arose from a `forecastStore`
+populated along one narrow slice; each time, the shortfall in the harness was
+read as a defect in the app. A third estimate was wrong for an unrelated
+reason — it modelled the lookup as exact-match when the real resolution falls
+back to a partial match. **Do not cite any figure in this table above the last
+row, and treat a new extreme figure as a harness result until proven otherwise.**
 
-**In-filter cohorts are unaffected.** All five `Corporate · RED *` rows score
-identically before and after, filtered and unfiltered (RED S = 85/93/88/91).
+#### The driver is segment-level forecast coverage
 
-**Extending `hasL2` to consider tariff is the WRONG fix.** It would only change
-which fallback fires. The defect is that a filter-scoped denominator is used for
-an unfiltered table — so a tariff-aware `hasL2` would still leave every
-out-of-filter cohort measured against someone else's denominator, just via the
-other branch. The correct fix is to make the denominator independent of
-`activeFilter`. That changes scoring for every cohort and needs its own
-before/after measurement across the full cohort set, which is why it is a
-separate branch rather than a rider on the tariff fix.
+`matchingBfs` ([ForecastVsActualsTab.tsx:629](../src/components/ForecastVsActualsTab.tsx))
+resolves a grouped accuracy row against 7-part leaf keys in two tiers:
+
+1. **Exact.** Build a key carrying the row's value in each *grouped* slot and
+   `'All'` in every other slot. One `forecastStore.get()`.
+2. **Partial match, then sum.** On a miss, scan the whole store keeping every
+   entry where the **segment** matches and each **grouped** dimension matches.
+   Non-grouped dimensions are unconstrained. Survivors are deduplicated
+   (productL2-specific preferred over aggregate; channel-aggregate preferred
+   when channel is not grouped) and summed by `flowBandMaps`.
+
+The share-scaled fallback fires **only when tier 2 returns empty**. Segment is
+the only dimension never relaxed, so in practice the fallback fires exactly for
+rows whose **segment has no forecast at all**.
+
+Measured against the real predicate over all 27 legal groupings (5,763
+enumerated rows, tariff fixture):
+
+| Coverage scenario | Rows on the fallback |
+|---|---|
+| One of five segments generated (108 of 540 leaves) | **4,587 of 5,763 — 79.6%** |
+| Bulk-generated everything | **0 of 5,763 — 0.0%** |
+
+The rate is flat at ~79–80% at *every* grouping, coarse or fine, because it is
+simply the fraction of segments with no forecast. **Grouping granularity is
+irrelevant. Structural data gaps are irrelevant** — at coarse groupings every
+combination is populated, and at fine ones tier 2 still matches within a covered
+segment.
+
+#### A completed bulk run leaves zero fallback — verified 2026-07-30
+
+Scenario (b) is not optimistic. `allCohorts` ([App.tsx:3370](../src/App.tsx))
+enumerates the **full hierarchy**, not a coarse grain: `['All', …segments]` ×
+product `{All|All, L1|All, L1|L2}` × the same for channel and tariff, keyed by
+`makeForecastKey(...)` — the identical 7-part format `matchingBfs` parses. It is
+filtered by `cohortHasData`, which is backed by `populatedCohortKeys`
+([App.tsx:3481](../src/App.tsx)) — a set that, for each populated leaf, inserts
+**every hierarchical ancestor including the leaf itself**. A completed bulk run
+therefore writes a forecast for all 540 populated leaves *and* every populated
+aggregate above them.
+
+**The defect exists only in the partially-generated window**, and closing that
+window shrinks the affected population directly.
+
+#### The most visible way to close that window did not close it — fixed 2026-07-30
+
+Until this was fixed, **"Generate Missing" on the Overall Forecast tab did not
+write `forecastStore` at all.** `OverallForecastTab.tsx` ran its own generation
+loop straight into `savedForecasts` (5-part cohort ids, `fKey|type|scenario`),
+never calling `generateAllMissingForecasts`, never writing the 7-part keys
+`matchingBfs` reads, and never recording a `bulkRuns` entry. Confirmed by
+`grep -c "setForecastStore" src/components/OverallForecastTab.tsx` → **0**.
+
+The two stores have different key shapes, so nothing type-errored and the button
+reported success.
+
+**Consequence for the coverage picture above: a user could run "Generate
+Missing" to completion, see it succeed, and still sit at ~80% fallback**, because
+none of what it generated was visible to the accuracy table. Any historic report
+of a high fallback rate from a user who had "generated everything" is consistent
+with this and is not evidence against the denominator analysis.
+
+Its missing-filter had also drifted (no `forecastType` guard, counting What-If
+cohorts), and the tab's status filter had a fifth variant with no `cohortHasData`
+guard — so selecting status "missing" listed the ~10x-inflated cross-product
+while the button beside it counted only populated cohorts. All five now consume
+one `missingStandardCohorts` memo in `App.tsx`.
+
+#### What is actually wrong
+
+The Historical Accuracy table shows **every** cohort (`cohortActualsMap` is
+deliberately unfiltered by `activeFilter`), but its share denominator is not.
+`broadAggrSnapshotMap` only takes its own broad path when `hasL2` is true, and
+`hasL2` tests `productL2`/`channelL2` only, never tariff. A tariff-specific,
+L2-`All` cohort therefore falls through to `aggrSnapshotMap` — a direct
+projection of the `activeFilter`-scoped `actualsAggrMap`.
+
+#### Reproduction — SUPERSEDED, retained as a worked example of the artefact
+
+**This reproduction does not survive a correctly populated store.** At the
+Segment+Tariff L1 grouping with all 540 populated leaves seeded, fallback is
+**zero** — including both rows below. They failed only because that harness
+built forecasts along the Mobile Voice / Direct slice alone, so no forecast
+existed for those segments anywhere; given any forecast for their segment
+carrying that tariff, tier 2 matches. The figures are kept because the
+*mechanism* they expose is real and is what a fix must address.
+
+Tariff fixture, 5 segments x 5 tariffs under Mobile Voice / Direct, accuracy
+table grouped by Tariff L1, loaded cohort Corporate · RED S:
+
+| Row | Viewing bar on RED S | Tariff filter cleared |
+|---|---|---|
+| `Large Enterprise · RED ULTD` | **86 / 94 / 89 / 95** | **0 / 0 / 0 / 0** |
+| `MNC · RED ULTD` | **78 / 96 / 80 / 92** | **0 / 0 / 0 / 0** |
+| the other 23 rows | score normally | **identical** |
+
+**25 of 25 rows score non-zero. 2 are filter-dependent.**
+
+#### Why those two — the mechanism (established 2026-07-30)
+
+`Large Enterprise · RED ULTD` and `MNC · RED ULTD` are the **only two of the 25
+pairs with zero rows of data under Mobile Voice / Direct** — verified by direct
+count: 0 rows each, against 168–336 for every scoring sibling. Both segments do
+sell RED ULTD (840 and 2,352 rows respectively), just never through that
+product/channel combination. Fixture collinearity, not a code defect.
+
+With no data there can be no forecast, so `forecastStore` can never hold a leaf
+for `seg|Mobile Voice|All|Direct|All|RED ULTD|All`. `matchingBfs` is therefore
+empty, and these two rows are **the only ones forced onto the share-scaled
+fallback** (`scaledBandFlow` / `computeAvgShare`). The other 23 take the direct
+`flowBandMaps` / `cohortBaseBandMap` path and **never touch `aggrMap` at all** —
+which is exactly why `Corporate`, `SME` and `SOHO · RED ULTD` score identically
+in both filter states.
+
+Instrumented, `Large Enterprise · RED ULTD`, `computeAvgShare('inflow')`:
+
+| Filter state | share | result |
+|---|---|---|
+| Filtered to RED S | **7.507** | mean lands near LE's scale → 86/94/89/95 |
+| Tariff cleared | **0.169** | mean ≈ 32.9 vs actual 1,435 → 4,264% dev → 0/0/0/0 |
+
+A ~44× swing driven purely by the denominator widening from one tariff to five.
+
+#### BOTH states are wrong — the filtered score is not the correct one
+
+86/94/89/95 is not a passing result that the cleared state breaks. That share is
+**Large Enterprise's cross-product actual divided by Corporate's
+`activeFilter`-scoped total** — a ratio of two unrelated segments with no
+principled reason to sit near 1 — multiplied by **Corporate's own forecast** to
+fabricate a band for a Large Enterprise row. It is a coincidence of scale. Do
+not treat the filtered figures as a target to restore.
+
+#### TRAP — do not fix by clamping
+
+Do **not** cap deviation, floor `primary`, or add a magnitude threshold in
+`calcComponentDetail`. That hides the defect while leaving the nonsensical
+comparison intact. The fix is the per-row, per-L1-ancestry denominator described
+below — comparing one segment's actual against another's filter-scoped total is
+wrong whatever score falls out of it.
+
+#### Why the earlier figures were wrong — read this before trusting a re-run
+
+The previous entry cited `SOHO · RED S` scoring 66/80/67/90 filtered and
+0/0/0/0 cleared, and a fix attempt that took **20 of 25 rows to zero**. Both
+came from a harness that seeded `forecastStore` with **only the five Corporate
+tariff siblings**. Every unseeded cohort therefore had no forecast of its own
+and fell to `scaledBandFlow`, which scales the LOADED forecast's bands by a
+share — a SOHO row scaled from a Corporate forecast collapses to zero whatever
+the denominator is. Seed every cohort and all 25 score normally.
+
+Two consequences a future session must not inherit:
+
+1. **The reasoning built on those figures is void.** It was argued that the
+   flat-map and per-cohort attempts "failed criterion 3 identically, which
+   points away from the denominator toward `scaledBandFlow`". That argument
+   rested on the same artefact that produced the failures.
+2. **Neither denominator fix has ever had a fair test.** Both the reverted
+   unconditional flat-map change and the per-cohort
+   `Map<cohortL1Key, Map<month, AggrSnapshot>>` design were judged against the
+   under-seeded harness. Re-run both against a fully seeded store before
+   concluding anything about either.
+
+#### BRANCH PARKED DELIBERATELY — 2026-07-30
+
+`fix-accuracy-denominator-scoping` is parked at main-equivalent code (both
+attempts reverted). **It was not abandoned because either attempt failed on
+merit — neither has ever been run against a correctly-seeded harness.** Nothing
+in the record below should be read as evidence against either design.
+
+It is parked because the bulk-generate work (offering the missing-forecast
+prompt as a standing action rather than only after a manual generation) shrinks
+the partially-generated window that is this defect's *entire* blast radius.
+Doing that first makes the denominator fix land on a smaller affected
+population. Resume by re-running both attempts against **two** stores: fully
+seeded, and partially seeded at one segment of five — the realistic condition,
+and the one neither attempt has been tested against.
+
+#### Acceptance criteria for a fix — all three together
+
+1. Every cohort scores identically with the tariff filter set and cleared.
+2. The five `Corporate · RED *` canary rows are unchanged from main.
+3. No cohort that scores non-zero on main scores zero after the fix.
+
+The third exists because criterion 1 alone is satisfiable by degeneracy —
+making every cohort equally unscoreable.
+
+#### Extending `hasL2` to tariff is still the wrong fix
+
+It would only change which cohorts reach the already-correct branch. The defect
+is the existence of a filter-scoped fallback, not which cohorts reach it.
+
 
 ### broadAggrSnapshotMap `hasL2` gate — related, unmeasured detail
 

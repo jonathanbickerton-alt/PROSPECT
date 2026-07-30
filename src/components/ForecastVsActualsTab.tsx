@@ -1815,6 +1815,14 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     if (!data.length || !wiDateCol) return aggrSnapshotMap;
     const cohort = baseForecast?.cohort;
     // If no L2 specificity on the cohort, the narrow map already works — reuse it.
+    //
+    // NOTE: this early return is the recorded defect (EXPECTED.md §16b) —
+    // aggrSnapshotMap is activeFilter-scoped, so cohorts without L2 specificity
+    // get a denominator that moves with someone else's filter. Removing it
+    // unconditionally was tried and REVERTED: it made 20 of 25 cohorts score
+    // 0/0/0/0, because one L1 denominator taken from the loaded forecast cannot
+    // serve rows from other segments. The real fix is a per-cohort denominator
+    // keyed by each row's own L1 ancestry, tracked separately.
     const hasL2 = cohort && (
       (cohort.productL2 && cohort.productL2 !== 'All') ||
       (cohort.channelL2 && cohort.channelL2 !== 'All')
@@ -1955,7 +1963,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       ];
       for (const month of allMonths) {
         const cohortVal = cohortMonthMap.get(month)?.[kpi] ?? 0;
-        const aggrSnap  = aggrSnapshotMap.get(month);
+        // broadAggrSnapshotMap, not aggrSnapshotMap: the numerator (cohortMonthMap)
+        // is unfiltered, so a filter-scoped denominator makes the share depend on
+        // what someone else is filtered to. Same denominator buildCohortAccuracy
+        // uses, so the chart and the accuracy tooltip cannot disagree.
+        const aggrSnap  = broadAggrSnapshotMap.get(month);
         const aggrVal   = aggrSnap?.[kpi] ?? 0;
         if (cohortVal > 0 && aggrVal > 0) {
           const share = cohortVal / aggrVal;
@@ -1985,7 +1997,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       if (!cohortMonthMap || selectedKpi !== 'base' || specificForecast) return null;
       const inflowShares: number[] = [];
       for (const [month, entry] of cohortMonthMap.entries()) {
-        const aggrSnap = aggrSnapshotMap.get(month);
+        // Broad denominator — see cohortShareMap above.
+        const aggrSnap = broadAggrSnapshotMap.get(month);
         if (!aggrSnap || aggrSnap.inflow === 0 || entry.inflow === 0) continue;
         inflowShares.push(entry.inflow / aggrSnap.inflow);
       }
@@ -1993,6 +2006,13 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       return inflowShares.reduce((s, v) => s + v, 0) / inflowShares.length;
     })();
 
+    // NOT moved to broadAggrSnapshotMap, and this is a known gap rather than an
+    // oversight: AggrSnapshot is { inflow, outflow, retention } and carries no
+    // revenue/volume, so an ARPU denominator cannot be read from it. Widening
+    // that type also widens buildCohortAccuracy's signature, so it is deliberately
+    // out of scope here. This ratio therefore still uses the activeFilter-scoped
+    // actualsAggrMap and retains the same class of defect the broad map just
+    // fixed for the flow metrics. Tracked in EXPECTED.md §16b.
     // ARPU ratio scale — when a cohort is selected but no specific forecast found,
     // scale the aggregate ARPU by the historical cohort/aggregate ARPU ratio.
     // Mirrors the flow-metric share-scaling approach for ARPU so that cohorts
@@ -2308,7 +2328,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     });
 
     return [...histRows, ...fcRows];
-  }, [comparisonRows, baseForecast, actualsAggrMap, aggrSnapshotMap, selectedKpi, usingAdjusted, prevFcMap, modelSwitchPoint, selectedCohortRow, cohortDims, forecastStore, activeFilter, cohortActualsMap]);
+  }, [comparisonRows, baseForecast, actualsAggrMap, aggrSnapshotMap, broadAggrSnapshotMap, selectedKpi, usingAdjusted, prevFcMap, modelSwitchPoint, selectedCohortRow, cohortDims, forecastStore, activeFilter, cohortActualsMap]);
 
   // ---------------------------------------------------------------------------
   // 5a. Multi-scenario chart data for the new Volume/Value 2-tab chart
@@ -2646,7 +2666,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     });
 
     return [...histRows, ...fcRows];
-  }, [baseForecast, comparisonRows, actualsAggrMap, cohortActualsMap, aggrSnapshotMap,
+  }, [baseForecast, comparisonRows, actualsAggrMap, cohortActualsMap, aggrSnapshotMap, broadAggrSnapshotMap,
       selectedCohortRow, cohortDims, forecastStore, activeFilter]);
 
   // True when at least one forecast-month row carries a baseline at the current

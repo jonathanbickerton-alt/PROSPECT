@@ -26,16 +26,22 @@ interface OverallForecastTabProps {
   exportToExcel: () => void;
   setSavedForecasts: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   savedForecasts: Record<string, any>;
-  computeCohortForecastData: (cohort: Cohort) => any;
-  /** True if a cohort has data — used to skip genuinely-empty combinations when
-   *  generating missing forecasts (avoids the tariff cross-product explosion). */
-  cohortHasData?: (cohort: Cohort) => boolean;
+  /** THE canonical missing-cohort list (App's missingStandardCohorts). Never
+   *  re-derive this locally: an earlier local copy omitted the forecastType
+   *  guard, and the status filter below omitted the data guard, so the table and
+   *  the button disagreed on screen about how many cohorts were missing. */
+  missingCohorts: Cohort[];
+  /** Raises the bulk-generate prompt, which drives the canonical generation
+   *  path. This button previously ran its own loop straight into savedForecasts,
+   *  never writing forecastStore — so nothing it generated was visible to the
+   *  accuracy table's matchingBfs and none of it reduced the fallback. */
+  onGenerateMissing: () => void;
   setGeneratingCohort: (cohort: Cohort | null) => void;
   setViewingCohort: (cohort: Cohort | null) => void;
+  /** Owned and driven by App's generateAllMissingForecasts — this tab only
+   *  displays the run, it no longer performs one. */
   isGeneratingMissing: boolean;
-  setIsGeneratingMissing: (val: boolean) => void;
   generationProgress: { current: number; total: number };
-  setGenerationProgress: (val: { current: number; total: number }) => void;
 }
 
 export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
@@ -53,16 +59,15 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
   exportToExcel,
   setSavedForecasts,
   savedForecasts,
-  computeCohortForecastData,
-  cohortHasData,
+  missingCohorts,
+  onGenerateMissing,
   setGeneratingCohort,
   setViewingCohort,
   isGeneratingMissing,
-  setIsGeneratingMissing,
-  generationProgress,
-  setGenerationProgress
+  generationProgress
 }) => {
   const { t } = useTranslation();
+  const missingIds = React.useMemo(() => new Set(missingCohorts.map(c => c.id)), [missingCohorts]);
   return (
     <div className="flex-1 overflow-auto p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -141,49 +146,20 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
               className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
             >{t('overall_clear_all')}</button>
             <button 
-              onClick={async () => {
-                // Skip genuinely-empty combinations (tariff is collinear with
-                // product/channel, so the cross-product is ~10× the real leaves).
-                const missing = allCohorts.filter(c => !c.hasForecast && (!cohortHasData || cohortHasData(c)));
-                if (missing.length === 0) return;
-                
-                setIsGeneratingMissing(true);
-                setGenerationProgress({ current: 0, total: missing.length });
-
-                // Process in chunks to allow UI to update
-                const chunkSize = 5;
-                const newForecasts: Record<string, any> = {};
-
-                for (let i = 0; i < missing.length; i += chunkSize) {
-                  const chunk = missing.slice(i, i + chunkSize);
-                  
-                  // Use setTimeout to yield to the main thread
-                  await new Promise<void>(resolve => {
-                    setTimeout(() => {
-                      chunk.forEach(c => {
-                        const forecastData = computeCohortForecastData(c);
-                        if (forecastData) {
-                          newForecasts[c.id] = forecastData;
-                        }
-                      });
-                      setGenerationProgress(prev => ({ ...prev, current: Math.min(prev.current + chunk.length, missing.length) }));
-                      resolve();
-                    }, 0);
-                  });
-                }
-
-                setSavedForecasts(prev => ({ ...prev, ...newForecasts }));
-                setIsGeneratingMissing(false);
-              }}
-              disabled={isGeneratingMissing}
-              className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors shadow-sm ${isGeneratingMissing ? 'bg-slate-400 cursor-not-allowed' : 'bg-[#e60000] hover:bg-[#cc0000]'}`}
+              onClick={onGenerateMissing}
+              disabled={isGeneratingMissing || missingCohorts.length === 0}
+              className="px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors shadow-sm bg-[#e60000] hover:bg-[#cc0000] disabled:bg-slate-400 disabled:hover:bg-slate-400 disabled:cursor-not-allowed"
             >
               {isGeneratingMissing ? t('overall_generating') : t('overall_generate_missing')}
             </button>
           </div>
         </div>
 
-        {isGeneratingMissing && (
+        {/* total is 0 for one tick: generateAllMissingForecasts sets the flag and
+            resets progress before yielding, and only learns the real total after
+            the pre-flight. Guarded the same way BulkGeneratingPanel guards it,
+            so the shared state cannot render "0 / 0 (NaN%)". */}
+        {isGeneratingMissing && generationProgress.total > 0 && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-medium text-slate-700">{t('overall_generating_forecasts')}</span>
@@ -214,7 +190,11 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
             <tbody className="divide-y divide-slate-100">
               {allCohorts.filter(c => {
                 if (overallStatusFilter === 'forecasted' && !c.hasForecast) return false;
-                if (overallStatusFilter === 'missing' && c.hasForecast) return false;
+                // "Missing" must mean the same thing here as it does on the
+                // Generate Missing button beside it — i.e. the canonical list.
+                // Testing !hasForecast alone listed the whole cross-product,
+                // which tariff collinearity inflates ~10x over the real leaves.
+                if (overallStatusFilter === 'missing' && !missingIds.has(c.id)) return false;
                 if (overallSegmentFilter !== 'All' && c.segment !== overallSegmentFilter) return false;
                 if (overallProductFilter !== 'All' && c.product !== overallProductFilter) return false;
                 if (overallChannelFilter !== 'All' && c.channel !== overallChannelFilter) return false;

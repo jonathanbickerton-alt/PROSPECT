@@ -41,6 +41,7 @@
   "app_download": "Download",
   "bulk_apply_to_all_remaining_combinations": "Apply to All Remaining Combinations?",
   "bulk_just_generated": "Just generated:",
+  "bulk_no_source_cohort": "Generating every remaining combination in the loaded data.",
   "common_forecast_model": "Forecast Model",
   "bulk_confidence_band_width": "Confidence Band Width",
   "common_run_name": "Run Name",

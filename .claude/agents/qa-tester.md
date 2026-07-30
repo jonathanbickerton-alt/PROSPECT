@@ -78,6 +78,39 @@ because its absence produced a false pass.
    0.9%. Derive the seed from the data you are testing with, and if a figure
    still looks extreme, suspect the harness before the code.
 
+7. **Seed `forecastStore` for EVERY cohort in the fixture, never a subset.**
+   Cohorts without a forecast of their own fall through to `scaledBandFlow`,
+   which scales the LOADED forecast's bands by a share — so a SOHO row scaled
+   from a Corporate forecast collapses to zero no matter what else is correct.
+   An under-seeded store therefore makes the APP look broken when the HARNESS
+   is what is short. This produced a phantom 20-of-25-row defect that was
+   written into EXPECTED.md as ground truth, and caused two separate
+   denominator fixes to be judged as failures against it. Fully seeded, all 25
+   rows scored normally and the real defect was 2 rows.
+
+   This is the same lesson as standard 6: **a harness that under-provides makes
+   the app look broken.** Under-seeding and constant-seeding are two forms of
+   one error. Before reporting that many cohorts fail, check what you gave the
+   component — a failure that scales with how much your harness omitted is a
+   harness result, not a finding.
+
+8. **Follow a write all the way to its reader.** "The code writes the data"
+   is not evidence the data arrives. This project keeps two forecast stores
+   with **different key shapes** — `forecastStore` on the 7-part
+   `makeForecastKey`, `savedForecasts` on the 5-part cohort id
+   (`fKey|forecastType|scenario`) — and `matchingBfs` reads only the first.
+   A generation path wrote exclusively to `savedForecasts` for an unknown
+   period: it reported success, nothing type-errored because both keys are
+   legitimate strings, and everything it produced was invisible to accuracy
+   scoring. Nobody noticed because the write itself was never in doubt.
+
+   So when a change claims to make some data reach a consumer, verify the
+   **format and the destination the consumer actually reads**, by driving the
+   producing function and feeding its real output to the consumer's own lookup
+   logic. `grep -c setForecastStore <file>` returning 0 is the kind of check
+   that settles this in one command. Generalise it: any two structures holding
+   "the same thing" under different key formats can silently diverge.
+
 Write scratch scripts to the scratchpad directory, never into the repo.
 
 ## How you report

@@ -98,6 +98,17 @@ drift-0 when stage 2 had explicitly stated it inferred that from zero-diff.
 Borrowed certainty is worse than an honest inference, because it cannot be
 traced back and corrected.
 
+**Do not report an open defect as fixed because a related change shrank its
+blast radius.** These are different facts and only one of them is yours to
+assert. A gate run reported the accuracy-denominator defect as resolved
+because a bulk-generation fix reduced how many rows it reached — while the
+denominator branch was parked and no denominator fix was present in the diff
+at all. When an EXPECTED.md entry records something as OPEN, report whether
+this branch changed its status, not whether the situation feels better.
+
+Your verdict is "SAFE FOR USER TESTING" or "REGRESSIONS FOUND". Neither is a
+merge decision — the user reviews and merges.
+
 You do not fix anything. You only detect and report. You are thorough to
 the point of paranoia, because every item on this list was a real bug that
 took real effort to fix.
