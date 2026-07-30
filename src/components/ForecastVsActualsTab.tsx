@@ -3901,10 +3901,15 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                         {scoreCell(c.outflowArpuScore,   c.outflowArpuBias,   c.outflowArpuTrend,   c.outflowArpuDetail)}
                         {scoreCell(c.retentionArpuScore, c.retentionArpuBias, c.retentionArpuTrend, c.retentionArpuDetail)}
                         {scoreCell(c.baseArpuScore,      c.baseArpuBias,      c.baseArpuTrend,      c.baseArpuDetail)}
+                        {/* Overall score. A noForecast row has no components to
+                            average, so the 'overall' card would render an empty
+                            list and a bare em-dash — the one cell still offering a
+                            tooltip saying nothing, and the grey dash reading as a
+                            fault again. Routed to the same explanation instead. */}
                         <td className="px-3 py-3 text-center">
                           <span
                             className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold cursor-help ${scoreBg(c.overallScore)}`}
-                            onMouseEnter={e => showTooltip(e, { kind: 'overall', row: c })}
+                            onMouseEnter={e => showTooltip(e, c.noForecast ? { kind: 'noForecast' } : { kind: 'overall', row: c })}
                             onMouseLeave={hideTooltip}
                           >
                             {scoreLabel(c.overallScore)}
