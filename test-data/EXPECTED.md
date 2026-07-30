@@ -708,11 +708,70 @@ or more different `tariff_tier_l1` values. Then assert that filtering to
 (L2 = X, tariff = Y) reads actuals for that intersection only, and that the
 Base actual matches the Base forecast's grain.
 
-### Accuracy-table denominator depends on the active filter — MEASURED, OPEN
+### Accuracy-table denominator depends on the active filter — MEASURED, OPEN, BRANCH PARKED
 
-**CORRECTED 2026-07-29. An earlier version of this entry recorded a 20-of-25
-row defect. That figure was wrong — it was an artefact of an under-seeded test
-harness, not a property of the app. The real blast radius is 2 of 25.**
+**Correction history — read before citing any figure in this entry.**
+
+| Date | Recorded blast radius | Status |
+|---|---|---|
+| 2026-07-28 | 20 of 25 rows | **WRONG** — artefact of a harness seeding only 5 Corporate siblings |
+| 2026-07-29 | 2 of 25 rows | **WRONG** — artefact of a harness generating only the Mobile Voice / Direct slice |
+| 2026-07-30 | ~99% of rows in a typical session | **WRONG** — assumed `matchingBfs` required an exact key match; it does not |
+| 2026-07-30 | 0% fully generated → ~80% with one of five segments generated | current |
+
+**Both prior reproductions were harness artefacts.** Neither the 20-row nor the
+2-row figure describes app behaviour. Both arose from a `forecastStore`
+populated along one narrow slice; each time, the shortfall in the harness was
+read as a defect in the app. A third estimate was wrong for an unrelated
+reason — it modelled the lookup as exact-match when the real resolution falls
+back to a partial match. **Do not cite any figure in this table above the last
+row, and treat a new extreme figure as a harness result until proven otherwise.**
+
+#### The driver is segment-level forecast coverage
+
+`matchingBfs` ([ForecastVsActualsTab.tsx:629](../src/components/ForecastVsActualsTab.tsx))
+resolves a grouped accuracy row against 7-part leaf keys in two tiers:
+
+1. **Exact.** Build a key carrying the row's value in each *grouped* slot and
+   `'All'` in every other slot. One `forecastStore.get()`.
+2. **Partial match, then sum.** On a miss, scan the whole store keeping every
+   entry where the **segment** matches and each **grouped** dimension matches.
+   Non-grouped dimensions are unconstrained. Survivors are deduplicated
+   (productL2-specific preferred over aggregate; channel-aggregate preferred
+   when channel is not grouped) and summed by `flowBandMaps`.
+
+The share-scaled fallback fires **only when tier 2 returns empty**. Segment is
+the only dimension never relaxed, so in practice the fallback fires exactly for
+rows whose **segment has no forecast at all**.
+
+Measured against the real predicate over all 27 legal groupings (5,763
+enumerated rows, tariff fixture):
+
+| Coverage scenario | Rows on the fallback |
+|---|---|
+| One of five segments generated (108 of 540 leaves) | **4,587 of 5,763 — 79.6%** |
+| Bulk-generated everything | **0 of 5,763 — 0.0%** |
+
+The rate is flat at ~79–80% at *every* grouping, coarse or fine, because it is
+simply the fraction of segments with no forecast. **Grouping granularity is
+irrelevant. Structural data gaps are irrelevant** — at coarse groupings every
+combination is populated, and at fine ones tier 2 still matches within a covered
+segment.
+
+#### A completed bulk run leaves zero fallback — verified 2026-07-30
+
+Scenario (b) is not optimistic. `allCohorts` ([App.tsx:3370](../src/App.tsx))
+enumerates the **full hierarchy**, not a coarse grain: `['All', …segments]` ×
+product `{All|All, L1|All, L1|L2}` × the same for channel and tariff, keyed by
+`makeForecastKey(...)` — the identical 7-part format `matchingBfs` parses. It is
+filtered by `cohortHasData`, which is backed by `populatedCohortKeys`
+([App.tsx:3481](../src/App.tsx)) — a set that, for each populated leaf, inserts
+**every hierarchical ancestor including the leaf itself**. A completed bulk run
+therefore writes a forecast for all 540 populated leaves *and* every populated
+aggregate above them.
+
+**The defect exists only in the partially-generated window**, and closing that
+window shrinks the affected population directly.
 
 #### What is actually wrong
 
@@ -723,7 +782,15 @@ deliberately unfiltered by `activeFilter`), but its share denominator is not.
 L2-`All` cohort therefore falls through to `aggrSnapshotMap` — a direct
 projection of the `activeFilter`-scoped `actualsAggrMap`.
 
-#### Reproduction — measured with EVERY cohort seeded in forecastStore
+#### Reproduction — SUPERSEDED, retained as a worked example of the artefact
+
+**This reproduction does not survive a correctly populated store.** At the
+Segment+Tariff L1 grouping with all 540 populated leaves seeded, fallback is
+**zero** — including both rows below. They failed only because that harness
+built forecasts along the Mobile Voice / Direct slice alone, so no forecast
+existed for those segments anywhere; given any forecast for their segment
+carrying that tariff, tier 2 matches. The figures are kept because the
+*mechanism* they expose is real and is what a fix must address.
 
 Tariff fixture, 5 segments x 5 tariffs under Mobile Voice / Direct, accuracy
 table grouped by Tariff L1, loaded cohort Corporate · RED S:
@@ -799,6 +866,21 @@ Two consequences a future session must not inherit:
    `Map<cohortL1Key, Map<month, AggrSnapshot>>` design were judged against the
    under-seeded harness. Re-run both against a fully seeded store before
    concluding anything about either.
+
+#### BRANCH PARKED DELIBERATELY — 2026-07-30
+
+`fix-accuracy-denominator-scoping` is parked at main-equivalent code (both
+attempts reverted). **It was not abandoned because either attempt failed on
+merit — neither has ever been run against a correctly-seeded harness.** Nothing
+in the record below should be read as evidence against either design.
+
+It is parked because the bulk-generate work (offering the missing-forecast
+prompt as a standing action rather than only after a manual generation) shrinks
+the partially-generated window that is this defect's *entire* blast radius.
+Doing that first makes the denominator fix land on a smaller affected
+population. Resume by re-running both attempts against **two** stores: fully
+seeded, and partially seeded at one segment of five — the realistic condition,
+and the one neither attempt has been tested against.
 
 #### Acceptance criteria for a fix — all three together
 
