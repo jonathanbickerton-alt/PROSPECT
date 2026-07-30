@@ -78,6 +78,22 @@ because its absence produced a false pass.
    0.9%. Derive the seed from the data you are testing with, and if a figure
    still looks extreme, suspect the harness before the code.
 
+7. **Seed `forecastStore` for EVERY cohort in the fixture, never a subset.**
+   Cohorts without a forecast of their own fall through to `scaledBandFlow`,
+   which scales the LOADED forecast's bands by a share — so a SOHO row scaled
+   from a Corporate forecast collapses to zero no matter what else is correct.
+   An under-seeded store therefore makes the APP look broken when the HARNESS
+   is what is short. This produced a phantom 20-of-25-row defect that was
+   written into EXPECTED.md as ground truth, and caused two separate
+   denominator fixes to be judged as failures against it. Fully seeded, all 25
+   rows scored normally and the real defect was 2 rows.
+
+   This is the same lesson as standard 6: **a harness that under-provides makes
+   the app look broken.** Under-seeding and constant-seeding are two forms of
+   one error. Before reporting that many cohorts fail, check what you gave the
+   component — a failure that scales with how much your harness omitted is a
+   harness result, not a finding.
+
 Write scratch scripts to the scratchpad directory, never into the repo.
 
 ## How you report

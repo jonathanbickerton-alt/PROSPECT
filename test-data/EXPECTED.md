@@ -710,42 +710,72 @@ Base actual matches the Base forecast's grain.
 
 ### Accuracy-table denominator depends on the active filter — MEASURED, OPEN
 
-**This is a real defect with a reproduction. It pre-dates the tariff fix; that
-fix made it visible rather than causing it.**
+**CORRECTED 2026-07-29. An earlier version of this entry recorded a 20-of-25
+row defect. That figure was wrong — it was an artefact of an under-seeded test
+harness, not a property of the app. The real blast radius is 2 of 25.**
 
-The Historical Accuracy table deliberately shows **every** cohort in the dataset
-(`cohortActualsMap` is intentionally unfiltered by `activeFilter`). But its share
-denominator is not. `broadAggrSnapshotMap` only takes its own broad path when
-`hasL2` is true — and `hasL2` tests `productL2`/`channelL2` only, never tariff.
-A tariff-specific, L2-`All` cohort therefore falls through to `aggrSnapshotMap`,
-which is a direct projection of `actualsAggrMap`, which **is** `activeFilter`-
-scoped. Result: cohorts outside the active filter are scored against a
-denominator that has nothing to do with them.
+#### What is actually wrong
 
-**Reproduction (measured on the tariff fixture, `forecastStore` populated with
-all five tariff siblings under Corporate · Mobile Voice · Direct):**
+The Historical Accuracy table shows **every** cohort (`cohortActualsMap` is
+deliberately unfiltered by `activeFilter`), but its share denominator is not.
+`broadAggrSnapshotMap` only takes its own broad path when `hasL2` is true, and
+`hasL2` tests `productL2`/`channelL2` only, never tariff. A tariff-specific,
+L2-`All` cohort therefore falls through to `aggrSnapshotMap` — a direct
+projection of the `activeFilter`-scoped `actualsAggrMap`.
 
-| Row | Viewing bar filtered to RED S | Tariff filter cleared |
+#### Reproduction — measured with EVERY cohort seeded in forecastStore
+
+Tariff fixture, 5 segments x 5 tariffs under Mobile Voice / Direct, accuracy
+table grouped by Tariff L1, loaded cohort Corporate · RED S:
+
+| Row | Viewing bar on RED S | Tariff filter cleared |
 |---|---|---|
-| `SOHO · RED S` | **66 / 80 / 67 / 90** | **0 / 0 / 0 / 0** |
-| `SOHO · RED M` | **59 / 70 / 59 / 81** | **0 / 0 / 0 / 0** |
+| `Large Enterprise · RED ULTD` | **86 / 94 / 89 / 95** | **0 / 0 / 0 / 0** |
+| `MNC · RED ULTD` | **78 / 96 / 80 / 92** | **0 / 0 / 0 / 0** |
+| the other 23 rows | score normally | **identical** |
 
-Same cohort, same data, same file — two different scores depending on a filter
-that does not apply to it. On `main` both columns read 0/0/0/0; the `0` is the
-"garbage share ratio" symptom the code comment beside `broadAggrSnapshotMap`
-already warns about, so the pre-fix values were not correct either.
+**25 of 25 rows score non-zero. 2 are filter-dependent.** Both are `RED ULTD`,
+the unlimited tariff — unexplained, and the first thing to establish before any
+fix. Two failures among twenty-three successes points at something specific to
+those rows (data density, band width, ARPU profile) rather than a structural
+denominator problem.
 
-**In-filter cohorts are unaffected.** All five `Corporate · RED *` rows score
-identically before and after, filtered and unfiltered (RED S = 85/93/88/91).
+#### Why the earlier figures were wrong — read this before trusting a re-run
 
-**Extending `hasL2` to consider tariff is the WRONG fix.** It would only change
-which fallback fires. The defect is that a filter-scoped denominator is used for
-an unfiltered table — so a tariff-aware `hasL2` would still leave every
-out-of-filter cohort measured against someone else's denominator, just via the
-other branch. The correct fix is to make the denominator independent of
-`activeFilter`. That changes scoring for every cohort and needs its own
-before/after measurement across the full cohort set, which is why it is a
-separate branch rather than a rider on the tariff fix.
+The previous entry cited `SOHO · RED S` scoring 66/80/67/90 filtered and
+0/0/0/0 cleared, and a fix attempt that took **20 of 25 rows to zero**. Both
+came from a harness that seeded `forecastStore` with **only the five Corporate
+tariff siblings**. Every unseeded cohort therefore had no forecast of its own
+and fell to `scaledBandFlow`, which scales the LOADED forecast's bands by a
+share — a SOHO row scaled from a Corporate forecast collapses to zero whatever
+the denominator is. Seed every cohort and all 25 score normally.
+
+Two consequences a future session must not inherit:
+
+1. **The reasoning built on those figures is void.** It was argued that the
+   flat-map and per-cohort attempts "failed criterion 3 identically, which
+   points away from the denominator toward `scaledBandFlow`". That argument
+   rested on the same artefact that produced the failures.
+2. **Neither denominator fix has ever had a fair test.** Both the reverted
+   unconditional flat-map change and the per-cohort
+   `Map<cohortL1Key, Map<month, AggrSnapshot>>` design were judged against the
+   under-seeded harness. Re-run both against a fully seeded store before
+   concluding anything about either.
+
+#### Acceptance criteria for a fix — all three together
+
+1. Every cohort scores identically with the tariff filter set and cleared.
+2. The five `Corporate · RED *` canary rows are unchanged from main.
+3. No cohort that scores non-zero on main scores zero after the fix.
+
+The third exists because criterion 1 alone is satisfiable by degeneracy —
+making every cohort equally unscoreable.
+
+#### Extending `hasL2` to tariff is still the wrong fix
+
+It would only change which cohorts reach the already-correct branch. The defect
+is the existence of a filter-scoped fallback, not which cohorts reach it.
+
 
 ### broadAggrSnapshotMap `hasL2` gate — related, unmeasured detail
 
