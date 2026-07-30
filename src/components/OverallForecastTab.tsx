@@ -155,7 +155,11 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
           </div>
         </div>
 
-        {isGeneratingMissing && (
+        {/* total is 0 for one tick: generateAllMissingForecasts sets the flag and
+            resets progress before yielding, and only learns the real total after
+            the pre-flight. Guarded the same way BulkGeneratingPanel guards it,
+            so the shared state cannot render "0 / 0 (NaN%)". */}
+        {isGeneratingMissing && generationProgress.total > 0 && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm font-medium text-slate-700">{t('overall_generating_forecasts')}</span>

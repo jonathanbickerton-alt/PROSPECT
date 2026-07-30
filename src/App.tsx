@@ -4347,7 +4347,18 @@ export default function App() {
         }}
         currentModel={selectedForecastModel}
         generationProgress={generationProgress}
-        onConfirm={(opts) => generateAllMissingForecasts(opts)}
+        onConfirm={async (opts) => {
+          // generateAllMissingForecasts has no finally, so a synchronous throw
+          // before its await (worker construction, a non-cloneable postMessage
+          // payload) would skip the line that clears isGeneratingMissing and
+          // leave Generate Missing permanently disabled reading "Generating...".
+          // The modal catches the rejection but cannot reach App's state.
+          try {
+            return await generateAllMissingForecasts(opts);
+          } finally {
+            setIsGeneratingMissing(false);
+          }
+        }}
       />
       <ManageBulkDrawer
         isOpen={showManageBulkDrawer}
