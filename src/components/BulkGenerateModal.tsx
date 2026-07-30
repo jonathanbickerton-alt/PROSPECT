@@ -132,16 +132,24 @@ export function BulkGenerateModal({
             {/* Scrollable body */}
             <div className="flex-1 overflow-y-auto">
 
-            {/* Source cohort pill */}
-            {cohortStr && (
-              <div className="px-6 pb-3">
-                <div className="bg-slate-50 rounded-lg px-4 py-2.5 text-xs flex items-center gap-2">
-                  <span className="text-slate-400">{t('bulk_just_generated')}</span>
-                  <span className="font-semibold text-slate-700">{cohortStr}</span>
-                  <span className="text-slate-400 ml-1">· {sourceCohort?.scenario}</span>
-                </div>
+            {/* Source cohort pill. The prompt can now be raised as a standing
+                action (Overall Forecast → Generate Missing) with no cohort
+                just generated, so the no-source state is explicit rather than
+                an absent element: claiming a stale "just generated X" would be
+                worse than saying nothing, and rendering nothing leaves a gap. */}
+            <div className="px-6 pb-3">
+              <div className="bg-slate-50 rounded-lg px-4 py-2.5 text-xs flex items-center gap-2">
+                {cohortStr ? (
+                  <>
+                    <span className="text-slate-400">{t('bulk_just_generated')}</span>
+                    <span className="font-semibold text-slate-700">{cohortStr}</span>
+                    <span className="text-slate-400 ml-1">· {sourceCohort?.scenario}</span>
+                  </>
+                ) : (
+                  <span className="text-slate-500">{t('bulk_no_source_cohort')}</span>
+                )}
               </div>
-            )}
+            </div>
 
             {/* Model strategy */}
             <div className="mx-6 mb-4">

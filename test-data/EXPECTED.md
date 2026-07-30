@@ -773,6 +773,30 @@ aggregate above them.
 **The defect exists only in the partially-generated window**, and closing that
 window shrinks the affected population directly.
 
+#### The most visible way to close that window did not close it — fixed 2026-07-30
+
+Until this was fixed, **"Generate Missing" on the Overall Forecast tab did not
+write `forecastStore` at all.** `OverallForecastTab.tsx` ran its own generation
+loop straight into `savedForecasts` (5-part cohort ids, `fKey|type|scenario`),
+never calling `generateAllMissingForecasts`, never writing the 7-part keys
+`matchingBfs` reads, and never recording a `bulkRuns` entry. Confirmed by
+`grep -c "setForecastStore" src/components/OverallForecastTab.tsx` → **0**.
+
+The two stores have different key shapes, so nothing type-errored and the button
+reported success.
+
+**Consequence for the coverage picture above: a user could run "Generate
+Missing" to completion, see it succeed, and still sit at ~80% fallback**, because
+none of what it generated was visible to the accuracy table. Any historic report
+of a high fallback rate from a user who had "generated everything" is consistent
+with this and is not evidence against the denominator analysis.
+
+Its missing-filter had also drifted (no `forecastType` guard, counting What-If
+cohorts), and the tab's status filter had a fifth variant with no `cohortHasData`
+guard — so selecting status "missing" listed the ~10x-inflated cross-product
+while the button beside it counted only populated cohorts. All five now consume
+one `missingStandardCohorts` memo in `App.tsx`.
+
 #### What is actually wrong
 
 The Historical Accuracy table shows **every** cohort (`cohortActualsMap` is

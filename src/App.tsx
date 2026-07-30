@@ -3478,6 +3478,42 @@ export default function App() {
     [populatedCohortKeys],
   );
 
+  // THE canonical "which cohorts still need a Standard Forecast" list.
+  //
+  // This existed as five separate expressions until 2026-07-30: three verbatim
+  // copies in this file (target selection, the prompt trigger, the modal's
+  // missingCount), one drifted copy in OverallForecastTab's "Generate Missing"
+  // button that omitted the forecastType guard, and one in that tab's status
+  // filter that omitted cohortHasData — so the table's "missing" view listed the
+  // ~10x-inflated cross-product while the button beside it counted only
+  // populated cohorts. They agreed only by nobody editing one without the others.
+  //
+  // Anything that needs "the missing cohorts" or "how many are missing" reads
+  // THIS. Do not re-derive membership from allCohorts: cohortHasData is what
+  // keeps tariff's collinearity with product/channel from inflating the count.
+  const missingStandardCohorts = useMemo(
+    () => allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast' && cohortHasData(c)),
+    [allCohorts, cohortHasData],
+  );
+
+  // The ONLY way a standing trigger should raise the bulk-generate prompt.
+  //
+  // bulkSourceCohort is display-only (the "just generated X" pill) and was never
+  // reset once set, so a trigger that showed the prompt without touching it
+  // would inherit whatever cohort was last generated earlier in the session and
+  // claim the user had just generated it. Null-guards in the modal do not catch
+  // that, because the value is stale rather than null. Setting both together
+  // here makes the pairing impossible to break at a call site.
+  //
+  // The post-generation path (setBulkSourceCohort + triggerBulkCheck, in
+  // generateStandardForecast) deliberately does NOT route through this: it must
+  // defer until the new forecast has landed in state, or missingStandardCohorts
+  // would still be counting the cohort that was just generated.
+  const openBulkPrompt = useCallback((source: typeof bulkSourceCohort) => {
+    setBulkSourceCohort(source);
+    if (missingStandardCohorts.length > 0) setShowBulkGeneratePrompt(true);
+  }, [missingStandardCohorts]);
+
   const computeCohortForecastData = useCallback((cohort: any, manualParams?: any, cohortDataMap?: CohortDataMap) => {
     if (cohort.forecastType.startsWith('What-If Analysis')) {
       const scenarioMatch = cohort.forecastType.match(/\(([^)]+)\)/);
@@ -3670,6 +3706,7 @@ export default function App() {
     // generating panel BEFORE the synchronous pre-flight (cohort enumeration +
     // data-map build + worker payload clone). Without this the main thread is
     // blocked for that whole phase and the modal appears frozen at 0%.
+    setIsGeneratingMissing(true);
     setGenerationProgress({ current: 0, total: 0 });
     await new Promise<void>(resolve => setTimeout(resolve, 0));
 
@@ -3695,14 +3732,14 @@ export default function App() {
       wiTariffL2Col,
     );
 
-    // Enumerate only cohorts that actually exist in the data — see the shared
-    // populatedCohortKeys / cohortHasData defined above (used here AND by the
-    // missing-count prompt so they agree). Keeps every data-spanning aggregate
-    // (derived in the worker by summing its constituent leaves), drops only
-    // genuinely-empty combinations, and never keys off the user's tariff selection.
+    // Enumerate only cohorts that actually exist in the data — see the canonical
+    // missingStandardCohorts memo defined above, which every missing-count
+    // consumer now shares. Keeps every data-spanning aggregate (derived in the
+    // worker by summing its constituent leaves), drops only genuinely-empty
+    // combinations, and never keys off the user's tariff selection.
     const targets = options?.cohortIds
       ? allCohorts.filter(c => options.cohortIds!.includes(c.id))
-      : allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast' && cohortHasData(c));
+      : missingStandardCohorts;
 
     // ── Phase 2: Build IBRO cohort list (needed before workers spawn) ────────
     // Enumerate unique L1×L2 combinations that exist in the data.
@@ -3871,6 +3908,7 @@ export default function App() {
     );
 
     setGenerationProgress({ current: 0, total: 0 });
+    setIsGeneratingMissing(false);
     setShortLeafWarnings(prev => ({ ...prev, ...Object.fromEntries(collectedShortLeafWarnings) }));
     setSavedForecasts(prev => ({ ...prev, ...newForecasts }));
 
@@ -3904,14 +3942,13 @@ export default function App() {
     setBulkRuns(prev => [...prev, record]);
 
     return { generated, failed };
-  }, [allCohorts, cohortHasData, computeCohortForecastData, selectedForecastModel, genPreHorizonUncertainty, genPostHorizonExpansionRate, confidenceHorizon, genLength, data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, oneOffMonths]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [allCohorts, missingStandardCohorts, computeCohortForecastData, selectedForecastModel, genPreHorizonUncertainty, genPostHorizonExpansionRate, confidenceHorizon, genLength, data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, oneOffMonths]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // After a single-combo forecast is saved, check whether there are remaining combinations
   // without a forecast and show the bulk-generate prompt if so.
   useEffect(() => {
     if (triggerBulkCheck === 0) return;
-    const missing = allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast' && cohortHasData(c));
-    if (missing.length > 0) {
+    if (missingStandardCohorts.length > 0) {
       setShowBulkGeneratePrompt(true);
     }
   }, [triggerBulkCheck]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -4241,14 +4278,12 @@ export default function App() {
             exportToExcel={openExportModal}
             setSavedForecasts={setSavedForecasts}
             savedForecasts={savedForecasts}
-            computeCohortForecastData={computeCohortForecastData}
-            cohortHasData={cohortHasData}
+            missingCohorts={missingStandardCohorts}
+            onGenerateMissing={() => openBulkPrompt(null)}
             setGeneratingCohort={setGeneratingCohort}
             setViewingCohort={setViewingCohort}
             isGeneratingMissing={isGeneratingMissing}
-            setIsGeneratingMissing={setIsGeneratingMissing}
             generationProgress={generationProgress}
-            setGenerationProgress={setGenerationProgress}
           />
         )}
         
@@ -4303,7 +4338,7 @@ export default function App() {
         isOpen={showBulkGeneratePrompt}
         onClose={() => setShowBulkGeneratePrompt(false)}
         sourceCohort={bulkSourceCohort}
-        missingCount={allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast' && cohortHasData(c)).length}
+        missingCount={missingStandardCohorts.length}
         params={{
           preHorizonUncertainty,
           postHorizonExpansionRate,
