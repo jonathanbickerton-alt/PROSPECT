@@ -734,11 +734,49 @@ table grouped by Tariff L1, loaded cohort Corporate · RED S:
 | `MNC · RED ULTD` | **78 / 96 / 80 / 92** | **0 / 0 / 0 / 0** |
 | the other 23 rows | score normally | **identical** |
 
-**25 of 25 rows score non-zero. 2 are filter-dependent.** Both are `RED ULTD`,
-the unlimited tariff — unexplained, and the first thing to establish before any
-fix. Two failures among twenty-three successes points at something specific to
-those rows (data density, band width, ARPU profile) rather than a structural
-denominator problem.
+**25 of 25 rows score non-zero. 2 are filter-dependent.**
+
+#### Why those two — the mechanism (established 2026-07-30)
+
+`Large Enterprise · RED ULTD` and `MNC · RED ULTD` are the **only two of the 25
+pairs with zero rows of data under Mobile Voice / Direct** — verified by direct
+count: 0 rows each, against 168–336 for every scoring sibling. Both segments do
+sell RED ULTD (840 and 2,352 rows respectively), just never through that
+product/channel combination. Fixture collinearity, not a code defect.
+
+With no data there can be no forecast, so `forecastStore` can never hold a leaf
+for `seg|Mobile Voice|All|Direct|All|RED ULTD|All`. `matchingBfs` is therefore
+empty, and these two rows are **the only ones forced onto the share-scaled
+fallback** (`scaledBandFlow` / `computeAvgShare`). The other 23 take the direct
+`flowBandMaps` / `cohortBaseBandMap` path and **never touch `aggrMap` at all** —
+which is exactly why `Corporate`, `SME` and `SOHO · RED ULTD` score identically
+in both filter states.
+
+Instrumented, `Large Enterprise · RED ULTD`, `computeAvgShare('inflow')`:
+
+| Filter state | share | result |
+|---|---|---|
+| Filtered to RED S | **7.507** | mean lands near LE's scale → 86/94/89/95 |
+| Tariff cleared | **0.169** | mean ≈ 32.9 vs actual 1,435 → 4,264% dev → 0/0/0/0 |
+
+A ~44× swing driven purely by the denominator widening from one tariff to five.
+
+#### BOTH states are wrong — the filtered score is not the correct one
+
+86/94/89/95 is not a passing result that the cleared state breaks. That share is
+**Large Enterprise's cross-product actual divided by Corporate's
+`activeFilter`-scoped total** — a ratio of two unrelated segments with no
+principled reason to sit near 1 — multiplied by **Corporate's own forecast** to
+fabricate a band for a Large Enterprise row. It is a coincidence of scale. Do
+not treat the filtered figures as a target to restore.
+
+#### TRAP — do not fix by clamping
+
+Do **not** cap deviation, floor `primary`, or add a magnitude threshold in
+`calcComponentDetail`. That hides the defect while leaving the nonsensical
+comparison intact. The fix is the per-row, per-L1-ancestry denominator described
+below — comparing one segment's actual against another's filter-scoped total is
+wrong whatever score falls out of it.
 
 #### Why the earlier figures were wrong — read this before trusting a re-run
 
