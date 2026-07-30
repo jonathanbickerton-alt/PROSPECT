@@ -996,11 +996,59 @@ Two consequences a future session must not inherit:
    flat-map and per-cohort attempts "failed criterion 3 identically, which
    points away from the denominator toward `scaledBandFlow`". That argument
    rested on the same artefact that produced the failures.
-2. **Neither denominator fix has ever had a fair test.** Both the reverted
+2. **Neither denominator fix had ever had a fair test.** Both the reverted
    unconditional flat-map change and the per-cohort
    `Map<cohortL1Key, Map<month, AggrSnapshot>>` design were judged against the
-   under-seeded harness. Re-run both against a fully seeded store before
-   concluding anything about either.
+   under-seeded harness. **This was resolved on 2026-07-30 — see the re-test
+   below.**
+
+#### RE-TEST 2026-07-30 — attempt A FAILS on merit; attempt B does not exist
+
+Run on `fix-accuracy-denominator-retest` off main at `018269b`, trimmed
+fixture, `forecastStore` seeded per evidence standard 7, both filter states,
+whole measurement repeated in-session for determinism.
+
+**Attempt B was never implemented.** `Map<string, Map<string, AggrSnapshot>>`
+and `cohortL1Key` appear in **no commit on any branch** — searched with
+`git log --all -S`. The text above describing it as "judged against the
+under-seeded harness" was wrong: it was a design sketch recorded in this file,
+never code, so it was never run at all. Building it is a new implementation,
+not a re-test.
+
+**Attempt A — remove the `hasL2` early return so the L1-only re-aggregation
+runs unconditionally:**
+
+| Criterion | Fully seeded (41 cohorts) | Partially seeded (1 segment of 5, 15 cohorts) |
+|---|---|---|
+| C1 identical filter set/cleared | PASS (0 of 13) | **PASS** (0 of 13, against **8 of 13 on main**) |
+| C2 Corporate·RED canaries unchanged | PASS (0 of 5 moved) | PASS (0 of 5 moved) |
+| C3 no non-zero → zero | PASS (0) | **FAIL — 8 rows** |
+| Determinism (measured twice) | PASS identical | PASS identical |
+| Rows changed vs main | **0 — no-op** | 8 |
+
+**Attempt A fails.** It achieves filter-independence by **degeneracy**: the
+same 8 rows that scored differently between filter states on main now score
+`0/0/0/0` in *both*. Main's tariff-cleared state already zeroed them; attempt A
+makes the filtered state match the broken one rather than fixing either.
+`SOHO · RED S` goes 60/75/61/74 → 0/0/0/0; `SOHO · RED XL` 37/43/37/55 → 0.
+
+The original revert commit `aa925ea` said exactly this. **Its reasoning rested
+on the under-seeded harness and was void; its conclusion was nonetheless
+correct.** The figure was never 20 of 25 — it is 8 of 13 here — but the failure
+mode is real and reproduces on a correctly seeded store.
+
+**Fully seeded, attempt A changes nothing at all (0 rows).** Consistent with
+the coverage analysis above: with every cohort forecast, `matchingBfs` always
+resolves and nothing reaches the denominator fallback. The defect and any fix
+for it are both confined to the partially-generated window.
+
+**Criterion 3 is what caught this, and it nearly did not.** The first
+comparison scored `isZero` with `/^0\/0\/0\/0$/` against cells that actually
+render `0↑ Over/0↑ Over/...`. The regex never matched, so every `isZero()`
+returned false and C3 reported PASS in both directions — attempt A looked like
+it cleared all four criteria. Any future harness must parse the leading number
+out of each component cell, and must confirm the defect REPRODUCES on main
+before crediting a fix with removing it.
 
 #### BRANCH PARKED DELIBERATELY — 2026-07-30
 
