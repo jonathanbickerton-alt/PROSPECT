@@ -94,6 +94,23 @@ because its absence produced a false pass.
    component — a failure that scales with how much your harness omitted is a
    harness result, not a finding.
 
+8. **Follow a write all the way to its reader.** "The code writes the data"
+   is not evidence the data arrives. This project keeps two forecast stores
+   with **different key shapes** — `forecastStore` on the 7-part
+   `makeForecastKey`, `savedForecasts` on the 5-part cohort id
+   (`fKey|forecastType|scenario`) — and `matchingBfs` reads only the first.
+   A generation path wrote exclusively to `savedForecasts` for an unknown
+   period: it reported success, nothing type-errored because both keys are
+   legitimate strings, and everything it produced was invisible to accuracy
+   scoring. Nobody noticed because the write itself was never in doubt.
+
+   So when a change claims to make some data reach a consumer, verify the
+   **format and the destination the consumer actually reads**, by driving the
+   producing function and feeding its real output to the consumer's own lookup
+   logic. `grep -c setForecastStore <file>` returning 0 is the kind of check
+   that settles this in one command. Generalise it: any two structures holding
+   "the same thing" under different key formats can silently diverge.
+
 Write scratch scripts to the scratchpad directory, never into the repo.
 
 ## How you report
