@@ -18,6 +18,54 @@ can assert against concrete facts rather than vague impressions.
 - **Historical data range:** Jan 2023 – Dec 2025
 - **Actuals range:** through **June 2026** — nothing should plot beyond this
   for any actuals series
+
+### The trimmed fixture — use this for routine agent runs
+
+`test-data/VBU_IBRO_Trimmed_TariffHierarchy_Jan2023_Jun2026.xlsx`
+
+**Not in git** — `.gitignore` excludes `/test-data/*.xlsx`, so no fixture is
+tracked and this one follows that convention. Regenerate it from the full
+tariff file with:
+
+```
+npm run build:trimmed-fixture
+```
+
+The generator (`scripts/build-trimmed-fixture.mjs`) IS tracked, and prints the
+preservation table below on every run, so the fixture is reproducible and its
+guarantees are re-asserted rather than trusted.
+
+CLAUDE.md instructs routine agent runs to use a trimmed fixture and reserve
+the full file for pre-merge validation. Until 2026-07-30 no trimmed file
+existed — all four fixtures were 5–8 MB — so that instruction could not be
+followed literally. This one closes that gap.
+
+**12,432 rows (13.7% of 90,720), 74 leaves (of 540), 2.4 MB (of 8.3 MB).**
+
+Built by selecting whole **leaf cohorts** and keeping every row of each —
+never by sampling rows or months, which would break the time series and the
+8-point minimum in `calculateBaseForecast`. It preserves:
+
+| Property | Status |
+|---|---|
+| Section 4's reference cohort (Corporate · IoT Connectivity · Indirect) | **byte-exact** vs the full file — 2,016 rows, all 12 leaves |
+| All 5 segments | yes, ≥2 leaves each |
+| Tariff L1 values | 5 of 5 |
+| Tariff L1\|L2 pairs | 10 of 10 |
+| Months | 42 of 42 |
+| The `RED ULTD` edge case | preserved: Large Enterprise and MNC still have **zero** rows under Mobile Voice / Direct while selling the tariff elsewhere |
+| Corporate · Mobile Voice · Direct tariff canary rows | all 5 tariffs |
+| Column schema and date format | identical (18 columns, `"2023-01"` strings) |
+
+**What it does NOT preserve — read before measuring anything with it.**
+The segment mix is deliberately unrepresentative: Corporate holds 35 of 74
+leaves (47%) against 108 of 540 (20%) in the full file, because the reference
+cohort and the tariff canaries are both Corporate. **Any rate expressed as a
+fraction of all rows will therefore differ.** The section 16b coverage
+measurement returns 57.9% here against 79.6% on the full fixture — the
+structure reproduces exactly (0% fully generated, substantial with one segment
+generated) but the magnitude does not. Re-derive any prevalence figure on the
+full file; use this one for behavioural checks, not for rates.
 - **Forecast horizon:** through Dec 2027 (24 months from forecast start)
 - Almost every PROSPECT bug is data-dependent. Agents MUST load this file
   before testing — code-only reasoning will not reproduce most issues.
@@ -920,6 +968,38 @@ making every cohort equally unscoreable.
 It would only change which cohorts reach the already-correct branch. The defect
 is the existence of a filter-scoped fallback, not which cohorts reach it.
 
+
+### savedForecasts / forecastStore divergence on delete — OPEN, needs its own pass
+
+**Same class as the "Generate Missing" defect fixed in `ec3c79a`, but a
+different instance. Fixing that one did not fix this one.**
+
+The project keeps two stores holding the same concept under **different key
+shapes**: `forecastStore` on the 7-part `makeForecastKey`, and `savedForecasts`
+on the 5-part cohort id (`fKey|forecastType|scenario`). Nothing type-errors when
+they disagree, because both keys are legitimate strings.
+
+The generate-side divergence is closed — every generation path now writes both.
+**The delete side is not.** In `OverallForecastTab`, both "Clear All"
+(`setSavedForecasts({})`) and the per-row delete remove the entry from
+`savedForecasts` **without pruning the corresponding `forecastStore` entry**.
+The typed forecast survives, so:
+
+- the cohort still reads `hasForecast: true` via `forecastStore.has(fKey)` in
+  `allCohorts`, so it never reappears in `missingStandardCohorts` and bulk
+  generation will not regenerate it;
+- `matchingBfs` keeps resolving it, so the accuracy table scores against a
+  forecast the user believes they deleted.
+
+**Pre-existing and untouched by `ec3c79a`** — that diff changed only the
+generate side. Recorded here rather than left as a gate observation because
+gate findings expire with the conversation and this one has a real user-visible
+consequence: a delete that does not delete.
+
+**Needs its own pass, starting with a dependency-mapper run** over every writer
+of both stores — there are nine `setForecastStore` call sites in `App.tsx`
+alone, and the question of which deletes should prune which store is a design
+decision, not a mechanical sweep. Do not fold it into an unrelated branch.
 
 ### broadAggrSnapshotMap `hasL2` gate — related, unmeasured detail
 
