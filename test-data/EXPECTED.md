@@ -1233,6 +1233,72 @@ that the deferred ARPU/revenue tooltip phase would touch. A session widening
 is real, and "fix" it — which is exactly when the mismatch becomes shipped
 behaviour.
 
+### `broadAggrSnapshotMap` excludes tariff DELIBERATELY — do not "fix" it
+
+A dependency-mapper pass correctly observed that this map filters segment,
+product L1 and channel L1 only, and that **no comment claimed the tariff
+omission was intentional** — so it looked like drift from the tariff dimension
+landing, the same class as `summaryMape`'s missing `tarMatch`. It is not.
+Closing the documentation gap here, without changing behaviour:
+
+**Adding `tariffL1` would break the map's purpose.** It is the BROAD share
+denominator. Its own comment already warns that scoping it to all seven cohort
+fields makes it as narrow as `actualsAggrMap`'s cohort branch, collapsing every
+share toward 1 and destroying the band-scaling it exists to perform. Tariff is
+**collinear with product and channel** in this data, so including tariffL1
+narrows the denominator toward the loaded cohort itself — which is precisely
+that failure, not a fix for drift.
+
+**And it is doubly not worth changing:** the share-scaled path this denominator
+feeds is apparently unreachable (0 of 4,416 band lookups — see the share-scaled
+subsection above), so even a correct change here would move nothing.
+
+Converted to the shared predicate at `L1_ONLY` on 2026-07-31 and measured
+byte-identical across five rendered states. The `ScopeDims` argument exists
+largely for this site: a predicate that always compared seven fields could not
+serve it.
+
+### `WhatIfConfig` cannot express L2 or tariff — OPEN, sized 2026-07-31
+
+`WhatIfConfig` (`forecasting.ts`) carries `wiSegmentCol`, `wiProductCol` and
+`wiChannelCol` only. `computeWhatIfData`'s scope arguments are three loose
+strings. **L2 and tariff cannot be expressed at that boundary at all.**
+
+`computeCohortForecastData` (`App.tsx`) passes only
+`cohort.segment / product / channel` — silently dropping four of the seven
+fields from a cohort object that carries all seven, and that uses all seven two
+branches later for the Standard Forecast key. So a bulk-generated What-If for an
+L2- or tariff-specific cohort is scoped to every sibling under its L1 triple.
+
+**Sizing — how many cohorts this affects if the config is widened:**
+
+| Fixture | Populated cohorts | Scoped too wide | Collapse groups | Largest group | Median group |
+|---|---|---|---|---|---|
+| Trimmed | 1,934 | **1,859 (96.1%)** | 75 | 154 cohorts → 1 scope | 14 |
+| Full tariff | 7,964 | **7,874 (98.9%)** | 90 | 238 cohorts → 1 scope | 89 |
+
+Counted over `populatedCohortKeys`' own construction (every hierarchical
+ancestor of each populated leaf), classifying a cohort as pooled when any of
+productL2 / channelL2 / tariffL1 / tariffL2 is non-`All`.
+
+#### Requirements before `computeWhatIfData` converts — OPEN DEFECT
+
+1. **Its own branch.** Not folded into a scoping refactor.
+2. **Its own before/after**, on a sample of the affected cohorts, showing the
+   numeric change to bulk-generated What-If output.
+3. **An explicit decision from the user**, recorded, before conversion.
+
+`computeWhatIfData` is therefore the one site the predicate-unification branch
+deliberately leaves unconverted. Converting it silently would change nearly
+every bulk-generated What-If number under cover of a refactor whose other
+commits are all measured byte-identical.
+
+**This is why the widening is a separate decision.** It is not a rider on a
+scoping refactor: it changes the numeric output of ~99% of bulk-generated
+What-If cohorts, and on the full fixture the median affected scope currently
+pools 89 cohorts into one. Accept it explicitly, with a before/after on a
+sample of those cohorts, or leave `computeWhatIfData` unconverted.
+
 ### Dead code — `exportToExcel` was dead, and was mistaken for a live defect
 
 **DELETED 2026-07-31** (`App.tsx`, ~146 lines). It was declared, never invoked,

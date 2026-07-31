@@ -15,6 +15,7 @@ import { useForecast } from '../context/ForecastContext';
 import { CohortDimCheckboxes } from './CohortDimCheckboxes';
 import type { ViewFilter } from './ViewFilterBar';
 import type { CohortDims } from './CohortDimCheckboxes';
+import { rowInScope, cohortInScope, dimsFromGrouping, ALL_DIMS, L1_ONLY } from '../utils/cohortScope';
 
 // ---------------------------------------------------------------------------
 // Props — all IBRO column mappings come from App; forecast data from context
@@ -223,26 +224,16 @@ export function computeForecastMape(
   const cohort = bf.cohort;
 
   // Scope data to this forecast's cohort (including L2 when present on the cohort)
-  const filteredData = data.filter(row => {
-    if (wiSegmentCol && cohort.segment !== 'All' &&
-        String(row[wiSegmentCol]).trim() !== cohort.segment.trim()) return false;
-    if (wiProductCol && cohort.product !== 'All' &&
-        String(row[wiProductCol]).trim() !== cohort.product.trim()) return false;
-    if (wiProductL2Col && cohort.productL2 && cohort.productL2 !== 'All' &&
-        String(row[wiProductL2Col]).trim() !== cohort.productL2.trim()) return false;
-    if (wiChannelCol && cohort.channel !== 'All' &&
-        String(row[wiChannelCol]).trim() !== cohort.channel.trim()) return false;
-    if (wiChannelL2Col && cohort.channelL2 && cohort.channelL2 !== 'All' &&
-        String(row[wiChannelL2Col]).trim() !== cohort.channelL2.trim()) return false;
-    // Tariff L1/L2. Without these the actuals were aggregated tariff-blind while
-    // bf.cohort is tariff-scoped, so the MAPE cards showed ~97.7% for a tariff
-    // cohort while the variance table below them showed ~2% on the same render.
-    if (wiTariffL1Col && cohort.tariffL1 && cohort.tariffL1 !== 'All' &&
-        String(row[wiTariffL1Col]).trim() !== cohort.tariffL1.trim()) return false;
-    if (wiTariffL2Col && cohort.tariffL2 && cohort.tariffL2 !== 'All' &&
-        String(row[wiTariffL2Col]).trim() !== cohort.tariffL2.trim()) return false;
-    return true;
-  });
+  // Shared predicate, all seven dimensions. The tariff clauses this replaces
+  // are the +97.7% fix: without them the actuals were aggregated tariff-blind
+  // while bf.cohort is tariff-scoped, so the MAPE cards read ~97.7% for a tariff
+  // cohort while the variance table below them read ~2% on the same render.
+  // Guarded by npm run traps (trap A), not by this comment.
+  const filteredData = data.filter(row => rowInScope(row, {
+    segment: wiSegmentCol, product: wiProductCol, productL2: wiProductL2Col,
+    channel: wiChannelCol, channelL2: wiChannelL2Col,
+    tariffL1: wiTariffL1Col, tariffL2: wiTariffL2Col,
+  }, cohort, ALL_DIMS));
 
   // Build monthly actuals aggregate — per-scenario revenue + subs for all 4 IBRO types
   type Bucket = {
@@ -413,7 +404,19 @@ function dedupeContainedForecasts(
     .map(e => e.bf);
 }
 
-/** True if the loaded forecast's cohort scope equals the filter bar scope exactly. */
+/**
+ * True if the loaded forecast's cohort scope EQUALS the filter bar scope exactly.
+ *
+ * NOT converted to cohortInScope, deliberately. This asks a third question:
+ * equality, where 'All' is a real value on both sides. cohortInScope treats
+ * 'All' on the scope side as a WILDCARD, so a RED S cohort would match a
+ * cleared tariff filter -- true under scoping, false under equality, and both
+ * call sites here want equality ("is the loaded forecast exactly what the
+ * filter bar is showing?").
+ *
+ * Equality, scoping and containment (scopeContains) are three distinct
+ * questions. Collapsing them is how the original sprawl started.
+ */
 function cohortMatchesFilter(cohort: BaseForecast['cohort'], filter: ViewFilter): boolean {
   return cohort.segment === (filter.segment || 'All')
     && cohort.product === (filter.product.l1 ?? 'All')
@@ -645,15 +648,22 @@ function buildCohortAccuracy(
     const matchingBfs: BFEarly[] = (() => {
       if (cohortSrcEarly) return [cohortSrcEarly];
       const candidates: BFEarly[] = [];
+      // Shared predicate. The store key is the candidate, this row's dims are
+      // the scope, and the view's group-by checkboxes are the ScopeDims -- which
+      // is why product and channelL1 are gateable rather than always applied.
+      const rowScope = { segment: d.seg, product: d.prod, productL2: d.prodL2,
+        channel: d.chan, channelL2: d.chanL2, tariffL1: d.tariffL1, tariffL2: d.tariffL2 };
+      const matchDims = dimsFromGrouping({
+        product: dims.product, productL2: dims.productL2,
+        channelL1: dims.channelL1, channelL2: dims.channelL2,
+        tariffL1: dims.tariffL1, tariffL2: dims.tariffL2,
+      });
       for (const [key, bf] of forecastStore.entries()) {
         const p = key.split('|');
         if (p[0] !== d.seg) continue;
-        if (dims.product   && d.prod   !== 'All' && p[1] !== d.prod)   continue;
-        if (dims.productL2 && d.prodL2 !== 'All' && p[2] !== d.prodL2) continue;
-        if (dims.channelL1 && d.chan   !== 'All' && p[3] !== d.chan)    continue;
-        if (dims.channelL2 && d.chanL2 !== 'All' && p[4] !== d.chanL2) continue;
-        if (dims.tariffL1  && d.tariffL1 !== 'All' && p[5] !== d.tariffL1) continue;
-        if (dims.tariffL2  && d.tariffL2 !== 'All' && p[6] !== d.tariffL2) continue;
+        if (!cohortInScope({ segment: p[0], product: p[1], productL2: p[2],
+              channel: p[3], channelL2: p[4], tariffL1: p[5], tariffL2: p[6] },
+              rowScope, matchDims)) continue;
         candidates.push(bf);
       }
       // When productL2 is not a GROUP-BY dimension the store may contain both
@@ -771,16 +781,13 @@ function buildCohortAccuracy(
       for (const [key, rawMonthMap] of cohortActualsMap.entries()) {
         const [kSeg, kProd, kProdL2, kChan, kChanL2, kTariffL1, kTariffL2] = key.split('|');
         if (kSeg !== d.seg) continue;
-        const covered = matchingBfs.some(bf => {
-          const c = bf.cohort;
-          if (c.product  !== 'All' && c.product  !== kProd)   return false;
-          if (c.productL2 && c.productL2 !== 'All' && c.productL2 !== kProdL2) return false;
-          if (c.channel  !== 'All' && c.channel  !== kChan)   return false;
-          if (c.channelL2 && c.channelL2 !== 'All' && c.channelL2 !== kChanL2) return false;
-          if (c.tariffL1 && c.tariffL1 !== 'All' && c.tariffL1 !== kTariffL1) return false;
-          if (c.tariffL2 && c.tariffL2 !== 'All' && c.tariffL2 !== kTariffL2) return false;
-          return true;
-        });
+        // Shared predicate, direction reversed from matchingBfs above: here the
+        // ACTUALS key is the candidate and the forecast's cohort is the scope,
+        // asking whether this actuals bucket is covered by any matched forecast.
+        const covered = matchingBfs.some(bf => cohortInScope(
+          { segment: kSeg, product: kProd, productL2: kProdL2,
+            channel: kChan, channelL2: kChanL2, tariffL1: kTariffL1, tariffL2: kTariffL2 },
+          bf.cohort, ALL_DIMS));
         if (!covered) continue;
         for (const [month, entry] of rawMonthMap.entries()) {
           if (!scoped.has(month)) {
@@ -1587,52 +1594,29 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     // When activeFilter is null, fall back to baseForecast.cohort as the scope so
     // the "unfiltered" view still respects the forecast's native dimension scope.
     const cohort = baseForecast?.cohort;
-    const filteredData = data.filter(row => {
-      if (activeFilter) {
-        // activeFilter is the sole authority — ignore baseForecast.cohort entirely.
-        if (wiSegmentCol && activeFilter.segment && activeFilter.segment !== 'All' &&
-            String(row[wiSegmentCol]).trim() !== activeFilter.segment.trim()) return false;
-        if (wiProductCol && activeFilter.product.l1 &&
-            String(row[wiProductCol]).trim() !== activeFilter.product.l1.trim()) return false;
-        if (wiProductL2Col && activeFilter.product.l2 &&
-            String(row[wiProductL2Col]).trim() !== activeFilter.product.l2.trim()) return false;
-        if (wiChannelCol && activeFilter.channel.l1 &&
-            String(row[wiChannelCol]).trim() !== activeFilter.channel.l1.trim()) return false;
-        if (wiChannelL2Col && activeFilter.channel.l2 &&
-            String(row[wiChannelL2Col]).trim() !== activeFilter.channel.l2.trim()) return false;
-        // Tariff L1/L2 — added 2026-07-29. Their absence made this predicate
-        // 5-part and tariff-blind, so a tariff-scoped cohort's Base ACTUAL was
-        // summed across every tariff leg while the Baseline it is compared
-        // against comes from forecastStore's full 7-part key. On
-        // Corporate·Mobile Voice·Direct·RED S that read 75,468 against 1,693
-        // (+97.7%) for every month. Guarded on !== 'All' so files with no tariff
-        // column, and All-tariff views, are unaffected.
-        if (wiTariffL1Col && activeFilter.tariff?.l1 && activeFilter.tariff.l1 !== 'All' &&
-            String(row[wiTariffL1Col]).trim() !== activeFilter.tariff.l1.trim()) return false;
-        if (wiTariffL2Col && activeFilter.tariff?.l2 && activeFilter.tariff.l2 !== 'All' &&
-            String(row[wiTariffL2Col]).trim() !== activeFilter.tariff.l2.trim()) return false;
-      } else if (cohort) {
-        // No activeFilter — use baseForecast.cohort scope as the default.
-        if (wiSegmentCol && cohort.segment !== 'All' &&
-            String(row[wiSegmentCol]).trim() !== cohort.segment.trim()) return false;
-        if (wiProductCol && cohort.product !== 'All' &&
-            String(row[wiProductCol]).trim() !== cohort.product.trim()) return false;
-        if (wiProductL2Col && cohort.productL2 && cohort.productL2 !== 'All' &&
-            String(row[wiProductL2Col]).trim() !== cohort.productL2.trim()) return false;
-        if (wiChannelCol && cohort.channel !== 'All' &&
-            String(row[wiChannelCol]).trim() !== cohort.channel.trim()) return false;
-        if (wiChannelL2Col && cohort.channelL2 && cohort.channelL2 !== 'All' &&
-            String(row[wiChannelL2Col]).trim() !== cohort.channelL2.trim()) return false;
-        // Tariff L1/L2 — see the note in the activeFilter branch above. The
-        // truthy check matters here as well as the 'All' check: cohort.tariffL1
-        // is undefined on forecasts saved before Phase 2a introduced tariff.
-        if (wiTariffL1Col && cohort.tariffL1 && cohort.tariffL1 !== 'All' &&
-            String(row[wiTariffL1Col]).trim() !== cohort.tariffL1.trim()) return false;
-        if (wiTariffL2Col && cohort.tariffL2 && cohort.tariffL2 !== 'All' &&
-            String(row[wiTariffL2Col]).trim() !== cohort.tariffL2.trim()) return false;
-      }
-      return true;
-    });
+    // Shared predicate. The activeFilter XOR cohort branching is preserved
+    // exactly: when the user has chosen a scope, activeFilter is the SOLE
+    // authority. ANDing it with baseForecast.cohort empties the result set for
+    // any segment the loaded forecast was not built for -- see the note above.
+    //
+    // The tariff dimensions here are the +97.7% fix (Corporate/Mobile Voice/
+    // Direct/RED S read 75,468 against 1,693 every month while the actuals were
+    // aggregated tariff-blind). Guarded now by npm run traps, trap A.
+    const scopeCols = {
+      segment: wiSegmentCol, product: wiProductCol, productL2: wiProductL2Col,
+      channel: wiChannelCol, channelL2: wiChannelL2Col,
+      tariffL1: wiTariffL1Col, tariffL2: wiTariffL2Col,
+    };
+    const filterScope = activeFilter ? {
+      segment: activeFilter.segment,
+      product: activeFilter.product.l1, productL2: activeFilter.product.l2,
+      channel: activeFilter.channel.l1, channelL2: activeFilter.channel.l2,
+      tariffL1: activeFilter.tariff?.l1, tariffL2: activeFilter.tariff?.l2,
+    } : null;
+    const filteredData = data.filter(row =>
+      filterScope ? rowInScope(row, scopeCols, filterScope, ALL_DIMS)
+      : cohort ? rowInScope(row, scopeCols, cohort, ALL_DIMS)
+      : true);
 
     filteredData.forEach(row => {
       const rawDate = row[wiDateCol];
@@ -1925,18 +1909,19 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     // unfiltered by activeFilter), producing garbage share ratios → MAPE = 0.
     type Bucket = { inflow: number; outflow: number; retention: number };
     const map = new Map<string, Bucket>();
-    const filteredData = data.filter(row => {
-      // L1-only cohort scope (strip L2 filter — broadAggrSnapshotMap is the L1 denominator)
-      if (cohort) {
-        if (wiSegmentCol && cohort.segment !== 'All' &&
-            String(row[wiSegmentCol]).trim() !== cohort.segment.trim()) return false;
-        if (wiProductCol && cohort.product !== 'All' &&
-            String(row[wiProductCol]).trim() !== cohort.product.trim()) return false;
-        if (wiChannelCol && cohort.channel !== 'All' &&
-            String(row[wiChannelCol]).trim() !== cohort.channel.trim()) return false;
-      }
-      return true;
-    });
+    // Shared predicate, L1_ONLY. The L2 stripping is deliberate and is exactly
+    // why the predicate takes a ScopeDims argument rather than always comparing
+    // seven fields — see src/utils/cohortScope.ts.
+    //
+    // TARIFF IS ALSO EXCLUDED, and that is NOT covered by the "strip L2" intent.
+    // It was never added when the tariff dimension landed. Preserved here
+    // deliberately so this conversion is measurable as behaviour-identical.
+    // Whether to include tariffL1 is a separate question with its own numbers:
+    // tariff is collinear with product/channel in this data, and narrowing the
+    // BROAD denominator is exactly what the comment above warns against.
+    const broadCols = { segment: wiSegmentCol, product: wiProductCol, channel: wiChannelCol };
+    const filteredData = data.filter(row =>
+      !cohort || rowInScope(row, broadCols, cohort, L1_ONLY));
     filteredData.forEach(row => {
       const rawDate = row[wiDateCol];
       if (!rawDate) return;
@@ -2869,30 +2854,19 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
 
     // Collect all forecasts that match the active filter (supports hierarchical L1/L2 selections)
     const matching: import('../types/forecast').BaseForecast[] = [];
+    // Shared predicate. The four hand-rolled *Match expressions this replaces
+    // were hierarchical-partial matching against the filter bar; the tariff one
+    // was added last and its absence is the defect trap B guards -- without it a
+    // tariff-scoped filter did not narrow the forecast set, so every tariff
+    // sibling was averaged into the summary cards.
+    const filterScope = {
+      segment: activeFilter?.segment,
+      product: activeFilter?.product?.l1, productL2: activeFilter?.product?.l2,
+      channel: activeFilter?.channel?.l1, channelL2: activeFilter?.channel?.l2,
+      tariffL1: activeFilter?.tariff?.l1, tariffL2: activeFilter?.tariff?.l2,
+    };
     for (const bf of forecastStore.values()) {
-      const { segment, product, productL2, channel, channelL2, tariffL1, tariffL2 } = bf.cohort;
-      const afSeg  = activeFilter?.segment;
-      const afProd = activeFilter?.product;
-      const afChan = activeFilter?.channel;
-      const afTar  = activeFilter?.tariff;
-      const segMatch  = !afSeg || afSeg === 'All' || afSeg === segment;
-      const prodMatch =
-        !afProd?.l1 ||
-        (afProd.l1 === product &&
-          (!afProd.l2 || afProd.l2 === (productL2 || 'All')));
-      const chanMatch =
-        !afChan?.l1 ||
-        (afChan.l1 === channel &&
-          (!afChan.l2 || afChan.l2 === (channelL2 || 'All')));
-      // Without tarMatch a tariff-scoped filter does not narrow the forecast
-      // set, so every tariff sibling is averaged into the summary cards.
-      const tarMatch =
-        !afTar?.l1 || afTar.l1 === 'All' ||
-        (afTar.l1 === (tariffL1 || 'All') &&
-          (!afTar.l2 || afTar.l2 === 'All' || afTar.l2 === (tariffL2 || 'All')));
-      if (segMatch && prodMatch && chanMatch && tarMatch) {
-        matching.push(bf);
-      }
+      if (cohortInScope(bf.cohort, filterScope, ALL_DIMS)) matching.push(bf);
     }
 
     if (!matching.length) return empty;
