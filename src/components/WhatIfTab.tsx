@@ -373,6 +373,56 @@ function groupByCampaign(events: MarketEvent[]): Map<string, { rows: MarketEvent
  *  the Custom Promotion Card's mix arm (Phase 4). Clamps the changed tier and
  *  redistributes the remainder across the others proportionally to their
  *  current share, so the total always sums to exactly 100. */
+/**
+ * Seed a tier mix when the tier list changes, PRESERVING weights the user or a
+ * restored event already set for tiers that survive.
+ *
+ * This used to unconditionally reset every tier to equal weights. That silently
+ * destroyed a restored mix: handleEditPromoStart sets newPromo and
+ * promoDraftMix in the same callback, newPromo changes the cohort the tier list
+ * derives from, and if the recomputed tiers differ at all the reset effect fires
+ * on the next render and overwrites the just-restored mix before the user sees
+ * it. Editing a promotion appeared to work and quietly discarded its mix.
+ *
+ * Rule: keep any weight already present for a surviving tier, give genuinely new
+ * tiers an even share of what is left, then normalise to 100. With no prior mix
+ * every tier is new and this reduces exactly to the old equal-weight behaviour.
+ */
+export function seedMixPreserving(
+  prev: Record<string, number>,
+  tiers: string[],
+): Record<string, number> {
+  if (tiers.length === 0) return {};
+  const kept = tiers.filter(t => typeof prev[t] === 'number' && isFinite(prev[t]));
+  const fresh = tiers.filter(t => !kept.includes(t));
+  const keptSum = kept.reduce((s, t) => s + prev[t], 0);
+  const out: Record<string, number> = {};
+  if (!kept.length) {
+    // No prior weights at all — the original equal-weight seed, unchanged.
+    const eq = 100 / tiers.length;
+    tiers.forEach((t, i) => {
+      out[t] = i === tiers.length - 1 ? 100 - eq * (tiers.length - 1) : eq;
+    });
+    return out;
+  }
+  const remaining = Math.max(0, 100 - keptSum);
+  const share = fresh.length ? remaining / fresh.length : 0;
+  for (const t of kept) out[t] = prev[t];
+  for (const t of fresh) out[t] = share;
+  // Normalise so the total is exactly 100 even when the kept weights did not sum
+  // to it (a partial tier overlap leaves keptSum below or above 100).
+  const total = tiers.reduce((sum, t) => sum + out[t], 0);
+  if (total > 0 && Math.abs(total - 100) > 1e-9) {
+    const k = 100 / total;
+    for (const t of tiers) out[t] = out[t] * k;
+  }
+  // Last tier absorbs any floating-point residual so the total reads exactly 100.
+  const last = tiers[tiers.length - 1];
+  const others = tiers.slice(0, -1).reduce((sum, t) => sum + out[t], 0);
+  out[last] = 100 - others;
+  return out;
+}
+
 function autoBalanceMix(prev: Record<string, number>, changedTier: string, newValue: number): Record<string, number> {
   const clamped = Math.min(100, Math.max(0, newValue));
   const others = Object.keys(prev).filter(t => t !== changedTier);
@@ -1161,18 +1211,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     else if (mixAxis === 'tariff' && !tariffAxisAvailable && valueAxisAvailable) setMixAxis('value');
   }, [mixAxis, valueAxisAvailable, tariffAxisAvailable]);
 
-  // Seed draftMix with equal weights whenever tiers change
+  // Seed draftMix when tiers change, preserving weights already set for tiers
+  // that survive — see seedMixPreserving. Overwriting unconditionally destroys a
+  // mix restored by an edit-start handler on the very next render.
   useEffect(() => {
-    if (yieldTierData.length === 0) { setDraftMix({}); return; }
-    const eq = 100 / yieldTierData.length;
-    const init: Record<string, number> = {};
-    yieldTierData.forEach((t, i) => {
-      // last tier absorbs rounding residual so total is exactly 100
-      init[t.tier] = i === yieldTierData.length - 1
-        ? 100 - eq * (yieldTierData.length - 1)
-        : eq;
-    });
-    setDraftMix(init);
+    setDraftMix(prev => seedMixPreserving(prev, yieldTierData.map(t => t.tier)));
   }, [yieldTierData.map(t => t.tier).join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-balancing slider handler
@@ -1249,17 +1292,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   const promoTariffAxisAvailable = !!wiTariffL1Col && selectedTariffs.length > 0;
 
-  // Seed promoDraftMix with equal weights whenever tiers change
+  // Same preserving seed as draftMix above. This is the site the bug was found
+  // on: handleEditPromoStart restores promoMix and changes newPromo in one
+  // callback, and the recomputed tier list firing this effect wiped the restore.
   useEffect(() => {
-    if (promoTierData.length === 0) { setPromoDraftMix({}); return; }
-    const eq = 100 / promoTierData.length;
-    const init: Record<string, number> = {};
-    promoTierData.forEach((t, i) => {
-      init[t.tier] = i === promoTierData.length - 1
-        ? 100 - eq * (promoTierData.length - 1)
-        : eq;
-    });
-    setPromoDraftMix(init);
+    setPromoDraftMix(prev => seedMixPreserving(prev, promoTierData.map(t => t.tier)));
   }, [promoTierData.map(t => t.tier).join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePromoSliderChange = useCallback((changedTier: string, newValue: number) => {
