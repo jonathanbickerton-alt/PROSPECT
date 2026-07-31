@@ -1453,7 +1453,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       addYieldEvent(event);
     }
     setNewYieldEvent({});
-  }, [newYieldEvent, draftMix, yieldTierData, addYieldEvent, editingYieldId, updateYieldEvent, setNewYieldEvent]);
+  }, [newYieldEvent, draftMix, mixAxis, yieldTierData, addYieldEvent, editingYieldId, updateYieldEvent, setNewYieldEvent]);
 
   // ── All unique tiers across saved yield events (for table header) ──────────
   const allYieldTiers = useMemo(() => {
@@ -3325,6 +3325,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                     />
                   </div>
+                  {editingPricingId && (
+                    <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                      {t('whatif_editing_event_modify_the_fields_above_then_cl')}
+                    </div>
+                  )}
                   <button
                     onClick={handleAddPricingEvent}
                     disabled={!newPricingEvent.month || newPricingEvent.amount === undefined}
@@ -3378,7 +3384,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             : Math.max(0, baseArpu + amt);
                           const delta = adjustedArpu - baseArpu;
                           return (
-                            <tr key={pe.id} className="hover:bg-slate-50 transition-colors">
+                            <tr key={pe.id} className={`transition-colors ${
+                              editingPricingId === pe.id
+                                ? 'bg-amber-50/60 ring-1 ring-inset ring-amber-300'
+                                : 'hover:bg-slate-50'
+                            }`}>
                               <td className="px-4 py-2.5 font-medium text-slate-700">{fmtMonth(pe.month)}</td>
                               <td className="px-4 py-2.5 text-slate-600">{pe.segment}</td>
                               <td className="px-4 py-2.5 text-slate-600">{pe.product}</td>
@@ -3432,8 +3442,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 <button
                                   type="button"
                                   onClick={(e) => { e.stopPropagation(); handleEditPricingStart(pe); }}
-                                  className="text-slate-300 hover:text-slate-600 transition-colors mr-2"
-                                  title={t('whatif_edit')}
+                                  className={`p-1 rounded transition-colors mr-1 ${
+                                    editingPricingId === pe.id
+                                      ? 'text-amber-600 bg-amber-100'
+                                      : 'text-slate-400 hover:text-[#e60000] hover:bg-[#e60000]/5'
+                                  }`}
+                                  title={editingPricingId === pe.id ? t('whatif_currently_editing') : t('whatif_edit_event')}
                                 >
                                   <Pencil size={14} />
                                 </button>
@@ -4301,6 +4315,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                     />
                   </div>
+                  {editingYieldId && (
+                    <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                      {t('whatif_editing_event_modify_the_fields_above_then_cl')}
+                    </div>
+                  )}
                   <button
                     onClick={handleAddYieldEvent}
                     disabled={yieldTierData.length === 0 || !newYieldEvent.month}
@@ -4365,7 +4385,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           return (
                             <React.Fragment key={evt.id}>
                               {/* Baseline row */}
-                              <tr className="hover:bg-slate-50 transition-colors">
+                              <tr className={`transition-colors ${
+                                editingYieldId === evt.id
+                                  ? 'bg-amber-50/60 ring-1 ring-inset ring-amber-300'
+                                  : 'hover:bg-slate-50'
+                              }`}>
                                 <td className="px-4 py-2.5 font-medium text-slate-700" rowSpan={2}>{fmtMonth(evt.month)}</td>
                                 <td className="px-4 py-2.5 text-slate-500" rowSpan={2}>
                                   <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${evt.ibro === 'Inflow' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
@@ -4405,10 +4429,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                   <button
                                     type="button"
                                     onClick={(e) => { e.stopPropagation(); handleEditYieldStart(evt); }}
-                                    className="text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-100 transition-colors mr-1"
-                                    title={t('whatif_edit')}
+                                    className={`p-1 rounded transition-colors mr-1 ${
+                                      editingYieldId === evt.id
+                                        ? 'text-amber-600 bg-amber-100'
+                                        : 'text-slate-400 hover:text-[#e60000] hover:bg-[#e60000]/5'
+                                    }`}
+                                    title={editingYieldId === evt.id ? t('whatif_currently_editing') : t('whatif_edit_event')}
                                   >
-                                    <Pencil size={13} />
+                                    <Pencil size={14} />
                                   </button>
                                   <button
                                     type="button"
@@ -4421,7 +4449,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               </tr>
 
                               {/* Adjusted row */}
-                              <tr className="hover:bg-slate-50 transition-colors border-b border-slate-200">
+                              <tr className={`transition-colors border-b border-slate-100 ${
+                                editingYieldId === evt.id
+                                  ? 'bg-amber-50/60'
+                                  : 'hover:bg-slate-50'
+                              }`}>
                                 {allYieldTiers.map(tier => {
                                   const mixPct = evt.tariffMix[tier] ?? null;
                                   const baseArpu = evt.tariffBaseArpu[tier] ?? null;
