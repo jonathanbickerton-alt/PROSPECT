@@ -1233,6 +1233,35 @@ that the deferred ARPU/revenue tooltip phase would touch. A session widening
 is real, and "fix" it — which is exactly when the mismatch becomes shipped
 behaviour.
 
+### `WhatIfConfig` cannot express L2 or tariff — OPEN, sized 2026-07-31
+
+`WhatIfConfig` (`forecasting.ts`) carries `wiSegmentCol`, `wiProductCol` and
+`wiChannelCol` only. `computeWhatIfData`'s scope arguments are three loose
+strings. **L2 and tariff cannot be expressed at that boundary at all.**
+
+`computeCohortForecastData` (`App.tsx`) passes only
+`cohort.segment / product / channel` — silently dropping four of the seven
+fields from a cohort object that carries all seven, and that uses all seven two
+branches later for the Standard Forecast key. So a bulk-generated What-If for an
+L2- or tariff-specific cohort is scoped to every sibling under its L1 triple.
+
+**Sizing — how many cohorts this affects if the config is widened:**
+
+| Fixture | Populated cohorts | Scoped too wide | Collapse groups | Largest group | Median group |
+|---|---|---|---|---|---|
+| Trimmed | 1,934 | **1,859 (96.1%)** | 75 | 154 cohorts → 1 scope | 14 |
+| Full tariff | 7,964 | **7,874 (98.9%)** | 90 | 238 cohorts → 1 scope | 89 |
+
+Counted over `populatedCohortKeys`' own construction (every hierarchical
+ancestor of each populated leaf), classifying a cohort as pooled when any of
+productL2 / channelL2 / tariffL1 / tariffL2 is non-`All`.
+
+**This is why the widening is a separate decision.** It is not a rider on a
+scoping refactor: it changes the numeric output of ~99% of bulk-generated
+What-If cohorts, and on the full fixture the median affected scope currently
+pools 89 cohorts into one. Accept it explicitly, with a before/after on a
+sample of those cohorts, or leave `computeWhatIfData` unconverted.
+
 ### Dead code — `exportToExcel` was dead, and was mistaken for a live defect
 
 **DELETED 2026-07-31** (`App.tsx`, ~146 lines). It was declared, never invoked,
