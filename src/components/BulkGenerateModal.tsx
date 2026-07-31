@@ -168,11 +168,19 @@ export function BulkGenerateModal({
                 reachable. missingCount is the real number in all cases. */}
             {missingCount >= SCALE_WARN_THRESHOLD && (
               <div className="px-6 pb-3">
-                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-start gap-2.5">
-                  <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5" />
-                  <div className="text-xs text-amber-900 leading-relaxed">
-                    <p className="font-semibold">{t('bulk_large_run_title', { count: missingCount.toLocaleString() })}</p>
-                    <p className="text-amber-700 mt-0.5">{t('bulk_large_run_detail')}</p>
+                {/* Matches the established amber alert in ForecastVsActualsTab
+                    ("No actuals data found") on the parts that carry the
+                    convention: icon size 18, amber-500 icon, text-sm
+                    font-semibold amber-900 title with mb-1, text-xs amber-700
+                    leading-relaxed detail, gap-3. Container keeps rounded-lg
+                    px-4 py-3 to sit with the modal's own blocks -- that alert is
+                    page-level at rounded-xl p-5, which would read as pasted-in
+                    next to the source pill directly above this. */}
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-start gap-3">
+                  <AlertTriangle size={18} className="text-amber-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-amber-900 mb-1">{t('bulk_large_run_title', { count: missingCount.toLocaleString() })}</p>
+                    <p className="text-xs text-amber-700 leading-relaxed">{t('bulk_large_run_detail')}</p>
                   </div>
                 </div>
               </div>
