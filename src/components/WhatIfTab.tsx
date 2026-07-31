@@ -79,6 +79,7 @@ interface WhatIfTabProps {
   setNewYieldEvent: (e: Partial<YieldEvent>) => void;
   addYieldEvent: (e: YieldEvent) => void;
   removeYieldEvent: (id: string) => void;
+  updateYieldEvent: (id: string, patch: Partial<YieldEvent>) => void;
   clearAllYieldEvents: () => void;
   /** Pricing Events (Pricing tab) */
   pricingEvents: PricingEvent[];
@@ -86,6 +87,7 @@ interface WhatIfTabProps {
   setNewPricingEvent: (e: Partial<PricingEvent>) => void;
   addPricingEvent: (e: PricingEvent) => void;
   removePricingEvent: (id: string) => void;
+  updatePricingEvent: (id: string, patch: Partial<PricingEvent>) => void;
   clearAllPricingEvents: () => void;
   downloadExcel: (data: any[], filename: string, params?: any[]) => void;
   formatNumber: (v: any) => string;
@@ -1063,12 +1065,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   setNewYieldEvent,
   addYieldEvent,
   removeYieldEvent,
+  updateYieldEvent,
   clearAllYieldEvents,
   pricingEvents,
   newPricingEvent,
   setNewPricingEvent,
   addPricingEvent,
   removePricingEvent,
+  updatePricingEvent,
   clearAllPricingEvents,
   downloadExcel,
   formatNumber,
@@ -1373,6 +1377,51 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   }, [data, wiProductCol, wiProductL2Col, newPricingEvent.product]);
 
   // ── Add Yield Event ────────────────────────────────────────────────────────
+  // Individual edit for the Value and Pricing cards. Volume and Promotion had
+  // this; these two had no update path at all, so users trying to edit a rate
+  // override had to delete and retype it. Bulk/campaign edit is deliberately NOT
+  // added: YieldEvent and PricingEvent carry no campaignName, and a ramp is one
+  // row here (rollForward / duration:'recurring') rather than several, so there
+  // is no grouping to edit in bulk. Inventing one to match the word would be a
+  // data-model decision disguised as a UI fix. See EXPECTED.md.
+  const [editingYieldId, setEditingYieldId] = useState<string | null>(null);
+  const [editingPricingId, setEditingPricingId] = useState<string | null>(null);
+
+  const handleEditYieldStart = useCallback((ev: YieldEvent) => {
+    setNewYieldEvent({
+      ibro: ev.ibro, segment: ev.segment, product: ev.product,
+      channelL1: ev.channelL1, channelL2: ev.channelL2, month: ev.month,
+      rollForward: ev.rollForward, name: ev.name ?? '', comment: ev.comment ?? '',
+    });
+    setMixAxis(ev.mixAxis);
+    // Restored AFTER the fields that drive the tier list. seedMixPreserving is
+    // what stops the seeding effect wiping this on the next render.
+    setDraftMix({ ...ev.tariffMix });
+    setEditingYieldId(ev.id);
+  }, [setNewYieldEvent]);
+
+  const handleCancelYieldEdit = useCallback(() => {
+    setEditingYieldId(null);
+    setNewYieldEvent({});
+  }, [setNewYieldEvent]);
+
+  const handleEditPricingStart = useCallback((ev: PricingEvent) => {
+    setNewPricingEvent({
+      segment: ev.segment, product: ev.product, productL2: ev.productL2,
+      channelL1: ev.channelL1, channelL2: ev.channelL2,
+      tariffL1: ev.tariffL1, tariffL2: ev.tariffL2,
+      month: ev.month, inputMode: ev.inputMode, amount: ev.amount,
+      target: ev.target, cohortScope: ev.cohortScope, duration: ev.duration,
+      name: ev.name ?? '', comment: ev.comment ?? '',
+    });
+    setEditingPricingId(ev.id);
+  }, [setNewPricingEvent]);
+
+  const handleCancelPricingEdit = useCallback(() => {
+    setEditingPricingId(null);
+    setNewPricingEvent({});
+  }, [setNewPricingEvent]);
+
   const handleAddYieldEvent = useCallback(() => {
     if (!newYieldEvent.month || yieldTierData.length === 0) return;
     const tariffBaseArpu: Record<string, number> = {};
@@ -1393,8 +1442,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       name:    newYieldEvent.name    ?? '',
       comment: newYieldEvent.comment ?? '',
     };
-    addYieldEvent(event);
-  }, [newYieldEvent, draftMix, yieldTierData, addYieldEvent]);
+    // One builder, two dispositions. Duplicating it for the edit path would be
+    // the drift this project keeps paying for; the id is preserved on update so
+    // the row keeps its identity rather than being deleted and recreated.
+    if (editingYieldId) {
+      const { id: _discard, ...patch } = event;
+      updateYieldEvent(editingYieldId, patch);
+      setEditingYieldId(null);
+    } else {
+      addYieldEvent(event);
+    }
+    setNewYieldEvent({});
+  }, [newYieldEvent, draftMix, yieldTierData, addYieldEvent, editingYieldId, updateYieldEvent, setNewYieldEvent]);
 
   // ── All unique tiers across saved yield events (for table header) ──────────
   const allYieldTiers = useMemo(() => {
@@ -1503,8 +1562,19 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       name:    newPricingEvent.name    ?? '',
       comment: newPricingEvent.comment ?? '',
     };
-    addPricingEvent(event);
-  }, [newPricingEvent, chartData, addPricingEvent]);
+    // Same one-builder-two-dispositions shape as the Yield card above.
+    // originalBaseArpu is deliberately RECOMPUTED on edit rather than carried
+    // over: it snapshots the pre-pricing blended ARPU for the selected month, so
+    // if the edit moves the month the old snapshot would be for the wrong one.
+    if (editingPricingId) {
+      const { id: _discard, ...patch } = event;
+      updatePricingEvent(editingPricingId, patch);
+      setEditingPricingId(null);
+    } else {
+      addPricingEvent(event);
+    }
+    setNewPricingEvent({});
+  }, [newPricingEvent, chartData, addPricingEvent, editingPricingId, updatePricingEvent, setNewPricingEvent]);
 
   // ── Volume spread handler ─────────────────────────────────────────────────
   const handleAddMarketEvent = useCallback(() => {
@@ -3259,7 +3329,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     onClick={handleAddPricingEvent}
                     disabled={!newPricingEvent.month || newPricingEvent.amount === undefined}
                     className="px-6 py-2 bg-[#e60000] text-white text-sm font-semibold rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-                  >{t('whatif_add_pricing_event')}</button>
+                  >{editingPricingId ? t('whatif_save_changes') : t('whatif_add_pricing_event')}</button>
+                  {editingPricingId && (
+                    <button
+                      type="button"
+                      onClick={handleCancelPricingEdit}
+                      className="ml-2 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
+                    >{t('common_cancel')}</button>
+                  )}
                 </div>
               </div>
 
@@ -3352,6 +3429,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               </td>
                               <td className="px-4 py-2.5 text-slate-500 max-w-[120px] truncate" title={pe.comment}>{pe.comment || '—'}</td>
                               <td className="px-4 py-2.5 text-center">
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); handleEditPricingStart(pe); }}
+                                  className="text-slate-300 hover:text-slate-600 transition-colors mr-2"
+                                  title={t('whatif_edit')}
+                                >
+                                  <Pencil size={14} />
+                                </button>
                                 <button
                                   type="button"
                                   onClick={(e) => { e.stopPropagation(); removePricingEvent(pe.id); }}
@@ -4220,7 +4305,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     onClick={handleAddYieldEvent}
                     disabled={yieldTierData.length === 0 || !newYieldEvent.month}
                     className="px-6 py-2 bg-[#e60000] text-white text-sm font-semibold rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-                  >{t('whatif_add_yield_event')}</button>
+                  >{editingYieldId ? t('whatif_save_changes') : t('whatif_add_yield_event')}</button>
+                  {editingYieldId && (
+                    <button
+                      type="button"
+                      onClick={handleCancelYieldEdit}
+                      className="ml-2 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
+                    >{t('common_cancel')}</button>
+                  )}
                 </div>
               </div>
 
@@ -4310,6 +4402,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 </td>
                                 <td className="px-4 py-2.5 text-slate-500 text-xs max-w-[120px] truncate" rowSpan={2} title={evt.comment}>{evt.comment || '—'}</td>
                                 <td className="px-4 py-2.5 text-center" rowSpan={2}>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); handleEditYieldStart(evt); }}
+                                    className="text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-100 transition-colors mr-1"
+                                    title={t('whatif_edit')}
+                                  >
+                                    <Pencil size={13} />
+                                  </button>
                                   <button
                                     type="button"
                                     onClick={(e) => { e.stopPropagation(); removeYieldEvent(evt.id); }}

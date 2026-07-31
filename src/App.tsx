@@ -262,9 +262,26 @@ export default function App() {
     setMarketEvents(prev => prev.filter(e => e.id !== id));
   };
 
-  const updateMarketEvent = (id: string, patch: Partial<MarketEvent>) => {
-    setMarketEvents(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
-  };
+  // ONE update-by-id primitive, closed over whichever array it is given.
+  // Volume/Promotion had this; Yield and Pricing had no update path at all, so
+  // their cards could not offer edit. Three bespoke copies would have been the
+  // shape this project has paid for repeatedly -- six cohort-scoping predicates,
+  // five missing-cohort filters. The forms genuinely differ and stay separate;
+  // the patch operation does not.
+  //
+  // .map() rather than in-place mutation is load-bearing: computeAdjustedForecast
+  // is a useMemo keyed on the array reference, so an edit only recomputes the
+  // forecast if the reference actually changes.
+  function updateById<T extends { id: string }>(
+    setter: React.Dispatch<React.SetStateAction<T[]>>,
+    id: string,
+    patch: Partial<T>,
+  ) {
+    setter(prev => prev.map(e => (e.id === id ? { ...e, ...patch } : e)));
+  }
+
+  const updateMarketEvent = (id: string, patch: Partial<MarketEvent>) =>
+    updateById(setMarketEvents, id, patch);
 
   const handleImportActualsFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1232,6 +1249,9 @@ export default function App() {
     setYieldEvents(prev => [...prev, event]);
   };
 
+  const updateYieldEvent = (id: string, patch: Partial<YieldEvent>) =>
+    updateById(setYieldEvents, id, patch);
+
   const removeYieldEvent = (id: string) => {
     setYieldEvents(prev => prev.filter(e => e.id !== id));
   };
@@ -1263,6 +1283,9 @@ export default function App() {
   const addPricingEvent = (event: PricingEvent) => {
     setPricingEvents(prev => [...prev, event]);
   };
+
+  const updatePricingEvent = (id: string, patch: Partial<PricingEvent>) =>
+    updateById(setPricingEvents, id, patch);
 
   const removePricingEvent = (id: string) => {
     setPricingEvents(prev => prev.filter(e => e.id !== id));
@@ -3884,12 +3907,14 @@ export default function App() {
             setNewYieldEvent={setNewYieldEvent}
             addYieldEvent={addYieldEvent}
             removeYieldEvent={removeYieldEvent}
+            updateYieldEvent={updateYieldEvent}
             clearAllYieldEvents={clearAllYieldEvents}
             pricingEvents={pricingEvents}
             newPricingEvent={newPricingEvent}
             setNewPricingEvent={setNewPricingEvent}
             addPricingEvent={addPricingEvent}
             removePricingEvent={removePricingEvent}
+            updatePricingEvent={updatePricingEvent}
             clearAllPricingEvents={clearAllPricingEvents}
             setActiveView={setActiveView}
           />
