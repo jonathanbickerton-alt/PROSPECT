@@ -93,6 +93,7 @@
   "actuals_comparing": "Comparing",
   "actuals_actuals_filtered_to_match_forecast_scope_like": "Actuals filtered to match forecast scope — like-for-like comparison",
   "actuals_no_actuals_data_found_for_this_combination": "No actuals data found for this combination",
+  "actuals_no_forecast_yet_tooltip": "No forecast generated for this cohort yet — nothing to score against.",
   "common_volume": "Volume",
   "actuals_value_arpu": "Value (ARPU)",
   "actuals_value_revenue": "Value (Revenue)",

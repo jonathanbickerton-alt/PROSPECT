@@ -996,11 +996,161 @@ Two consequences a future session must not inherit:
    flat-map and per-cohort attempts "failed criterion 3 identically, which
    points away from the denominator toward `scaledBandFlow`". That argument
    rested on the same artefact that produced the failures.
-2. **Neither denominator fix has ever had a fair test.** Both the reverted
-   unconditional flat-map change and the per-cohort
-   `Map<cohortL1Key, Map<month, AggrSnapshot>>` design were judged against the
-   under-seeded harness. Re-run both against a fully seeded store before
-   concluding anything about either.
+2. **Attempt A had never had a fair test — it has now, and it fails.** The
+   reverted unconditional flat-map change was judged against the under-seeded
+   harness. Re-tested correctly on 2026-07-30, it fails on merit. See below.
+
+   **There is no attempt B to re-test.** An earlier version of this entry said
+   "both attempts were judged against the under-seeded harness", listing a
+   per-cohort `Map<cohortL1Key, Map<month, AggrSnapshot>>` alongside the
+   flat-map change. **That was wrong.** `Map<string, Map<string, AggrSnapshot>>`
+   and `cohortL1Key` appear in **no commit on any branch** — verified with
+   `git log --all -S`. It is an **unbuilt design sketch**, recorded in this file
+   and never written as code, so it was never judged against any harness, fair
+   or otherwise. Do not describe it as shelved, reverted, or previously tried.
+   Implementing it is new work.
+
+#### FIXED 2026-07-30 — rows with no forecast render UNSCORED
+
+The fix is not a better denominator. A row on the share-scaled fallback has **no
+forecast behind it at all** — that is definitionally what puts it there — so
+there is nothing to score and any computed number is fabricated. Such rows now
+short-circuit in `buildCohortAccuracy` the moment `matchingBfs` comes back
+empty, returning every score, bias, trend and detail as `null`.
+
+`scoreLabel(null)` and `scoreBg(null)` already rendered a grey em-dash for
+exactly this state, and `BiasVal`/`TrendVal` are both nullable. **No new UI was
+needed — the fallback simply never reached the honest rendering.**
+
+Measured, partially-seeded window, tariff fixture (trimmed):
+
+| | main | after |
+|---|---|---|
+| 8 no-forecast rows, filter set | `60/75/61/74` etc, orange/amber pills, "Under" | unscored, no bias, no trend |
+| 8 no-forecast rows, filter cleared | `0/0/0/0`, rose pills, "Over" | unscored, identical to filtered |
+| 5 forecast-backed rows | — | **byte-identical**, both filter states |
+| Fully seeded (all 13 rows) | — | **byte-identical — nothing reaches the fallback** |
+| Determinism (measured twice) | — | identical |
+
+Two things this exposed that a code reading would not have:
+
+1. **The rows initially vanished instead of rendering unscored.** A pre-existing
+   `.filter(row => row.overallScore !== null || row.avgMape !== null)` at the end
+   of `buildCohortAccuracy` drops anything unscored. It now also retains
+   `row.noForecast`. Replacing a fabricated score with an *absent row* would have
+   been a different kind of dishonesty, and the row-count check caught it —
+   `partSet` fell from 13 rows to 5.
+2. **Criterion 3 passed vacuously twice.** First because `isZero` never matched
+   the rendered `0↑ Over` text; then because the 8 rows were missing entirely, so
+   there was nothing to test. Both times the criterion read PASS. See
+   qa-tester evidence standard 10.
+
+`noForecast` rows carry `null` MAPE, which also keeps them out of the AutoML
+Challenger's `avgMape > 5%` threshold — a cohort with no forecast has nothing for
+a challenger model to beat.
+
+#### The share-scaled fallback SURVIVES — recorded, not deleted
+
+`scaledBandFlow` / `computeAvgShare` are **still reachable**, for a narrower case
+than the one just fixed: a row that HAS a forecast, for a month that forecast
+does not cover. `ForecastVsActualsTab.tsx:1260`:
+
+```ts
+const baseBand = directBand ?? (fallbackBm ? scaledBandFlow(fallbackBm, kpi) : null);
+```
+
+`directBand` is undefined when `flowBandMaps[kpi]` has no entry for that month —
+typically actuals extending past the forecast horizon. `avgShare*` is also read
+by the derived-base-band path at `:873-874`.
+
+**Measured 2026-07-30 — it never fires. 0 of 4,416 band lookups.**
+
+| Condition | Band lookups | Share-scaled | Rows affected |
+|---|---|---|---|
+| Fully seeded, 12-month horizon | 1,656 | **0 (0.0%)** | 0 |
+| Partially seeded (1 of 5 segments) | 504 | **0** | 0 |
+| Realistic coverage (~50% of cohorts) | 1,152 | **0** | 0 |
+| All three repeated at a 2-month horizon | 1,104 | **0** | 0 |
+
+The second sweep exists because the first looked like it might be vacuous: a
+12-month horizon against a 6-month actuals window cannot produce
+actuals-beyond-horizon. Forcing the horizon to 2 months should have triggered it
+and did not — instead the lookup COUNT fell (1,656 → 552 fully seeded), which is
+the structural answer:
+
+**the comparison iterates `allFcMonths`, derived from `matchingBfs` itself.** So
+when `matchingBfs` is non-empty every iterated month is by construction covered
+by `flowBandMaps`, `directBand` is always defined, and `scaledBandFlow` is
+unreachable. Shortening the horizon shrinks the compared window rather than
+exposing uncovered months.
+
+**So `scaledBandFlow` / `computeAvgShare` now appear to be dead code** — reachable
+only through the empty-`matchingBfs` branch that this change short-circuits.
+They were NOT deleted: `avgShare*` is also read by the derived-base-band path at
+`:873-874`, whose reachability was not separately established, and deleting a
+path on the strength of a measurement that returned zero everywhere is exactly
+the inference qa-tester standard 10 warns about. **Removal needs a
+dependency-mapper pass, not a confident deletion.** Open, but sized: not
+fabricating at scale, and probably not fabricating at all.
+
+#### The defect exists ONLY in the partially-generated window
+
+Re-confirmed by the re-test below: **fully seeded, attempt A changes 0 rows.**
+With every cohort forecast, `matchingBfs` resolves for every row — tier 1 exact
+or tier 2 partial-match-and-sum — so nothing reaches the share-scaled fallback
+and no denominator is consulted. There is nothing there to fix.
+
+Any fix therefore only ever acts on rows whose segment has no forecast. Measure
+every candidate in BOTH conditions; a fully-seeded measurement alone will report
+any change as a no-op and any fix as harmless.
+
+#### RE-TEST 2026-07-30 — attempt A FAILS on merit; attempt B does not exist
+
+Run on `fix-accuracy-denominator-retest` off main at `018269b`, trimmed
+fixture, `forecastStore` seeded per evidence standard 7, both filter states,
+whole measurement repeated in-session for determinism.
+
+**Attempt B was never implemented.** `Map<string, Map<string, AggrSnapshot>>`
+and `cohortL1Key` appear in **no commit on any branch** — searched with
+`git log --all -S`. The text above describing it as "judged against the
+under-seeded harness" was wrong: it was a design sketch recorded in this file,
+never code, so it was never run at all. Building it is a new implementation,
+not a re-test.
+
+**Attempt A — remove the `hasL2` early return so the L1-only re-aggregation
+runs unconditionally:**
+
+| Criterion | Fully seeded (41 cohorts) | Partially seeded (1 segment of 5, 15 cohorts) |
+|---|---|---|
+| C1 identical filter set/cleared | PASS (0 of 13) | **PASS** (0 of 13, against **8 of 13 on main**) |
+| C2 Corporate·RED canaries unchanged | PASS (0 of 5 moved) | PASS (0 of 5 moved) |
+| C3 no non-zero → zero | PASS (0) | **FAIL — 8 rows** |
+| Determinism (measured twice) | PASS identical | PASS identical |
+| Rows changed vs main | **0 — no-op** | 8 |
+
+**Attempt A fails.** It achieves filter-independence by **degeneracy**: the
+same 8 rows that scored differently between filter states on main now score
+`0/0/0/0` in *both*. Main's tariff-cleared state already zeroed them; attempt A
+makes the filtered state match the broken one rather than fixing either.
+`SOHO · RED S` goes 60/75/61/74 → 0/0/0/0; `SOHO · RED XL` 37/43/37/55 → 0.
+
+The original revert commit `aa925ea` said exactly this. **Its reasoning rested
+on the under-seeded harness and was void; its conclusion was nonetheless
+correct.** The figure was never 20 of 25 — it is 8 of 13 here — but the failure
+mode is real and reproduces on a correctly seeded store.
+
+**Fully seeded, attempt A changes nothing at all (0 rows).** Consistent with
+the coverage analysis above: with every cohort forecast, `matchingBfs` always
+resolves and nothing reaches the denominator fallback. The defect and any fix
+for it are both confined to the partially-generated window.
+
+**Criterion 3 is what caught this, and it nearly did not.** The first
+comparison scored `isZero` with `/^0\/0\/0\/0$/` against cells that actually
+render `0↑ Over/0↑ Over/...`. The regex never matched, so every `isZero()`
+returned false and C3 reported PASS in both directions — attempt A looked like
+it cleared all four criteria. Any future harness must parse the leading number
+out of each component cell, and must confirm the defect REPRODUCES on main
+before crediting a fix with removing it.
 
 #### BRANCH PARKED DELIBERATELY — 2026-07-30
 
