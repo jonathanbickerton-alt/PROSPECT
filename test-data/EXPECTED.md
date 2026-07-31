@@ -1049,19 +1049,25 @@ Two things this exposed that a code reading would not have:
 Challenger's `avgMape > 5%` threshold — a cohort with no forecast has nothing for
 a challenger model to beat.
 
-#### The share-scaled fallback SURVIVES — recorded, not deleted
+#### The share-scaled fallback is RETAINED but APPEARS DEAD — measured, not deleted
 
-`scaledBandFlow` / `computeAvgShare` are **still reachable**, for a narrower case
-than the one just fixed: a row that HAS a forecast, for a month that forecast
-does not cover. `ForecastVsActualsTab.tsx:1260`:
+**Read the measurement below before describing this path as live.** It was
+initially expected to survive for a narrower case than the one just fixed — a
+row that HAS a forecast, for a month that forecast does not cover. **That
+hypothesis was superseded by measurement on 2026-07-30 and is recorded here only
+so it is not re-derived.** A regression-guard run afterwards still summarised the
+path as "surviving for its intended narrow case"; that is the superseded
+hypothesis, not the measured result.
+
+The call site is `ForecastVsActualsTab.tsx:1260`:
 
 ```ts
 const baseBand = directBand ?? (fallbackBm ? scaledBandFlow(fallbackBm, kpi) : null);
 ```
 
-`directBand` is undefined when `flowBandMaps[kpi]` has no entry for that month —
-typically actuals extending past the forecast horizon. `avgShare*` is also read
-by the derived-base-band path at `:873-874`.
+`directBand` would be undefined if `flowBandMaps[kpi]` had no entry for a month —
+the case actuals-past-the-forecast-horizon would produce. `avgShare*` is also
+read by the derived-base-band path at `:873-874`.
 
 **Measured 2026-07-30 — it never fires. 0 of 4,416 band lookups.**
 
