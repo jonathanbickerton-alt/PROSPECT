@@ -742,13 +742,56 @@ The rule now enforced: **an event belongs to its target scope as a whole.**
 Each cohort inside the scope receives only its volume share; the shares sum to
 exactly 1, so the event is applied once in total. One shared helper,
 `eventProRataShare` in `src/utils/forecasting.ts`, is the single implementation
-of that rule. All three event-application paths consume it:
+of that rule.
+
+
+### Bulk edit is delete-and-rebuild, not an update loop — decide before percentage events
+
+On the Volume and Promotion cards, **individual** edit patches by id and keeps
+the row's identity. **Bulk (campaign) edit does not**: `handleSaveCampaign`
+filters every row of the campaign out of the array and appends freshly-built
+replacements with new `Math.random()` ids.
+
+```ts
+setMarketEvents([...marketEvents.filter(e => e.campaignName !== editingCampaign || e.isPromotion), ...newEvents]);
+```
+
+**This interacts with the percentage-events design and needs deciding before it
+lands.** If events apply in creation order, and adjusted-targeting events depend
+on the result of earlier ones, then a bulk edit that deletes and re-appends a
+campaign **silently moves those rows to the end of the array** — changing which
+events precede them, and so changing their result, without the user editing
+anything about ordering.
+
+Nothing observable depends on it today, because order is only positional in the
+array and current event types do not read each other's output. Percentage /
+adjusted-targeting events would make it observable. Options are to preserve
+array position on rebuild, to give events an explicit order field, or to make
+bulk edit patch by id like individual edit does — **not yet decided**.
+
+### Value and Pricing cards: individual edit only, deliberately
+
+Added 2026-07-31. Bulk edit was NOT added: `YieldEvent` and `PricingEvent`
+carry no `campaignName`, and a ramp is a single row on these cards
+(`rollForward`, `duration: 'recurring'`) rather than the multi-row spread that
+makes a campaign meaningful on Volume and Promotion. There is no grouping to
+edit in bulk, and inventing a grouping key to satisfy the word "bulk" in a
+request would be a data-model decision disguised as a UI fix. Open, pending a
+decision on what a grouping key would mean for a rate override.
+
+**There are TWO event-application paths, not three. Corrected 2026-07-31.**
+`computeWhatIfData` was deleted as unreachable — see the dead-subsystem entry.
+Any statement elsewhere that there are three is stale and should be corrected
+at its lead, not annotated below.
 
 | Path | Function | Location |
 |---|---|---|
-| A | `computeWhatIfData` | `src/utils/forecasting.ts` |
-| B | `computeAdjustedForecast` (Pass 1/2/3) | `src/components/WhatIfTab.tsx` |
-| C | `computeScenarioForFilter` (leaf case) | `src/utils/scenarioHelper.ts` |
+| A | `computeAdjustedForecast` (Pass 1/2/3) | `src/components/WhatIfTab.tsx` |
+| B | `computeScenarioForFilter` (leaf case) | `src/utils/scenarioHelper.ts` |
+
+Both still consume `eventProRataShare`, and they still return DIFFERENT output
+shapes for the same idea — nested `uplifted.*` versus flat `adjusted*`. Two
+paths is less coupling surface than three; it is not none.
 
 Path C's *aggregate* case already summed leaf rows and applied the event once,
 and is deliberately untouched — with view scope equal to event target the share

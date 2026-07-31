@@ -34,13 +34,14 @@ component, or a data parsing field.
        same level or scores break
      * Derived vs read values — Base and ARPU have specific rules about
        where derivation is allowed
-     * The three event-application paths — `computeWhatIfData`
-       (`src/utils/forecasting.ts`), `computeAdjustedForecast`
+     * The TWO event-application paths — `computeAdjustedForecast`
        (`src/components/WhatIfTab.tsx`) and `computeScenarioForFilter`
-       (`src/utils/scenarioHelper.ts`) are three independent
-       implementations of the same concept. Any change to how a market
+       (`src/utils/scenarioHelper.ts`) are two independent
+       implementations of the same concept. (`computeWhatIfData` was a
+       third until 2026-07-31, when it was deleted as unreachable. Do
+       not trace it; it no longer exists.) Any change to how a market
        event is applied, scoped, or distributed must be traced through
-       ALL THREE or they drift. They also return DIFFERENT output shapes
+       BOTH or they drift. They also return DIFFERENT output shapes
        for the same idea — `computeAdjustedForecast` nests under
        `uplifted.*`, `computeScenarioForFilter` is flat `adjusted*` —
        so a consumer or test written against one silently reads
