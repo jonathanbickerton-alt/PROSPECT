@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, computeWhatIfData, WhatIfConfig, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent } from './types/forecast';
 import { ForecastProvider } from './context/ForecastContext';
@@ -188,10 +188,12 @@ export default function App() {
   const [wiRetentionLag, setWiRetentionLag] = useState(0);
   const [wiArpuUpliftPct, setWiArpuUpliftPct] = useState(0);
   const [marketEvents, setMarketEvents] = useState<MarketEvent[]>([]);
-  const [whatIfData, setWhatIfData] = useState<any[]>([]);
-  const [whatIfDelta, setWhatIfDelta] = useState<number | null>(null);
-  const [whatIfRevenueDelta, setWhatIfRevenueDelta] = useState<number | null>(null);
-  const [whatIfMissingMonths, setWhatIfMissingMonths] = useState<string[]>([]);
+  // whatIfDelta / whatIfRevenueDelta / whatIfMissingMonths deleted 2026-07-31:
+  // their only setters lived in generateWhatIfForecast, so all three were stuck
+  // at their initial values. WhatIfTab still declares an optional missingMonths
+  // prop and renders a gap warning from it; that block now has NO SUPPLIER and
+  // has never fired. Left in place rather than deleted -- removing a UI
+  // capability is a product decision. See EXPECTED.md.
   const [selectedKpis, setSelectedKpis] = useState<string[]>(['Inflow Volume', 'Base Volume']);
   const [forecastLength] = useState(24);
 
@@ -1588,7 +1590,6 @@ export default function App() {
         
         setError('');
         setForecastData([]);
-        setWhatIfData([]);
 
         // Restore market events if the file contains a Market_Events sheet
         const eventsSheetName = wb.SheetNames.find(n => n.toLowerCase() === 'market_events');
@@ -2841,135 +2842,11 @@ export default function App() {
     ],
   );
 
-  const generateWhatIfForecast = () => {
-    setError('');
-    
-    const isAllSegment = wiSegmentValue === 'All (Aggregated)';
-    const isAllProduct = wiProductValue === 'All (Aggregated)';
-    const isAllChannel = wiChannelValue === 'All (Aggregated)';
-
-    if (isAllSegment || isAllProduct || isAllChannel) {
-      let processedData = data
-        .map(row => ({ ...row, _parsedDate: new Date(row[wiDateCol]) }))
-        .filter(row => isValid(row._parsedDate));
-      
-      const combos = getUniqueCombos(processedData, wiSegmentValue, wiProductValue, wiSegmentCol, wiProductCol, wiChannelValue, wiChannelCol);
-      const newSaved = { ...savedForecasts };
-      const allWhatIfResults: any[] = [];
-
-      const config: WhatIfConfig = {
-        wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiBaseVal, wiRetentionVal,
-        wiSegmentCol, wiProductCol, wiChannelCol, wiCustomerCol, wiRevenueCol, wiArpuCol, data,
-        forecastModel: baseForecast?.modelUsed ?? selectedForecastModel,
-        preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon,
-      };
-
-      combos.forEach(combo => {
-        const result = computeWhatIfData(
-          config,
-          combo.s,
-          combo.p,
-          combo.c,
-          forecastLength,
-          wiUpliftPct,
-          wiInflowLag,
-          wiRetentionUpliftPct,
-          wiRetentionLag,
-          wiArpuUpliftPct,
-          marketEvents
-        );
-
-        if (!result.error && result.combined) {
-          newSaved[`${combo.s}|${combo.p}|${combo.c}|What-If Analysis|Base`] = result.combined;
-          allWhatIfResults.push(result.combined);
-        }
-      });
-
-      // Aggregate allWhatIfResults for the chart
-      const chartAggMap = new Map<number, any>();
-      allWhatIfResults.forEach(forecast => {
-        forecast.forEach(row => {
-          const time = new Date(row.date).getTime();
-          if (!chartAggMap.has(time)) {
-             chartAggMap.set(time, { ...row });
-          } else {
-             const existing = chartAggMap.get(time);
-             const keysToSum = [
-               'Inflow Volume (Baseline)', 'Inflow Volume (Uplifted)',
-               'Outflow Volume (Baseline)', 'Outflow Volume (Uplifted)',
-               'Retention Volume (Baseline)', 'Retention Volume (Uplifted)',
-               'Base Volume (Baseline)', 'Base Volume (Uplifted)',
-               'Total Subscribers (Baseline)', 'Total Subscribers (Uplifted)',
-               'Total Revenue (Baseline)', 'Total Revenue (Uplifted)'
-             ];
-             keysToSum.forEach(k => {
-               existing[k] = (existing[k] || 0) + (row[k] || 0);
-             });
-             // ARPU needs to be recalculated after summing
-             existing['Blended ARPU (Baseline)'] = existing['Total Subscribers (Baseline)'] > 0 ? existing['Total Revenue (Baseline)'] / existing['Total Subscribers (Baseline)'] : 0;
-             existing['Blended ARPU (Uplifted)'] = existing['Total Subscribers (Uplifted)'] > 0 ? existing['Total Revenue (Uplifted)'] / existing['Total Subscribers (Uplifted)'] : 0;
-          }
-        });
-      });
-
-      const aggregated = Array.from(chartAggMap.values()).sort((a, b) => a.timestamp - b.timestamp);
-      setWhatIfData(aggregated);
-      setSavedForecasts(newSaved);
-      
-      // Delta calculation for aggregate
-      const baselineTotal = aggregated.filter(r => r.Type === 'Forecast').reduce((acc, r) => acc + r['Base Volume (Baseline)'], 0);
-      const upliftedTotal = aggregated.filter(r => r.Type === 'Forecast').reduce((acc, r) => acc + r['Base Volume (Uplifted)'], 0);
-      setWhatIfDelta(upliftedTotal - baselineTotal);
-
-      const revBaselineTotal = aggregated.filter(r => r.Type === 'Forecast').reduce((acc, r) => acc + r['Total Revenue (Baseline)'], 0);
-      const revUpliftedTotal = aggregated.filter(r => r.Type === 'Forecast').reduce((acc, r) => acc + r['Total Revenue (Uplifted)'], 0);
-      setWhatIfRevenueDelta(revUpliftedTotal - revBaselineTotal);
-
-      return;
-    }
-
-    const config: WhatIfConfig = {
-      wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiBaseVal, wiRetentionVal,
-      wiSegmentCol, wiProductCol, wiChannelCol, wiCustomerCol, wiRevenueCol, wiArpuCol, data,
-      forecastModel: baseForecast?.modelUsed ?? selectedForecastModel,
-      preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon,
-    };
-
-    const result = computeWhatIfData(
-      config,
-      wiSegmentValue,
-      wiProductValue,
-      wiChannelValue,
-      forecastLength,
-      wiUpliftPct,
-      wiInflowLag,
-      wiRetentionUpliftPct,
-      wiRetentionLag,
-      wiArpuUpliftPct,
-      marketEvents
-    );
-
-    if (result.error) {
-      setError(result.error);
-      setWhatIfMissingMonths([]);
-      return;
-    }
-
-    setWhatIfData(result.combined!);
-    setWhatIfDelta(result.totalBaseUplifted! - result.totalBaseBaseline!);
-    setWhatIfRevenueDelta(result.totalRevUpliftedSum! - result.totalRevBaselineSum!);
-    setWhatIfMissingMonths(result.missingMonths ?? []);
-
-    const segKey = wiSegmentValue === 'All (Aggregated)' ? 'All' : wiSegmentValue;
-    const prodKey = wiProductValue === 'All (Aggregated)' ? 'All' : wiProductValue;
-    const chanKey = wiChannelValue === 'All (Aggregated)' ? 'All' : wiChannelValue;
-    
-    const newForecasts = { ...savedForecasts };
-    ['Inflow', 'Outflow', 'Base', 'Retention'].forEach(scen => {
-      newForecasts[`${segKey}|${prodKey}|${chanKey}|What-If Analysis|${scen}`] = result.combined!;
-    });
-    setSavedForecasts(newForecasts);
-  };
+  // NOTE: generateWhatIfForecast was deleted here on 2026-07-31.
+  // Declared and never referenced -- the only writer of whatIfData besides a
+  // reset, and two of the three unreachable callers of computeWhatIfData. The
+  // live market-events path is computeAdjustedForecast in WhatIfTab, which
+  // already carries all seven cohort dimensions. See EXPECTED.md.
 
   const downloadExcel = (dataset: any[], filename: string, metadata?: any[]) => {
     if (dataset.length === 0) return;
@@ -3020,23 +2897,7 @@ export default function App() {
     }
   }, [forecastData, activeView, windowSize, wiDateCol]);
 
-  useEffect(() => {
-    if (whatIfData.length > 0 && activeView === 'whatif') {
-      const sorted = [...whatIfData].sort((a, b) => a.date.getTime() - b.date.getTime());
-      let lastHistoricalIdx = -1;
-      for (let i = sorted.length - 1; i >= 0; i--) {
-        if (sorted[i].Type === 'Historical') {
-          lastHistoricalIdx = i;
-          break;
-        }
-      }
-      
-      if (lastHistoricalIdx !== -1) {
-        const defaultOffset = Math.max(0, Math.min(sorted.length - windowSize, lastHistoricalIdx - Math.floor(windowSize / 2)));
-        setWindowOffset(defaultOffset);
-      }
-    }
-  }, [whatIfData, activeView, windowSize]);
+  // whatIfData effect deleted 2026-07-31: whatIfData had no writer left.
 
   const stdChartData = useMemo(() => {
     if (!forecastData.length) return [];
@@ -3073,23 +2934,7 @@ export default function App() {
     });
   }, [forecastData, wiDateCol, compareCategories]);
 
-  const wiChartData = useMemo(() => {
-    if (!whatIfData.length) return [];
-
-    // Sort all data by date first
-    const sortedData = [...whatIfData].sort((a, b) => {
-      const da = a.date;
-      const db = b.date;
-      return da.getTime() - db.getTime();
-    });
-
-    return sortedData.map(row => {
-      return {
-        ...row,
-        date: isValid(row.date) ? format(row.date, 'yyyy-MM') : 'Invalid Date',
-      };
-    });
-  }, [whatIfData]);
+  // wiChartData deleted 2026-07-31: derived from whatIfData and never read.
 
   const vsActualsData = useMemo(() => {
     const grouped: Record<string, any> = {};
@@ -3390,54 +3235,12 @@ export default function App() {
   }, [missingStandardCohorts]);
 
   const computeCohortForecastData = useCallback((cohort: any, manualParams?: any, cohortDataMap?: CohortDataMap) => {
-    if (cohort.forecastType.startsWith('What-If Analysis')) {
-      const scenarioMatch = cohort.forecastType.match(/\(([^)]+)\)/);
-      const wiScen = scenarioMatch ? scenarioMatch[1] : 'Base Case';
-
-      let inflowUplift = manualParams?.inflowUplift ?? genInflowUplift;
-      let retentionUplift = manualParams?.retentionUplift ?? genRetentionUplift;
-      let arpuUplift = manualParams?.arpuUplift ?? genArpuUplift;
-
-      // If no manual params provided (e.g. batch generation), use scenario defaults
-      if (!manualParams) {
-        if (wiScen === 'Aggressive Growth') {
-          inflowUplift = 20; retentionUplift = 10; arpuUplift = 5;
-        } else if (wiScen === 'Worst Case') {
-          inflowUplift = -20; retentionUplift = -10; arpuUplift = -5;
-        } else if (wiScen === 'Base Case') {
-          inflowUplift = 0; retentionUplift = 0; arpuUplift = 0;
-        }
-      }
-
-      const config: WhatIfConfig = {
-        wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiBaseVal, wiRetentionVal,
-        wiSegmentCol, wiProductCol, wiChannelCol, wiCustomerCol, wiRevenueCol, wiArpuCol, data,
-        forecastModel: baseForecast?.modelUsed ?? selectedForecastModel,
-        preHorizonUncertainty: manualParams?.preHorizonUncertainty ?? preHorizonUncertainty,
-        postHorizonExpansionRate: manualParams?.postHorizonExpansionRate ?? postHorizonExpansionRate,
-        confidenceHorizon: manualParams?.confidenceHorizon ?? confidenceHorizon,
-      };
-
-      const result = computeWhatIfData(
-        config,
-        cohort.segment,
-        cohort.product,
-        cohort.channel || 'All',
-        manualParams?.length ?? genLength,
-        inflowUplift,
-        manualParams?.inflowLag ?? genInflowLag,
-        retentionUplift,
-        manualParams?.retentionLag ?? genRetentionLag,
-        arpuUplift,
-        manualParams?.marketEvents ?? marketEvents
-      );
-
-      if (result.error) {
-        console.error(result.error);
-        return null;
-      }
-      return result.combined!;
-    }
+    // NOTE: the What-If branch was deleted here on 2026-07-31. It was
+    // unreachable: allCohorts has one cohorts.push and only ever assigns
+    // forecastType: 'Standard Forecast', so no What-If cohort object exists.
+    // It also silently dropped productL2/channelL2/tariffL1/tariffL2 when
+    // calling computeWhatIfData -- a real defect in code that never ran, which
+    // was once sized and reported as a live one. See EXPECTED.md.
 
     const targetMetric = cohort.scenario === 'Inflow' ? wiInflowVal :
                          cohort.scenario === 'Outflow' ? wiOutflowVal :
@@ -3539,21 +3342,12 @@ export default function App() {
     }));
 
     return [...historicalData, ...forecastWithTrace];
-  }, [data, wiDateCol, wiMetricCol, wiValueCol, wiSegmentCol, wiProductCol, wiInflowVal, wiOutflowVal, wiBaseVal, wiRetentionVal, genLength, genInflowUplift, genInflowLag, genRetentionUplift, genRetentionLag, genArpuUplift, genMarketEvents, genPreHorizonUncertainty, genPostHorizonExpansionRate, computeWhatIfData]);
+  }, [data, wiDateCol, wiMetricCol, wiValueCol, wiSegmentCol, wiProductCol, wiInflowVal, wiOutflowVal, wiBaseVal, wiRetentionVal, genLength, genInflowUplift, genInflowLag, genRetentionUplift, genRetentionLag, genArpuUplift, genMarketEvents, genPreHorizonUncertainty, genPostHorizonExpansionRate]);
 
   const generateCohortForecast = (cohort: any, manualParams?: any) => {
     const forecastData = computeCohortForecastData(cohort, manualParams);
     if (forecastData) {
-      if (cohort.forecastType === 'What-If Analysis') {
-        setSavedForecasts(prev => {
-          const next = { ...prev };
-          ['Inflow', 'Outflow', 'Base', 'Retention'].forEach(scen => {
-            const id = `${cohort.segment}|${cohort.product}|${cohort.channel || 'All'}|What-If Analysis|${scen}`;
-            next[id] = forecastData;
-          });
-          return next;
-        });
-      } else {
+      {
         setSavedForecasts(prev => ({
           ...prev,
           [cohort.id]: forecastData
@@ -4098,7 +3892,6 @@ export default function App() {
             removePricingEvent={removePricingEvent}
             clearAllPricingEvents={clearAllPricingEvents}
             setActiveView={setActiveView}
-            missingMonths={whatIfMissingMonths}
           />
         )}
 
