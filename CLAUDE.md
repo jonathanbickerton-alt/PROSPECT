@@ -9,12 +9,35 @@ equally hard.
 
 | Agent              | Model  | Why |
 |--------------------|--------|-----|
-| regression-guard   | haiku  | Walks a fixed checklist in test-data/EXPECTED.md and reports pass/fail against concrete expected values. No hypothesis forming. Run most often — cheapest tier compounds. |
+| regression-guard   | sonnet | **Escalated from haiku 2026-07-31 — see below.** Walks a fixed checklist in test-data/EXPECTED.md and reports pass/fail against concrete expected values. The reasoning is not hard; citing files and sections that actually exist turned out to be. |
 | ui-consistency     | haiku  | Conformance-checking new UI against a written list of established patterns, plus lint and build. Pattern-matching, not judgment. |
 | qa-tester          | sonnet | Must decide what to test from what changed, trace data flow through ForecastContext, and notice subtly wrong results — not just absent ones. This is the gate before merge; do not under-power it. |
 | dependency-mapper  | sonnet | Mostly exhaustive grep-and-trace, but needs judgment on the "shared, must be retained" distinction and change sequencing. Sonnet is sufficient; Opus is overkill. |
 | debugger           | sonnet | Default. Routine debugging (reproduce, log, compare, spot mismatch) is well within Sonnet. |
 | ux-design          | opus   | Reasoning across an end-to-end user journey with trade-offs. Genuinely hard, produces no code, invoked rarely. Cost profile is different from the gate agents. |
+
+### Tier changes are evidence-led
+
+**regression-guard: haiku → sonnet, 2026-07-31.** The first tier change since
+this table was written, and it was made because a specific failure recurred
+after two attempts to fix it by instruction.
+
+Two consecutive gate runs produced fabricated-but-plausible identifiers — a
+module path that does not exist (`src/utils/predicates.ts` for what is
+`cohortScope.ts`), five claimed exports of which one was real, and a hook name
+(`useArpuToggle`) for a toggle that is `valueUnit`. **Both runs happened after
+regression-guard.md gained a rule written specifically to prevent it**, and in
+both the underlying conclusions were sound.
+
+That is the shape that justifies a tier change rather than more briefing: the
+reasoning held and the precision did not. A third prose instruction would have
+been the wrong response to two that did not land — at some point "try harder"
+stops being a fix and starts being a way of avoiding the cost.
+
+The bar for future changes is the same. Escalate when a specific, named failure
+survives an attempt to close it by instruction, not when output feels thin.
+Record the evidence here, as above, so the next reader can judge whether the
+reason still applies — and de-escalate on the same standard.
 
 ## Escalation rule
 
