@@ -8,6 +8,16 @@ can assert against concrete facts rather than vague impressions.
 > **Maintenance note:** Values marked `(confirm)` should be verified against
 > the current synthetic data file before relying on them. Update this file
 > whenever a new bug is fixed so the regression checklist stays complete.
+>
+> **When a measurement supersedes a hypothesis, correct the LEAD — do not
+> append the correction underneath it.** Readers, human and agent, stop at the
+> first assertion. Worked example: §16b's share-scaled subsection opened by
+> stating the path was "still reachable, for a narrower case", and reported the
+> measurement showing it never fires thirty lines further down. A
+> regression-guard run then reported the path as live-but-narrow — it read
+> top-down and stopped at the assertion. The agent was not careless; the
+> ground-truth file misled it. Rewrite the heading and opening paragraph, and
+> label the superseded hypothesis as superseded where it is still worth keeping.
 
 ---
 
