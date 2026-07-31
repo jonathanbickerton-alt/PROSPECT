@@ -176,6 +176,29 @@ because its absence produced a false pass.
     assertion. When a check compares two rendered states, confirm the thing you
     are scraping is the thing the guard controls, and nothing else.
 
+    **Neuter EVERY guard a trap claims to cover, not just one.** A trap that
+    names two code paths needs a mutation per path. One passing mutation
+    proves the trap catches that path — it says nothing about the other, and
+    the natural stopping point ("I broke it, the trap failed, good") is exactly
+    where the coverage gap hides.
+
+    Worked example, found by a gate reviewing this very rule. Trap A's
+    docstring read "actualsAggrMap AND computeForecastMape must both scope
+    actuals to the loaded forecast's tariff". Mutating `actualsAggrMap` made it
+    fail, which looked like verification. It was not: the trap read only the
+    Base variance table, which `actualsAggrMap` feeds. `computeForecastMape` is
+    a separate path feeding the summary MAPE cards, and breaking ITS tariff
+    scoping in isolation left **all three traps green while the cards read
+    97.6%** — the exact +97.7% defect the trap is named for, reproduced and
+    undetected.
+
+    **Corollary: a trap's docstring is a CLAIM ABOUT COVERAGE, and an
+    unverified claim in a docstring is the same failure class as an unverified
+    claim in a report.** Standard 2 forbids reporting a pass for something you
+    could not exercise. A docstring asserting coverage the trap does not have
+    is that same false pass, written once and then trusted silently by every
+    future reader. When a trap names N things it protects, produce N mutations
+    — or narrow the docstring to what you actually verified.
 Write scratch scripts to the scratchpad directory, never into the repo.
 
 ## How you report
