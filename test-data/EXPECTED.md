@@ -1258,46 +1258,64 @@ byte-identical across five rendered states. The `ScopeDims` argument exists
 largely for this site: a predicate that always compared seven fields could not
 serve it.
 
-### `WhatIfConfig` cannot express L2 or tariff — OPEN, sized 2026-07-31
+### `computeWhatIfData` is UNREACHABLE — the scoping "defect" is not shipped behaviour
 
-`WhatIfConfig` (`forecasting.ts`) carries `wiSegmentCol`, `wiProductCol` and
-`wiChannelCol` only. `computeWhatIfData`'s scope arguments are three loose
-strings. **L2 and tariff cannot be expressed at that boundary at all.**
+**CORRECTED 2026-07-31. Read this before acting on any figure that follows.**
+An earlier version of this entry recorded the What-If scoping gap as an OPEN
+DEFECT affecting 98.9% of bulk-generated What-If cohorts, listed requirements
+before conversion, and asked for a decision. **The user authorised a widening on
+that framing.** The premise was wrong, and the acceptance criterion — a
+before/after across the collapse groups — was unsatisfiable, because there is no
+"before": nothing produces those forecasts.
 
-`computeCohortForecastData` (`App.tsx`) passes only
-`cohort.segment / product / channel` — silently dropping four of the seven
-fields from a cohort object that carries all seven, and that uses all seven two
-branches later for the Standard Forecast key. So a bulk-generated What-If for an
-L2- or tariff-specific cohort is scoped to every sibling under its L1 triple.
+#### The reachability facts
 
-**Sizing — how many cohorts this affects if the config is widened:**
+`computeWhatIfData` has **three call sites and no reachable caller**:
 
-| Fixture | Populated cohorts | Scoped too wide | Collapse groups | Largest group | Median group |
-|---|---|---|---|---|---|
-| Trimmed | 1,934 | **1,859 (96.1%)** | 75 | 154 cohorts → 1 scope | 14 |
-| Full tariff | 7,964 | **7,874 (98.9%)** | 90 | 238 cohorts → 1 scope | 89 |
+| Call site | Enclosing function | Reachable |
+|---|---|---|
+| `App.tsx:2868` | `generateWhatIfForecast` | **No** — that function has zero references in `src/` or `scripts/`. Declared, never called. |
+| `App.tsx:2938` | `generateWhatIfForecast` | **No** — same function |
+| `App.tsx:3421` | `computeCohortForecastData`'s What-If branch | **No** — see below |
 
-Counted over `populatedCohortKeys`' own construction (every hierarchical
-ancestor of each populated leaf), classifying a cohort as pooled when any of
-productL2 / channelL2 / tariffL1 / tariffL2 is non-`All`.
+For the third: `allCohorts` contains exactly **one** `cohorts.push`
+(`App.tsx:3304`), and `forecastType: 'Standard Forecast'` (`:3313`) is the ONLY
+`forecastType:` assignment anywhere in the codebase. `missingStandardCohorts`
+filters to Standard Forecast explicitly. `generateCohortForecast` receives its
+cohort from `GenerateCohortForecastModal`, whose rows come from `allCohorts`.
+**No cohort object with `forecastType: 'What-If Analysis'` is ever constructed**,
+so that branch and the `savedForecasts` What-If key writes at `:2883`, `:2969`
+and `:3551` cannot execute.
 
-#### Requirements before `computeWhatIfData` converts — OPEN DEFECT
+There is also no `wiProductL2Value` / `wiChannelL2Value` / `wiTariffValue` state
+anywhere — 0 occurrences. The What-If path never had L2 or tariff selection to
+drop in the first place.
 
-1. **Its own branch.** Not folded into a scoping refactor.
-2. **Its own before/after**, on a sample of the affected cohorts, showing the
-   numeric change to bulk-generated What-If output.
-3. **An explicit decision from the user**, recorded, before conversion.
+#### What the 98.9% figure actually measured
 
-`computeWhatIfData` is therefore the one site the predicate-unification branch
-deliberately leaves unconverted. Converting it silently would change nearly
-every bulk-generated What-If number under cover of a refactor whose other
-commits are all measured byte-identical.
+A **synthetic enumeration** over `populatedCohortKeys` — every hierarchical
+ancestor of every populated leaf, classified as pooled when any of productL2 /
+channelL2 / tariffL1 / tariffL2 is non-`All`. It describes what WOULD happen if
+that branch ran. It is not a count of anything the app produces.
 
-**This is why the widening is a separate decision.** It is not a rider on a
-scoping refactor: it changes the numeric output of ~99% of bulk-generated
-What-If cohorts, and on the full fixture the median affected scope currently
-pools 89 cohorts into one. Accept it explicitly, with a before/after on a
-sample of those cohorts, or leave `computeWhatIfData` unconverted.
+The measurement was sound; the label was not. "98.9% of bulk-generated What-If
+cohorts" implies such cohorts exist. **They do not.**
+
+#### Do not widen `WhatIfConfig`
+
+It would change zero numbers. The field-dropping at `App.tsx:3421` is real as
+code and wrong as code, but it is dead, and widening a config for a function
+nobody calls buys nothing. The three call sites belong to the dead-code pass
+recorded below, not to a behavioural change.
+
+#### Why this entry misled
+
+The field-dropping was measured precisely and its blast radius sized to four
+significant figures without anyone asking whether the branch runs — the same
+error as the `exportToExcel` entry below, made again after the rule drawn from
+it ("establish reachability BEFORE characterising severity") was already written
+into this file. Precision about a mechanism reads as confidence about its
+importance. It is not.
 
 ### Dead code — `exportToExcel` was dead, and was mistaken for a live defect
 
