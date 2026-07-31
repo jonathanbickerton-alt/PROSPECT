@@ -42,6 +42,8 @@
   "bulk_apply_to_all_remaining_combinations": "Apply to All Remaining Combinations?",
   "bulk_just_generated": "Just generated:",
   "bulk_no_source_cohort": "Generating every remaining combination in the loaded data.",
+  "bulk_large_run_title": "Large run: {{count}} cohorts",
+  "bulk_large_run_detail": "This may take several minutes and cannot be paused once started. Existing forecasts are not affected — only combinations without one are generated.",
   "common_forecast_model": "Forecast Model",
   "bulk_confidence_band_width": "Confidence Band Width",
   "common_run_name": "Run Name",
