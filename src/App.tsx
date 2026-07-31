@@ -188,9 +188,12 @@ export default function App() {
   const [wiRetentionLag, setWiRetentionLag] = useState(0);
   const [wiArpuUpliftPct, setWiArpuUpliftPct] = useState(0);
   const [marketEvents, setMarketEvents] = useState<MarketEvent[]>([]);
-  const [whatIfDelta, setWhatIfDelta] = useState<number | null>(null);
-  const [whatIfRevenueDelta, setWhatIfRevenueDelta] = useState<number | null>(null);
-  const [whatIfMissingMonths, setWhatIfMissingMonths] = useState<string[]>([]);
+  // whatIfDelta / whatIfRevenueDelta / whatIfMissingMonths deleted 2026-07-31:
+  // their only setters lived in generateWhatIfForecast, so all three were stuck
+  // at their initial values. WhatIfTab still declares an optional missingMonths
+  // prop and renders a gap warning from it; that block now has NO SUPPLIER and
+  // has never fired. Left in place rather than deleted -- removing a UI
+  // capability is a product decision. See EXPECTED.md.
   const [selectedKpis, setSelectedKpis] = useState<string[]>(['Inflow Volume', 'Base Volume']);
   const [forecastLength] = useState(24);
 
@@ -3889,7 +3892,6 @@ export default function App() {
             removePricingEvent={removePricingEvent}
             clearAllPricingEvents={clearAllPricingEvents}
             setActiveView={setActiveView}
-            missingMonths={whatIfMissingMonths}
           />
         )}
 

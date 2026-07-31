@@ -1364,6 +1364,26 @@ from the first case was written into this file. **Establish reachability before
 characterising severity** — and treat "I have measured this precisely" as a
 reason to check reachability, not a substitute for it.
 
+#### A dead subsystem leaves a tail — the first sweep missed three
+
+Removing `generateWhatIfForecast` orphaned `whatIfDelta`,
+`whatIfRevenueDelta` and `whatIfMissingMonths`: their only setters lived inside
+it, so all three sat at their initial values. The first removal pass did not
+catch them; the qa-tester gate did.
+
+They were already dead on main — the function was never called — so this was
+pre-existing, not introduced. That is the point: **removing a dead subsystem
+does not automatically remove what fed it or what it fed.** After deleting one,
+grep for the state it wrote and the props it filled, or the tail survives and
+still reads as live.
+
+**One tail deliberately NOT removed.** `WhatIfTab` declares an optional
+`missingMonths` prop and renders a gap warning when it is non-empty. Its only
+supplier was the deleted function, so that warning has never fired. The App-side
+plumbing is gone; the component's block is left in place, because deleting a
+working UI capability is a product decision rather than dead-code removal. It is
+recorded here so it is not mistaken for a feature that works.
+
 #### Retained deliberately
 
 `getUniqueCombos` survives the What-If removal: it is also called by the live
