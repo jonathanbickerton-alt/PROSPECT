@@ -1362,6 +1362,51 @@ The live actuals-side revenue accumulators are in `ForecastVsActualsTab.tsx`
 Market Event definitions is `resolveEventArpuRevenue` in `src/utils/forecasting.ts`
 — a different domain, not reusable for chart series.
 
+### The two-store relationship — TWO findings now, wants a mapper pass not a third point fix
+
+`forecastStore` (7-part `makeForecastKey`) and `savedForecasts` (5-part cohort
+id, `fKey|forecastType|scenario`) hold the same concept under different key
+shapes. Nothing type-errors when they disagree, because both keys are
+legitimate strings. Three defects have now come out of that relationship:
+
+| # | Finding | Status |
+|---|---|---|
+| 1 | Generate Missing wrote only `savedForecasts`, so nothing it produced reached `matchingBfs` | **FIXED** (`ec3c79a`) |
+| 2 | Deletes remove the `savedForecasts` entry without pruning `forecastStore` | **OPEN** — below |
+| 3 | Compare-mode branches write **key shapes no consumer reads** | **OPEN** — below |
+
+#### 3. Compare-mode write-only orphans — 2026-07-31
+
+The three `segmentMode`/`productMode`/`channelMode === 'compare'` branches of
+`generateStandardForecast` (`App.tsx`) call `setSavedForecasts` only — never
+`forecastStore`, never `setBaseForecast`. They write keys shaped
+`${cat}|${prodKey}|Standard Forecast|${scenario}` (4 fields) and
+`${segKey}|${prodKey}|${cat}|Standard Forecast|${scenario}` (5 fields).
+
+**No consumer reads those shapes.** Every reader of `savedForecasts` keys off a
+`cohortId` sourced from `allCohorts`, which is always the canonical 9-field
+`makeForecastKey(...)|type|scenario`. So those entries are permanently invisible
+to `hasForecast`, to the missing-cohort count and to the cohort-forecast viewer.
+
+**Benign today**, and deliberately not fixed: the compare branches produce
+comparison chart series rather than cohort forecasts, they never claim to have
+generated a cohort, and what renders on screen comes from `setForecastData`, not
+from these entries. They also correctly do not fire the bulk-generate trigger,
+since nothing was generated to follow up on.
+
+#### Why this now wants a dependency-mapper pass over the relationship itself
+
+Findings 2 and 3 point at the same unexamined area from opposite directions —
+**writes that land in a shape nobody reads, and deletes that prune one store but
+not the other.** Each was found incidentally while doing something else, which
+is the signal that the relationship has never been mapped as a whole.
+
+A third point fix would close one more instance and leave the class open. What
+is wanted is a map of every writer and every reader of both stores, which key
+shape each uses, and which of the two is authoritative for each question —
+then a decision about whether both stores should exist at all. Do not fold that
+into an unrelated branch.
+
 ### savedForecasts / forecastStore divergence on delete — OPEN, needs its own pass
 
 **Same class as the "Generate Missing" defect fixed in `ec3c79a`, but a
