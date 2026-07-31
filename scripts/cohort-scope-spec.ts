@@ -124,7 +124,19 @@ check('L1_ONLY cohort ignores tariff mismatch',
 // ── dimsFromGrouping ──────────────────────────────────────────────────────
 const d = dimsFromGrouping({ tariffL1: true });
 check('dimsFromGrouping enables only what is grouped',
-  d.tariffL1 && !d.productL2 && !d.channelL2 && !d.tariffL2, true);
+  d.tariffL1 && !d.product && !d.productL2 && !d.channelL1 && !d.channelL2 && !d.tariffL2, true);
+
+// Product L1 and Channel L1 are gateable too -- matchingBfs gates them on the
+// view's group-by checkboxes. Segment is the only always-applied dimension.
+check('product disabled ignores a product mismatch',
+  rowInScope(ROW, COLS, { product: 'Mobile Data' }, { ...ALL_DIMS, product: false }), true);
+check('channelL1 disabled ignores a channel mismatch',
+  rowInScope(ROW, COLS, { channel: 'Indirect' }, { ...ALL_DIMS, channelL1: false }), true);
+check('segment still binds with every other dimension off',
+  rowInScope(ROW, COLS, { segment: 'MNC' },
+    { product: false, productL2: false, channelL1: false, channelL2: false, tariffL1: false, tariffL2: false }), false);
+check('L1_ONLY still enforces product and channel L1',
+  rowInScope(ROW, COLS, { product: 'Mobile Data' }, L1_ONLY), false);
 
 // ── report ────────────────────────────────────────────────────────────────
 console.log(`cohortScope spec: ${pass} passed, ${fails.length} failed`);

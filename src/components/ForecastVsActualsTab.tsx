@@ -15,7 +15,7 @@ import { useForecast } from '../context/ForecastContext';
 import { CohortDimCheckboxes } from './CohortDimCheckboxes';
 import type { ViewFilter } from './ViewFilterBar';
 import type { CohortDims } from './CohortDimCheckboxes';
-import { rowInScope, ALL_DIMS, L1_ONLY } from '../utils/cohortScope';
+import { rowInScope, cohortInScope, dimsFromGrouping, ALL_DIMS, L1_ONLY } from '../utils/cohortScope';
 
 // ---------------------------------------------------------------------------
 // Props — all IBRO column mappings come from App; forecast data from context
@@ -636,15 +636,22 @@ function buildCohortAccuracy(
     const matchingBfs: BFEarly[] = (() => {
       if (cohortSrcEarly) return [cohortSrcEarly];
       const candidates: BFEarly[] = [];
+      // Shared predicate. The store key is the candidate, this row's dims are
+      // the scope, and the view's group-by checkboxes are the ScopeDims -- which
+      // is why product and channelL1 are gateable rather than always applied.
+      const rowScope = { segment: d.seg, product: d.prod, productL2: d.prodL2,
+        channel: d.chan, channelL2: d.chanL2, tariffL1: d.tariffL1, tariffL2: d.tariffL2 };
+      const matchDims = dimsFromGrouping({
+        product: dims.product, productL2: dims.productL2,
+        channelL1: dims.channelL1, channelL2: dims.channelL2,
+        tariffL1: dims.tariffL1, tariffL2: dims.tariffL2,
+      });
       for (const [key, bf] of forecastStore.entries()) {
         const p = key.split('|');
         if (p[0] !== d.seg) continue;
-        if (dims.product   && d.prod   !== 'All' && p[1] !== d.prod)   continue;
-        if (dims.productL2 && d.prodL2 !== 'All' && p[2] !== d.prodL2) continue;
-        if (dims.channelL1 && d.chan   !== 'All' && p[3] !== d.chan)    continue;
-        if (dims.channelL2 && d.chanL2 !== 'All' && p[4] !== d.chanL2) continue;
-        if (dims.tariffL1  && d.tariffL1 !== 'All' && p[5] !== d.tariffL1) continue;
-        if (dims.tariffL2  && d.tariffL2 !== 'All' && p[6] !== d.tariffL2) continue;
+        if (!cohortInScope({ segment: p[0], product: p[1], productL2: p[2],
+              channel: p[3], channelL2: p[4], tariffL1: p[5], tariffL2: p[6] },
+              rowScope, matchDims)) continue;
         candidates.push(bf);
       }
       // When productL2 is not a GROUP-BY dimension the store may contain both
@@ -762,16 +769,13 @@ function buildCohortAccuracy(
       for (const [key, rawMonthMap] of cohortActualsMap.entries()) {
         const [kSeg, kProd, kProdL2, kChan, kChanL2, kTariffL1, kTariffL2] = key.split('|');
         if (kSeg !== d.seg) continue;
-        const covered = matchingBfs.some(bf => {
-          const c = bf.cohort;
-          if (c.product  !== 'All' && c.product  !== kProd)   return false;
-          if (c.productL2 && c.productL2 !== 'All' && c.productL2 !== kProdL2) return false;
-          if (c.channel  !== 'All' && c.channel  !== kChan)   return false;
-          if (c.channelL2 && c.channelL2 !== 'All' && c.channelL2 !== kChanL2) return false;
-          if (c.tariffL1 && c.tariffL1 !== 'All' && c.tariffL1 !== kTariffL1) return false;
-          if (c.tariffL2 && c.tariffL2 !== 'All' && c.tariffL2 !== kTariffL2) return false;
-          return true;
-        });
+        // Shared predicate, direction reversed from matchingBfs above: here the
+        // ACTUALS key is the candidate and the forecast's cohort is the scope,
+        // asking whether this actuals bucket is covered by any matched forecast.
+        const covered = matchingBfs.some(bf => cohortInScope(
+          { segment: kSeg, product: kProd, productL2: kProdL2,
+            channel: kChan, channelL2: kChanL2, tariffL1: kTariffL1, tariffL2: kTariffL2 },
+          bf.cohort, ALL_DIMS));
         if (!covered) continue;
         for (const [month, entry] of rawMonthMap.entries()) {
           if (!scoped.has(month)) {

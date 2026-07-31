@@ -47,17 +47,23 @@
 
 /** Which optional dimensions participate. L1 product/channel and segment always do. */
 export type ScopeDims = {
+  /** Product L1 and Channel L1 are optional too: matchingBfs gates them on the
+   *  view's group-by checkboxes. Segment is the only dimension always applied. */
+  product: boolean;
   productL2: boolean;
+  channelL1: boolean;
   channelL2: boolean;
   tariffL1: boolean;
   tariffL2: boolean;
 };
 
 /** Every dimension participates — the default for a fully-specified cohort. */
-export const ALL_DIMS: ScopeDims = { productL2: true, channelL2: true, tariffL1: true, tariffL2: true };
+export const ALL_DIMS: ScopeDims = { product: true, productL2: true, channelL1: true, channelL2: true, tariffL1: true, tariffL2: true };
 
-/** L1 only. broadAggrSnapshotMap's setting, and the reason ScopeDims exists. */
-export const L1_ONLY: ScopeDims = { productL2: false, channelL2: false, tariffL1: false, tariffL2: false };
+/** L1 only: segment, product L1 and channel L1 apply; every L2 and tariff
+  * dimension is ignored. broadAggrSnapshotMap's setting, and the reason
+  * ScopeDims exists rather than a hardcoded seven-field compare. */
+export const L1_ONLY: ScopeDims = { product: true, productL2: false, channelL1: true, channelL2: false, tariffL1: false, tariffL2: false };
 
 /** A cohort scope. Any absent or 'All' field is a wildcard that matches anything. */
 export type CohortScope = {
@@ -91,9 +97,9 @@ type Field = keyof CohortScope;
 /** Field order, with the ScopeDims flag gating each optional one. */
 const FIELDS: { field: Field; dim: keyof ScopeDims | null }[] = [
   { field: 'segment',   dim: null },
-  { field: 'product',   dim: null },
+  { field: 'product',   dim: 'product' },
   { field: 'productL2', dim: 'productL2' },
-  { field: 'channel',   dim: null },
+  { field: 'channel',   dim: 'channelL1' },
   { field: 'channelL2', dim: 'channelL2' },
   { field: 'tariffL1',  dim: 'tariffL1' },
   { field: 'tariffL2',  dim: 'tariffL2' },
@@ -153,10 +159,13 @@ export function cohortInScope(
 
 /** Build ScopeDims from the view's group-by checkboxes. */
 export function dimsFromGrouping(g: {
-  productL2?: boolean; channelL2?: boolean; tariffL1?: boolean; tariffL2?: boolean;
+  product?: boolean; productL2?: boolean; channelL1?: boolean;
+  channelL2?: boolean; tariffL1?: boolean; tariffL2?: boolean;
 }): ScopeDims {
   return {
+    product: !!g.product,
     productL2: !!g.productL2,
+    channelL1: !!g.channelL1,
     channelL2: !!g.channelL2,
     tariffL1: !!g.tariffL1,
     tariffL2: !!g.tariffL2,
