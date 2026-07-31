@@ -404,7 +404,19 @@ function dedupeContainedForecasts(
     .map(e => e.bf);
 }
 
-/** True if the loaded forecast's cohort scope equals the filter bar scope exactly. */
+/**
+ * True if the loaded forecast's cohort scope EQUALS the filter bar scope exactly.
+ *
+ * NOT converted to cohortInScope, deliberately. This asks a third question:
+ * equality, where 'All' is a real value on both sides. cohortInScope treats
+ * 'All' on the scope side as a WILDCARD, so a RED S cohort would match a
+ * cleared tariff filter -- true under scoping, false under equality, and both
+ * call sites here want equality ("is the loaded forecast exactly what the
+ * filter bar is showing?").
+ *
+ * Equality, scoping and containment (scopeContains) are three distinct
+ * questions. Collapsing them is how the original sprawl started.
+ */
 function cohortMatchesFilter(cohort: BaseForecast['cohort'], filter: ViewFilter): boolean {
   return cohort.segment === (filter.segment || 'All')
     && cohort.product === (filter.product.l1 ?? 'All')
@@ -2842,30 +2854,19 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
 
     // Collect all forecasts that match the active filter (supports hierarchical L1/L2 selections)
     const matching: import('../types/forecast').BaseForecast[] = [];
+    // Shared predicate. The four hand-rolled *Match expressions this replaces
+    // were hierarchical-partial matching against the filter bar; the tariff one
+    // was added last and its absence is the defect trap B guards -- without it a
+    // tariff-scoped filter did not narrow the forecast set, so every tariff
+    // sibling was averaged into the summary cards.
+    const filterScope = {
+      segment: activeFilter?.segment,
+      product: activeFilter?.product?.l1, productL2: activeFilter?.product?.l2,
+      channel: activeFilter?.channel?.l1, channelL2: activeFilter?.channel?.l2,
+      tariffL1: activeFilter?.tariff?.l1, tariffL2: activeFilter?.tariff?.l2,
+    };
     for (const bf of forecastStore.values()) {
-      const { segment, product, productL2, channel, channelL2, tariffL1, tariffL2 } = bf.cohort;
-      const afSeg  = activeFilter?.segment;
-      const afProd = activeFilter?.product;
-      const afChan = activeFilter?.channel;
-      const afTar  = activeFilter?.tariff;
-      const segMatch  = !afSeg || afSeg === 'All' || afSeg === segment;
-      const prodMatch =
-        !afProd?.l1 ||
-        (afProd.l1 === product &&
-          (!afProd.l2 || afProd.l2 === (productL2 || 'All')));
-      const chanMatch =
-        !afChan?.l1 ||
-        (afChan.l1 === channel &&
-          (!afChan.l2 || afChan.l2 === (channelL2 || 'All')));
-      // Without tarMatch a tariff-scoped filter does not narrow the forecast
-      // set, so every tariff sibling is averaged into the summary cards.
-      const tarMatch =
-        !afTar?.l1 || afTar.l1 === 'All' ||
-        (afTar.l1 === (tariffL1 || 'All') &&
-          (!afTar.l2 || afTar.l2 === 'All' || afTar.l2 === (tariffL2 || 'All')));
-      if (segMatch && prodMatch && chanMatch && tarMatch) {
-        matching.push(bf);
-      }
+      if (cohortInScope(bf.cohort, filterScope, ALL_DIMS)) matching.push(bf);
     }
 
     if (!matching.length) return empty;
