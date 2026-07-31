@@ -11,7 +11,8 @@
     "lint": "tsc --noEmit",
     "dev:express": "tsx server.ts",
     "build:trimmed-fixture": "node scripts/build-trimmed-fixture.mjs",
-    "traps": "tsx scripts/regression-traps.tsx"
+    "traps": "tsx scripts/regression-traps.tsx",
+    "spec:scope": "tsx scripts/cohort-scope-spec.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",
