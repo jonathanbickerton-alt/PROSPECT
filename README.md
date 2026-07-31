@@ -88,7 +88,6 @@ src/
 │   │                               #  • MarketEvent interface and event application logic
 │   │                               #  • Cohort data aggregation helpers
 │   │
-│   └── varianceEngine.ts           # Actuals vs forecast comparison engine:
 │                                   #  • Computes absolute and percentage variance per month
 │                                   #  • Calculates MAPE across all cohorts
 │                                   #  • Flags whether actuals fall within confidence bands
@@ -141,7 +140,6 @@ src/
     │   └── RemoveActualsModal.tsx           # Confirmation dialog for clearing actuals
     │
     └── ── Shared / Utility Components
-        ├── ChallengerModels.tsx    # AutoML challenger model panel — runs alternative forecast
         │                           # models and surfaces accuracy comparisons
         ├── CohortDimCheckboxes.tsx # Checkbox group for cohort dimension selection
         ├── ForecastSummaryBar.tsx  # KPI strip showing total forecast volume and revenue
