@@ -12,6 +12,9 @@
  *      forecast (+97.7%) every month — the cohort's actuals were being summed
  *      across all five tariffs while the forecast covered one.
  *      (ForecastVsActualsTab.tsx:1607, :238)
+ *      Asserts BOTH paths: the variance table (fed by actualsAggrMap) and the
+ *      summary MAPE cards (fed by computeForecastMape). Breaking only the
+ *      second left all three traps green until 2026-07-31.
  *
  *   B. summaryMape's tarMatch. A tariff filter must NARROW the forecast set.
  *      Without tarMatch the summary cards ignore the tariff dimension, so the
@@ -218,8 +221,27 @@ async function main() {
         `Base actuals ~${Math.round(scale)} match the ALL-TARIFF total ~${Math.round(expectAll)}, not the RED S total ~${Math.round(expectOne)}. ` +
         `This is the +97.7% defect: actuals summed across ${ratio.toFixed(1)}x the forecast's scope.`);
     } else if (nearOne) {
-      record('A', 'tariff grain (actualsAggrMap + computeForecastMape)', 'PASS',
-        `Base actuals ~${Math.round(scale)} match the RED S total ~${Math.round(expectOne)} (all-tariff would be ~${Math.round(expectAll)}, ${ratio.toFixed(1)}x)`);
+      // The variance table above is fed by actualsAggrMap. computeForecastMape is
+      // a SEPARATE path feeding the summary MAPE cards, and breaking only its
+      // tariff scoping left every trap green while the cards read 97.6% -- the
+      // exact defect this trap names. Assert the cards too, or the docstring
+      // claims coverage the trap does not have.
+      const cardPcts = r.summaryCards
+        .map(c => Number((c.split('=')[1] || '').replace('%', '')))
+        .filter(n => isFinite(n));
+      const worst = cardPcts.length ? Math.max(...cardPcts) : NaN;
+      if (!cardPcts.length) {
+        record('A', 'tariff grain (actualsAggrMap + computeForecastMape)', 'INCONCLUSIVE',
+          'variance table is correctly scoped but no summary MAPE cards rendered, so computeForecastMape was not exercised');
+      } else if (worst > 20) {
+        record('A', 'tariff grain (actualsAggrMap + computeForecastMape)', 'FAIL',
+          `variance table is correctly tariff-scoped (~${Math.round(scale)}) but summary MAPE peaks at ${worst}% -- ` +
+          `computeForecastMape is scoping actuals across ${ratio.toFixed(1)}x its forecast's tariff scope. This is the +97.7% defect on the cards.`);
+      } else {
+        record('A', 'tariff grain (actualsAggrMap + computeForecastMape)', 'PASS',
+          `Base actuals ~${Math.round(scale)} match the RED S total ~${Math.round(expectOne)} (all-tariff ~${Math.round(expectAll)}, ${ratio.toFixed(1)}x); ` +
+          `summary MAPE peaks at ${worst}% (computeForecastMape scoped correctly)`);
+      }
     } else {
       record('A', 'tariff grain (actualsAggrMap + computeForecastMape)', 'FAIL',
         `Base actuals ~${Math.round(scale)} match neither the RED S total ~${Math.round(expectOne)} nor the all-tariff total ~${Math.round(expectAll)}`);
