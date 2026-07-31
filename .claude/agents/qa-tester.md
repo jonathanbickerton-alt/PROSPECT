@@ -154,6 +154,28 @@ because its absence produced a false pass.
       rows sit at zero in the same output. Assert your predicate against a
       known-positive and a known-negative sample before trusting a count of 0.
 
+11. **A regression trap that passes proves nothing until it has been shown to
+    fail.** Standard 10 says a criterion asserting a defect is absent needs a
+    baseline showing it present. This is the same principle turned on the
+    TESTS: before trusting a guard-protecting check, neuter the guard it
+    protects and confirm the check catches it. A trap that cannot fail is not
+    protection, it is a green light with no wiring behind it.
+
+    Worked example. Three traps were written for `npm run traps`; all three
+    passed on a clean tree. Mutation-testing each guard in turn showed two
+    caught their defect and **one did not**. Trap B (summaryMape's `tarMatch`)
+    compared the rendered output with a tariff filter set against the same
+    output cleared — but it scraped EVERY percentage in the component, and the
+    variance and accuracy figures move with the filter for reasons unrelated to
+    `tarMatch`. So the two states always differed, the trap always passed, and
+    setting `tarMatch = true` did not flip it. Retargeted to read only the
+    summary MAPE cards, it fails as it should.
+
+    Note the shape: the trap was not obviously wrong, it was too BROAD. It
+    observed a superset of the signal, and the surrounding noise guaranteed the
+    assertion. When a check compares two rendered states, confirm the thing you
+    are scraping is the thing the guard controls, and nothing else.
+
 Write scratch scripts to the scratchpad directory, never into the repo.
 
 ## How you report
