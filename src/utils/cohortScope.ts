@@ -24,6 +24,27 @@
  * each entry point — not six edits across four files.
  */
 
+/**
+ * WILDCARD CONVENTION — deliberate, and uniform across every dimension.
+ *
+ * On the SCOPE side, `null`, `undefined` and the string `'All'` all mean
+ * "do not constrain this dimension". There is no dimension where `'All'` is
+ * treated as a literal value to match against.
+ *
+ * This is a deliberate widening over the predicates it replaced. The old
+ * `actualsAggrMap` activeFilter branch treated `'All'` as a wildcard for
+ * segment and tariff but as a LITERAL for product and channel — so a scope of
+ * `product: 'All'` filtered rows down to those whose product column literally
+ * read "All", which is nothing. Callers never hit it because product and
+ * channel use `null` for "no filter" and only segment uses `'All'`, but that
+ * made the behaviour a property of caller convention rather than of the
+ * predicate. It is now a property of the predicate, and locked by spec.
+ *
+ * **If a caller ever needs `'All'` as a literal cohort value, that needs a
+ * different mechanism** — an explicit sentinel or a separate entry point.
+ * Do not special-case it here: uniformity is the whole point.
+ */
+
 /** Which optional dimensions participate. L1 product/channel and segment always do. */
 export type ScopeDims = {
   productL2: boolean;

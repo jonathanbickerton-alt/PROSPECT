@@ -22,6 +22,12 @@ const ROW = {
   tariff_tier_l1: 'RED S', tariff_tier_l2: 'SIM-only',
 };
 
+/** A fully-specified cohort, for the cohortInScope wildcard cases. */
+const COHORT_FULL: CohortScope = {
+  segment: 'Corporate', product: 'Mobile Voice', productL2: 'Premium',
+  channel: 'Direct', channelL2: 'Inside Sales', tariffL1: 'RED S', tariffL2: 'SIM-only',
+};
+
 let pass = 0; const fails: string[] = [];
 const check = (name: string, got: boolean, want: boolean) => {
   if (got === want) pass++; else fails.push(`${name}: got ${got}, expected ${want}`);
@@ -67,6 +73,35 @@ check('tariffL1 disabled ignores tariff, channelL2 enabled still binds',
 check('channelL2 disabled ignores channelL2',
   rowInScope(ROW, COLS, { channelL2: 'Digital Direct' },
     { ...ALL_DIMS, channelL2: false }), true);
+
+// ── the 'All' wildcard convention, on EVERY dimension ────────────────────
+// Locked deliberately. The predicates this replaced treated 'All' as a
+// wildcard for segment and tariff but as a LITERAL for product and channel,
+// so the behaviour depended on callers using null there rather than on the
+// predicate. These cases make it the predicate's property.
+for (const [field, col] of [
+  ['segment', COLS.segment], ['product', COLS.product], ['productL2', COLS.productL2],
+  ['channel', COLS.channel], ['channelL2', COLS.channelL2],
+  ['tariffL1', COLS.tariffL1], ['tariffL2', COLS.tariffL2],
+] as [keyof CohortScope, string][]) {
+  check(`'All' is a wildcard on ${field}`,
+    rowInScope(ROW, COLS, { [field]: 'All' } as CohortScope, ALL_DIMS), true);
+  check(`null is a wildcard on ${field}`,
+    rowInScope(ROW, COLS, { [field]: null } as CohortScope, ALL_DIMS), true);
+  check(`undefined is a wildcard on ${field}`,
+    rowInScope(ROW, COLS, {} as CohortScope, ALL_DIMS), true);
+  // and the negative: a real value on that dimension still constrains
+  check(`a real value still constrains ${field}`,
+    rowInScope({ ...ROW, [col]: 'SOMETHING ELSE' }, COLS,
+      { [field]: String((ROW as any)[col]) } as CohortScope, ALL_DIMS), false);
+  check(`'All' is a wildcard on ${field} (cohort entry point)`,
+    cohortInScope(COHORT_FULL, { [field]: 'All' } as CohortScope, ALL_DIMS), true);
+}
+
+// A scope of 'All' must NOT be read as "match rows whose column literally says
+// All" — the old activeFilter branch did exactly that for product and channel.
+check("'All' scope does not filter down to literal-'All' rows",
+  rowInScope(ROW, COLS, { product: 'All', channel: 'All' }, ALL_DIMS), true);
 
 // ── cohortInScope ─────────────────────────────────────────────────────────
 const COHORT: CohortScope = {
