@@ -1233,6 +1233,52 @@ that the deferred ARPU/revenue tooltip phase would touch. A session widening
 is real, and "fix" it — which is exactly when the mismatch becomes shipped
 behaviour.
 
+### Dead code — `exportToExcel` was dead, and was mistaken for a live defect
+
+**DELETED 2026-07-31** (`App.tsx`, ~146 lines). It was declared, never invoked,
+never exported. The live export is `exportSession` — the 7-sheet save-point
+reached via `openExportModal`.
+
+Its key parser assumed the old 4/5-part format:
+
+```ts
+const channel      = parts.length >= 5 ? (parts[2] || 'All') : 'All';
+const forecastType = parts.length >= 5 ? parts[3] : parts[2];
+const scenario     = parts.length >= 5 ? parts[4] : parts[3];
+```
+
+Against the 9-part keys the app has written since Product L2 and tariff landed
+(`makeForecastKey`'s 7 parts + `|type|scenario`), that reads **productL2 as the
+channel, channel as the forecast type, and channelL2 as the scenario**.
+Reproduced: 3 of 4 real key shapes misparsed; only the legacy 5-part What-If key
+(`App.tsx:3094`) parsed correctly.
+
+**`exportSession` is unaffected** and always was: it reads `BaseForecast` objects
+from `forecastStore` and takes values off `bf.cohort.*`, never parsing a
+`savedForecasts` key positionally (`grep -c "parts\["` over it returns 0).
+Verified at deletion by building unminified before and after and comparing the
+emitted `exportSession` — byte-identical, 13,309 chars, same SHA.
+
+A prop named `exportToExcel` whose value was `openExportModal` was renamed to
+`onOpenExportModal`. That name is what made the dead function read as wired.
+
+#### The rule: establish reachability BEFORE characterising severity
+
+This was reported up as "a live, user-visible data-integrity defect on main". It
+was not: the logic was verified and the reachability was not. The misparse is
+real; nothing can invoke it.
+
+**This is the exact inverse of the `varianceEngine.ts` miss below, and the same
+underlying error** — reasoning about a code path's behaviour without first
+establishing whether anything reaches it. There it caused a dead calculator to
+be treated as a foothold worth building on; here it caused dead code to be
+escalated as a shipped defect and to displace planned work.
+
+Before calling anything a defect, a regression, or a priority: grep for call
+sites, confirm the identifier is not merely a prop name or a comment, and check
+whether a replacement already superseded it. `grep -n <name>` returning only a
+declaration, a comment and a prop label is the signature of dead code.
+
 ### Dead code — `varianceEngine.ts` / `ChallengerModels.tsx` are NOT live
 
 `src/utils/varianceEngine.ts:78` and `src/components/ChallengerModels.tsx:112`

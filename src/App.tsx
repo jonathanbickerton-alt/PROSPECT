@@ -1085,152 +1085,12 @@ export default function App() {
     reader.readAsArrayBuffer(file);
   };
 
-  const exportToExcel = () => {
-    if (Object.keys(savedForecasts).length === 0) {
-      alert('No forecasts to export.');
-      return;
-    }
-
-    const dateColName = wiDateCol || 'Date';
-    const segColName = wiSegmentCol || 'Customer_Segment';
-    const prodColName = wiProductCol || 'Product';
-    const chanColName = wiChannelCol || 'Channel_Level_1';
-    const metricColName = wiMetricCol || 'IBRO_Scenario_Type';
-    const valueColName = wiValueCol || 'Subscriber_Volume';
-
-    // Build lookup: "yyyy-MM|segment|product|channel|scenario" → forecast values
-    const forecastMap = new Map<string, { value: number; optimistic: number | null; pessimistic: number | null; forecastType: string }>();
-
-    Object.entries(savedForecasts).forEach(([key, forecastRows]) => {
-      const parts = key.split('|');
-      // Handle both old 4-part and new 5-part key formats
-      const segment = parts[0] || 'All';
-      const product = parts[1] || 'All';
-      const channel = parts.length >= 5 ? (parts[2] || 'All') : 'All';
-      const forecastType = parts.length >= 5 ? parts[3] : parts[2];
-      const scenario = parts.length >= 5 ? parts[4] : parts[3];
-
-      (forecastRows as any[]).forEach((row: any) => {
-        if (row.Type !== 'Forecast') return;
-
-        const dateVal = row.date || row[wiDateCol];
-        if (!dateVal) return;
-        const d = dateVal instanceof Date ? dateVal : new Date(dateVal);
-        if (!isValid(d)) return;
-        const dateKey = format(d, 'yyyy-MM');
-
-        let forecastValue = 0;
-        if (forecastType && forecastType.includes('What-If')) {
-          forecastValue = Number(row['Total Subscribers (Uplifted)']) || Number(row['Total Revenue (Uplifted)']) || Number(row['Mean (Base)']) || 0;
-        } else {
-          forecastValue = Number(row['Mean (Base)']) || Number(row[valueColName]) || 0;
-        }
-
-        const mapKey = `${dateKey}|${segment}|${product}|${channel}|${scenario}`;
-        forecastMap.set(mapKey, {
-          value: forecastValue,
-          optimistic: row['Optimistic'] != null ? Number(row['Optimistic']) : null,
-          pessimistic: row['Pessimistic'] != null ? Number(row['Pessimistic']) : null,
-          forecastType: forecastType || 'Standard Forecast'
-        });
-      });
-    });
-
-    // Start with existing actuals rows, appending forecast columns
-    const exportRows: any[] = [];
-    const usedForecastKeys = new Set<string>();
-
-    data.forEach(row => {
-      const newRow: any = {};
-      // Copy original columns in order
-      Object.keys(row).forEach(col => {
-        const val = row[col];
-        // Format dates to yyyy-MM
-        if (col === dateColName && val) {
-          const d = new Date(val);
-          newRow[col] = isValid(d) ? format(d, 'yyyy-MM') : val;
-        } else {
-          newRow[col] = val;
-        }
-      });
-
-      // Look up matching forecast
-      const dateVal = row[dateColName];
-      const d = dateVal ? new Date(dateVal) : null;
-      const dateKey = d && isValid(d) ? format(d, 'yyyy-MM') : '';
-      const seg = String(row[segColName] || 'All');
-      const prod = String(row[prodColName] || 'All');
-      const chan = String(row[chanColName] || 'All');
-      const scenario = String(row[metricColName] || '');
-
-      const mapKey = `${dateKey}|${seg}|${prod}|${chan}|${scenario}`;
-      const forecast = forecastMap.get(mapKey);
-
-      newRow['Forecast_Value'] = forecast ? forecast.value : '';
-      newRow['Forecast_Optimistic'] = forecast?.optimistic ?? '';
-      newRow['Forecast_Pessimistic'] = forecast?.pessimistic ?? '';
-      newRow['Forecast_Type'] = forecast?.forecastType ?? '';
-
-      if (forecast) usedForecastKeys.add(mapKey);
-      exportRows.push(newRow);
-    });
-
-    // Add future-month rows (forecasts with no matching actuals)
-    const originalCols = data.length > 0 ? Object.keys(data[0]) : [];
-    forecastMap.forEach((forecast, mapKey) => {
-      if (usedForecastKeys.has(mapKey)) return;
-      const [dateKey, seg, prod, chan, scenario] = mapKey.split('|');
-
-      const newRow: any = {};
-      originalCols.forEach(col => { newRow[col] = ''; });
-      newRow[dateColName] = dateKey;
-      newRow[segColName] = seg;
-      newRow[prodColName] = prod;
-      newRow[chanColName] = chan;
-      newRow[metricColName] = scenario;
-      // Leave value columns blank for future months
-      newRow[valueColName] = '';
-      newRow['Forecast_Value'] = forecast.value;
-      newRow['Forecast_Optimistic'] = forecast.optimistic ?? '';
-      newRow['Forecast_Pessimistic'] = forecast.pessimistic ?? '';
-      newRow['Forecast_Type'] = forecast.forecastType;
-      exportRows.push(newRow);
-    });
-
-    // Sort by date
-    exportRows.sort((a, b) => String(a[dateColName] || '').localeCompare(String(b[dateColName] || '')));
-
-    const ws = XLSX.utils.json_to_sheet(exportRows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Prospect_Forecast");
-
-    // Add Market Events as a separate sheet so they can be re-imported next month
-    if (marketEvents.length > 0) {
-      const eventRows = marketEvents.map(e => ({
-        Name: e.name ?? '',
-        Campaign_Name: e.campaignName ?? '',
-        Scenario: e.scenario,
-        Segment: e.segment,
-        Product: e.product,
-        Product_L2: e.productL2 ?? 'All',
-        Channel: e.channel,
-        Channel_L2: e.channelL2 ?? 'All',
-        Tariff_L1: e.tariffL1 ?? 'All',
-        Tariff_L2: e.tariffL2 ?? 'All',
-        Date: e.date,
-        Subscriber_Volume: e.subscriberVolume,
-        Customer_Volume: e.customerVolume,
-        Revenue: e.revenue,
-        ARPU: e.arpu,
-        Contract_Length_Months: e.contractLength ?? 24,
-        Comment: e.comment,
-      }));
-      const wsEvents = XLSX.utils.json_to_sheet(eventRows);
-      XLSX.utils.book_append_sheet(wb, wsEvents, "Market_Events");
-    }
-
-    XLSX.writeFile(wb, "prospect_forecast_export.xlsx");
-  };
+  // NOTE: exportToExcel was deleted here on 2026-07-31. It was dead code —
+  // declared, never invoked, not exported. The live export is exportSession
+  // (the 7-sheet save-point) reached via openExportModal. Its key parser still
+  // assumed the old 4/5-part format and misparsed the 9-part keys the app has
+  // written since Product L2 and tariff landed; see EXPECTED.md. Do not
+  // reinstate it — build on exportSession.
 
   const [overallSegmentFilter, setOverallSegmentFilter] = useState('All');
   const [overallProductFilter, setOverallProductFilter] = useState('All');
@@ -4275,7 +4135,7 @@ export default function App() {
             setOverallTypeFilter={setOverallTypeFilter}
             overallStatusFilter={overallStatusFilter}
             setOverallStatusFilter={setOverallStatusFilter}
-            exportToExcel={openExportModal}
+            onOpenExportModal={openExportModal}
             setSavedForecasts={setSavedForecasts}
             savedForecasts={savedForecasts}
             missingCohorts={missingStandardCohorts}

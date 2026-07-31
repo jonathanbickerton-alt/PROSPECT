@@ -23,7 +23,11 @@ interface OverallForecastTabProps {
   setOverallTypeFilter: (val: string) => void;
   overallStatusFilter: string;
   setOverallStatusFilter: (val: string) => void;
-  exportToExcel: () => void;
+  /** Opens the session-export modal. Named for what it does: an earlier
+   *  prop called exportToExcel pointed at this same modal opener while a dead
+   *  function of that name sat in App.tsx, which made the dead one read as
+   *  wired. See EXPECTED.md. */
+  onOpenExportModal: () => void;
   setSavedForecasts: React.Dispatch<React.SetStateAction<Record<string, any>>>;
   savedForecasts: Record<string, any>;
   /** THE canonical missing-cohort list (App's missingStandardCohorts). Never
@@ -56,7 +60,7 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
   setOverallTypeFilter,
   overallStatusFilter,
   setOverallStatusFilter,
-  exportToExcel,
+  onOpenExportModal,
   setSavedForecasts,
   savedForecasts,
   missingCohorts,
@@ -135,7 +139,7 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
           </div>
           <div className="flex items-center gap-3">
             <button 
-              onClick={exportToExcel}
+              onClick={onOpenExportModal}
               className="px-4 py-2 text-sm font-medium bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors shadow-sm flex items-center gap-2"
             >
               <Download size={18} />{t('common_export_to_excel')}</button>
