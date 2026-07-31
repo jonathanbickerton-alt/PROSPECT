@@ -1377,13 +1377,19 @@ does not automatically remove what fed it or what it fed.** After deleting one,
 grep for the state it wrote and the props it filled, or the tail survives and
 still reads as live.
 
-**One tail deliberately NOT removed.** `WhatIfTab` declares an optional
-`missingMonths` prop and renders a gap warning when it is non-empty. Its only
-supplier was the deleted function, so that warning has never fired. The App-side
-plumbing is gone; the component's block is left in place, because deleting a
-working UI capability is a product decision rather than dead-code removal. It is
-recorded here so it is not mistaken for a feature that works.
+**The tail was removed too, 2026-07-31.** `WhatIfTab`'s `missingMonths` prop and
+its gap-warning block are gone. It was not a working capability being deleted —
+it was a **duplicate stub of a feature that already works elsewhere**. Gap
+detection is live via `calculateBaseForecast`, which computes `missingMonths`
+onto the `BaseForecast`, surfaced by StandardForecastTab's amber warning
+(checklist item 11). WhatIfTab's copy had no supplier and never fired. Four
+`whatif_*` translation keys orphaned by the removal were dropped from all six
+locales.
 
+That correction matters: "leave it, deleting a UI capability is a product
+decision" was the wrong read. The capability was never in that block — it was in
+the live path all along, and the block only made it look like Market Events had
+its own gap detection.
 #### Retained deliberately
 
 `getUniqueCombos` survives the What-If removal: it is also called by the live

@@ -91,7 +91,6 @@ interface WhatIfTabProps {
   formatNumber: (v: any) => string;
   setActiveView: (v: string) => void;
   /** Calendar months absent from the cohort's historical series — populated by gap detection in computeWhatIfData */
-  missingMonths?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -1024,7 +1023,6 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   downloadExcel,
   formatNumber,
   setActiveView,
-  missingMonths,
 }) => {
   const { t } = useTranslation();
   const { baseForecast, setAdjustedForecast } = useForecast();
@@ -2014,20 +2012,6 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           >
             <ArrowLeft size={14} />{t('whatif_back_to_step_1')}</button>
         </div>
-
-        {/* Missing-month gap warning */}
-        {missingMonths && missingMonths.length > 0 && (
-          <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-100 rounded-xl text-sm text-amber-800">
-            <Info size={15} className="shrink-0 mt-0.5 text-amber-500" />
-            <span>
-              <strong>{t('common_missing_months_detected_in_historical_data')}</strong>{' '}
-              
-              {t('whatif_the_following')}{missingMonths.length === 1 ? t('whatif_month_is') : t('whatif_months_are')} {t('whatif_absent_from_this_cohort_s_history')}{' '}
-              <span className="font-mono">{missingMonths.join(', ')}</span>.
-              {' '}{t('whatif_gaps_can_bias_level_and_trend_initialisation')}
-            </span>
-          </div>
-        )}
 
         {/* ── KPI focus ────────────────────────────────────────────────────── */}
         {/* Cohort dimensions REMOVED. They used to scope computeAdjustedForecast,
