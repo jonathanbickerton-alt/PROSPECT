@@ -50,6 +50,14 @@ export interface BulkGenerateModalProps {
 
 type Phase = 'confirm' | 'generating' | 'complete';
 
+/** Above this many cohorts the run is a whole-dataset job rather than a top-up,
+  * and the modal says so before the confirm. Generating one cohort reduces the
+  * outstanding count by exactly one, so a user who has generated a handful still
+  * sees essentially the full number here -- which is the point: the offer is the
+  * same size whichever path raised it. Measured on the shipped fixtures: 7,736
+  * cohorts on the trimmed file and 31,856 on the full tariff file from cold. */
+const SCALE_WARN_THRESHOLD = 500;
+
 export function BulkGenerateModal({
   isOpen,
   onClose,
@@ -150,6 +158,25 @@ export function BulkGenerateModal({
                 )}
               </div>
             </div>
+
+            {/* Scale warning. Shown on EVERY entry path, not just the new
+                'All'-state one. generateAllMissingForecasts is never passed
+                cohortIds from this modal, so every route offers the same
+                whole-dataset job -- the post-generation path already offered
+                tens of thousands of cohorts unqualified, and fixing the trigger
+                without this would have left that unchanged and merely more
+                reachable. missingCount is the real number in all cases. */}
+            {missingCount >= SCALE_WARN_THRESHOLD && (
+              <div className="px-6 pb-3">
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-start gap-2.5">
+                  <AlertTriangle size={15} className="text-amber-500 shrink-0 mt-0.5" />
+                  <div className="text-xs text-amber-900 leading-relaxed">
+                    <p className="font-semibold">{t('bulk_large_run_title', { count: missingCount.toLocaleString() })}</p>
+                    <p className="text-amber-700 mt-0.5">{t('bulk_large_run_detail')}</p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Model strategy */}
             <div className="mx-6 mb-4">

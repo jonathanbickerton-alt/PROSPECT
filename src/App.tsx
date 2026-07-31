@@ -2178,6 +2178,21 @@ export default function App() {
       }
 
       setIsLoading(false);
+      // Raise the standing bulk-generate prompt from the aggregated ('All') path
+      // too. Until now the trigger lines lived only after this branch's return,
+      // so a user sitting at the default All state -- where most people start --
+      // never saw the offer, which is most of what the bulk-generate work exists
+      // to shrink. Set AFTER the setForecastStore/setBaseForecast writes above
+      // for the ordering reason documented at openBulkPrompt: the check must
+      // defer until state has landed or missingStandardCohorts still counts the
+      // cohort just generated.
+      //
+      // Source is null deliberately. A {segment:'All',...} source renders as
+      // "Just generated: All cohorts", which implies both a generation that did
+      // not happen and a scoping relationship to the offer that does not exist --
+      // generateAllMissingForecasts is never passed cohortIds from this modal.
+      setBulkSourceCohort(null);
+      setTriggerBulkCheck(prev => prev + 1);
       return;
     }
 
