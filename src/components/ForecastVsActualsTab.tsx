@@ -15,6 +15,7 @@ import { useForecast } from '../context/ForecastContext';
 import { CohortDimCheckboxes } from './CohortDimCheckboxes';
 import type { ViewFilter } from './ViewFilterBar';
 import type { CohortDims } from './CohortDimCheckboxes';
+import { rowInScope, L1_ONLY } from '../utils/cohortScope';
 
 // ---------------------------------------------------------------------------
 // Props — all IBRO column mappings come from App; forecast data from context
@@ -1925,18 +1926,19 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     // unfiltered by activeFilter), producing garbage share ratios → MAPE = 0.
     type Bucket = { inflow: number; outflow: number; retention: number };
     const map = new Map<string, Bucket>();
-    const filteredData = data.filter(row => {
-      // L1-only cohort scope (strip L2 filter — broadAggrSnapshotMap is the L1 denominator)
-      if (cohort) {
-        if (wiSegmentCol && cohort.segment !== 'All' &&
-            String(row[wiSegmentCol]).trim() !== cohort.segment.trim()) return false;
-        if (wiProductCol && cohort.product !== 'All' &&
-            String(row[wiProductCol]).trim() !== cohort.product.trim()) return false;
-        if (wiChannelCol && cohort.channel !== 'All' &&
-            String(row[wiChannelCol]).trim() !== cohort.channel.trim()) return false;
-      }
-      return true;
-    });
+    // Shared predicate, L1_ONLY. The L2 stripping is deliberate and is exactly
+    // why the predicate takes a ScopeDims argument rather than always comparing
+    // seven fields — see src/utils/cohortScope.ts.
+    //
+    // TARIFF IS ALSO EXCLUDED, and that is NOT covered by the "strip L2" intent.
+    // It was never added when the tariff dimension landed. Preserved here
+    // deliberately so this conversion is measurable as behaviour-identical.
+    // Whether to include tariffL1 is a separate question with its own numbers:
+    // tariff is collinear with product/channel in this data, and narrowing the
+    // BROAD denominator is exactly what the comment above warns against.
+    const broadCols = { segment: wiSegmentCol, product: wiProductCol, channel: wiChannelCol };
+    const filteredData = data.filter(row =>
+      !cohort || rowInScope(row, broadCols, cohort, L1_ONLY));
     filteredData.forEach(row => {
       const rawDate = row[wiDateCol];
       if (!rawDate) return;
