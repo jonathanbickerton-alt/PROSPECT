@@ -79,6 +79,7 @@ interface WhatIfTabProps {
   setNewYieldEvent: (e: Partial<YieldEvent>) => void;
   addYieldEvent: (e: YieldEvent) => void;
   removeYieldEvent: (id: string) => void;
+  updateYieldEvent: (id: string, patch: Partial<YieldEvent>) => void;
   clearAllYieldEvents: () => void;
   /** Pricing Events (Pricing tab) */
   pricingEvents: PricingEvent[];
@@ -86,6 +87,7 @@ interface WhatIfTabProps {
   setNewPricingEvent: (e: Partial<PricingEvent>) => void;
   addPricingEvent: (e: PricingEvent) => void;
   removePricingEvent: (id: string) => void;
+  updatePricingEvent: (id: string, patch: Partial<PricingEvent>) => void;
   clearAllPricingEvents: () => void;
   downloadExcel: (data: any[], filename: string, params?: any[]) => void;
   formatNumber: (v: any) => string;
@@ -373,6 +375,56 @@ function groupByCampaign(events: MarketEvent[]): Map<string, { rows: MarketEvent
  *  the Custom Promotion Card's mix arm (Phase 4). Clamps the changed tier and
  *  redistributes the remainder across the others proportionally to their
  *  current share, so the total always sums to exactly 100. */
+/**
+ * Seed a tier mix when the tier list changes, PRESERVING weights the user or a
+ * restored event already set for tiers that survive.
+ *
+ * This used to unconditionally reset every tier to equal weights. That silently
+ * destroyed a restored mix: handleEditPromoStart sets newPromo and
+ * promoDraftMix in the same callback, newPromo changes the cohort the tier list
+ * derives from, and if the recomputed tiers differ at all the reset effect fires
+ * on the next render and overwrites the just-restored mix before the user sees
+ * it. Editing a promotion appeared to work and quietly discarded its mix.
+ *
+ * Rule: keep any weight already present for a surviving tier, give genuinely new
+ * tiers an even share of what is left, then normalise to 100. With no prior mix
+ * every tier is new and this reduces exactly to the old equal-weight behaviour.
+ */
+export function seedMixPreserving(
+  prev: Record<string, number>,
+  tiers: string[],
+): Record<string, number> {
+  if (tiers.length === 0) return {};
+  const kept = tiers.filter(t => typeof prev[t] === 'number' && isFinite(prev[t]));
+  const fresh = tiers.filter(t => !kept.includes(t));
+  const keptSum = kept.reduce((s, t) => s + prev[t], 0);
+  const out: Record<string, number> = {};
+  if (!kept.length) {
+    // No prior weights at all — the original equal-weight seed, unchanged.
+    const eq = 100 / tiers.length;
+    tiers.forEach((t, i) => {
+      out[t] = i === tiers.length - 1 ? 100 - eq * (tiers.length - 1) : eq;
+    });
+    return out;
+  }
+  const remaining = Math.max(0, 100 - keptSum);
+  const share = fresh.length ? remaining / fresh.length : 0;
+  for (const t of kept) out[t] = prev[t];
+  for (const t of fresh) out[t] = share;
+  // Normalise so the total is exactly 100 even when the kept weights did not sum
+  // to it (a partial tier overlap leaves keptSum below or above 100).
+  const total = tiers.reduce((sum, t) => sum + out[t], 0);
+  if (total > 0 && Math.abs(total - 100) > 1e-9) {
+    const k = 100 / total;
+    for (const t of tiers) out[t] = out[t] * k;
+  }
+  // Last tier absorbs any floating-point residual so the total reads exactly 100.
+  const last = tiers[tiers.length - 1];
+  const others = tiers.slice(0, -1).reduce((sum, t) => sum + out[t], 0);
+  out[last] = 100 - others;
+  return out;
+}
+
 function autoBalanceMix(prev: Record<string, number>, changedTier: string, newValue: number): Record<string, number> {
   const clamped = Math.min(100, Math.max(0, newValue));
   const others = Object.keys(prev).filter(t => t !== changedTier);
@@ -1013,12 +1065,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   setNewYieldEvent,
   addYieldEvent,
   removeYieldEvent,
+  updateYieldEvent,
   clearAllYieldEvents,
   pricingEvents,
   newPricingEvent,
   setNewPricingEvent,
   addPricingEvent,
   removePricingEvent,
+  updatePricingEvent,
   clearAllPricingEvents,
   downloadExcel,
   formatNumber,
@@ -1161,18 +1215,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     else if (mixAxis === 'tariff' && !tariffAxisAvailable && valueAxisAvailable) setMixAxis('value');
   }, [mixAxis, valueAxisAvailable, tariffAxisAvailable]);
 
-  // Seed draftMix with equal weights whenever tiers change
+  // Seed draftMix when tiers change, preserving weights already set for tiers
+  // that survive — see seedMixPreserving. Overwriting unconditionally destroys a
+  // mix restored by an edit-start handler on the very next render.
   useEffect(() => {
-    if (yieldTierData.length === 0) { setDraftMix({}); return; }
-    const eq = 100 / yieldTierData.length;
-    const init: Record<string, number> = {};
-    yieldTierData.forEach((t, i) => {
-      // last tier absorbs rounding residual so total is exactly 100
-      init[t.tier] = i === yieldTierData.length - 1
-        ? 100 - eq * (yieldTierData.length - 1)
-        : eq;
-    });
-    setDraftMix(init);
+    setDraftMix(prev => seedMixPreserving(prev, yieldTierData.map(t => t.tier)));
   }, [yieldTierData.map(t => t.tier).join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-balancing slider handler
@@ -1249,17 +1296,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   const promoTariffAxisAvailable = !!wiTariffL1Col && selectedTariffs.length > 0;
 
-  // Seed promoDraftMix with equal weights whenever tiers change
+  // Same preserving seed as draftMix above. This is the site the bug was found
+  // on: handleEditPromoStart restores promoMix and changes newPromo in one
+  // callback, and the recomputed tier list firing this effect wiped the restore.
   useEffect(() => {
-    if (promoTierData.length === 0) { setPromoDraftMix({}); return; }
-    const eq = 100 / promoTierData.length;
-    const init: Record<string, number> = {};
-    promoTierData.forEach((t, i) => {
-      init[t.tier] = i === promoTierData.length - 1
-        ? 100 - eq * (promoTierData.length - 1)
-        : eq;
-    });
-    setPromoDraftMix(init);
+    setPromoDraftMix(prev => seedMixPreserving(prev, promoTierData.map(t => t.tier)));
   }, [promoTierData.map(t => t.tier).join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePromoSliderChange = useCallback((changedTier: string, newValue: number) => {
@@ -1336,6 +1377,51 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   }, [data, wiProductCol, wiProductL2Col, newPricingEvent.product]);
 
   // ── Add Yield Event ────────────────────────────────────────────────────────
+  // Individual edit for the Value and Pricing cards. Volume and Promotion had
+  // this; these two had no update path at all, so users trying to edit a rate
+  // override had to delete and retype it. Bulk/campaign edit is deliberately NOT
+  // added: YieldEvent and PricingEvent carry no campaignName, and a ramp is one
+  // row here (rollForward / duration:'recurring') rather than several, so there
+  // is no grouping to edit in bulk. Inventing one to match the word would be a
+  // data-model decision disguised as a UI fix. See EXPECTED.md.
+  const [editingYieldId, setEditingYieldId] = useState<string | null>(null);
+  const [editingPricingId, setEditingPricingId] = useState<string | null>(null);
+
+  const handleEditYieldStart = useCallback((ev: YieldEvent) => {
+    setNewYieldEvent({
+      ibro: ev.ibro, segment: ev.segment, product: ev.product,
+      channelL1: ev.channelL1, channelL2: ev.channelL2, month: ev.month,
+      rollForward: ev.rollForward, name: ev.name ?? '', comment: ev.comment ?? '',
+    });
+    setMixAxis(ev.mixAxis);
+    // Restored AFTER the fields that drive the tier list. seedMixPreserving is
+    // what stops the seeding effect wiping this on the next render.
+    setDraftMix({ ...ev.tariffMix });
+    setEditingYieldId(ev.id);
+  }, [setNewYieldEvent]);
+
+  const handleCancelYieldEdit = useCallback(() => {
+    setEditingYieldId(null);
+    setNewYieldEvent({});
+  }, [setNewYieldEvent]);
+
+  const handleEditPricingStart = useCallback((ev: PricingEvent) => {
+    setNewPricingEvent({
+      segment: ev.segment, product: ev.product, productL2: ev.productL2,
+      channelL1: ev.channelL1, channelL2: ev.channelL2,
+      tariffL1: ev.tariffL1, tariffL2: ev.tariffL2,
+      month: ev.month, inputMode: ev.inputMode, amount: ev.amount,
+      target: ev.target, cohortScope: ev.cohortScope, duration: ev.duration,
+      name: ev.name ?? '', comment: ev.comment ?? '',
+    });
+    setEditingPricingId(ev.id);
+  }, [setNewPricingEvent]);
+
+  const handleCancelPricingEdit = useCallback(() => {
+    setEditingPricingId(null);
+    setNewPricingEvent({});
+  }, [setNewPricingEvent]);
+
   const handleAddYieldEvent = useCallback(() => {
     if (!newYieldEvent.month || yieldTierData.length === 0) return;
     const tariffBaseArpu: Record<string, number> = {};
@@ -1356,8 +1442,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       name:    newYieldEvent.name    ?? '',
       comment: newYieldEvent.comment ?? '',
     };
-    addYieldEvent(event);
-  }, [newYieldEvent, draftMix, yieldTierData, addYieldEvent]);
+    // One builder, two dispositions. Duplicating it for the edit path would be
+    // the drift this project keeps paying for; the id is preserved on update so
+    // the row keeps its identity rather than being deleted and recreated.
+    if (editingYieldId) {
+      const { id: _discard, ...patch } = event;
+      updateYieldEvent(editingYieldId, patch);
+      setEditingYieldId(null);
+    } else {
+      addYieldEvent(event);
+    }
+    setNewYieldEvent({});
+  }, [newYieldEvent, draftMix, mixAxis, yieldTierData, addYieldEvent, editingYieldId, updateYieldEvent, setNewYieldEvent]);
 
   // ── All unique tiers across saved yield events (for table header) ──────────
   const allYieldTiers = useMemo(() => {
@@ -1466,8 +1562,19 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       name:    newPricingEvent.name    ?? '',
       comment: newPricingEvent.comment ?? '',
     };
-    addPricingEvent(event);
-  }, [newPricingEvent, chartData, addPricingEvent]);
+    // Same one-builder-two-dispositions shape as the Yield card above.
+    // originalBaseArpu is deliberately RECOMPUTED on edit rather than carried
+    // over: it snapshots the pre-pricing blended ARPU for the selected month, so
+    // if the edit moves the month the old snapshot would be for the wrong one.
+    if (editingPricingId) {
+      const { id: _discard, ...patch } = event;
+      updatePricingEvent(editingPricingId, patch);
+      setEditingPricingId(null);
+    } else {
+      addPricingEvent(event);
+    }
+    setNewPricingEvent({});
+  }, [newPricingEvent, chartData, addPricingEvent, editingPricingId, updatePricingEvent, setNewPricingEvent]);
 
   // ── Volume spread handler ─────────────────────────────────────────────────
   const handleAddMarketEvent = useCallback(() => {
@@ -3218,11 +3325,24 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                     />
                   </div>
+                  {editingPricingId && (
+                    <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                      {t('whatif_editing_event_modify_the_fields_above_then_cl')}
+                    </div>
+                  )}
                   <button
                     onClick={handleAddPricingEvent}
                     disabled={!newPricingEvent.month || newPricingEvent.amount === undefined}
                     className="px-6 py-2 bg-[#e60000] text-white text-sm font-semibold rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-                  >{t('whatif_add_pricing_event')}</button>
+                  >{editingPricingId ? t('whatif_save_changes') : t('whatif_add_pricing_event')}</button>
+                  {editingPricingId && (
+                    <button
+                      type="button"
+                      onClick={handleCancelPricingEdit}
+                      className="ml-2 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
+                    >{t('common_cancel')}</button>
+                  )}
                 </div>
               </div>
 
@@ -3264,7 +3384,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             : Math.max(0, baseArpu + amt);
                           const delta = adjustedArpu - baseArpu;
                           return (
-                            <tr key={pe.id} className="hover:bg-slate-50 transition-colors">
+                            <tr key={pe.id} className={`transition-colors ${
+                              editingPricingId === pe.id
+                                ? 'bg-amber-50/60 ring-1 ring-inset ring-amber-300'
+                                : 'hover:bg-slate-50'
+                            }`}>
                               <td className="px-4 py-2.5 font-medium text-slate-700">{fmtMonth(pe.month)}</td>
                               <td className="px-4 py-2.5 text-slate-600">{pe.segment}</td>
                               <td className="px-4 py-2.5 text-slate-600">{pe.product}</td>
@@ -3315,6 +3439,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               </td>
                               <td className="px-4 py-2.5 text-slate-500 max-w-[120px] truncate" title={pe.comment}>{pe.comment || '—'}</td>
                               <td className="px-4 py-2.5 text-center">
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); handleEditPricingStart(pe); }}
+                                  className={`p-1 rounded transition-colors mr-1 ${
+                                    editingPricingId === pe.id
+                                      ? 'text-amber-600 bg-amber-100'
+                                      : 'text-slate-400 hover:text-[#e60000] hover:bg-[#e60000]/5'
+                                  }`}
+                                  title={editingPricingId === pe.id ? t('whatif_currently_editing') : t('whatif_edit_event')}
+                                >
+                                  <Pencil size={14} />
+                                </button>
                                 <button
                                   type="button"
                                   onClick={(e) => { e.stopPropagation(); removePricingEvent(pe.id); }}
@@ -4179,11 +4315,24 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                     />
                   </div>
+                  {editingYieldId && (
+                    <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium flex items-center gap-2">
+                      <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                      {t('whatif_editing_event_modify_the_fields_above_then_cl')}
+                    </div>
+                  )}
                   <button
                     onClick={handleAddYieldEvent}
                     disabled={yieldTierData.length === 0 || !newYieldEvent.month}
                     className="px-6 py-2 bg-[#e60000] text-white text-sm font-semibold rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
-                  >{t('whatif_add_yield_event')}</button>
+                  >{editingYieldId ? t('whatif_save_changes') : t('whatif_add_yield_event')}</button>
+                  {editingYieldId && (
+                    <button
+                      type="button"
+                      onClick={handleCancelYieldEdit}
+                      className="ml-2 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
+                    >{t('common_cancel')}</button>
+                  )}
                 </div>
               </div>
 
@@ -4236,7 +4385,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           return (
                             <React.Fragment key={evt.id}>
                               {/* Baseline row */}
-                              <tr className="hover:bg-slate-50 transition-colors">
+                              <tr className={`transition-colors ${
+                                editingYieldId === evt.id
+                                  ? 'bg-amber-50/60 ring-1 ring-inset ring-amber-300'
+                                  : 'hover:bg-slate-50'
+                              }`}>
                                 <td className="px-4 py-2.5 font-medium text-slate-700" rowSpan={2}>{fmtMonth(evt.month)}</td>
                                 <td className="px-4 py-2.5 text-slate-500" rowSpan={2}>
                                   <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${evt.ibro === 'Inflow' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
@@ -4275,6 +4428,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 <td className="px-4 py-2.5 text-center" rowSpan={2}>
                                   <button
                                     type="button"
+                                    onClick={(e) => { e.stopPropagation(); handleEditYieldStart(evt); }}
+                                    className={`p-1 rounded transition-colors mr-1 ${
+                                      editingYieldId === evt.id
+                                        ? 'text-amber-600 bg-amber-100'
+                                        : 'text-slate-400 hover:text-[#e60000] hover:bg-[#e60000]/5'
+                                    }`}
+                                    title={editingYieldId === evt.id ? t('whatif_currently_editing') : t('whatif_edit_event')}
+                                  >
+                                    <Pencil size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
                                     onClick={(e) => { e.stopPropagation(); removeYieldEvent(evt.id); }}
                                     className="text-rose-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors"
                                   >
@@ -4284,7 +4449,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               </tr>
 
                               {/* Adjusted row */}
-                              <tr className="hover:bg-slate-50 transition-colors border-b border-slate-200">
+                              <tr className={`transition-colors border-b border-slate-100 ${
+                                editingYieldId === evt.id
+                                  ? 'bg-amber-50/60'
+                                  : 'hover:bg-slate-50'
+                              }`}>
                                 {allYieldTiers.map(tier => {
                                   const mixPct = evt.tariffMix[tier] ?? null;
                                   const baseArpu = evt.tariffBaseArpu[tier] ?? null;
