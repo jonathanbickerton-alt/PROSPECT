@@ -1317,6 +1317,60 @@ it ("establish reachability BEFORE characterising severity") was already written
 into this file. Precision about a mechanism reads as confidence about its
 importance. It is not.
 
+### Dead subsystems — three found, each mistaken for live. The pattern, not the instances
+
+**The cost is not the dead code. It is that dead code reads as live.** Two
+failure modes, and both have now happened here:
+
+1. **Someone extends it and ships nothing.** `varianceEngine.ts` was flagged
+   during the ARPU/revenue mapping as a plausible foothold for a revenue view —
+   it would have been extended, and rendered nothing.
+2. **Someone characterises its bugs as user-facing.** `exportToExcel`'s 9-part
+   key misparse was escalated as a live data-integrity defect on main.
+   `computeWhatIfData`'s field-dropping was sized to 98.9%, written into this
+   file as an OPEN DEFECT, and a widening was authorised on that basis.
+
+| Subsystem | Found while | Mistaken for | Removed |
+|---|---|---|---|
+| `varianceEngine.ts` + `ChallengerModels.tsx` | mapping the ARPU/revenue toggle | a live foothold to build on | 2026-07-31 |
+| `exportToExcel` | mapping the predicate unification | a live data-integrity defect | 2026-07-31 |
+| `computeWhatIfData` + `generateWhatIfForecast` + `WhatIfConfig` | mapping the WhatIfConfig widening | a live scoping defect, 98.9% sized | 2026-07-31 |
+
+**All three were found incidentally, while mapping something else.** None was
+found by looking for dead code. That is the signal: the codebase had no way to
+surface unreachable subsystems, so they were only ever discovered by walking
+into them — at which point the natural reading is that they matter.
+
+#### What makes them read as live
+
+- A prop named for the dead function (`exportToExcel={openExportModal}`), which
+  looks like a call site and is not.
+- A branch on a discriminator no producer ever emits
+  (`cohort.forecastType.startsWith('What-If Analysis')` where the only
+  `forecastType:` assignment in the codebase is `'Standard Forecast'`).
+- A component that imports a real utility and is itself never imported.
+- Precise, internally-correct logic. All three had real bugs. Correct-looking
+  detail invites analysis of the mechanism and discourages the prior question.
+
+#### The check that would have caught all three, in one command each
+
+```
+grep -rn "<identifier>" src/
+```
+
+If the only hits are a declaration, a comment and a same-named prop, it is dead.
+That check costs seconds and was skipped three times, twice AFTER the rule drawn
+from the first case was written into this file. **Establish reachability before
+characterising severity** — and treat "I have measured this precisely" as a
+reason to check reachability, not a substitute for it.
+
+#### Retained deliberately
+
+`getUniqueCombos` survives the What-If removal: it is also called by the live
+aggregated Standard Forecast path (`App.tsx:2022`). Deleting a helper because
+one of its callers died is the mirror-image error.
+
+
 ### Dead code — `exportToExcel` was dead, and was mistaken for a live defect
 
 **DELETED 2026-07-31** (`App.tsx`, ~146 lines). It was declared, never invoked,
