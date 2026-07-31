@@ -349,6 +349,20 @@ phase 1.
   defect it replaces was made of. Keep both halves — the cause ("no forecast
   generated yet") and the consequence ("nothing to score against").
 
+### This is now a build check, not a convention
+
+`scripts/scan-i18n.ts --check` fails if a key exists in `en` and not in all five
+other locales, unless it is listed in `LOCALE_DEFERRED` in that file. The table
+above and that list must agree.
+
+The rule below was broken **twice by the person who wrote it**, caught both
+times by the pre-merge gate and never at commit time. A convention that relies
+on someone remembering it will keep being missed; this closes it the same way
+the identifier-position rule was closed.
+
+The check also reports a deferred key that has since been translated everywhere,
+so the exemption list cannot quietly outlive its reason.
+
 ### Rule going forward
 
 Any key added to `en` without its five siblings gets a row here **in the same

@@ -378,6 +378,61 @@ console.log('\nfull inventory -> scan_i18n_report.json');
 console.log(`\nt() IN IDENTIFIER POSITION: ${identErrors.length}`);
 for (const e of identErrors) console.log(`  ${e.file}:${e.line}  [${e.kind}]  ${e.text}`);
 
+// ---------------------------------------------------------------------------
+// LOCALE PARITY — a key in `en` and absent from any of the five other locales.
+//
+// TERMBASE §13 asked for these to be recorded by hand, in the same commit that
+// added the key. That rule was broken TWICE by the person who wrote it, caught
+// both times by the pre-merge gate and never at commit time. A rule that relies
+// on someone remembering it will keep being missed, so it is a build failure
+// now — the same way the identifier-position rule was closed.
+//
+// Existing debt sits in LOCALE_DEFERRED rather than blocking the build: these
+// are known, recorded in TERMBASE §13, and awaiting phase 2 commissioning.
+// `fallbackLng` is 'en', so they render English rather than a raw key.
+//
+// ADDING to this list is a deliberate act. It means "this ships English for
+// now", and it belongs in the same commit as the key, with a §13 row.
+// ---------------------------------------------------------------------------
+const LOCALE_DEFERRED = new Set<string>([
+  // Recorded in src/locales/TERMBASE.md §13, 2026-07-30 and 2026-07-31.
+  'actuals_no_forecast_yet_tooltip',
+  'actuals_revenue_no_band',
+  'actuals_show',
+  'actuals_unit_arpu',
+  'actuals_unit_revenue',
+  'actuals_value_revenue',
+  'bulk_large_run_detail',
+  'bulk_large_run_title',
+  'bulk_no_source_cohort',
+]);
+
+const LOCALES = ['de', 'es', 'fr', 'it', 'pt'];
+const localeGaps: { key: string; missingFrom: string[] }[] = [];
+const staleDeferred: string[] = [];
+{
+  const readLocale = (l: string): Record<string, string> => {
+    const f = path.join('src', 'locales', l, 'translation.json');
+    return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : {};
+  };
+  const enBundle = readLocale('en');
+  const others = Object.fromEntries(LOCALES.map(l => [l, readLocale(l)]));
+  for (const key of Object.keys(enBundle)) {
+    if (LOCALE_DEFERRED.has(key)) continue;
+    const missingFrom = LOCALES.filter(l => !(key in others[l]));
+    if (missingFrom.length) localeGaps.push({ key, missingFrom });
+  }
+  // A deferred key that HAS been translated everywhere should leave the list,
+  // or it silently exempts a key that no longer needs exempting.
+  for (const k of LOCALE_DEFERRED) {
+    if (k in enBundle && LOCALES.every(l => k in others[l])) staleDeferred.push(k);
+  }
+  console.log(`\nLOCALE PARITY: ${localeGaps.length} key(s) in en missing from another locale ` +
+    `(${LOCALE_DEFERRED.size} explicitly deferred)`);
+  for (const g of localeGaps) console.log(`  ${g.key} — missing from ${g.missingFrom.join(', ')}`);
+  for (const k of staleDeferred) console.log(`  ${k} — now translated everywhere; remove from LOCALE_DEFERRED`);
+}
+
 const mustKey = bucketed.filter(b => b.bucket.includes('MUST KEY'));
 if (process.argv.includes('--check')) {
   if (identErrors.length) {
@@ -394,5 +449,15 @@ if (process.argv.includes('--check')) {
     if (mustKey.length > 25) console.error(`  ... and ${mustKey.length - 25} more — see scan_i18n_report.json`);
     process.exit(1);
   }
-  console.log('\nPASS: every user-facing string resolves from a translation key or an agreed exclusion.');
+  if (localeGaps.length) {
+    console.error(`\nFAIL: ${localeGaps.length} key(s) exist in en but not in every locale.`);
+    for (const g of localeGaps.slice(0, 25))
+      console.error(`  ${g.key} — missing from ${g.missingFrom.join(', ')}`);
+    if (localeGaps.length > 25) console.error(`  ... and ${localeGaps.length - 25} more`);
+    console.error('Either translate them, or add them to LOCALE_DEFERRED in this file AND');
+    console.error('record a row in src/locales/TERMBASE.md §13 — in THIS commit, not later.');
+    process.exit(1);
+  }
+  console.log('\nPASS: every user-facing string resolves from a translation key or an agreed exclusion,');
+  console.log('and every key exists in all six locales or is explicitly deferred.');
 }
