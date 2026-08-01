@@ -868,13 +868,19 @@ is 1, so it needs no special-casing.
 **Rate events are excluded, by design.** ARPU-scenario, Yield and Pricing
 events are rates, not quantities: a volume-weighted average of
 `(leafArpu + Δ)` already equals `(aggregateArpu + Δ)`. Pro-rating them would
-under-apply the rate change. Five rate matchers carry an explicit "RATE event —
-NOT pro-rated" comment saying so — `forecasting.ts` (ARPU, path A),
-`WhatIfTab.tsx` ×3 (ARPU Pass 1, Yield Pass 2, Pricing Pass 3) and
-`scenarioHelper.ts` (ARPU, path C). Do not "fix" them into the volume path.
-Two further rate blocks — the Retention-yield application in `WhatIfTab.tsx`
-and the Pricing block in `scenarioHelper.ts` — are also correctly not
-pro-rated and carry the same comment.
+under-apply the rate change. **CORRECTED 2026-08-01:** this list previously
+attributed one of the comments to `forecasting.ts` and referred to a "path C"
+that no longer exists. `grep "RATE event" src/utils/forecasting.ts` returns
+nothing. The rate matchers are:
+
+| Site | What |
+|---|---|
+| `scenarioHelper.ts` | ARPU (Path B), Pricing |
+| `WhatIfTab.tsx` | ARPU Pass 1, Yield Pass 2, Pricing Pass 3, Retention-yield Pass 2 |
+
+Do not "fix" them into the volume path. **None of them constructs a `leaves`
+array**, so no change to pro-rata leaf weighting can route a rate event through
+it — asserted by `npm run spec:prorata`, not left to inspection.
 
 Volume, revenue and customerVolume are split by the **same** share. Splitting
 one without the others reconciles volume while silently corrupting blended
@@ -893,7 +899,20 @@ Leaf-targeted events are unaffected on all three paths (+10,000 → +10,000).
 
 ### Accuracy scores will move — this is not a regression
 
-Path B feeds `useAdjustedScoring` in `ForecastVsActualsTab`, so the wildcard
+**CORRECTED 2026-08-01. This entry named the wrong path, and it is the second
+time this section has misled with different content** (it previously listed
+three event-application paths when `computeWhatIfData` had been deleted). A
+reader sizing pro-rata work from the old text would have targeted
+`scenarioHelper.ts` and found no effect on accuracy at all.
+
+**PATH A feeds `useAdjustedScoring`, not Path B.** Verified:
+`ForecastVsActualsTab.tsx` contains **zero** references to `scenarioHelper` or
+`computeScenarioForFilter`. It reads `adjustedForecast.adjustedMonths[].uplifted.*`
+from context, and the only writers of `adjustedForecast` are
+`WhatIfTab.tsx:2021` — the output of `computeAdjustedForecast`, Path A — and
+`App.tsx:1034` on session import.
+
+So Path A's wildcard
 defect was corrupting MAPE for any leaf cohort in scope of an aggregate-targeted
 event. Correcting it **moves leaf accuracy scores**, and the *direction depends
 on whether the actuals contain the event*:
