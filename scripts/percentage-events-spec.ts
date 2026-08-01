@@ -3,11 +3,12 @@
  *
  *   npm run spec:pct
  *
- * Grows one section per build step. Step 1 covers sequence allocation only —
- * the field exists and every construction site fills it, but nothing reads it
- * yet.
+ * Grows one section per build step.
+ *   Step 1 — sequence allocation: the field exists and every construction site
+ *            fills it.
+ *   Step 2 — slot preservation across campaign bulk edit.
  */
-import { nextSequence, backfillSequences, bySequence, type MarketEvent } from '../src/utils/forecasting';
+import { nextSequence, backfillSequences, bySequence, resequenceRebuild, type MarketEvent } from '../src/utils/forecasting';
 
 let pass = 0; const fails: string[] = [];
 const check = (name: string, ok: boolean, detail = '') => {
@@ -86,6 +87,67 @@ const ev = (id: string, sequence?: number, date = '2026-01'): MarketEvent => ({
   const r = [...tied].reverse().sort(bySequence).map(e => e.id).join(',');
   check('a tie breaks on date, identically from either input order',
     f === 'y,z' && f === r, `${f} vs ${r}`);
+}
+
+// ── resequenceRebuild: campaign bulk edit keeps its slots ────────────────
+{
+  // The scenario the field exists for: a campaign sitting in the middle of the
+  // table is edited, and must not jump to the bottom.
+  const survivors = [ev('before', 1), ev('after', 5)];
+  const replaced = [ev('c1', 2), ev('c2', 3), ev('c3', 4)];
+  const rebuilt = [ev('n1'), ev('n2'), ev('n3')];
+
+  const out = resequenceRebuild(rebuilt, replaced, survivors);
+  check('rebuild takes the slots the replaced rows held',
+    out.map(e => e.sequence).join(',') === '2,3,4',
+    out.map(e => e.sequence).join(','));
+
+  // The whole point: sorted display order is unchanged by the edit.
+  const after = [...survivors, ...out].sort(bySequence).map(e => e.id).join(',');
+  check('table order is preserved across a bulk edit',
+    after === 'before,n1,n2,n3,after', after);
+
+  // Prove the check is not vacuous — appending (the old behaviour) would fail it.
+  let seq = nextSequence([...survivors, ...replaced]);
+  const appended = rebuilt.map(e => ({ ...e, sequence: seq++ }));
+  const oldOrder = [...survivors, ...appended].sort(bySequence).map(e => e.id).join(',');
+  check('...and appending, the old behaviour, does NOT preserve it',
+    oldOrder !== after, oldOrder);
+}
+{
+  // A 3-month spread edited up to 5 months. The first three keep their slots;
+  // the extras go after everything, never into a slot they never held.
+  const survivors = [ev('x', 9)];
+  const replaced = [ev('c1', 2), ev('c2', 3), ev('c3', 4)];
+  const out = resequenceRebuild([ev('a'), ev('b'), ev('c'), ev('d'), ev('e')], replaced, survivors);
+  check('a longer rebuild reuses slots then allocates fresh ones',
+    out.map(e => e.sequence).join(',') === '2,3,4,10,11',
+    out.map(e => e.sequence).join(','));
+  check('fresh slots clear every pre-edit event, including survivors',
+    out[3].sequence! > 9);
+}
+{
+  // Collapsed to a single event: surplus slots are abandoned, not reassigned.
+  const replaced = [ev('c1', 2), ev('c2', 3), ev('c3', 4)];
+  const out = resequenceRebuild([ev('only')], replaced, [ev('x', 1)]);
+  check('a shorter rebuild takes the earliest slot and leaves the rest empty',
+    out.length === 1 && out[0].sequence === 2, JSON.stringify(out.map(e => e.sequence)));
+}
+{
+  // Slots are paired in ascending order regardless of how the array was held,
+  // so a campaign stored out of order still rebuilds into its own slots.
+  const replaced = [ev('c3', 7), ev('c1', 2), ev('c2', 5)];
+  const out = resequenceRebuild([ev('a'), ev('b'), ev('c')], replaced, []);
+  check('slots are reused in ascending order, not array order',
+    out.map(e => e.sequence).join(',') === '2,5,7', out.map(e => e.sequence).join(','));
+}
+{
+  // A legacy campaign whose rows never had slots must not produce NaN.
+  const out = resequenceRebuild([ev('a'), ev('b')], [ev('c1'), ev('c2')], [ev('x', 4)]);
+  check('a rebuild of unsequenced rows still yields finite slots',
+    out.every(e => Number.isFinite(e.sequence)), JSON.stringify(out.map(e => e.sequence)));
+  check('...allocated above the surviving events', out[0].sequence === 5 && out[1].sequence === 6,
+    out.map(e => e.sequence).join(','));
 }
 
 console.log(`percentage-events spec: ${pass} passed, ${fails.length} failed`);

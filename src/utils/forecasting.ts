@@ -1562,6 +1562,35 @@ export function backfillSequences(events: MarketEvent[]): MarketEvent[] {
 }
 
 /**
+ * Campaign bulk edit deletes every row of a campaign and rebuilds it from the
+ * form, with new ids. Left to itself that appends, so a user who edits the
+ * spread on a campaign sitting third in their table finds it at the bottom
+ * afterwards — an edit about volumes silently reordering their work.
+ *
+ * This hands the rebuilt rows the slots the replaced rows held. Both are in
+ * date order within a campaign, so pairing them by position pairs first month
+ * with first month.
+ *
+ * A rebuild may change the row count: a 3-month spread edited to 5 months, or
+ * collapsed to a single event. Extra rows take fresh slots at the end; surplus
+ * slots are simply left unused. Fresh slots are allocated above EVERY
+ * pre-edit event rather than filling the gap, so a slot freed by this edit is
+ * never handed to a row that did not previously occupy it.
+ */
+export function resequenceRebuild(
+  rebuilt: MarketEvent[],
+  replaced: MarketEvent[],
+  survivors: MarketEvent[],
+): MarketEvent[] {
+  const slots = replaced
+    .map(e => e.sequence)
+    .filter((s): s is number => Number.isFinite(s))
+    .sort((a, b) => a - b);
+  let next = nextSequence([...survivors, ...replaced]);
+  return rebuilt.map((e, i) => ({ ...e, sequence: i < slots.length ? slots[i] : next++ }));
+}
+
+/**
  * The display order. Sequence first; date then id break ties so the result is
  * total and stable even for events that somehow share a slot.
  */

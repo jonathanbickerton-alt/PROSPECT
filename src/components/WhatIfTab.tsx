@@ -9,7 +9,7 @@ import { format, parse, isValid, addMonths, differenceInCalendarMonths } from 'd
 import { useForecast } from '../context/ForecastContext';
 import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent } from '../types/forecast';
 import type { MarketEvent } from '../utils/forecasting';
-import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix, eventProRataShare, nextSequence } from '../utils/forecasting';
+import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix, eventProRataShare, nextSequence, resequenceRebuild } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
@@ -1856,9 +1856,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         campaignName: newEvent.campaignName || '',
         comment: newEvent.comment || '',
         contractLength: newEvent.contractLength ?? 24,
-        // Appends to the end for now; step 2 makes the rebuild restore the
-        // slots the replaced rows held.
-        sequence: nextSequence(marketEvents),
+        // Overwritten by resequenceRebuild below, which restores the slots
+        // the replaced rows held.
+        sequence: 0,
       }];
     } else {
       const pcts = spreadDistType === 'even'
@@ -1892,7 +1892,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           campaignName: newEvent.campaignName || '',
           comment: newEvent.comment || '',
           contractLength: newEvent.contractLength ?? 24,
-          sequence: nextSequence(marketEvents) + i,
+          sequence: 0,
         };
       });
     }
@@ -1900,7 +1900,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // Only replace THIS card's rows for the campaign — a Promotion Card
     // campaign that happens to share this name is a different group
     // (promoCampaignGroups) and must never be touched here.
-    setMarketEvents([...marketEvents.filter(e => e.campaignName !== editingCampaign || e.isPromotion), ...newEvents]);
+    const isMine = (e: MarketEvent) => e.campaignName === editingCampaign && !e.isPromotion;
+    const survivors = marketEvents.filter(e => !isMine(e));
+    const replaced  = marketEvents.filter(isMine);
+    setMarketEvents([...survivors, ...resequenceRebuild(newEvents, replaced, survivors)]);
     setEditingCampaign(null);
     setNewEvent(BLANK_EVENT);
     setSpreadEnabled(false);
@@ -2054,7 +2057,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // Only replace THIS card's rows for the campaign — a Volume-tab campaign
     // that happens to share this name is a different group (campaignGroups)
     // and must never be touched here.
-    setMarketEvents([...marketEvents.filter(e => e.campaignName !== editingPromoCampaign || !e.isPromotion), ...events]);
+    // Promo rows carry no percentage capability, but slot preservation is
+    // about the user's table order and applies to both cards alike.
+    const isMinePromo = (e: MarketEvent) => e.campaignName === editingPromoCampaign && !!e.isPromotion;
+    const promoSurvivors = marketEvents.filter(e => !isMinePromo(e));
+    const promoReplaced  = marketEvents.filter(isMinePromo);
+    setMarketEvents([...promoSurvivors, ...resequenceRebuild(events, promoReplaced, promoSurvivors)]);
     setEditingPromoCampaign(null);
     resetPromoDraft();
   }, [editingPromoCampaign, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, marketEvents, setMarketEvents, resetPromoDraft]);
