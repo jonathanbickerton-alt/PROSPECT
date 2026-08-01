@@ -913,6 +913,42 @@ fallback rather than dropping the event.
 
 Leaf-targeted events are unaffected on all three paths (+10,000 → +10,000).
 
+### Percentage events: the display bug only the browser could find — 2026-08-01
+
+The table computed Outflow Δ for a Retention event as `-subscriberVolume`,
+unconditionally. An UNLINKED retention event does not touch outflow, so the
+table advertised a movement the engine would never make.
+
+Every unit measurement passed. The engine was right — `applyEventsToMonth`
+skips the outflow coupling when `retentionLinked === false`, and that is
+mutation-tested. The table was right about linked events, which is every event
+that existed before this feature. **The two were only wrong together, on
+screen.** No harness compared them, because comparing a rendered table cell
+against an engine field is not a comparison either one invites.
+
+Found by creating a percentage Retention event through the UI with the link set
+to No, and reading the row. That was the first percentage event in this feature
+not constructed in a harness.
+
+The lesson is narrower than "test in a browser". It is: **a derived display
+value computed independently of the engine is a second implementation of the
+rule**, and it drifts exactly where the two disagree about a case only one of
+them was taught. Prefer reading the engine’s own output; where the table must
+derive, make the derivation depend on the same flag the engine reads.
+
+#### The other three the form had to get right
+
+- **Sign.** Absolute Outflow volumes are stored negative; percentage amounts
+  are not, because a percentage applies in its natural direction. `neg()`
+  excludes percentages, or +10% outflow would store as −10%.
+- **ARPU auto-fill.** `resolveEventArpuRevenue` is skipped for percentages. Its
+  trailing average is a per-subscriber figure that means nothing here, and
+  storing one would put a misleading number behind a deliberately dashed column.
+- **Spread.** Hidden for percentages rather than guarded: spreading 10% over
+  three months is ambiguous between 10% total and 10% each, and no answer was
+  settled. Switching to percentage also clears a spread already toggled on,
+  which would otherwise persist invisibly and still apply on Add.
+
 ### Percentage events: the traps in the surrounding work — 2026-08-01
 
 Three places where the obvious implementation is quietly wrong, and one

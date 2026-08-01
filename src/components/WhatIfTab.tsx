@@ -1724,11 +1724,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setCustomDist([34, 33, 33]);
   }, [newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, addMarketEvent, setMarketEvents, marketEvents, setNewEvent, cohortAvgArpu]);
 
+  /** Is the draft a percentage event? Read in several places in the form,
+   *  so derived once rather than re-tested. */
+  const isPercentageDraft = newEvent.amountType === 'percentage';
+
   const BLANK_EVENT: Partial<MarketEvent> = {
     scenario: 'Inflow', segment: 'All', product: 'All', productL2: 'All',
     channel: 'All', channelL2: 'All', tariffL1: 'All', tariffL2: 'All', date: format(new Date(), 'yyyy-MM'),
     subscriberVolume: 0, customerVolume: 0, revenue: 0, arpu: 0,
     name: '', campaignName: '', comment: '', contractLength: 24,
+    // Stated rather than left undefined, so a fresh form and a restored
+    // one describe the same state.
+    amountType: 'absolute', percentageBasis: 'baseline', retentionLinked: true,
   };
 
   const handleEditStart = useCallback((event: MarketEvent) => {
@@ -1753,6 +1760,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       campaignName: event.campaignName ?? '',
       comment: event.comment,
       contractLength: event.contractLength,
+      // Restoring these is not optional. Without them, opening a percentage
+      // event for edit and saving would rewrite it as absolute, and the
+      // amount would change meaning from 10 per cent to 10 subscribers.
+      amountType: event.amountType ?? 'absolute',
+      percentageBasis: event.percentageBasis ?? 'baseline',
+      retentionLinked: event.retentionLinked ?? true,
     });
     setEditingEventId(event.id);
     setEditingCampaign(null);
@@ -2002,11 +2015,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const handleSaveEdit = useCallback(() => {
     if (!editingEventId || !newEvent.date) return;
     const isOutflow = newEvent.scenario === 'Outflow';
-    const neg = (v: number) => isOutflow ? -Math.abs(v) : v;
+    // See addMarketEvent: percentage amounts keep their sign.
+    const isPctEdit = newEvent.amountType === 'percentage';
+    const neg = (v: number) => (isOutflow && !isPctEdit) ? -Math.abs(v) : v;
     // Phase 3 P4: re-resolve ARPU on save too — if the user clears the field back
     // to blank while editing, they get the cohort placeholder again rather than a
     // stale explicit value or a diluting zero.
-    const resolved = resolveEventArpuRevenue(newEvent.subscriberVolume ?? 0, newEvent.arpu, newEvent.revenue, newEvent.scenario, cohortAvgArpu);
+    const resolved = isPctEdit
+      ? { arpu: 0, revenue: 0 }
+      : resolveEventArpuRevenue(newEvent.subscriberVolume ?? 0, newEvent.arpu, newEvent.revenue, newEvent.scenario, cohortAvgArpu);
     const patch: Partial<MarketEvent> = {
       scenario: newEvent.scenario as MarketEvent['scenario'],
       segment: newEvent.segment ?? 'All',
@@ -2025,6 +2042,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       campaignName: newEvent.campaignName ?? '',
       comment: newEvent.comment ?? '',
       contractLength: newEvent.contractLength ?? 24,
+      amountType: newEvent.amountType ?? 'absolute',
+      percentageBasis: newEvent.percentageBasis ?? 'baseline',
+      retentionLinked: newEvent.retentionLinked ?? true,
     };
     // Previewed and committed from the same array — see pendingChange.
     setPendingChange({
@@ -2724,18 +2744,128 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
               </div>
+              {/* Amount type. Percentage is a Volume-tab capability only — the
+                  promo card never offers it, by the settled decision. */}
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_subscriber_volume')}</label>
-                <input
-                  type="number"
-                  value={newEvent.subscriberVolume || ''}
-                  onChange={e => {
-                    const vol = Number(e.target.value);
-                    setNewEvent({ ...newEvent, subscriberVolume: vol, revenue: vol * (newEvent.arpu || 0) });
-                  }}
-                  className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
-                />
+                <label className="block text-xs font-medium text-slate-500 mb-1">Amount type</label>
+                <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
+                  {(['absolute', 'percentage'] as const).map(mode => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => {
+                        setNewEvent({
+                          ...newEvent,
+                          amountType: mode,
+                          // The number means something different under each mode,
+                          // so carrying it across would reinterpret it silently:
+                          // 5000 subscribers becoming 5000 per cent.
+                          subscriberVolume: 0,
+                          revenue: 0,
+                        });
+                        // The spread control is hidden for percentages, so a
+                        // spread left enabled from an earlier draft would
+                        // otherwise persist invisibly and still apply on Add.
+                        if (mode === 'percentage') setSpreadEnabled(false);
+                      }}
+                      className={`flex-1 px-3 py-2 transition-colors ${
+                        (newEvent.amountType ?? 'absolute') === mode
+                          ? 'bg-[#e60000] text-white font-medium'
+                          : 'bg-white text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {mode === 'absolute' ? 'Subscribers' : 'Percentage'}
+                    </button>
+                  ))}
+                </div>
               </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">
+                  {isPercentageDraft
+                    ? `Percentage change to ${String(newEvent.scenario ?? 'Inflow')}`
+                    : t('whatif_subscriber_volume')}
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step={isPercentageDraft ? 0.1 : 1}
+                    placeholder={isPercentageDraft ? 'e.g. 10 for +10%' : ''}
+                    value={newEvent.subscriberVolume || ''}
+                    onChange={e => {
+                      const vol = Number(e.target.value);
+                      setNewEvent({
+                        ...newEvent,
+                        subscriberVolume: vol,
+                        // A percentage carries no per-subscriber revenue.
+                        revenue: isPercentageDraft ? 0 : vol * (newEvent.arpu || 0),
+                      });
+                    }}
+                    className={`w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000] ${
+                      isPercentageDraft ? 'pr-7' : ''
+                    }`}
+                  />
+                  {isPercentageDraft && (
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none">%</span>
+                  )}
+                </div>
+                {isPercentageDraft && (
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Applied to each cohort's own {String(newEvent.scenario ?? 'Inflow').toLowerCase()}. Negative reduces it.
+                  </p>
+                )}
+              </div>
+              {isPercentageDraft && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Percentage of</label>
+                  <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
+                    {([['baseline', 'Baseline'], ['adjusted', 'After other events']] as const).map(([val, label]) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setNewEvent({ ...newEvent, percentageBasis: val })}
+                        className={`flex-1 px-3 py-2 transition-colors ${
+                          (newEvent.percentageBasis ?? 'baseline') === val
+                            ? 'bg-[#e60000] text-white font-medium'
+                            : 'bg-white text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Percentage events never compound with each other, whichever basis is chosen.
+                  </p>
+                </div>
+              )}
+              {newEvent.scenario === 'Retention' && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">
+                    Were these customers forecast to leave?
+                  </label>
+                  <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
+                    {([[true, 'Yes'], [false, 'No']] as const).map(([val, label]) => (
+                      <button
+                        key={String(val)}
+                        type="button"
+                        onClick={() => setNewEvent({ ...newEvent, retentionLinked: val })}
+                        className={`flex-1 px-3 py-2 transition-colors ${
+                          (newEvent.retentionLinked ?? true) === val
+                            ? 'bg-[#e60000] text-white font-medium'
+                            : 'bg-white text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    {(newEvent.retentionLinked ?? true)
+                      ? 'Retaining them reduces forecast outflow, so Base rises.'
+                      : 'Retention moves on its own; outflow and Base are unchanged.'}
+                  </p>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_customer_volume')}</label>
                 <input
@@ -2797,8 +2927,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               </div>
             </div>
 
-            {/* Volume spread section — only shown for non-ARPU scenarios */}
-            {newEvent.scenario !== 'ARPU' && (
+            {/* Volume spread section — non-ARPU scenarios only, and not for
+                percentage events: spreading a percentage is ambiguous (is 10%
+                over three months a total of 10%, or 10% in each month?) and no
+                answer to that was settled. Hidden rather than guarded, so the
+                question is not raised in the UI at all. */}
+            {newEvent.scenario !== 'ARPU' && !isPercentageDraft && (
               <div className="mt-4">
                 {/* Toggle */}
                 <button
@@ -3018,8 +3152,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       const retentionDelta  = isRetention ? event.subscriberVolume : null;
                       // Outflow Δ — Outflow events (stored negative) and Retention events
                       //   (outflow reduced by the retained volume, so negative).
+                      //
+                      //   An UNLINKED retention event does not touch outflow, so it must
+                      //   dash here. Without the check the table advertises an outflow
+                      //   movement the engine will not make — found in the browser, not
+                      //   by any unit measurement, because both halves are individually
+                      //   correct and only disagree on screen.
                       const outflowDelta    = isOutflow   ? event.subscriberVolume        // already negative
-                                           : isRetention  ? -event.subscriberVolume        // positive stored → negative Outflow Δ
+                                           : isRetention && event.retentionLinked !== false
+                                                          ? -event.subscriberVolume        // positive stored → negative Outflow Δ
                                            : null;
                       const isPercentage = event.amountType === 'percentage';
                       // ARPU Δ — see eventArpuDelta for why percentage rows dash.

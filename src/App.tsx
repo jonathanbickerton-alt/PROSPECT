@@ -210,12 +210,21 @@ export default function App() {
     // Outflow events always represent subscribers leaving — negate the magnitudes so
     // the stored values are negative, which is the correct sign for an increase in outflow.
     const isOutflow = newEvent.scenario === 'Outflow';
-    const neg = (v: number) => isOutflow ? -Math.abs(v) : v;
+    // Absolute Outflow volumes are STORED negative. Percentage amounts are
+    // not: a percentage applies in its natural direction, so +10% means more
+    // outflow and negating it would invert what the user typed.
+    const isPct = newEvent.amountType === 'percentage';
+    const neg = (v: number) => (isOutflow && !isPct) ? -Math.abs(v) : v;
     // Phase 3 P4: a volume-only Inflow/Retention event (ARPU left blank) is
     // auto-populated from the cohort's trailing 3-month average — baked into the
     // stored event exactly as if the user had typed it, never overriding an
     // explicit non-zero value.
-    const resolved = resolveEventArpuRevenue(newEvent.subscriberVolume || 0, newEvent.arpu, newEvent.revenue, newEvent.scenario, cohortAvgArpu);
+    // A percentage event carries no per-subscriber ARPU, so the trailing-
+    // average auto-fill is skipped: storing one would be a number with no
+    // meaning, and the table dashes the column for these rows anyway.
+    const resolved = isPct
+      ? { arpu: 0, revenue: 0 }
+      : resolveEventArpuRevenue(newEvent.subscriberVolume || 0, newEvent.arpu, newEvent.revenue, newEvent.scenario, cohortAvgArpu);
     const event: MarketEvent = {
       id: Math.random().toString(36).substr(2, 9),
       scenario: newEvent.scenario as any,
@@ -235,6 +244,9 @@ export default function App() {
       campaignName: newEvent.campaignName || '',
       comment:      newEvent.comment      || '',
       contractLength: newEvent.contractLength ?? 24,
+      amountType: newEvent.amountType ?? 'absolute',
+      percentageBasis: newEvent.percentageBasis ?? 'baseline',
+      retentionLinked: newEvent.retentionLinked ?? true,
       // Placeholder — the real slot is allocated against prev inside the
       // updater below, so two adds in one batch cannot collide.
       sequence: 0,
