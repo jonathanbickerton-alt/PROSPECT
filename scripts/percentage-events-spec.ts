@@ -8,12 +8,14 @@
  *            fills it.
  *   Step 2 — slot preservation across campaign bulk edit.
  *   Step 3 — the two-phase applier and the coverage fraction.
+ *   Step 4 — the table's ARPU dash and campaign grouping.
  */
 import {
   nextSequence, backfillSequences, bySequence, resequenceRebuild,
-  applyEventsToMonth, eventCoverage, eventProRataShare,
+  applyEventsToMonth, eventCoverage, eventProRataShare, resolveEventArpuRevenue, eventArpuDelta,
   type MarketEvent, type MonthMetrics, type EventApplication,
 } from '../src/utils/forecasting';
+import { groupByCampaign } from '../src/components/WhatIfTab';
 
 let pass = 0; const fails: string[] = [];
 const check = (name: string, ok: boolean, detail = '') => {
@@ -311,6 +313,68 @@ const app = (o: Partial<EventApplication>): EventApplication => ({
     eventCoverage(view, view, zero) === 1, String(eventCoverage(view, view, zero)));
   check('...but a non-matching one is still excluded',
     eventCoverage({ ...view, segment: 'OTHER' }, view, zero) === 0);
+}
+
+// ── Step 4: the table, and campaign grouping ─────────────────────────────
+{
+  // The ARPU Δ dash. resolveEventArpuRevenue auto-fills the cohort trailing
+  // average for a blank Inflow/Retention ARPU, so a percentage row arrives
+  // carrying a NON-ZERO arpu and the obvious `arpu !== 0` test renders a
+  // number. Establish that trap first, then guard against it.
+  const filled = resolveEventArpuRevenue(10, undefined, undefined, 'Inflow', 28.5);
+  check('a blank ARPU is auto-filled with the trailing average', filled.arpu === 28.5,
+    String(filled.arpu));
+
+  // Driven through the real exported rule, never a restatement of it.
+  const arpuDelta = eventArpuDelta;
+  const pctRow = { ...ev('p'), amountType: 'percentage', arpu: filled.arpu } as MarketEvent;
+  const absRow = { ...ev('a'), arpu: filled.arpu } as MarketEvent;
+
+  check('a percentage row with NON-ZERO arpu still dashes', arpuDelta(pctRow) === null,
+    String(arpuDelta(pctRow)));
+  check('an absolute row with the same arpu shows the number', arpuDelta(absRow) === 28.5);
+  check('the naive `arpu !== 0` rule would disagree here, so the guard is load-bearing',
+    (pctRow.arpu !== 0 ? pctRow.arpu : null) !== arpuDelta(pctRow));
+}
+{
+  // Campaign grouping. An all-absolute campaign must stay editable, or
+  // "percentage is rejected" would be indistinguishable from "everything is".
+  const camp = (id: string, date: string, o: Partial<MarketEvent> = {}) =>
+    ({ ...ev(id, 1, date), campaignName: 'C', ...o } as MarketEvent);
+
+  const clean = groupByCampaign([camp('a1', '2026-01'), camp('a2', '2026-02')]);
+  check('an all-absolute campaign remains editable (control)',
+    clean.get('C')!.editable === true, clean.get('C')!.reason);
+
+  const mixed = groupByCampaign([
+    camp('m1', '2026-01'),
+    camp('m2', '2026-02', { amountType: 'percentage' }),
+  ]);
+  check('a campaign mixing absolute and percentage rows is not editable',
+    mixed.get('C')!.editable === false, mixed.get('C')!.reason);
+
+  const allPct = groupByCampaign([
+    camp('p1', '2026-01', { amountType: 'percentage' }),
+    camp('p2', '2026-02', { amountType: 'percentage' }),
+  ]);
+  check('an all-percentage campaign is barred by the rule, with that reason',
+    allPct.get('C')!.editable === false &&
+    /individually, not as a campaign spread/.test(allPct.get('C')!.reason),
+    allPct.get('C')!.reason);
+
+  // The intra-campaign sort feeds spread reconstruction (month offsets from the
+  // first row), which is a different question from display order. It must stay
+  // on date even though the table now sorts on sequence.
+  const ramp = groupByCampaign([
+    { ...camp('d3', '2026-03'), sequence: 1 } as MarketEvent,
+    { ...camp('d1', '2026-01'), sequence: 2 } as MarketEvent,
+    { ...camp('d2', '2026-02'), sequence: 3 } as MarketEvent,
+  ]);
+  const order = ramp.get('C')!.rows.map(e => e.id).join(',');
+  check('rows within a campaign are ordered by date, not sequence',
+    order === 'd1,d2,d3', order);
+  check('...and the sequence order would have differed (not vacuous)',
+    order !== 'd3,d1,d2');
 }
 
 console.log(`percentage-events spec: ${pass} passed, ${fails.length} failed`);

@@ -1807,6 +1807,24 @@ export function resequenceRebuild(
 }
 
 /**
+ * What the table's ARPU Δ column shows for an event, or null for a dash.
+ *
+ * Percentage rows always dash. The condition keys off amountType and NOT off
+ * `arpu !== 0`, which is the implementation that suggests itself and is wrong:
+ * resolveEventArpuRevenue auto-fills the cohort trailing average whenever the
+ * user leaves ARPU blank on an Inflow or Retention event, so a percentage row
+ * normally arrives carrying a non-zero arpu and would render a number.
+ *
+ * Extracted rather than inlined in the JSX so there is one definition of the
+ * rule and a test can drive it. Inline, a spec can only restate it, and a
+ * restatement agrees with itself no matter what the table does.
+ */
+export function eventArpuDelta(e: MarketEvent): number | null {
+  if (e.amountType === 'percentage') return null;
+  return e.arpu !== 0 ? e.arpu : null;
+}
+
+/**
  * The display order. Sequence first; date then id break ties so the result is
  * total and stable even for events that somehow share a slot.
  */

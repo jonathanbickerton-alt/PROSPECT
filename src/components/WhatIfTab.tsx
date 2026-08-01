@@ -9,7 +9,7 @@ import { format, parse, isValid, addMonths, differenceInCalendarMonths } from 'd
 import { useForecast } from '../context/ForecastContext';
 import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent } from '../types/forecast';
 import type { MarketEvent } from '../utils/forecasting';
-import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix, eventProRataShare, eventCoverage, applyEventsToMonth, nextSequence, resequenceRebuild } from '../utils/forecasting';
+import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix, eventProRataShare, eventCoverage, applyEventsToMonth, nextSequence, resequenceRebuild, bySequence, eventArpuDelta } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
@@ -356,7 +356,7 @@ function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
  * pre-filter `events` to their own card's rows (e.g. `!e.isPromotion` for
  * Volume, `e.isPromotion` for Promotion) before calling this.
  */
-function groupByCampaign(events: MarketEvent[]): Map<string, { rows: MarketEvent[]; editable: boolean; reason: string }> {
+export function groupByCampaign(events: MarketEvent[]): Map<string, { rows: MarketEvent[]; editable: boolean; reason: string }> {
   const groups = new Map<string, { rows: MarketEvent[]; editable: boolean; reason: string }>();
   events.forEach(e => {
     if (!e.campaignName) return;
@@ -380,7 +380,23 @@ function groupByCampaign(events: MarketEvent[]): Map<string, { rows: MarketEvent
     const d0 = parse(first.date, 'yyyy-MM', new Date());
     const dN = parse(g.rows[g.rows.length - 1].date, 'yyyy-MM', new Date());
     const span = isValid(d0) && isValid(dN) ? differenceInCalendarMonths(dN, d0) + 1 : 0;
-    if (!homogeneous) {
+    const anyPercentage = g.rows.some(e => e.amountType === 'percentage');
+    if (anyPercentage) {
+      // Barred by RULE, and checked before homogeneity so it is the reason the
+      // user sees. Campaign group edit reverse-engineers a ramp by summing
+      // Math.abs(subscriberVolume) across the rows (handleEditCampaignStart) —
+      // arithmetic that is meaningless for a row storing a percent rather than
+      // a quantity, and would produce a plausible, wrong spread.
+      //
+      // The homogeneity test below deliberately does NOT also compare
+      // amountType. It was written that way first, and it is unobservable: this
+      // branch catches every campaign containing a percentage row, so the extra
+      // clause could never change an outcome. An unreachable guard reads as
+      // protection while providing none, and a mutation test proved it — the
+      // clause could be deleted with every assertion still green.
+      g.editable = false;
+      g.reason = 'Percentage events are edited individually, not as a campaign spread';
+    } else if (!homogeneous) {
       g.editable = false;
       g.reason = 'Events in this campaign target different scenarios or cohorts — edit rows individually';
     } else if (first.scenario === 'ARPU' && g.rows.length > 1) {
@@ -2896,12 +2912,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 ) : (
                   marketEvents
                     .slice()
-                    .sort((a, b) => {
-                      const ca = a.campaignName || '';
-                      const cb = b.campaignName || '';
-                      if (ca !== cb) return ca.localeCompare(cb);
-                      return String(a.date).localeCompare(String(b.date));
-                    })
+                    // Sequence is the primary sort. Campaign membership is now
+                    // shown by the badge in the first column and no longer
+                    // groups rows, so a campaign's events sit wherever the user
+                    // created them rather than being gathered alphabetically.
+                    .sort(bySequence)
                     .map(event => {
                       const isRetention = event.scenario === 'Retention';
                       const isInflow    = event.scenario === 'Inflow';
@@ -2920,12 +2935,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       const outflowDelta    = isOutflow   ? event.subscriberVolume        // already negative
                                            : isRetention  ? -event.subscriberVolume        // positive stored → negative Outflow Δ
                                            : null;
-                      // ARPU Δ — ARPU events directly; Inflow/Outflow show their per-subscriber
-                      //   ARPU if non-zero (contextual blending info).
-                      const arpuDelta       = event.arpu !== 0 ? event.arpu : null;
+                      const isPercentage = event.amountType === 'percentage';
+                      // ARPU Δ — see eventArpuDelta for why percentage rows dash.
+                      const arpuDelta       = eventArpuDelta(event);
 
                       // Helper: render a signed numeric delta cell
-                      const fmtDelta = (v: number) => (v > 0 ? '+' : '') + formatNumber(v);
+                      // A percentage row stores a PERCENT in subscriberVolume, not a
+                      // quantity, so it must never be run through formatNumber as if
+                      // it were subscribers — "+10" for a 10% uplift reads as ten
+                      // people. The unit is what distinguishes them.
+                      const fmtDelta = (v: number) => isPercentage
+                        ? (v > 0 ? '+' : '') + v.toFixed(1) + '%'
+                        : (v > 0 ? '+' : '') + formatNumber(v);
 
                       const isEditing = editingEventId === event.id
                         || (editingCampaign !== null && event.campaignName === editingCampaign);
