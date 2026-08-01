@@ -1438,8 +1438,23 @@ export interface EventApplication {
   coverage?: number;
 }
 
+/** How one percentage event's contribution to one month was arrived at.
+ *  Emitted by the engine rather than re-derived in the view, so what the user
+ *  is shown is the arithmetic that actually ran. */
+export interface PercentageDerivation {
+  eventId: string;
+  metric: 'inflow' | 'outflow' | 'retention';
+  basisKind: 'baseline' | 'adjusted';
+  basis: number;
+  percent: number;
+  coverage: number;
+  delta: number;
+}
+
 export interface MonthApplication {
   metrics: MonthMetrics;
+  /** One entry per percentage event applied this month. */
+  derivations: PercentageDerivation[];
   /** Before the zero floor, so a breach can be shown rather than just clipped. */
   preFloor: MonthMetrics;
   appliedIds: string[];
@@ -1524,19 +1539,29 @@ export function applyEventsToMonth(
 
   // ── Phase 2: percentage events, all against a frozen basis ─────────────
   let dInflow = 0, dOutflow = 0, dRetention = 0;
+  const derivations: PercentageDerivation[] = [];
   events.forEach(e => {
     if (!isPct(e)) return;
-    const basis = e.percentageBasis === 'adjusted' ? afterAbsolute : baseline;
+    const basisKind = e.percentageBasis === 'adjusted' ? 'adjusted' as const : 'baseline' as const;
+    const basis = basisKind === 'adjusted' ? afterAbsolute : baseline;
     const pct = (e.percentAmount ?? 0) / 100;
     const coverage = e.coverage ?? 1;
+    const record = (metric: 'inflow' | 'outflow' | 'retention', basisVal: number, delta: number) =>
+      derivations.push({ eventId: e.id, metric, basisKind, basis: basisVal,
+                         percent: e.percentAmount ?? 0, coverage, delta });
     if (e.scenario === 'Inflow') {
-      dInflow += pct * basis.inflow * coverage;
+      const delta = pct * basis.inflow * coverage;
+      dInflow += delta;
+      record('inflow', basis.inflow, delta);
     } else if (e.scenario === 'Outflow') {
       // Natural direction: +10% means more outflow.
-      dOutflow += pct * basis.outflow * coverage;
+      const delta = pct * basis.outflow * coverage;
+      dOutflow += delta;
+      record('outflow', basis.outflow, delta);
     } else if (e.scenario === 'Retention') {
       const delta = pct * basis.retention * coverage;
       dRetention += delta;
+      record('retention', basis.retention, delta);
       // Same coupling as the absolute case: more retention is less outflow.
       if (e.retentionLinked !== false) dOutflow -= delta;
     }
@@ -1563,6 +1588,7 @@ export function applyEventsToMonth(
     preFloor,
     appliedIds,
     flooredMetrics,
+    derivations,
   };
 }
 

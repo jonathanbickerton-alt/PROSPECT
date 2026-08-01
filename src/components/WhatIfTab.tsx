@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Info, Download, Trash2, CheckCircle2, XCircle, Activity, AlertTriangle, Pencil } from 'lucide-react';
+import { ArrowLeft, Info, Download, Trash2, CheckCircle2, XCircle, Activity, AlertTriangle, Pencil, ChevronRight, ChevronDown } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip,
   Legend, Line, Brush, ReferenceLine,
@@ -699,6 +699,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
           arpu: applied.metrics.arpu,
         },
         preFloor: applied.preFloor,
+        derivations: applied.derivations,
         flooredMetrics: applied.flooredMetrics,
         appliedEventIds: applied.appliedIds,
       });
@@ -1933,6 +1934,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // preview is computed from that array and confirming commits that same array,
   // so the figures on screen cannot describe a state the user never reaches.
   // Deriving the outcome a second time on confirm is the failure this avoids.
+  /** Which percentage event has its derivation row open. Follows the
+   *  chevron-expand pattern used by ForecastVsActualsTab. */
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+
   const [pendingChange, setPendingChange] = useState<
     { kind: 'delete' | 'edit' | 'clear'; nextEvents: MarketEvent[] } | null
   >(null);
@@ -3040,8 +3045,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             isEditing ? 'bg-amber-50/60 ring-1 ring-inset ring-amber-300' :
                             hasWarning ? 'bg-amber-50/40' : ''
                           }`}>
-                            {/* Campaign column — badge doubles as the group-edit control */}
+                            {/* Campaign column — badge doubles as the group-edit control.
+                                A percentage row also carries the chevron that opens its
+                                derivation, since that is the row whose number needs explaining. */}
                             <td className="px-5 py-3 text-xs max-w-[160px]">
+                              {isPercentage && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setExpandedEventId(expandedEventId === event.id ? null : event.id); }}
+                                  className="align-middle mr-1 text-slate-400 hover:text-slate-600 transition-colors"
+                                  title={expandedEventId === event.id ? 'Hide derivation' : 'Show how this was applied'}
+                                  aria-expanded={expandedEventId === event.id}
+                                >
+                                  {expandedEventId === event.id ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                </button>
+                              )}
                               {campaignLabel ? (
                                 group?.editable ? (
                                   <button
@@ -3138,6 +3156,67 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               </button>
                             </td>
                           </tr>
+                          {isPercentage && expandedEventId === event.id && (
+                            <tr className="bg-slate-50/70">
+                              <td colSpan={wiTariffL1Col ? 14 : 13} className="px-5 py-3">
+                                <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-1.5">
+                                  How this was applied
+                                </div>
+                                {(() => {
+                                  // Straight from the engine's own record — not
+                                  // recomputed here, so what is shown is the
+                                  // arithmetic that actually ran.
+                                  const rowsFor = adjustedMonths
+                                    .flatMap(m => (m.derivations ?? [])
+                                      .filter(d => d.eventId === event.id)
+                                      .map(d => ({ month: m.month, ...d })));
+                                  if (!rowsFor.length) {
+                                    return (
+                                      <div className="text-xs text-slate-400 italic">
+                                        This event does not apply in the current view.
+                                      </div>
+                                    );
+                                  }
+                                  return (
+                                    <table className="text-xs w-full max-w-2xl">
+                                      <thead className="text-slate-400">
+                                        <tr>
+                                          <th className="text-left font-medium pb-1">Month</th>
+                                          <th className="text-left font-medium pb-1">Metric</th>
+                                          <th className="text-right font-medium pb-1">Basis</th>
+                                          <th className="text-right font-medium pb-1">%</th>
+                                          <th className="text-right font-medium pb-1">In scope</th>
+                                          <th className="text-right font-medium pb-1">Applied</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-200/60">
+                                        {rowsFor.map(d => (
+                                          <tr key={d.month + d.metric}>
+                                            <td className="py-1 text-slate-600">{fmtMonth(d.month)}</td>
+                                            <td className="py-1 text-slate-600 capitalize">
+                                              {d.metric}
+                                              <span className="text-slate-400 ml-1">({d.basisKind})</span>
+                                            </td>
+                                            <td className="py-1 text-right tabular-nums text-slate-500">{formatNumber(d.basis)}</td>
+                                            <td className="py-1 text-right tabular-nums text-slate-500">{d.percent.toFixed(1)}%</td>
+                                            <td className="py-1 text-right tabular-nums text-slate-500">{(d.coverage * 100).toFixed(1)}%</td>
+                                            <td className="py-1 text-right tabular-nums text-slate-800 font-medium">
+                                              {(d.delta > 0 ? '+' : '') + formatNumber(d.delta)}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  );
+                                })()}
+                                <div className="text-[11px] text-slate-400 mt-1.5">
+                                  Applied = basis x % x in-scope share. "In scope" is how much of this
+                                  view lies inside the event's target; it is 100% whenever the view sits
+                                  entirely within it.
+                                </div>
+                              </td>
+                            </tr>
+                          )}
                           {hasWarning && (
                             <tr className="bg-amber-50">
                               <td colSpan={wiTariffL1Col ? 14 : 13} className="px-5 py-2 text-xs text-amber-700 flex items-center gap-2">

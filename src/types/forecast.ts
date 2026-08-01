@@ -306,6 +306,17 @@ export interface AdjustedForecastMonth {
     outflow: number;
     arpu: number;
   };
+  /** Per-event derivation for percentage events applied this month, emitted
+   *  by the engine so the provenance row shows the arithmetic that ran. */
+  derivations?: Array<{
+    eventId: string;
+    metric: 'inflow' | 'outflow' | 'retention';
+    basisKind: 'baseline' | 'adjusted';
+    basis: number;
+    percent: number;
+    coverage: number;
+    delta: number;
+  }>;
   /** Metrics the floor caught this month, empty when none did. */
   flooredMetrics?: Array<'inflow' | 'outflow' | 'retention' | 'arpu'>;
 }
