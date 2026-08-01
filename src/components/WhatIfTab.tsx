@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useState, useCallback } from 'react';
+import React, { useMemo, useEffect, useState, useCallback, useRef} from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Info, Download, Trash2, CheckCircle2, XCircle, Activity, AlertTriangle, Pencil } from 'lucide-react';
 import {
@@ -1081,7 +1081,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const { t } = useTranslation();
   const { baseForecast, setAdjustedForecast } = useForecast();
 
-  const [selectedKpis, setSelectedKpis] = useState<KpiName[]>(['Inflow', 'Outflow', 'Retention', 'Base']);
+  // KPI selection is PER TAB. One shared set produced two wrong behaviours in
+  // turn: re-defaulting on every tab change silently discarded a hand-picked
+  // selection, and defaulting only once let the Value tab's ARPU-only choice
+  // follow the user back to Volume. Each tab now remembers what it was left on,
+  // and gets its default the first time it is opened.
+  const TAB_DEFAULT_KPIS: Record<string, KpiName[]> = {
+    volume:    ['Inflow', 'Outflow', 'Retention', 'Base'],
+    promotion: ['Inflow', 'Outflow', 'Retention', 'Base'],
+    value:     ['ARPU'],
+    pricing:   ['ARPU'],
+  };
+  const [kpisByTab, setKpisByTab] = useState<Record<string, KpiName[]>>({});
 
   // null = add-new mode; a string id = editing that event
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
@@ -1093,7 +1104,6 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // Defaults to 'All' on every mount; never reads from baseForecast.cohort.
   // ---------------------------------------------------------------------------
   // 'All' means all KPIs visible; a specific scenario pre-selects that KPI.
-  const [viewScenario, setViewScenario] = useState('All');
 
   // Tariff tree constrained to the user's selected tariffs (Phase 2b) — feeds the
   // P7 targeting dropdowns and the tariff mix axis. Empty selection = no options,
@@ -1144,23 +1154,25 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     });
   }, [spreadMonths]);
 
-  // When the active tab changes, sync the KPI selection to the tab's focus.
-  useEffect(() => {
-    if (activeTab === 'volume' || activeTab === 'promotion') {
-      setSelectedKpis(['Inflow', 'Outflow', 'Retention', 'Base']);
-    } else {
-      // Value and Pricing tabs focus on ARPU
-      setSelectedKpis(['ARPU']);
-    }
-  }, [activeTab]);
-
-  // When the user picks a specific scenario, focus the chart on that KPI.
-  // When 'All' is selected, do nothing — the activeTab effect owns the default set.
-  useEffect(() => {
-    if (viewScenario !== 'All') {
-      setSelectedKpis([viewScenario as KpiName]);
-    }
-  }, [viewScenario]);
+  // Each tab gets a sensible default KPI set the FIRST time it is opened, and
+  // never again. This used to run on every tab change and silently overwrote a
+  // hand-picked selection: choose your own series, switch tabs, come back, and
+  // it was gone with no indication anything had happened.
+  //
+  // The KPI pills below the chart are the single authority for what is
+  // displayed. Nothing else writes selectedKpis, so the pills and the chart
+  // cannot disagree. The FOCUS bar that used to be a second writer is deleted;
+  // see the header-slot rule in EXPECTED.md.
+  const selectedKpis = kpisByTab[activeTab] ?? TAB_DEFAULT_KPIS[activeTab] ?? TAB_DEFAULT_KPIS.volume;
+  const setSelectedKpis = useCallback(
+    (next: KpiName[] | ((prev: KpiName[]) => KpiName[])) =>
+      setKpisByTab(prev => {
+        const current = prev[activeTab] ?? TAB_DEFAULT_KPIS[activeTab] ?? TAB_DEFAULT_KPIS.volume;
+        return { ...prev, [activeTab]: typeof next === 'function' ? next(current) : next };
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeTab],
+  );
 
 
   // ── Yield Events form local draft state ──────────────────────────────────
@@ -2056,6 +2068,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const toggleKpi = (kpi: KpiName) =>
     setSelectedKpis(prev => prev.includes(kpi) ? prev.filter(k => k !== kpi) : [...prev, kpi]);
 
+  /** Isolate one series in a single gesture — what the deleted FOCUS dropdown
+   *  was for. Kept next to the chart it drives rather than in the header slot,
+   *  so there is exactly one authority for what is displayed. */
+  const selectOnlyKpi = (kpi: KpiName) => setSelectedKpis([kpi]);
+
   // -------------------------------------------------------------------------
   // No-baseline empty state
   // -------------------------------------------------------------------------
@@ -2120,43 +2137,23 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             <ArrowLeft size={14} />{t('whatif_back_to_step_1')}</button>
         </div>
 
-        {/* ── KPI focus ────────────────────────────────────────────────────── */}
-        {/* Cohort dimensions REMOVED. They used to scope computeAdjustedForecast,
-            whose output is written to global adjustedForecast paired with the
-            LOADED cohort's identity — so a narrowed preview silently mislabelled
-            the Adjusted_Forecasts export and mis-scored Step 3. Scope now comes
-            from baseForecast.cohort only; use the dark VIEWING bar to change it.
-            Only the KPI focus survives here — it has no dark-bar equivalent and
-            is display-only. */}
-        <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0">{t('whatif_focus')}</span>
+        {/* The FOCUS bar that stood here was deleted on 2026-08-01.
+            It was styled identically to Step 3's in-page bar -- same container
+            classes, same slot, same uppercase label -- and Step 3's bar means
+            cohort scope. Users read the app's grammar correctly and this one
+            broke it, which is what "two filter bars I can't tell apart" was.
+            It also carried filter vocabulary ("IBRO Scenario") for what the
+            chart calls KPIs eighty pixels below.
 
-          <div className="flex items-center gap-1.5">
-            <label className="text-xs text-slate-500 shrink-0">IBRO Scenario</label>
-            <select
-              value={viewScenario}
-              onChange={e => setViewScenario(e.target.value)}
-              className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-slate-50 outline-none focus:border-[#e60000]"
-            >
-              <option value="All">{t('whatif_all')}</option>
-              <option value="Inflow">Inflow</option>
-              <option value="Outflow">Outflow</option>
-              <option value="Retention">Retention</option>
-              <option value="Base">Base</option>
-              <option value="ARPU">ARPU</option>
-            </select>
-          </div>
+            Its dropdown was a remote control for the KPI pills, and its Reset
+            arm did not work: the effect it drove was guarded on !== 'All', so
+            selecting All or clicking Reset left the chart on one series while
+            the dropdown claimed otherwise. Both are gone with the bar.
 
-          {viewScenario !== 'All' && (
-            <button
-              onClick={() => setViewScenario('All')}
-              className="text-[10px] text-slate-400 hover:text-rose-500 underline underline-offset-2 transition-colors"
-            >{t('whatif_reset')}</button>
-          )}
-
-          <span className="ml-auto text-[10px] text-slate-400 italic hidden lg:block">{t('whatif_chart_focus_only')}</span>
-        </div>
-
+            The rule this follows is in EXPECTED.md: an in-page bar in the
+            header slot may only MIRROR global scope, never own local state,
+            and hides when it has nothing to say. Do not reintroduce one here
+            for a display-only control. */}
         {/* Impact summary cards */}
         {impactSummary && (
           <div className="grid grid-cols-3 gap-4">
@@ -2211,10 +2208,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
           {/* KPI selector */}
           <div className="flex flex-wrap gap-2 mb-5">
-            {KPI_LIST.map(kpi => (
+            {KPI_LIST.map(kpi => {
+              const isOnly = selectedKpis.length === 1 && selectedKpis[0] === kpi;
+              return (
               <label
                 key={kpi}
-                className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border cursor-pointer transition-colors ${
+                className={`group flex items-center gap-2 text-xs pl-3 pr-2 py-1.5 rounded-lg border cursor-pointer transition-colors ${
                   selectedKpis.includes(kpi)
                     ? 'bg-slate-800 border-slate-800 text-white'
                     : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
@@ -2231,8 +2230,25 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   style={{ backgroundColor: KPI_COLORS[kpi].baseline }}
                 />
                 {kpi}
+                {/* Isolate this series. preventDefault stops the enclosing
+                    label activating its checkbox as well as running this. */}
+                <button
+                  type="button"
+                  onClick={e => { e.preventDefault(); e.stopPropagation(); selectOnlyKpi(kpi); }}
+                  disabled={isOnly}
+                  aria-label={t('whatif_show_only_kpi', { kpi })}
+                  title={t('whatif_show_only_kpi', { kpi })}
+                  className={`ml-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide transition-opacity ${
+                    isOnly
+                      ? 'opacity-0 pointer-events-none'
+                      : selectedKpis.includes(kpi)
+                        ? 'opacity-0 group-hover:opacity-100 focus:opacity-100 bg-white/15 text-white hover:bg-white/25'
+                        : 'opacity-0 group-hover:opacity-100 focus:opacity-100 bg-slate-200 text-slate-600 hover:bg-slate-300'
+                  }`}
+                >{t('whatif_only')}</button>
               </label>
-            ))}
+              );
+            })}
           </div>
 
           {/* Legend hint */}

@@ -658,5 +658,7 @@
   "importactuals_import": "Import",
   "removeactuals_preview": "Preview",
   "whatif_focus": "Focus",
-  "whatif_chart_focus_only": "Chart focus only — scope follows the VIEWING bar"
+  "whatif_chart_focus_only": "Chart focus only — scope follows the VIEWING bar",
+  "whatif_only": "Only",
+  "whatif_show_only_kpi": "Show only {{kpi}}"
 }

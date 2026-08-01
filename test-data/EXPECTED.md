@@ -745,6 +745,74 @@ exactly 1, so the event is applied once in total. One shared helper,
 of that rule.
 
 
+### Header-slot rule — an in-page bar may only MIRROR global scope
+
+**An in-page bar in the header slot may only mirror global scope, never own
+local state, and hides when it has nothing to say.**
+
+Users reported "two filter bars I can't tell apart" on Market Events. The cause
+was not that the white bar resembled the dark global one — it was that it was
+**identical to Step 3's in-page bar**: same container classes
+(`bg-white border border-slate-200 rounded-xl px-4 py-3`), same slot under the
+page header, same `text-[10px] font-bold uppercase tracking-wider text-slate-400`
+label. Step 3's bar describes cohort scope. Users read the app's grammar
+correctly; Step 2 broke it.
+
+| Step | In-page bar | Conforms |
+|---|---|---|
+| 1 (`StandardForecastTab`) | none | Exempt — its controls ARE authoritative, there is no global bar to mirror |
+| 3 (`ForecastVsActualsTab`) | yes | **Yes** — pure mirror; chips display the dark bar's dimensions and write back via `onCohortFilterChange`, and the whole bar is hidden behind `hasActiveFilterDims` |
+| 2 (`WhatIfTab`) | **deleted 2026-08-01** | Was the only violation — it owned local state the dark bar had no equivalent for |
+
+Step 2's bar also used filter vocabulary ("IBRO Scenario") for what the chart
+calls KPIs eighty pixels below, and carried an italic "chart focus only" hint.
+**Microcopy defending a control against being misread is a sign the control is
+in the wrong place**, not a sign the copy needs work.
+
+Do not reintroduce a bar in that slot for a display-only control. Put the
+control next to what it affects.
+
+#### What was deleted with it
+
+`viewScenario` had exactly one consumer — an effect that wrote `selectedKpis`.
+It was a remote control for the KPI pills further down the same screen, and its
+reset arm did not work: the effect was guarded on `!== 'All'`, so choosing All
+or clicking Reset left the chart on one series while the dropdown claimed
+otherwise. Both are gone. The single-gesture isolate capability it genuinely
+provided is now an "Only" affordance on each KPI pill.
+
+#### KPI selection is per tab
+
+Two wrong behaviours in succession, both fixed 2026-08-01. Re-defaulting on
+every tab change silently discarded a hand-picked selection. Defaulting only
+once per tab then let the Value tab's ARPU-only choice follow the user back to
+Volume — **found by the measurement, not by reading the code.** Each tab now
+remembers what it was left on and gets its default the first time it is opened.
+
+**The KPI pills are the single authority for what the chart displays.** Measured
+by driving the component: after every interaction — toggle, Only, tab round trip
+— the selected pills equal the series the chart draws, identified by stroke
+colour. A positive control asserts the chart is drawing something first, because
+an empty set on both sides would otherwise read as agreement.
+
+### OPEN PRODUCT QUESTION — the scoped preview
+
+The in-page bar once carried four cohort dimensions letting a user narrow the
+adjusted-forecast preview to a sub-cohort without changing global scope. Removed
+because its output was written to global `adjustedForecast` paired with the
+LOADED cohort's identity, mislabelling the export and mis-scoring Step 3.
+
+The underlying need is plausible: *"I've loaded Corporate/All/All, added an
+event, and want to see how it lands on one tariff without regenerating."*
+
+**Not built, and not a UI decision.** A safe version must:
+1. never write `adjustedForecast` — it needs its own derived value;
+2. present differently enough that it cannot be mistaken for the thing that gets
+   exported (an overlay or annotation, not a replaced line);
+3. not reintroduce a control in the header slot, per the rule above.
+
+Recorded as an open product question. Do not fold it into a UI change.
+
 ### Bulk edit is delete-and-rebuild, not an update loop — decide before percentage events
 
 On the Volume and Promotion cards, **individual** edit patches by id and keeps
