@@ -9,7 +9,7 @@ import { format, parse, isValid, addMonths, differenceInCalendarMonths } from 'd
 import { useForecast } from '../context/ForecastContext';
 import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent } from '../types/forecast';
 import type { MarketEvent } from '../utils/forecasting';
-import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix, eventProRataShare } from '../utils/forecasting';
+import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix, eventProRataShare, nextSequence } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
@@ -96,7 +96,6 @@ interface WhatIfTabProps {
   downloadExcel: (data: any[], filename: string, params?: any[]) => void;
   formatNumber: (v: any) => string;
   setActiveView: (v: string) => void;
-  /** Calendar months absent from the cohort's historical series — populated by gap detection in computeWhatIfData */
 }
 
 // ---------------------------------------------------------------------------
@@ -273,12 +272,24 @@ interface BuildPromoEventsParams {
   spreadMonths: number;
   spreadDistType: 'even' | 'custom';
   customDist: number[];
+  /** First display slot for the rows produced; a spread takes consecutive
+   *  slots from here. Required so a caller cannot forget to allocate one. */
+  startSequence: number;
 }
 
 /** Builds one or more MarketEvent rows for the Custom Promotion Card — a
  *  single event, or a ramp/decay spread, depending on spreadEnabled. Shared by
  *  Add, Save Edit, and Save Campaign so the mix-blend / pricing-delta /
- *  cohort-average resolution logic is never duplicated. */
+ *  cohort-average resolution logic is never duplicated.
+ *
+ *  Percentage amounts are a Volume-tab capability and are deliberately absent
+ *  here: this function never sets amountType, so every promo row is absolute.
+ *  The card is already compositional — an optional mix arm and an optional
+ *  pricing arm — and putting a percentage volume basis underneath both
+ *  multiplies the interaction space for a case nobody has asked for. The
+ *  exclusion is a rule, not a guard: percentage rows are also barred from
+ *  campaign group-editing rather than defensively handled there. Revisit only
+ *  on a real request, and cost the combinations before agreeing. */
 function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
   const applyPricing = (arpu: number) =>
     p.pricingMode === 'percentage' ? arpu * (1 + p.pricingAmount / 100) : arpu + p.pricingAmount;
@@ -332,6 +343,7 @@ function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
       promoMix: p.mixEnabled ? { ...p.draftMix } : undefined,
       promoPricingMode: p.pricingEnabled ? p.pricingMode : undefined,
       promoPricingAmount: p.pricingEnabled ? p.pricingAmount : undefined,
+      sequence: p.startSequence + i,
     };
   });
 }
@@ -1243,7 +1255,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // Historical per-tier ARPU is sum(Revenue)/sum(Volume) over the columns the
     // user selected in Data Mapping/Baseline Forecast generation — never a
     // name-matched "ARPU" column. This mirrors computeCohortTrailingArpu (P4)
-    // and computeWhatIfData's own aggregation, so cohort-average ARPU is derived
+    // and the what-if row aggregation, so cohort-average ARPU is derived
     // the same way everywhere in the app, including the Custom Promotion Card's
     // mix arm (Phase 4), which calls the same computeTierData helper below.
     return computeTierData({
@@ -1403,6 +1415,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
       cohortAvgArpu: promoCohortAvgArpu,
       spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
+      startSequence: nextSequence(marketEvents),
     });
     if (events.length === 0) return;
 
@@ -1843,6 +1856,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         campaignName: newEvent.campaignName || '',
         comment: newEvent.comment || '',
         contractLength: newEvent.contractLength ?? 24,
+        // Appends to the end for now; step 2 makes the rebuild restore the
+        // slots the replaced rows held.
+        sequence: nextSequence(marketEvents),
       }];
     } else {
       const pcts = spreadDistType === 'even'
@@ -1876,6 +1892,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           campaignName: newEvent.campaignName || '',
           comment: newEvent.comment || '',
           contractLength: newEvent.contractLength ?? 24,
+          sequence: nextSequence(marketEvents) + i,
         };
       });
     }
@@ -2015,6 +2032,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
       cohortAvgArpu: promoCohortAvgArpu,
       spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [100],
+      startSequence: nextSequence(marketEvents),
     });
     if (events.length === 0) return;
     updateMarketEvent(editingPromoId, { ...events[0], id: editingPromoId });
@@ -2030,6 +2048,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
       cohortAvgArpu: promoCohortAvgArpu,
       spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
+      startSequence: nextSequence(marketEvents),
     });
     if (events.length === 0) return;
     // Only replace THIS card's rows for the campaign — a Volume-tab campaign

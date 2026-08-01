@@ -813,7 +813,7 @@ event, and want to see how it lands on one tariff without regenerating."*
 
 Recorded as an open product question. Do not fold it into a UI change.
 
-### Bulk edit is delete-and-rebuild, not an update loop — decide before percentage events
+### Bulk edit is delete-and-rebuild, not an update loop — SETTLED 2026-08-01
 
 On the Volume and Promotion cards, **individual** edit patches by id and keeps
 the row's identity. **Bulk (campaign) edit does not**: `handleSaveCampaign`
@@ -832,10 +832,26 @@ events precede them, and so changing their result, without the user editing
 anything about ordering.
 
 Nothing observable depends on it today, because order is only positional in the
-array and current event types do not read each other's output. Percentage /
-adjusted-targeting events would make it observable. Options are to preserve
-array position on rebuild, to give events an explicit order field, or to make
-bulk edit patch by id like individual edit does — **not yet decided**.
+array and current event types do not read each other's output.
+
+**Resolution: an explicit `sequence` field on `MarketEvent`, and both bulk
+rebuild sites restore the slots their replaced rows held rather than appending.**
+
+One correction to the reasoning above, because it is the interesting part. This
+entry expected percentage events to make array order *computationally*
+observable — "adjusted-targeting events depend on the result of earlier ones".
+They do not. Percentage events are flat and non-compounding by decision: each
+resolves against a single basis and none can observe another's output, so the
+maths is order-independent by construction.
+
+What was actually at risk was never the arithmetic. It was that a bulk edit
+silently moved rows to the end of the table, so the user's own ordering — the
+thing they arranged and read — was rearranged by an edit that had nothing to do
+with ordering. `sequence` exists for display stability and edit-slot retention.
+
+The distinction matters because the wrong reason argues for a strict processing
+order in the engine, and that is exactly the over-engineering to avoid. See the
+two-phase comment in `computeAdjustedForecast`.
 
 ### Value and Pricing cards: individual edit only, deliberately
 
@@ -1566,6 +1582,28 @@ pre-existing, not introduced. That is the point: **removing a dead subsystem
 does not automatically remove what fed it or what it fed.** After deleting one,
 grep for the state it wrote and the props it filled, or the tail survives and
 still reads as live.
+
+#### A fourth: `MarketEventType`, dead by decoy rather than by orphaning
+
+`src/types/forecast.ts:276` declares
+`export type MarketEventType = 'Inflow' | 'Retention' | 'Outflow'`. It has
+exactly one reference in `src/` — its own declaration. Verified by grep during
+the percentage-events mapping pass, 2026-08-01.
+
+This one is a different failure mode from the three above, and the more
+dangerous one. Those were dead because their callers went away. This has been
+dead since it was written, and it survives because it is **plausible**: it has
+the obvious name for the event type, it sits in the file called `types`, and it
+is exported. The real record is the `MarketEvent` interface in
+`src/utils/forecasting.ts:4` — a utils file, which is not where anyone looks
+first.
+
+So the reachability rule needs a second half. **A symbol can be unreachable and
+still cost you, by being the thing a reader finds before the live one.** Grep
+for references before extending a type you found by name; a zero-reference
+export is not a base to build on, it is a decoy. Left in place deliberately
+pending removal, recorded here so the next reader who reaches for it by name
+has been warned.
 
 **The tail was removed too, 2026-07-31.** `WhatIfTab`'s `missingMonths` prop and
 its gap-warning block are gone. It was not a working capability being deleted —

@@ -26,8 +26,8 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
 
   if (!matchingBaseline.length) return [];
 
-  // Market-event pro-rata scoping — SAME shared rule as computeWhatIfData and
-  // the WhatIfTab engine (see eventProRataShare). No parallel implementation.
+  // Market-event pro-rata scoping — SAME shared rule as the WhatIfTab
+  // engine (see eventProRataShare). No parallel implementation.
   //
   // Note this deliberately leaves the AGGREGATE case untouched: when the view
   // scope is exactly the event's target, the cohort covers the whole target and

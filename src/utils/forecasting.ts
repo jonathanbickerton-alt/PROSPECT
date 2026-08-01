@@ -16,7 +16,52 @@ export interface MarketEvent {
   /** Tariff L2 — 'All' or absent means apply to all L2 within the L1 tariff (Phase 2a) */
   tariffL2?: string;
   date: string; // yyyy-MM
+  /**
+   * Explicit display order, independent of array position. Editing an event
+   * keeps its slot instead of moving to the end, and campaign bulk-edit —
+   * which deletes and rebuilds its rows — restores the original slots rather
+   * than appending.
+   *
+   * This does NOT order the calculation. See the two-phase comment in
+   * computeAdjustedForecast: percentage events are flat and cannot observe
+   * each other, so the maths is order-independent by construction.
+   */
+  sequence: number;
   subscriberVolume: number;
+  /**
+   * How subscriberVolume is to be read. 'absolute' (the default, and the only
+   * value before 2026-08-01) means it is a subscriber count. 'percentage'
+   * means it is a percent of the metric named by `scenario`, resolved per
+   * cohort-month against the basis in `percentageBasis`.
+   *
+   * Percentage amounts are VOLUME-like and therefore pro-rated through
+   * eventProRataShare exactly as absolute amounts are. Do not confuse this
+   * with promoPricingMode below, which carries the same union on this same
+   * interface and takes the opposite rule.
+   *
+   * Volume tab only — the promo card never sets this. See buildPromoEvents.
+   */
+  amountType?: 'absolute' | 'percentage';
+  /**
+   * What a percentage resolves against. 'baseline' (default) is the untouched
+   * forecast for the month; 'adjusted' is the value after every absolute event
+   * for that month has been applied, but before any percentage event has.
+   * Ignored unless amountType === 'percentage'.
+   */
+  percentageBasis?: 'baseline' | 'adjusted';
+  /**
+   * Retention events reduce Outflow as well as raising Retention, because
+   * retained subscribers are subscribers who did not leave. Setting this false
+   * decouples them: Retention moves and Outflow does not.
+   *
+   * Because Base is driven by Outflow and not by Retention, an unlinked
+   * Retention event has NO effect on Base — it moves the Retention line alone.
+   * That is a deliberate reporting choice, not an oversight.
+   *
+   * Absent means linked, which is both the default and the pre-2026-08-01
+   * behaviour.
+   */
+  retentionLinked?: boolean;
   customerVolume: number;
   revenue: number;
   arpu: number;
@@ -47,7 +92,13 @@ export interface MarketEvent {
   promoMixAxis?: 'value' | 'tariff';
   promoMix?: Record<string, number>;
   /** Phase 4 — Custom Promotion Card: the pricing arm's raw inputs, stored for
-   *  the same edit-restoration reason as promoMix above. */
+   *  the same edit-restoration reason as promoMix above.
+   *
+   *  NOT the same thing as amountType above, despite carrying the same union on
+   *  this same interface. This one is a RATE — it scales ARPU, and a rate must
+   *  never be pro-rated, because a volume-weighted average of (leafArpu + delta)
+   *  already equals (aggregateArpu + delta). amountType is a VOLUME and must be
+   *  pro-rated. Same shape, opposite rule; check which one you are holding. */
   promoPricingMode?: 'percentage' | 'absolute';
   promoPricingAmount?: number;
 }
@@ -740,7 +791,7 @@ function fitAndBuildBands(
 }
 
 // ---------------------------------------------------------------------------
-// Public legacy API — unchanged output format, used by App.tsx and computeWhatIfData
+// Public legacy API — unchanged output format, used by App.tsx
 // ---------------------------------------------------------------------------
 
 /**
@@ -1178,11 +1229,15 @@ export function distributeProRata(
 // in total however many cohorts are computed, and an aggregate always equals
 // the sum of its adjusted leaves — the reconciliation guarantee.
 //
-// This is the ONE implementation of that rule. computeWhatIfData, WhatIfTab's
-// adjusted-forecast engine and scenarioHelper all call it. They differ only in
-// how they read their rows (raw vs exported PascalCase); the share arithmetic
-// must never be duplicated, because these three paths have drifted apart
-// before.
+// This is the ONE implementation of that rule. TWO paths call it: WhatIfTab's
+// adjusted-forecast engine (computeAdjustedForecast) and scenarioHelper
+// (computeScenarioForFilter). They differ only in how they read their rows
+// (raw camelCase vs exported PascalCase); the share arithmetic must never be
+// duplicated, because these paths have drifted apart before.
+//
+// It said "three paths" and named computeWhatIfData until 2026-08-01. That
+// function was deleted on 2026-07-31 and the count was never updated — the
+// kind of comment that survives a deletion because nothing compiles it.
 //
 // SCOPE — VOLUME EVENTS ONLY. Inflow / Outflow / Retention events carry
 // quantities (subscriberVolume, revenue, customerVolume) and must be split.
@@ -1402,7 +1457,7 @@ export interface TrailingArpuConfig {
  * IBRO metric value — the canonical "cohort average" used to auto-populate a
  * volume-only market event's ARPU field so it doesn't dilute the blended ARPU
  * toward zero (Phase 3 P4). Mirrors the row-level revenue derivation already
- * used by computeWhatIfData's own aggregation: the revenue column if mapped
+ * used by the what-if row aggregation: the revenue column if mapped
  * and non-zero, else volume × per-row ARPU. Dimensions are matched only when
  * both a column is mapped and a non-'All' value is supplied — omitted/'All'
  * dims are unfiltered, same convention as the rest of the app.
@@ -1470,6 +1525,53 @@ export function computeCohortTrailingArpu(
  * other value. Outflow/ARPU-scenario events, or an explicit non-zero ARPU,
  * pass through unchanged — this never overrides a value the user provided.
  */
+/**
+ * Next free display slot. Appends go to the end; nothing else should invent a
+ * sequence number, so that "highest wins" holds no matter which path created
+ * the event.
+ */
+export function nextSequence(events: MarketEvent[]): number {
+  // Non-finite slots are skipped rather than compared: Math.max(2, NaN) is NaN,
+  // so one corrupt row would otherwise poison every subsequent allocation.
+  return events.reduce(
+    (max, e) => (Number.isFinite(e.sequence) ? Math.max(max, e.sequence) : max),
+    0,
+  ) + 1;
+}
+
+/**
+ * Backfill sequences for events that have none — sessions exported before
+ * 2026-08-01 carry no Sequence column.
+ *
+ * The fallback is array position, because that IS the order those sessions
+ * displayed in: before an explicit field existed, the table sorted by campaign
+ * then date, but storage order was insertion order and the export wrote rows
+ * in storage order. Reading the sheet top to bottom therefore recovers the
+ * order the user last saw their events accumulate in.
+ *
+ * Events that already carry a sequence keep it, so a partially-migrated
+ * session — hand-edited, or merged from two exports — does not get renumbered
+ * underneath the user.
+ */
+export function backfillSequences(events: MarketEvent[]): MarketEvent[] {
+  const anySequenced = events.some(e => Number.isFinite(e.sequence));
+  let next = nextSequence(events);
+  return events.map((e, i) =>
+    Number.isFinite(e.sequence) ? e : { ...e, sequence: anySequenced ? next++ : i + 1 },
+  );
+}
+
+/**
+ * The display order. Sequence first; date then id break ties so the result is
+ * total and stable even for events that somehow share a slot.
+ */
+export function bySequence(a: MarketEvent, b: MarketEvent): number {
+  const s = (a.sequence ?? 0) - (b.sequence ?? 0);
+  if (s !== 0) return s;
+  const d = a.date.localeCompare(b.date);
+  return d !== 0 ? d : a.id.localeCompare(b.id);
+}
+
 export function resolveEventArpuRevenue(
   vol: number,
   rawArpu: number | undefined,

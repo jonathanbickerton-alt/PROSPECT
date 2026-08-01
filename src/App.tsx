@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent } from './types/forecast';
 import { ForecastProvider } from './context/ForecastContext';
@@ -235,8 +235,11 @@ export default function App() {
       campaignName: newEvent.campaignName || '',
       comment:      newEvent.comment      || '',
       contractLength: newEvent.contractLength ?? 24,
+      // Placeholder — the real slot is allocated against prev inside the
+      // updater below, so two adds in one batch cannot collide.
+      sequence: 0,
     };
-    setMarketEvents(prev => [...prev, event]);
+    setMarketEvents(prev => [...prev, { ...event, sequence: nextSequence(prev) }]);
     setNewEvent({
       scenario: 'Inflow',
       segment: 'All',
@@ -918,8 +921,11 @@ export default function App() {
             promoMix:         r.Promo_Mix_JSON ? (() => { try { return JSON.parse(String(r.Promo_Mix_JSON)); } catch { return undefined; } })() : undefined,
             promoPricingMode: r.Promo_Pricing_Mode === 'absolute' ? 'absolute' : r.Promo_Pricing_Mode === 'percentage' ? 'percentage' : undefined,
             promoPricingAmount: r.Promo_Pricing_Amount !== undefined && r.Promo_Pricing_Amount !== '' ? Number(r.Promo_Pricing_Amount) : undefined,
+            // Sessions exported before 2026-08-01 have no Sequence column;
+            // backfillSequences below assigns sheet order to those.
+            sequence:         r.Sequence !== undefined && r.Sequence !== '' ? Number(r.Sequence) : undefined as any,
           }));
-          setMarketEvents(restoredEvents);
+          setMarketEvents(backfillSequences(restoredEvents));
         }
 
         // ── Yield Events ──────────────────────────────────────────────────────
@@ -1641,9 +1647,10 @@ export default function App() {
               arpu:             neg(Number(r['ARPU'])              || 0),
               comment: String(r['Comment'] || ''),
               contractLength: Number(r['Contract_Length'] || r['Contract_Length_Months']) || 24,
+              sequence: r['Sequence'] !== undefined && r['Sequence'] !== '' ? Number(r['Sequence']) : undefined as any,
             };
           });
-          setMarketEvents(restoredEvents);
+          setMarketEvents(backfillSequences(restoredEvents));
         }
       } catch (err) {
         console.error(err);
