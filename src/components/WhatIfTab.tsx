@@ -36,6 +36,10 @@ interface WhatIfTabProps {
   wiInflowVal?: string;
   /** Value in wiMetricCol that identifies Retention rows */
   wiRetentionVal?: string;
+  /** Value in wiMetricCol that identifies Outflow rows. Absent from this
+   *  component until 2026-08-01: it was never needed, because pro-rata leaf
+   *  weights ignored which metric an event moved. Required now they do not. */
+  wiOutflowVal?: string;
   /** Column that holds per-row ARPU — optional fallback source for deriving
    *  revenue (arpu × volume) only when no revenue column is mapped. The primary
    *  per-tier ARPU derivation is sum(Revenue)/sum(Volume) over the user-mapped
@@ -487,6 +491,11 @@ export interface AdjustedForecastInput {
   wiSegmentCol: string; wiProductCol: string; wiProductL2Col: string;
   wiChannelCol: string; wiChannelL2Col: string;
   wiTariffL1Col: string; wiTariffL2Col: string; wiValueCol: string;
+  /** Needed to weight pro-rata leaves by the metric an event actually moves.
+   *  Optional: when omitted the leaf builder falls back to the previous
+   *  unfiltered blend rather than silently weighting everything as one metric. */
+  wiMetricCol?: string;
+  wiInflowVal?: string; wiOutflowVal?: string; wiRetentionVal?: string;
   /** Injectable for tests: pass [] to reproduce the pre-pro-rata wildcard behaviour. */
   proRataLeavesOverride?: ProRataLeaf[];
 }
@@ -1052,6 +1061,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   wiMetricCol = '',
   wiInflowVal = '',
   wiRetentionVal = '',
+  wiOutflowVal = '',
   wiArpuCol = '',
   wiValueCol = '',
   wiRevenueCol = '',
@@ -1503,11 +1513,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     viewChannel: cohortScope.chan, viewTariff: cohortScope.tar, data,
     wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
     wiTariffL1Col, wiTariffL2Col, wiValueCol,
+    wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
     // data + the column mappings are load-bearing: the pro-rata leaf enumeration
     // reads them to derive each leaf's volume share. Before pro-rata they were
     // unused in this body, which is why they were historically absent here.
   }), [baseForecast, marketEvents, yieldEvents, pricingEvents, cohortScope,
-       data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiValueCol]);
+       data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiValueCol,
+       wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal]);
 
   // ── Custom chart tooltip — shows KPI values + any event names for that month ─
   const renderTooltip = useCallback(({ active, payload, label }: any) => {
