@@ -433,6 +433,40 @@ const staleDeferred: string[] = [];
   for (const k of staleDeferred) console.log(`  ${k} — now translated everywhere; remove from LOCALE_DEFERRED`);
 }
 
+// ---------------------------------------------------------------------------
+// _context.json STALENESS — an entry documenting a key that no longer exists.
+//
+// src/locales/_context.json annotates keys that need translator context:
+// ambiguous verb/noun pairs, interpolation notes, terms that must stay English.
+// It is SELECTIVE by design — 40 entries against 668 keys — so "undocumented"
+// is the normal state and cannot be an error.
+//
+// What CAN be checked is the other direction: an entry for a key that has been
+// deleted. That is pure staleness, it always means the annotation was missed
+// when the key went, and it is exactly the defect a gate caught on the
+// FOCUS-bar branch (`whatif_reset` still documented after deletion). Same shape
+// as TERMBASE §13 — a convention nothing enforced, broken by its own author,
+// caught by a gate. That pattern has now resolved the same way twice, so it is
+// a build failure rather than a third convention.
+// ---------------------------------------------------------------------------
+const staleContext: string[] = [];
+let contextEntryCount = 0;
+let undocumentedCount = 0;
+{
+  const ctxPath = path.join('src', 'locales', '_context.json');
+  const enPath = path.join('src', 'locales', 'en', 'translation.json');
+  if (fs.existsSync(ctxPath) && fs.existsSync(enPath)) {
+    const ctx = JSON.parse(fs.readFileSync(ctxPath, 'utf8')) as Record<string, string>;
+    const enBundle = JSON.parse(fs.readFileSync(enPath, 'utf8')) as Record<string, string>;
+    contextEntryCount = Object.keys(ctx).length;
+    for (const k of Object.keys(ctx)) if (!(k in enBundle)) staleContext.push(k);
+    undocumentedCount = Object.keys(enBundle).filter(k => !(k in ctx)).length;
+  }
+  console.log(`\nCONTEXT FILE: ${contextEntryCount} annotated key(s), ${staleContext.length} documenting a key that no longer exists`);
+  console.log(`  (${undocumentedCount} keys carry no annotation — expected; the file is selective, not exhaustive)`);
+  for (const k of staleContext) console.log(`  ${k} — in _context.json but absent from en/translation.json`);
+}
+
 const mustKey = bucketed.filter(b => b.bucket.includes('MUST KEY'));
 if (process.argv.includes('--check')) {
   if (identErrors.length) {
@@ -458,6 +492,15 @@ if (process.argv.includes('--check')) {
     console.error('record a row in src/locales/TERMBASE.md §13 — in THIS commit, not later.');
     process.exit(1);
   }
+  if (staleContext.length) {
+    console.error(`\nFAIL: ${staleContext.length} entr(ies) in src/locales/_context.json document a key that no longer exists.`);
+    for (const k of staleContext) console.error(`  ${k}`);
+    console.error('Remove the entry in the same commit that removes the key. Translator');
+    console.error('context for a string nobody can see is worse than none — it reads as');
+    console.error('evidence the string is still live.');
+    process.exit(1);
+  }
   console.log('\nPASS: every user-facing string resolves from a translation key or an agreed exclusion,');
-  console.log('and every key exists in all six locales or is explicitly deferred.');
+  console.log('every key exists in all six locales or is explicitly deferred,');
+  console.log('and no translator note documents a key that has been deleted.');
 }

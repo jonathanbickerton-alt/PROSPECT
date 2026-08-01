@@ -349,6 +349,22 @@ phase 1.
   defect it replaces was made of. Keep both halves — the cause ("no forecast
   generated yet") and the consequence ("nothing to score against").
 
+### The population phase 2 must translate — not a defect
+
+Every key added since phase 1 lands in **all six locales carrying the English
+string**. The locale-parity check requires presence, not translation, and that
+is deliberate: requiring translation would block every new key on
+commissioning, which inverts phase 1's design. `fallbackLng: 'en'` means an
+untranslated key renders correct English rather than a raw key, and the
+`LOCALE_DEFERRED` list makes shipping-English an explicit act rather than an
+oversight.
+
+So a gate reporting "de/es/fr/it/pt hold the English string" is describing the
+design working, not a regression. **Recorded here as the population phase 2
+needs to translate**, alongside the deferred list above — those are keys absent
+from the other locales; these are keys present but untranslated. Both are phase
+2 work; neither blocks a merge.
+
 ### This is now a build check, not a convention
 
 `scripts/scan-i18n.ts --check` fails if a key exists in `en` and not in all five

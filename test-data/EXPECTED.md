@@ -1804,10 +1804,12 @@ after any change:
     of its adjusted leaves — drift 0. Apply one volume event at an aggregate
     target (e.g. Corporate · All · All, +10,000 Inflow), then sum the adjusted
     forecast across every constituent leg: the total uplift must equal the
-    event volume, not `legs × volume`. Must hold on all three paths
-    (`computeWhatIfData`, `computeAdjustedForecast`, `computeScenarioForFilter`)
-    — they are three implementations of the same concept and have drifted
-    before. Leaf-targeted events must be unaffected, and ARPU-scenario/Yield/
+    event volume, not `legs × volume`. Must hold on **both surviving paths**
+    — `computeAdjustedForecast` (`src/components/WhatIfTab.tsx`) and
+    `computeScenarioForFilter` (`src/utils/scenarioHelper.ts`). They are two
+    implementations of the same concept and have drifted before.
+    (`computeWhatIfData` was a third until 2026-07-31, when it was deleted as
+    unreachable. Do not trace it; it no longer exists.) Leaf-targeted events must be unaffected, and ARPU-scenario/Yield/
     Pricing events must **not** be pro-rated (see §16).
 
 33. **AI capability — hard gate.** main is under an AI-approval hold, so
