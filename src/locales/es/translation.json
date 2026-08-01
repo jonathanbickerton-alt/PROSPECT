@@ -277,7 +277,6 @@
   "whatif_market_events": "Market Events",
   "whatif_applying_incremental_adjustments_on_top_of_th": "Applying incremental adjustments on top of the baseline IBRO forecast",
   "whatif_back_to_step_1": "Back to Step 1",
-  "whatif_reset": "Reset",
   "whatif_base_volume_delta_end_of_period": "Base Volume Delta (end of period)",
   "whatif_adjusted_vs_baseline": "Adjusted vs Baseline",
   "whatif_arpu_delta_end_of_period": "ARPU Delta (end of period)",
@@ -657,8 +656,6 @@
   "importactuals_import_count_months": "Import {{count}} months",
   "importactuals_import": "Import",
   "removeactuals_preview": "Preview",
-  "whatif_focus": "Focus",
-  "whatif_chart_focus_only": "Chart focus only — scope follows the VIEWING bar",
   "whatif_only": "Only",
   "whatif_show_only_kpi": "Show only {{kpi}}"
 }

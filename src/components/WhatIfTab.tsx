@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useState, useCallback, useRef} from 'react';
+import React, { useMemo, useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Info, Download, Trash2, CheckCircle2, XCircle, Activity, AlertTriangle, Pencil } from 'lucide-react';
 import {
@@ -101,6 +101,16 @@ interface WhatIfTabProps {
 
 const KPI_LIST = ['Inflow', 'Outflow', 'Retention', 'Base', 'ARPU'] as const;
 type KpiName = typeof KPI_LIST[number];
+
+/** Default KPI set per tab, applied the first time each tab is opened.
+  * Module scope so the per-tab setter closes over a stable reference and needs
+  * no dependency-array exemption. */
+const TAB_DEFAULT_KPIS: Record<string, KpiName[]> = {
+  volume:    ['Inflow', 'Outflow', 'Retention', 'Base'],
+  promotion: ['Inflow', 'Outflow', 'Retention', 'Base'],
+  value:     ['ARPU'],
+  pricing:   ['ARPU'],
+};
 
 const KPI_COLORS: Record<KpiName, { baseline: string; adjusted: string; axis: 'left' | 'right' }> = {
   Inflow:    { baseline: '#3b82f6', adjusted: '#2563eb', axis: 'left' },
@@ -1086,12 +1096,6 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // selection, and defaulting only once let the Value tab's ARPU-only choice
   // follow the user back to Volume. Each tab now remembers what it was left on,
   // and gets its default the first time it is opened.
-  const TAB_DEFAULT_KPIS: Record<string, KpiName[]> = {
-    volume:    ['Inflow', 'Outflow', 'Retention', 'Base'],
-    promotion: ['Inflow', 'Outflow', 'Retention', 'Base'],
-    value:     ['ARPU'],
-    pricing:   ['ARPU'],
-  };
   const [kpisByTab, setKpisByTab] = useState<Record<string, KpiName[]>>({});
 
   // null = add-new mode; a string id = editing that event
@@ -1170,7 +1174,6 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         const current = prev[activeTab] ?? TAB_DEFAULT_KPIS[activeTab] ?? TAB_DEFAULT_KPIS.volume;
         return { ...prev, [activeTab]: typeof next === 'function' ? next(current) : next };
       }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [activeTab],
   );
 
