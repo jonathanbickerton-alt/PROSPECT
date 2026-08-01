@@ -8,6 +8,7 @@ import {
 import { format, parse, isValid, addMonths, differenceInCalendarMonths } from 'date-fns';
 import { useForecast } from '../context/ForecastContext';
 import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent } from '../types/forecast';
+import { EventChangeConfirmModal } from './EventChangeConfirmModal';
 import type { MarketEvent } from '../utils/forecasting';
 import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix, eventProRataShare, eventCoverage, applyEventsToMonth, nextSequence, resequenceRebuild, bySequence, eventArpuDelta } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope } from '../utils/forecasting';
@@ -1926,6 +1927,73 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setCustomDist([34, 33, 33]);
   }, [editingCampaign, newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, marketEvents, setMarketEvents, setNewEvent, cohortAvgArpu]);
 
+  // ── Confirmation for changes that recalculate the forecast ───────────────
+  //
+  // The pending change carries the EXACT array that will be committed. The
+  // preview is computed from that array and confirming commits that same array,
+  // so the figures on screen cannot describe a state the user never reaches.
+  // Deriving the outcome a second time on confirm is the failure this avoids.
+  const [pendingChange, setPendingChange] = useState<
+    { kind: 'delete' | 'edit' | 'clear'; nextEvents: MarketEvent[] } | null
+  >(null);
+
+  const changeSummary = useMemo(() => {
+    if (!pendingChange || !baseForecast) return null;
+    const shared = {
+      baseForecast, yieldEvents, pricingEvents, data,
+      viewSegment: cohortScope.seg, viewProduct: cohortScope.prod,
+      viewChannel: cohortScope.chan, viewTariff: cohortScope.tar,
+      wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
+      wiTariffL1Col, wiTariffL2Col, wiValueCol,
+      wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
+    };
+    const before = computeAdjustedForecast({ ...shared, marketEvents });
+    const after = computeAdjustedForecast({ ...shared, marketEvents: pendingChange.nextEvents });
+    if (!before.adjustedMonths.length || !after.adjustedMonths.length) return null;
+
+    // Inflow, Outflow and Retention are FLOWS: summed across the horizon, so a
+    // change to an early month still shows. Reading a single month — the last
+    // one — was the first version here, and it reported "no change" for an
+    // event six months before the horizon end, which is most events.
+    //
+    // Base is a STOCK, so it is read at the final month instead. Summing a
+    // stock would be meaningless.
+    const flows = (ms: any[]) => ms.reduce((acc, m) => ({
+      inflow: acc.inflow + m.uplifted.inflow,
+      outflow: acc.outflow + m.uplifted.outflow,
+      retention: acc.retention + m.uplifted.retention,
+    }), { inflow: 0, outflow: 0, retention: 0 });
+    const finalBase = (chart: any[]) => {
+      const row = chart[chart.length - 1];
+      return Number(row?.['Base (Adjusted)'] ?? row?.adjustedBase ?? 0);
+    };
+    const fb = flows(before.adjustedMonths);
+    const fa = flows(after.adjustedMonths);
+    const first = after.adjustedMonths[0].month;
+    const last = after.adjustedMonths[after.adjustedMonths.length - 1].month;
+
+    return {
+      month: `${first} to ${last} · flows totalled, Base at ${last}`,
+      before: { ...fb, base: finalBase(before.chartData) },
+      after: { ...fa, base: finalBase(after.chartData) },
+      floorWarnings: after.adjustedMonths
+        .filter(m => (m.flooredMetrics ?? []).length > 0)
+        .map(m => ({ month: m.month, metrics: m.flooredMetrics as string[] })),
+    };
+  }, [pendingChange, baseForecast, marketEvents, yieldEvents, pricingEvents, data,
+      cohortScope, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol,
+      wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiValueCol,
+      wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal]);
+
+  /** Commits exactly the array that was previewed. */
+  const confirmPendingChange = useCallback(() => {
+    if (!pendingChange) return;
+    setMarketEvents(pendingChange.nextEvents);
+    setPendingChange(null);
+    setEditingEventId(null);
+    setNewEvent(BLANK_EVENT);
+  }, [pendingChange, setMarketEvents, setNewEvent]);
+
   const handleSaveEdit = useCallback(() => {
     if (!editingEventId || !newEvent.date) return;
     const isOutflow = newEvent.scenario === 'Outflow';
@@ -1934,7 +2002,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // to blank while editing, they get the cohort placeholder again rather than a
     // stale explicit value or a diluting zero.
     const resolved = resolveEventArpuRevenue(newEvent.subscriberVolume ?? 0, newEvent.arpu, newEvent.revenue, newEvent.scenario, cohortAvgArpu);
-    updateMarketEvent(editingEventId, {
+    const patch: Partial<MarketEvent> = {
       scenario: newEvent.scenario as MarketEvent['scenario'],
       segment: newEvent.segment ?? 'All',
       product: newEvent.product ?? 'All',
@@ -1952,10 +2020,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       campaignName: newEvent.campaignName ?? '',
       comment: newEvent.comment ?? '',
       contractLength: newEvent.contractLength ?? 24,
+    };
+    // Previewed and committed from the same array — see pendingChange.
+    setPendingChange({
+      kind: 'edit',
+      nextEvents: marketEvents.map(e => (e.id === editingEventId ? { ...e, ...patch } : e)),
     });
-    setEditingEventId(null);
-    setNewEvent(BLANK_EVENT);
-  }, [editingEventId, newEvent, updateMarketEvent, setNewEvent, cohortAvgArpu]);
+  }, [editingEventId, newEvent, marketEvents, setNewEvent, cohortAvgArpu]);
 
   const handleCancelEdit = useCallback(() => {
     setEditingEventId(null);
@@ -2208,6 +2279,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
+      {pendingChange && (
+        <EventChangeConfirmModal
+          kind={pendingChange.kind}
+          affectedCount={pendingChange.kind === 'clear' ? marketEvents.length : 1}
+          summary={changeSummary}
+          formatNumber={formatNumber}
+          onConfirm={confirmPendingChange}
+          onCancel={() => setPendingChange(null)}
+        />
+      )}
       <div className="flex-1 overflow-y-auto p-8">
       <div className="max-w-5xl mx-auto space-y-6">
 
@@ -3050,7 +3131,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             <td className="px-5 py-3 text-center">
                               <button
                                 type="button"
-                                onClick={(e) => { e.stopPropagation(); removeMarketEvent(event.id); }}
+                                onClick={(e) => { e.stopPropagation(); setPendingChange({ kind: 'delete', nextEvents: marketEvents.filter(x => x.id !== event.id) }); }}
                                 className="text-rose-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors"
                               >
                                 <Trash2 size={14} />
@@ -3077,7 +3158,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           {marketEvents.length > 0 && (
             <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex justify-start">
               <button
-                onClick={() => setMarketEvents([])}
+                onClick={() => setPendingChange({ kind: 'clear', nextEvents: [] })}
                 className="text-xs font-medium text-slate-500 hover:text-rose-600 transition-colors flex items-center gap-1.5"
               >
                 <Trash2 size={12} />{t('whatif_clear_all_events')}</button>
