@@ -3884,6 +3884,7 @@ export default function App() {
             wiMetricCol={wiMetricCol}
             wiInflowVal={wiInflowVal}
             wiRetentionVal={wiRetentionVal}
+            wiOutflowVal={wiOutflowVal}
             wiArpuCol={wiArpuCol}
             wiValueCol={wiValueCol}
             wiRevenueCol={wiRevenueCol}

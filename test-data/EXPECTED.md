@@ -134,7 +134,7 @@ Hierarchical child of Tariff L1, mirroring Product L1/L2 and Channel L1/L2.
 - Same logic for Channel L1 / Channel L2, and Tariff L1 / Tariff L2
 - Cohort store key format is the 7-part appended key (see §2 above), e.g.
   `Segment|ProductL1|ProductL2|ChannelL1|ChannelL2|TariffL1|TariffL2` with `All`
-  where a level is not specified — confirmed in `src/App.tsx:1425` (`makeForecastKey`)
+  where a level is not specified — confirmed in `src/App.tsx:1373` (`makeForecastKey`)
 
 ---
 
@@ -868,13 +868,19 @@ is 1, so it needs no special-casing.
 **Rate events are excluded, by design.** ARPU-scenario, Yield and Pricing
 events are rates, not quantities: a volume-weighted average of
 `(leafArpu + Δ)` already equals `(aggregateArpu + Δ)`. Pro-rating them would
-under-apply the rate change. Five rate matchers carry an explicit "RATE event —
-NOT pro-rated" comment saying so — `forecasting.ts` (ARPU, path A),
-`WhatIfTab.tsx` ×3 (ARPU Pass 1, Yield Pass 2, Pricing Pass 3) and
-`scenarioHelper.ts` (ARPU, path C). Do not "fix" them into the volume path.
-Two further rate blocks — the Retention-yield application in `WhatIfTab.tsx`
-and the Pricing block in `scenarioHelper.ts` — are also correctly not
-pro-rated and carry the same comment.
+under-apply the rate change. **CORRECTED 2026-08-01:** this list previously
+attributed one of the comments to `forecasting.ts` and referred to a "path C"
+that no longer exists. `grep "RATE event" src/utils/forecasting.ts` returns
+nothing. The rate matchers are:
+
+| Site | What |
+|---|---|
+| `scenarioHelper.ts` | ARPU (Path B), Pricing |
+| `WhatIfTab.tsx` | ARPU Pass 1, Yield Pass 2, Pricing Pass 3, Retention-yield Pass 2 |
+
+Do not "fix" them into the volume path. **None of them constructs a `leaves`
+array**, so no change to pro-rata leaf weighting can route a rate event through
+it — asserted by `npm run spec:prorata`, not left to inspection.
 
 Volume, revenue and customerVolume are split by the **same** share. Splitting
 one without the others reconciles volume while silently corrupting blended
@@ -891,9 +897,82 @@ fallback rather than dropping the event.
 
 Leaf-targeted events are unaffected on all three paths (+10,000 → +10,000).
 
+### Pro-rata leaf weights are PER METRIC — fixed 2026-08-01
+
+Leaf weights used to ignore which metric an event moved.
+`scenarioHelper.ts` weighted every event by `Inflow_Mean` unconditionally;
+`WhatIfTab.tsx` summed the value column over every row for a leaf with no
+filter on the metric column. So an Outflow or Retention event was distributed
+across leaves in proportion to their INFLOW mix.
+
+**Totals always reconciled**, which is why this survived the original pro-rata
+work: the aggregate equalled the sum of its leaves throughout. The error was
+entirely *within* the cohort.
+
+Measured before the fix, `Corporate · Mobile Voice · Direct`, June 2026, a 10%
+Retention event over five tariff leaves: RED L +4.3 subscribers, RED XL −3.4,
+±2% per leaf. After: every leaf takes exactly its own share of the metric being
+moved, verified through the real `eventProRataShare` rather than a
+reimplementation.
+
+**Blast radius, measured across the trimmed fixture:** 82 leaf-shares compared
+(28 cohorts × Outflow and Retention, every tariffL1 leaf including single-leaf
+cohorts), 34 moved (41.5%), 48 unmoved, 4 of 28 cohorts affected. The unmoved
+population is the one whose metric mix already matched its weighting source.
+
+**State which "before" the movement is measured against.** The two paths did not
+share a prior behaviour, so there is no single number:
+
+| Prior baseline | Path | Largest single-leaf change |
+|---|---|---|
+| Blend of all metrics | A, `WhatIfTab` | **2.39 pp** |
+| `Inflow_Mean` only | B, `scenarioHelper` | 2.34 pp |
+
+Both peak on the same leaf and scenario (`SOHO · Mobile Voice · Direct · RED L`,
+Retention), and the moved/affected counts are identical either way. A gate pass
+re-derived this and reported 2.17 pp against a narrower enumeration — cohorts
+with ≥2 leaves only (51 comparisons), Inflow-only baseline. That is not a
+contradiction; it is a third denominator. Quote the baseline and the enumeration
+with the figure, or the next re-derivation will read as a disagreement again.
+
+#### The zero case needed a new signal, not a new rule
+
+`distributeProRata` fell back to an even split whenever the leaf total was zero,
+so an event targeted at a cohort with no history was never silently discarded.
+Under Inflow-only weighting that branch almost never fired. Under metric-specific
+weighting it fires often — and it must do **two opposite things**:
+
+| Case | Correct result |
+|---|---|
+| Established cohort that churned nobody this month | **zero** for every leaf |
+| Brand-new product with no outflow history at all | **even split**, so the event is not discarded |
+
+A bare volume of 0 cannot tell them apart, so `ProRataLeaf` gained
+`hasMetricData`, set from row PRESENCE rather than value. Omitting it preserves
+the pre-2026-08-01 behaviour: `eventProRataShare` passes `undefined` unless some
+leaf actually carries the flag, because mapping an absent flag to `true` would
+make every un-updated caller take the zero branch — the exact inverse of the
+intent, and a mistake made and caught during implementation.
+
+Guarded by `npm run spec:prorata`, which mutation-tests both directions and
+asserts structurally that no pro-rata call site touches a rate metric.
+
 ### Accuracy scores will move — this is not a regression
 
-Path B feeds `useAdjustedScoring` in `ForecastVsActualsTab`, so the wildcard
+**CORRECTED 2026-08-01. This entry named the wrong path, and it is the second
+time this section has misled with different content** (it previously listed
+three event-application paths when `computeWhatIfData` had been deleted). A
+reader sizing pro-rata work from the old text would have targeted
+`scenarioHelper.ts` and found no effect on accuracy at all.
+
+**PATH A feeds `useAdjustedScoring`, not Path B.** Verified:
+`ForecastVsActualsTab.tsx` contains **zero** references to `scenarioHelper` or
+`computeScenarioForFilter`. It reads `adjustedForecast.adjustedMonths[].uplifted.*`
+from context, and the only writers of `adjustedForecast` are
+`WhatIfTab.tsx:2064` — the output of `computeAdjustedForecast`, Path A — and
+`App.tsx:1034` on session import.
+
+So Path A's wildcard
 defect was corrupting MAPE for any leaf cohort in scope of an aggregate-targeted
 event. Correcting it **moves leaf accuracy scores**, and the *direction depends
 on whether the actuals contain the event*:

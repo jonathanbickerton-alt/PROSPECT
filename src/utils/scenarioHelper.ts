@@ -34,7 +34,21 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
   // the share is 1, so an aggregate query keeps summing its leaf rows and
   // applying the event once — which was already correct. Only a LEAF view, where
   // the wildcard previously re-attached the event at full magnitude, changes.
-  const proRataLeaves: ProRataLeaf[] = (() => {
+  // Leaf weights PER METRIC. Weighting every event by Inflow_Mean misallocates
+  // any Outflow or Retention event across leaves whose metric mix differs from
+  // their inflow mix -- measured at up to ±2% per leaf on the shipped fixture,
+  // with totals still reconciling, so it was invisible at the aggregate.
+  //
+  // hasMetricData records whether the leaf had ANY row for that metric, so a
+  // brand-new cohort with no outflow history still receives an even split
+  // rather than nothing. See distributeProRata.
+  type MetricKey = 'Inflow' | 'Outflow' | 'Retention';
+  const METRIC_FIELD: Record<MetricKey, string> = {
+    Inflow: 'Inflow_Mean', Outflow: 'Outflow_Mean', Retention: 'Retention_Mean',
+  };
+  const leavesByMetric: Record<MetricKey, ProRataLeaf[]> = { Inflow: [], Outflow: [], Retention: [] };
+  for (const metric of Object.keys(METRIC_FIELD) as MetricKey[]) {
+    const field = METRIC_FIELD[metric];
     const byLeaf = new Map<string, ProRataLeaf>();
     for (const r of baselineRows as any[]) {
       const leaf: ProRataLeaf = {
@@ -48,12 +62,21 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
         volume: 0,
       };
       const k = [leaf.segment, leaf.product, leaf.productL2, leaf.channel, leaf.channelL2, leaf.tariffL1, leaf.tariffL2].join('|');
-      const vol = Number(r.Inflow_Mean || 0);
+      // Present-but-null counts as populated: the row exists for this metric.
+      const present = r[field] !== undefined && r[field] !== null && r[field] !== '';
+      const vol = Number(r[field] || 0);
       const cur = byLeaf.get(k);
-      if (cur) cur.volume += vol; else { leaf.volume = vol; byLeaf.set(k, leaf); }
+      if (cur) {
+        cur.volume += vol;
+        if (present) cur.hasMetricData = true;
+      } else {
+        leaf.volume = vol;
+        leaf.hasMetricData = present;
+        byLeaf.set(k, leaf);
+      }
     }
-    return Array.from(byLeaf.values());
-  })();
+    leavesByMetric[metric] = Array.from(byLeaf.values());
+  }
   const viewScope: ProRataScope = {
     segment: vseg === 'All' ? 'All' : vseg,
     product: vprodL1 ?? 'All',
@@ -64,7 +87,9 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
     tariffL2: vtarL2 ?? 'All',
   };
   const shareCache = new Map<string, number>();
-  /** Share of a VOLUME event belonging to this view. Rate events never use this. */
+  /** Share of a VOLUME event belonging to this view. Rate events never use this.
+   *  Dispatches on the event's own scenario so the weights come from the metric
+   *  actually being moved. */
   const eventShare = (e: any): number => {
     const id = String(e.ID ?? e.Name ?? '') + '|' + String(e.Start_Month ?? e.Date ?? e.Month ?? '') + '|' + String(e.Scenario ?? '');
     const hit = shareCache.get(id);
@@ -73,7 +98,9 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       { segment: String(e.Segment ?? 'All'), product: String(e.Product ?? 'All'), productL2: String(e.Product_L2 ?? 'All'),
         channel: String(e.Channel ?? 'All'), channelL2: String(e.Channel_L2 ?? 'All'),
         tariffL1: String(e.Tariff_L1 ?? 'All'), tariffL2: String(e.Tariff_L2 ?? 'All') },
-      viewScope, proRataLeaves,
+      viewScope,
+      leavesByMetric[(String(e.Scenario) as MetricKey) in leavesByMetric
+        ? (String(e.Scenario) as MetricKey) : 'Inflow'],
     );
     shareCache.set(id, v);
     return v;

@@ -1117,15 +1117,33 @@ export function aggregateArpu(parts: Array<{ arpu: number; volume: number }>): n
  * reconciliation — the parent would move while the children did not.
  *
  * The final leaf absorbs any rounding residual so the parts sum EXACTLY to the
- * input amount. When every leaf has zero volume the split is even, so a
- * targeted event is never silently discarded.
+ * input amount.
+ *
+ * ZERO-TOTAL BEHAVIOUR depends on `hasData`, and the distinction is the point:
+ *
+ *   - Some leaf HAS data for this metric (or `hasData` is omitted): the split is
+ *     even, so an event targeted at a cohort with no history yet is never
+ *     silently discarded. This is the original behaviour and the reason the
+ *     fallback exists.
+ *   - EVERY leaf has data and it all sums to zero: every leaf gets zero. An
+ *     established cohort that churned nobody this month should receive nothing,
+ *     not an equal slice of an event.
+ *
+ * A bare volume of 0 cannot tell those apart, which is why ProRataLeaf carries
+ * `hasMetricData`. Omitting `hasData` preserves the pre-2026-08-01 behaviour.
  */
-export function distributeProRata(amount: number, leafVolumes: number[]): number[] {
+export function distributeProRata(
+  amount: number,
+  leafVolumes: number[],
+  hasData?: boolean[],
+): number[] {
   const n = leafVolumes.length;
   if (n === 0) return [];
   const total = leafVolumes.reduce((s, v) => s + (isFinite(v) ? v : 0), 0);
   const out = new Array<number>(n).fill(0);
   if (total <= 0) {
+    // Populated everywhere and genuinely zero -> zero, not an even slice.
+    if (hasData && hasData.length === n && hasData.every(Boolean)) return out;
     const even = amount / n;
     for (let i = 0; i < n; i++) out[i] = even;
     let acc = 0;
@@ -1188,7 +1206,23 @@ export interface ProRataScope {
 
 /** One populated leaf plus the volume used to weight its share. */
 export interface ProRataLeaf extends ProRataScope {
+  /** The leaf's volume of the metric being distributed. */
   volume: number;
+  /**
+   * True when this leaf has ANY data for the metric being distributed, even if
+   * that data sums to zero.
+   *
+   * Distinguishes two cases a bare volume of 0 cannot:
+   *   - populated but zero  — an established cohort that churned nobody this
+   *     month. The correct share is 0; it should receive nothing.
+   *   - never populated     — a brand-new product with no outflow history at
+   *     all. Giving it 0 would silently discard an event a user deliberately
+   *     targeted at it, which is what the even-split fallback exists to prevent.
+   *
+   * Absent is treated as `true`, so callers that have not been updated keep
+   * today's behaviour rather than silently gaining the stricter rule.
+   */
+  hasMetricData?: boolean;
 }
 
 /** True when `leaf` falls inside `scope` ('All'/absent = no narrowing on that dim). */
@@ -1243,7 +1277,19 @@ export function eventProRataShare(
 
   // distributeProRata owns the split (including the zero-volume even fallback),
   // so shares here behave identically to volumes distributed elsewhere.
-  const shares = distributeProRata(1, targetIdx.map(i => leaves[i].volume));
+  // hasMetricData threaded through so a genuinely-zero cohort receives zero
+  // while a never-populated one still gets the even split.
+  //
+  // Passed as undefined unless at least one leaf actually carries the flag. A
+  // caller that has not been updated supplies leaves without it; mapping those
+  // to `true` would make every leaf look populated and route them into the zero
+  // branch — the exact opposite of preserving today's behaviour.
+  const anyFlagged = leaves.some(l => l.hasMetricData !== undefined);
+  const shares = distributeProRata(
+    1,
+    targetIdx.map(i => leaves[i].volume),
+    anyFlagged ? targetIdx.map(i => leaves[i].hasMetricData === true) : undefined,
+  );
   let share = 0;
   targetIdx.forEach((leafI, k) => { if (cohortIdx.has(leafI)) share += shares[k]; });
   return share;

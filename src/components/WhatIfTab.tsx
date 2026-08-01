@@ -36,6 +36,10 @@ interface WhatIfTabProps {
   wiInflowVal?: string;
   /** Value in wiMetricCol that identifies Retention rows */
   wiRetentionVal?: string;
+  /** Value in wiMetricCol that identifies Outflow rows. Absent from this
+   *  component until 2026-08-01: it was never needed, because pro-rata leaf
+   *  weights ignored which metric an event moved. Required now they do not. */
+  wiOutflowVal?: string;
   /** Column that holds per-row ARPU — optional fallback source for deriving
    *  revenue (arpu × volume) only when no revenue column is mapped. The primary
    *  per-tier ARPU derivation is sum(Revenue)/sum(Volume) over the user-mapped
@@ -487,6 +491,11 @@ export interface AdjustedForecastInput {
   wiSegmentCol: string; wiProductCol: string; wiProductL2Col: string;
   wiChannelCol: string; wiChannelL2Col: string;
   wiTariffL1Col: string; wiTariffL2Col: string; wiValueCol: string;
+  /** Needed to weight pro-rata leaves by the metric an event actually moves.
+   *  Optional: when omitted the leaf builder falls back to the previous
+   *  unfiltered blend rather than silently weighting everything as one metric. */
+  wiMetricCol?: string;
+  wiInflowVal?: string; wiOutflowVal?: string; wiRetentionVal?: string;
   /** Injectable for tests: pass [] to reproduce the pre-pro-rata wildcard behaviour. */
   proRataLeavesOverride?: ProRataLeaf[];
 }
@@ -495,6 +504,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
   const { baseForecast, marketEvents, yieldEvents, pricingEvents, viewSegment, viewProduct,
     viewChannel, viewTariff, data, wiSegmentCol, wiProductCol, wiProductL2Col,
     wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiValueCol,
+    wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
     proRataLeavesOverride } = input;
   if (!baseForecast) return { chartData: [], adjustedMonths: [], eventShares: new Map() };
 
@@ -525,9 +535,23 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
     // share; shares across the target's leaves sum to 1, so the event is applied
     // once in total and an aggregate reconciles to the sum of its leaves.
     // Leaves are enumerated from the loaded rows — no rows.filter fallback scan.
-    const proRataLeaves: ProRataLeaf[] = proRataLeavesOverride ?? (() => {
+    // Leaf weights PER METRIC. This used to sum wiValueCol over every row for a
+    // leaf with no filter on wiMetricCol, so an Outflow event was distributed by
+    // a blend of whatever IBRO rows that leaf happened to have. Totals always
+    // reconciled, which is why it was invisible at the aggregate.
+    //
+    // hasMetricData records whether the leaf had ANY row of that metric, so a
+    // brand-new cohort with no outflow history still gets the even split rather
+    // than nothing. See distributeProRata.
+    //
+    // When wiMetricCol is unmapped there is nothing to filter on, so every
+    // metric falls back to the old unfiltered blend — the previous behaviour,
+    // not a silent reinterpretation of it.
+    type LeafMetric = 'Inflow' | 'Outflow' | 'Retention';
+    const buildLeaves = (metricValue: string): ProRataLeaf[] => (() => {
       const byLeaf = new Map<string, ProRataLeaf>();
       for (const row of data) {
+        if (wiMetricCol && metricValue && String(row[wiMetricCol]).trim() !== metricValue) continue;
         const leaf: ProRataLeaf = {
           segment:   wiSegmentCol  ? String(row[wiSegmentCol]  ?? 'All').trim() : 'All',
           product:   wiProductCol  ? String(row[wiProductCol]  ?? 'All').trim() : 'All',
@@ -540,11 +564,22 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
         };
         const k = [leaf.segment, leaf.product, leaf.productL2, leaf.channel, leaf.channelL2, leaf.tariffL1, leaf.tariffL2].join('|');
         const vol = wiValueCol ? Number(row[wiValueCol]) || 0 : 0;
+        // The row EXISTS for this metric, whatever its value — that is what
+        // distinguishes "churned nobody" from "no outflow history at all".
         const cur = byLeaf.get(k);
-        if (cur) cur.volume += vol; else { leaf.volume = vol; byLeaf.set(k, leaf); }
+        if (cur) { cur.volume += vol; cur.hasMetricData = true; }
+        else { leaf.volume = vol; leaf.hasMetricData = true; byLeaf.set(k, leaf); }
       }
       return Array.from(byLeaf.values());
     })();
+
+    const leavesByMetric: Record<LeafMetric, ProRataLeaf[]> = proRataLeavesOverride
+      ? { Inflow: proRataLeavesOverride, Outflow: proRataLeavesOverride, Retention: proRataLeavesOverride }
+      : {
+          Inflow:    buildLeaves(wiInflowVal ?? ''),
+          Outflow:   buildLeaves(wiOutflowVal ?? ''),
+          Retention: buildLeaves(wiRetentionVal ?? ''),
+        };
     const viewScope: ProRataScope = {
       segment: vseg === 'All' ? 'All' : vseg,
       product: vprodL1 ?? 'All',
@@ -562,7 +597,12 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
       const v = eventProRataShare(
         { segment: e.segment, product: e.product, productL2: e.productL2, channel: e.channel,
           channelL2: e.channelL2, tariffL1: e.tariffL1, tariffL2: e.tariffL2 },
-        viewScope, proRataLeaves,
+        viewScope,
+        // Weights from the metric this event actually moves. ARPU never reaches
+        // here — rate events are not pro-rated — but it falls back to Inflow
+        // rather than crashing if a future caller routes one through.
+        leavesByMetric[(e.scenario as LeafMetric) in leavesByMetric
+          ? (e.scenario as LeafMetric) : 'Inflow'],
       );
       shareCache.set(e.id, v);
       return v;
@@ -1052,6 +1092,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   wiMetricCol = '',
   wiInflowVal = '',
   wiRetentionVal = '',
+  wiOutflowVal = '',
   wiArpuCol = '',
   wiValueCol = '',
   wiRevenueCol = '',
@@ -1503,11 +1544,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     viewChannel: cohortScope.chan, viewTariff: cohortScope.tar, data,
     wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
     wiTariffL1Col, wiTariffL2Col, wiValueCol,
+    wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
     // data + the column mappings are load-bearing: the pro-rata leaf enumeration
     // reads them to derive each leaf's volume share. Before pro-rata they were
     // unused in this body, which is why they were historically absent here.
   }), [baseForecast, marketEvents, yieldEvents, pricingEvents, cohortScope,
-       data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiValueCol]);
+       data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiValueCol,
+       wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal]);
 
   // ── Custom chart tooltip — shows KPI values + any event names for that month ─
   const renderTooltip = useCallback(({ active, payload, label }: any) => {

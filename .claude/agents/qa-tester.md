@@ -130,6 +130,31 @@ because its absence produced a false pass.
    A one-directional "it's gone" result is the same observation as "nothing ever
    rendered", and only the round trip separates them.
 
+12. **A re-derived figure that disagrees is usually a different denominator, not
+    a different answer. Quote your enumeration and your baseline before calling
+    it a discrepancy.**
+
+    Re-deriving a recorded measurement independently is the right instinct — it
+    is what caught several real defects. But "independently" means you chose
+    your own population and your own point of comparison, and those choices are
+    part of the result. State them.
+
+    On the pro-rata branch a re-derivation reported 2.17 pp against a recorded
+    2.39 pp and flagged it as unverified precision. Both were correct. The
+    recorded figure enumerated every leaf including single-leaf cohorts (82
+    comparisons) against the blended pre-fix weighting of Path A; the
+    re-derivation enumerated only cohorts with two or more leaves (51) against
+    Path B's Inflow-only weighting. Same code, same fixture, same peak leaf —
+    three numbers, none of them wrong.
+
+    Two consequences. **Where a change touches more than one code path, ask
+    which path's prior behaviour your "before" represents** — paths that now
+    agree may not have agreed before, so there may be no single "before" to
+    measure against. And **report the enumeration alongside the number** — how
+    many units compared, which were excluded and why. A bare figure cannot be
+    reconciled with another bare figure, which is how a matching result gets
+    escalated as a contradiction.
+
 10. **A criterion asserting a defect is ABSENT must be paired with a baseline
     showing it PRESENT without the fix.** "Zero filter-dependent rows" is
     equally consistent with a working fix and with a harness that never
