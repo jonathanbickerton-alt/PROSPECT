@@ -915,10 +915,25 @@ Retention event over five tariff leaves: RED L +4.3 subscribers, RED XL −3.4,
 moved, verified through the real `eventProRataShare` rather than a
 reimplementation.
 
-**Blast radius, measured across the trimmed fixture:** 82 leaf-shares compared,
-34 moved (41.5%), 48 unmoved, largest single-leaf change 2.39 pp
-(`SOHO · Mobile Voice · Direct · RED L`, Retention), 4 of 28 cohorts affected.
-The unmoved population is the one whose metric mix already matched its blend.
+**Blast radius, measured across the trimmed fixture:** 82 leaf-shares compared
+(28 cohorts × Outflow and Retention, every tariffL1 leaf including single-leaf
+cohorts), 34 moved (41.5%), 48 unmoved, 4 of 28 cohorts affected. The unmoved
+population is the one whose metric mix already matched its weighting source.
+
+**State which "before" the movement is measured against.** The two paths did not
+share a prior behaviour, so there is no single number:
+
+| Prior baseline | Path | Largest single-leaf change |
+|---|---|---|
+| Blend of all metrics | A, `WhatIfTab` | **2.39 pp** |
+| `Inflow_Mean` only | B, `scenarioHelper` | 2.34 pp |
+
+Both peak on the same leaf and scenario (`SOHO · Mobile Voice · Direct · RED L`,
+Retention), and the moved/affected counts are identical either way. A gate pass
+re-derived this and reported 2.17 pp against a narrower enumeration — cohorts
+with ≥2 leaves only (51 comparisons), Inflow-only baseline. That is not a
+contradiction; it is a third denominator. Quote the baseline and the enumeration
+with the figure, or the next re-derivation will read as a disagreement again.
 
 #### The zero case needed a new signal, not a new rule
 
