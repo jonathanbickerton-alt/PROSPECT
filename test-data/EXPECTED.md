@@ -134,7 +134,7 @@ Hierarchical child of Tariff L1, mirroring Product L1/L2 and Channel L1/L2.
 - Same logic for Channel L1 / Channel L2, and Tariff L1 / Tariff L2
 - Cohort store key format is the 7-part appended key (see §2 above), e.g.
   `Segment|ProductL1|ProductL2|ChannelL1|ChannelL2|TariffL1|TariffL2` with `All`
-  where a level is not specified — confirmed in `src/App.tsx:1425` (`makeForecastKey`)
+  where a level is not specified — confirmed in `src/App.tsx:1373` (`makeForecastKey`)
 
 ---
 
@@ -969,7 +969,7 @@ reader sizing pro-rata work from the old text would have targeted
 `ForecastVsActualsTab.tsx` contains **zero** references to `scenarioHelper` or
 `computeScenarioForFilter`. It reads `adjustedForecast.adjustedMonths[].uplifted.*`
 from context, and the only writers of `adjustedForecast` are
-`WhatIfTab.tsx:2021` — the output of `computeAdjustedForecast`, Path A — and
+`WhatIfTab.tsx:2064` — the output of `computeAdjustedForecast`, Path A — and
 `App.tsx:1034` on session import.
 
 So Path A's wildcard
