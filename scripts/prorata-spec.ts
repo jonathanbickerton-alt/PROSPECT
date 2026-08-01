@@ -125,10 +125,40 @@ const sum = (a: number[]) => a.reduce((s, v) => s + v, 0);
   check('no pro-rata call site mentions a rate metric', rateCalls.length === 0,
     rateCalls.join(' | '));
 
-  // forecasting.ts must NOT carry a RATE-event comment — EXPECTED.md claimed it
-  // did until 2026-08-01 and grep found none.
-  check('forecasting.ts carries no RATE-event matcher',
-    !/RATE event/i.test(read(path.join('utils', 'forecasting.ts'))));
+  // This assertion used to read: "forecasting.ts carries no RATE-event
+  // matcher". That was true when written — EXPECTED.md claimed it did and grep
+  // found none — and it stopped being true later the same day, when both
+  // application paths were refactored to delegate to applyEventsToMonth and the
+  // ARPU branch moved into forecasting.ts along with everything else.
+  //
+  // The old form was an assertion about WHERE the rate handling lived, and that
+  // is not the property worth protecting. This is: wherever it lives, a rate is
+  // added directly and never scaled by a share or a coverage fraction.
+  {
+    const fc = read(path.join('utils', 'forecasting.ts'));
+    const arpuBranch = fc.slice(
+      fc.indexOf("} else if (e.scenario === 'ARPU') {"),
+      fc.indexOf('  // ── The snapshot that gives'),
+    );
+    check('the ARPU branch exists to be checked', arpuBranch.length > 0,
+      `${arpuBranch.length} chars`);
+    check('the ARPU branch adds its delta directly',
+      /arpu \+= e\.arpuDelta;/.test(arpuBranch), arpuBranch.trim().slice(-60));
+    check('the ARPU branch never scales by a share or coverage',
+      !/eventShare|eventProRataShare|coverage/i.test(arpuBranch));
+  }
+
+  // Percentages are volume-only: the percentage phase must not touch arpu.
+  {
+    const fc = read(path.join('utils', 'forecasting.ts'));
+    const pctPhase = fc.slice(
+      fc.indexOf('  let dInflow = 0, dOutflow = 0, dRetention = 0;'),
+      fc.indexOf('  inflow += dInflow;'),
+    );
+    check('the percentage phase exists to be checked', pctPhase.length > 0);
+    check('the percentage phase never assigns to arpu',
+      !/\barpu\s*[+-]?=/.test(pctPhase), pctPhase.match(/\barpu\s*[+-]?=.*/)?.[0] ?? '');
+  }
 }
 
 console.log(`pro-rata spec: ${pass} passed, ${fails.length} failed`);

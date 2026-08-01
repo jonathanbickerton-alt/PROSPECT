@@ -1,5 +1,5 @@
 import { format, addMonths, parse } from 'date-fns';
-import { eventProRataShare } from './forecasting';
+import { eventProRataShare, eventCoverage, applyEventsToMonth } from './forecasting';
 import type { ProRataLeaf, ProRataScope } from './forecasting';
 
 export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod: any, vchan: any, vtariff?: any) {
@@ -90,18 +90,22 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
   /** Share of a VOLUME event belonging to this view. Rate events never use this.
    *  Dispatches on the event's own scenario so the weights come from the metric
    *  actually being moved. */
+  /** Event scope and leaf set, built once so eventProRataShare and
+   *  eventCoverage can never disagree about what an event targets. */
+  const scopeOf = (e: any) => ({
+    segment: String(e.Segment ?? 'All'), product: String(e.Product ?? 'All'),
+    productL2: String(e.Product_L2 ?? 'All'),
+    channel: String(e.Channel ?? 'All'), channelL2: String(e.Channel_L2 ?? 'All'),
+    tariffL1: String(e.Tariff_L1 ?? 'All'), tariffL2: String(e.Tariff_L2 ?? 'All'),
+  });
+  const leavesFor = (e: any) =>
+    leavesByMetric[(String(e.Scenario) as MetricKey) in leavesByMetric
+      ? (String(e.Scenario) as MetricKey) : 'Inflow'];
   const eventShare = (e: any): number => {
     const id = String(e.ID ?? e.Name ?? '') + '|' + String(e.Start_Month ?? e.Date ?? e.Month ?? '') + '|' + String(e.Scenario ?? '');
     const hit = shareCache.get(id);
     if (hit !== undefined) return hit;
-    const v = eventProRataShare(
-      { segment: String(e.Segment ?? 'All'), product: String(e.Product ?? 'All'), productL2: String(e.Product_L2 ?? 'All'),
-        channel: String(e.Channel ?? 'All'), channelL2: String(e.Channel_L2 ?? 'All'),
-        tariffL1: String(e.Tariff_L1 ?? 'All'), tariffL2: String(e.Tariff_L2 ?? 'All') },
-      viewScope,
-      leavesByMetric[(String(e.Scenario) as MetricKey) in leavesByMetric
-        ? (String(e.Scenario) as MetricKey) : 'Inflow'],
-    );
+    const v = eventProRataShare(scopeOf(e), viewScope, leavesFor(e));
     shareCache.set(id, v);
     return v;
   };
@@ -196,31 +200,30 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       return segMatch && prodL1Match && prodL2Match && chanL1Match && chanL2Match && tarL1Match && tarL2Match;
     });
 
-    let adjInflow = month.inflow.mean;
-    let adjOutflow = month.outflow.mean;
-    let adjRetention = month.retention.mean;
-    let adjArpu = month.arpu.mean;
-
-    applicable.forEach((e: any) => {
-      // VOLUME events take only this view's pro-rata share (share is 1 for an
-      // aggregate view, so the already-correct aggregate case is unchanged).
-      const vol = Number(e.Subscriber_Volume || 0) * eventShare(e);
-      if (e.Scenario === 'Inflow') {
-        adjInflow += vol;
-      } else if (e.Scenario === 'Outflow') {
-        adjOutflow -= vol;
-      } else if (e.Scenario === 'Retention') {
-        adjOutflow -= vol;
-        adjRetention += vol;
-      } else if (e.Scenario === 'ARPU') {
-        // RATE event — deliberately NOT pro-rated. ARPU is a rate: a
-        // volume-weighted average of (leafArpu + delta) already equals
-        // (aggregateArpu + delta), so the same delta is correct at every level.
-        // Splitting it by volume share would understate the price change at
-        // leaf level. Do not route this through eventShare().
-        adjArpu += Number(e.ARPU || 0);
-      }
-    });
+    const applied = applyEventsToMonth(
+      {
+        inflow: month.inflow.mean,
+        outflow: month.outflow.mean,
+        retention: month.retention.mean,
+        arpu: month.arpu.mean,
+      },
+      applicable.map((e: any) => ({
+        id: String(e.ID ?? e.Name ?? ''),
+        scenario: String(e.Scenario) as 'Inflow' | 'Retention' | 'Outflow' | 'ARPU',
+        // VOLUME events take only this view's pro-rata share (share is 1 for an
+        // aggregate view, so the already-correct aggregate case is unchanged).
+        sharedVolume: Number(e.Subscriber_Volume || 0) * eventShare(e),
+        arpuDelta: Number(e.ARPU || 0),
+        amountType: e.Amount_Type === 'percentage' ? 'percentage' as const : 'absolute' as const,
+        percentageBasis: e.Percentage_Basis === 'adjusted' ? 'adjusted' as const : 'baseline' as const,
+        retentionLinked: e.Retention_Linked !== 'No',
+        percentAmount: Number(e.Subscriber_Volume || 0),
+        // A percentage scales what it lands on rather than being split across
+        // it — coverage, not share. See eventCoverage.
+        coverage: e.Amount_Type === 'percentage'
+          ? eventCoverage(scopeOf(e), viewScope, leavesFor(e)) : 1,
+      })),
+    );
 
     computed.push({
       month: month.month,
@@ -231,11 +234,17 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
         arpu: month.arpu.mean,
       },
       uplifted: {
-        inflow: Math.max(0, adjInflow),
-        retention: Math.max(0, adjRetention),
-        outflow: Math.max(0, adjOutflow),
-        arpu: Math.max(0, adjArpu),
-      }
+        inflow: applied.metrics.inflow,
+        retention: applied.metrics.retention,
+        outflow: applied.metrics.outflow,
+        arpu: applied.metrics.arpu,
+      },
+      preFloor: applied.preFloor,
+      flooredMetrics: applied.flooredMetrics,
+      // Path A has carried per-month event attribution since it was written;
+      // this path had none, so a floor warning could only ever have existed on
+      // one side. Added here so both can attribute a breach.
+      appliedEventIds: applied.appliedIds,
     });
   });
 

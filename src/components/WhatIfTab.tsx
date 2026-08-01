@@ -9,7 +9,7 @@ import { format, parse, isValid, addMonths, differenceInCalendarMonths } from 'd
 import { useForecast } from '../context/ForecastContext';
 import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent } from '../types/forecast';
 import type { MarketEvent } from '../utils/forecasting';
-import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix, eventProRataShare, nextSequence, resequenceRebuild } from '../utils/forecasting';
+import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix, eventProRataShare, eventCoverage, applyEventsToMonth, nextSequence, resequenceRebuild } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
@@ -601,6 +601,12 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
       tariffL1: vtarL1 ?? 'All',
       tariffL2: vtarL2 ?? 'All',
     };
+    /** The leaf set weighted by the metric an event moves — shared by the
+     *  pro-rata share and the coverage fraction so they can never disagree
+     *  about which leaves an event sees. */
+    const leavesFor = (e: MarketEvent) =>
+      leavesByMetric[(e.scenario as LeafMetric) in leavesByMetric
+        ? (e.scenario as LeafMetric) : 'Inflow'];
     const shareCache = new Map<string, number>();
     /** Share of a VOLUME event belonging to the current view. Rate events never use this. */
     const eventShare = (e: MarketEvent): number => {
@@ -636,38 +642,28 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
         return segMatch && prodL1Match && prodL2Match && chanL1Match && chanL2Match && tarL1Match && tarL2Match;
       });
 
-      let adjInflow = month.inflow.mean;
-      let adjOutflow = month.outflow.mean;
-      let adjRetention = month.retention.mean;
-      let adjArpu = month.arpu.mean;   // direct ARPU-event adjustments only
-      const appliedIds: string[] = [];
-
-      applicable.forEach(e => {
-        // VOLUME events take only this view's pro-rata share of the event.
-        const vol = e.subscriberVolume * eventShare(e);
-        if (e.scenario === 'Inflow') {
-          adjInflow += vol;
-        } else if (e.scenario === 'Outflow') {
-          // subscriberVolume is stored as a negative number for Outflow events.
-          // Subtracting a negative value adds its absolute magnitude to adjOutflow,
-          // which correctly increases outflow and reduces Base (T+1 via lagged formula).
-          adjOutflow -= vol;
-        } else if (e.scenario === 'Retention') {
-          // Retention events reduce Outflow AND increase Retention tracking.
-          // Because Retention is not in the base stock formula, only the Outflow
-          // reduction affects Base (one month later, via the lagged formula).
-          adjOutflow -= vol;
-          adjRetention += vol;
-        } else if (e.scenario === 'ARPU') {
-          // RATE event — deliberately NOT pro-rated. ARPU is a rate, not a
-          // quantity: a volume-weighted average of (leafArpu + delta) already
-          // equals (aggregateArpu + delta), so the same delta applies correctly
-          // at every level. Splitting it by volume share would understate the
-          // price change at leaf level. Do not route this through eventShare().
-          adjArpu += e.arpu;
-        }
-        appliedIds.push(e.id);
-      });
+      const applied = applyEventsToMonth(
+        {
+          inflow: month.inflow.mean,
+          outflow: month.outflow.mean,
+          retention: month.retention.mean,
+          arpu: month.arpu.mean,
+        },
+        applicable.map(e => ({
+          id: e.id,
+          scenario: e.scenario,
+          // VOLUME events take only this view's pro-rata share of the event.
+          sharedVolume: e.subscriberVolume * eventShare(e),
+          arpuDelta: e.arpu,
+          amountType: e.amountType,
+          percentageBasis: e.percentageBasis,
+          retentionLinked: e.retentionLinked,
+          percentAmount: e.subscriberVolume,
+          // A percentage scales what it lands on rather than being split
+          // across it — coverage, not share. See eventCoverage.
+          coverage: e.amountType === 'percentage' ? eventCoverage(e, viewScope, leavesFor(e)) : 1,
+        })),
+      );
 
       computed.push({
         month: month.month,
@@ -678,14 +674,16 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
           arpu: month.arpu.mean,
         },
         uplifted: {
-          inflow: Math.max(0, adjInflow),
-          retention: Math.max(0, adjRetention),
-          outflow: Math.max(0, adjOutflow),
+          inflow: applied.metrics.inflow,
+          retention: applied.metrics.retention,
+          outflow: applied.metrics.outflow,
           // uplifted.arpu starts as the direct-event-adjusted value; it will be
           // overwritten below with the blended ARPU once Base volumes are known.
-          arpu: Math.max(0, adjArpu),
+          arpu: applied.metrics.arpu,
         },
-        appliedEventIds: appliedIds,
+        preFloor: applied.preFloor,
+        flooredMetrics: applied.flooredMetrics,
+        appliedEventIds: applied.appliedIds,
       });
     });
 

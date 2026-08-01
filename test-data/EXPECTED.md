@@ -913,6 +913,82 @@ fallback rather than dropping the event.
 
 Leaf-targeted events are unaffected on all three paths (+10,000 → +10,000).
 
+### Percentage events: coverage, not share — 2026-08-01
+
+Absolute and percentage events need **different** scoping arithmetic, and the
+two functions are one character apart in intent and easy to swap by accident:
+
+| | formula | used by |
+|---|---|---|
+| `eventProRataShare` | metric(view ∩ target) / metric(**target**) | absolute |
+| `eventCoverage` | metric(view ∩ target) / metric(**view**) | percentage |
+
+An absolute event carries a fixed quantity that must be **split** between the
+cohorts under its target. A percentage carries no quantity — it scales whatever
+it lands on — so splitting it would shrink it wrongly. What it needs instead is
+how much of what it landed on it is entitled to touch.
+
+Concretely: event targets All, view is one cohort. Coverage is 1, so +10% means
++10% of that cohort. The share would be well under 1 and would understate it.
+Reverse the containment — event targets one tariff, view is the whole cohort —
+and coverage is that tariff's fraction, so +10% of that tariff lands as the
+right absolute number at the aggregate.
+
+**Measured:** each of 5 tariff leaves took exactly 10% of its own inflow
+(RED L 369.4, RED M 212.8, RED S 19.0, RED ULTD 22.6, RED XL 208.7) and the
+leaves summed to 832.500000 against an aggregate effect of 832.500000 — exact.
+
+**Known characteristic, not a defect.** `buildLeaves` applies no date filter, so
+leaf weights are all-time totals and coverage is an all-time ratio applied to
+one month. On the measured case that is 0.442442 against the month's own
+0.443724, 0.128 pp apart. `eventProRataShare` has always behaved this way for
+absolute events; the two are consistent with each other, which matters more.
+
+#### The `sequence` field is not load-bearing for the maths
+
+Worth stating plainly because the natural assumption is the opposite, and the
+design note that motivated this feature made it (see the bulk-edit entry).
+
+Percentage events are flat: each resolves against a basis frozen before any of
+them ran, so none can observe another's output. Two +10% events give +20%, not
++21% — **verified, and verified to be distinguishable**, since 1200 and 1210 are
+different numbers. Reversing the array changes nothing, and neither does moving
+an absolute event between two percentages.
+
+So there is no processing order to get right, and adding one would create the
+coupling it appears to guard against. `sequence` exists for display stability
+and edit-slot retention. If percentages are ever made to compound, this stops
+being true and sequence becomes load-bearing for the numbers — a much larger
+change than it looks.
+
+#### Why two phases
+
+`adjusted` basis has to mean something stable. Resolved inside the original
+single mutating pass, "the adjusted value" would have meant whatever the running
+total happened to be when that event's turn came — making the result depend on
+array position, which the user neither controls nor sees. Absolutes apply, the
+result is snapshotted, then every percentage resolves against baseline or that
+snapshot. **Verified:** an absolute event placed before or after a percentage
+event gives the identical answer, and the two bases give different answers
+(13157.5 vs 13557.5) so the check is not vacuous.
+
+#### One spec assertion had to change, and why that was legitimate
+
+`spec:prorata` asserted `forecasting.ts carries no RATE-event matcher`. True when
+written — EXPECTED.md claimed it did and grep found none. It stopped being true
+hours later, when both paths were refactored to delegate to
+`applyEventsToMonth` and the ARPU branch moved into `forecasting.ts`.
+
+The old assertion was about **where** rate handling lived, which is not the
+property worth protecting. It now asserts the durable one: wherever it lives, a
+rate is added directly and never scaled by a share or coverage, and the
+percentage phase never assigns to `arpu`. Both mutation-tested.
+
+The general point: when a structural assertion fails because of a deliberate
+refactor, check whether it was asserting the invariant or merely its current
+address. Deleting it loses the invariant; leaving it forces the code to keep an
+arrangement nobody chose.
+
 ### Pro-rata leaf weights are PER METRIC — fixed 2026-08-01
 
 Leaf weights used to ignore which metric an event moved.

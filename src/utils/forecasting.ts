@@ -1351,6 +1351,222 @@ export function eventProRataShare(
 }
 
 /**
+ * What fraction of THIS view's metric lies inside the event's target scope.
+ *
+ * The sibling of eventProRataShare, and easy to confuse with it. They divide
+ * the same numerator by different denominators:
+ *
+ *   eventProRataShare  =  metric(view ∩ target) / metric(target)
+ *   eventCoverage      =  metric(view ∩ target) / metric(view)
+ *
+ * An ABSOLUTE event carries a fixed quantity that has to be split between the
+ * cohorts under its target, so it wants the share. A PERCENTAGE event carries
+ * no quantity at all — it scales whatever it lands on — so splitting it would
+ * be wrong. What it needs to know instead is how much of what it landed on it
+ * is actually entitled to touch.
+ *
+ * Two cases make the difference concrete. If the event targets All and the view
+ * is one cohort, the whole view is inside the target: coverage is 1 and +10%
+ * means +10% of that cohort — while the share would be well under 1 and would
+ * wrongly shrink the effect. If the event targets Corporate and the view is
+ * All, only part of the view is entitled: coverage is Corporate's fraction of
+ * the total, so +10% of Corporate lands as the right absolute number at the
+ * aggregate.
+ *
+ * Reconciliation holds by construction: each leaf takes the same percentage of
+ * its own value, and those sum to that percentage of the aggregate.
+ */
+export function eventCoverage(
+  event: ProRataScope,
+  cohort: ProRataScope,
+  leaves: ProRataLeaf[],
+): number {
+  let inView = 0;
+  let inBoth = 0;
+  let anyInView = false;
+  leaves.forEach(leaf => {
+    if (!leafWithinScope(cohort, leaf)) return;
+    anyInView = true;
+    inView += leaf.volume;
+    if (leafWithinScope(event, leaf)) inBoth += leaf.volume;
+  });
+
+  // No populated leaf under the view. Mirror eventProRataShare's fallback: the
+  // event applies in full where its own dimensions match, rather than being
+  // silently dropped for want of history.
+  if (!anyInView) {
+    return leafWithinScope(event, cohort) || leafWithinScope(cohort, event) ? 1 : 0;
+  }
+  // The view is populated in the hierarchy but zero on this metric. A ratio is
+  // undefined; fall back to whether the scopes overlap at all, which keeps a
+  // percentage event on a brand-new cohort from vanishing.
+  if (inView <= 0) {
+    return leaves.some(l => leafWithinScope(cohort, l) && leafWithinScope(event, l)) ? 1 : 0;
+  }
+  return inBoth / inView;
+}
+
+/** The metrics a month carries through event application. */
+export interface MonthMetrics {
+  inflow: number;
+  outflow: number;
+  retention: number;
+  arpu: number;
+}
+
+/**
+ * One event, already reduced to numbers this view can use. Both application
+ * paths build this from their own row shape, so the rule below is written once.
+ */
+export interface EventApplication {
+  id: string;
+  scenario: 'Inflow' | 'Retention' | 'Outflow' | 'ARPU';
+  /** Pro-rata'd absolute subscriber volume. Outflow keeps its negative
+   *  storage convention. Unused when amountType is 'percentage'. */
+  sharedVolume: number;
+  /** ARPU delta. A rate: never pro-rated, never a percentage. */
+  arpuDelta: number;
+  amountType?: 'absolute' | 'percentage';
+  percentageBasis?: 'baseline' | 'adjusted';
+  retentionLinked?: boolean;
+  /** Signed percent, e.g. 10 for +10%. Applies to the metric named by
+   *  `scenario` in its natural direction — +10% Outflow means MORE outflow —
+   *  so percentage events do NOT use the negative-storage convention that
+   *  absolute Outflow volumes do. */
+  percentAmount?: number;
+  /** eventCoverage for this view. Defaults to 1. */
+  coverage?: number;
+}
+
+export interface MonthApplication {
+  metrics: MonthMetrics;
+  /** Before the zero floor, so a breach can be shown rather than just clipped. */
+  preFloor: MonthMetrics;
+  appliedIds: string[];
+  /** Metrics the floor actually caught, and the events that were applied when
+   *  it did — enough to attach a warning to this cohort-month. */
+  flooredMetrics: Array<'inflow' | 'outflow' | 'retention' | 'arpu'>;
+}
+
+/**
+ * Apply one month's events to one month's baseline.
+ *
+ * THE TWO PHASES, AND WHY THERE ARE TWO
+ * -------------------------------------
+ * Absolute events apply first; the result is snapshotted; percentage events
+ * then resolve against either the untouched baseline or that snapshot, and
+ * their deltas are summed and added afterwards.
+ *
+ * The reason for the snapshot is that 'adjusted' has to mean something stable.
+ * Resolved inside a single pass, "the adjusted value" would mean whatever the
+ * running total happened to be when this event's turn came, so a percentage
+ * event's result would depend on where it sat relative to the absolute events
+ * in the array — and array position is not something the user controls or can
+ * even see.
+ *
+ * ORDER AMONG PERCENTAGE EVENTS IS IRRELEVANT, AND MUST STAY THAT WAY
+ * ------------------------------------------------------------------
+ * Percentage events are flat, not compounding: every one of them resolves
+ * against a basis fixed before any of them ran, so none can observe another's
+ * output. Two +10% events on a baseline of 100 give +20, never +21.
+ *
+ * This means the maths here is order-independent BY CONSTRUCTION, and the
+ * `sequence` field exists for display stability and edit-slot retention only.
+ * Do not add a strict processing order for percentage events, and do not sort
+ * this array before calling. There is nothing for an order to fix, and adding
+ * one would quietly create the coupling it appears to protect against.
+ *
+ * The natural assumption is the opposite — the design note that led to this
+ * feature assumed percentage events would read each other, and EXPECTED.md
+ * records that correction. If a future change makes percentages compound, this
+ * comment stops being true and sequence becomes load-bearing for the numbers;
+ * that is a much larger change than it looks and should be treated as one.
+ */
+export function applyEventsToMonth(
+  baseline: MonthMetrics,
+  events: EventApplication[],
+): MonthApplication {
+  const appliedIds: string[] = [];
+  let inflow = baseline.inflow;
+  let outflow = baseline.outflow;
+  let retention = baseline.retention;
+  let arpu = baseline.arpu;
+
+  const isPct = (e: EventApplication) => e.amountType === 'percentage';
+
+  // ── Phase 1: absolute events ───────────────────────────────────────────
+  events.forEach(e => {
+    appliedIds.push(e.id);
+    if (isPct(e)) return;
+    const vol = e.sharedVolume;
+    if (e.scenario === 'Inflow') {
+      inflow += vol;
+    } else if (e.scenario === 'Outflow') {
+      // subscriberVolume is stored negative for Outflow, so subtracting adds
+      // its magnitude — more outflow, and less Base one month later.
+      outflow -= vol;
+    } else if (e.scenario === 'Retention') {
+      // Retained subscribers are subscribers who did not leave, so retention
+      // normally reduces outflow too. Unlinked moves the retention line alone,
+      // which means it does not reach Base at all.
+      if (e.retentionLinked !== false) outflow -= vol;
+      retention += vol;
+    } else if (e.scenario === 'ARPU') {
+      // RATE event — deliberately NOT pro-rated. A volume-weighted average of
+      // (leafArpu + delta) already equals (aggregateArpu + delta), so the same
+      // delta is correct at every level.
+      arpu += e.arpuDelta;
+    }
+  });
+
+  // ── The snapshot that gives 'adjusted' a fixed meaning ─────────────────
+  const afterAbsolute: MonthMetrics = { inflow, outflow, retention, arpu };
+
+  // ── Phase 2: percentage events, all against a frozen basis ─────────────
+  let dInflow = 0, dOutflow = 0, dRetention = 0;
+  events.forEach(e => {
+    if (!isPct(e)) return;
+    const basis = e.percentageBasis === 'adjusted' ? afterAbsolute : baseline;
+    const pct = (e.percentAmount ?? 0) / 100;
+    const coverage = e.coverage ?? 1;
+    if (e.scenario === 'Inflow') {
+      dInflow += pct * basis.inflow * coverage;
+    } else if (e.scenario === 'Outflow') {
+      // Natural direction: +10% means more outflow.
+      dOutflow += pct * basis.outflow * coverage;
+    } else if (e.scenario === 'Retention') {
+      const delta = pct * basis.retention * coverage;
+      dRetention += delta;
+      // Same coupling as the absolute case: more retention is less outflow.
+      if (e.retentionLinked !== false) dOutflow -= delta;
+    }
+    // ARPU is a rate and takes no percentage amount — see the scenario guard
+    // at the input sites. Nothing to do here.
+  });
+  inflow += dInflow;
+  outflow += dOutflow;
+  retention += dRetention;
+
+  const preFloor: MonthMetrics = { inflow, outflow, retention, arpu };
+  const flooredMetrics: MonthApplication['flooredMetrics'] = [];
+  (['inflow', 'outflow', 'retention', 'arpu'] as const).forEach(k => {
+    if (preFloor[k] < 0) flooredMetrics.push(k);
+  });
+
+  return {
+    metrics: {
+      inflow: Math.max(0, inflow),
+      outflow: Math.max(0, outflow),
+      retention: Math.max(0, retention),
+      arpu: Math.max(0, arpu),
+    },
+    preFloor,
+    appliedIds,
+    flooredMetrics,
+  };
+}
+
+/**
  * Single O(N) pass over `data` that groups each valid row into a CohortDataMap.
  *
  * Call this ONCE before the bulk forecasting loop, then replace per-cohort
