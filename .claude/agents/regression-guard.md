@@ -133,6 +133,18 @@ sound.** That is precisely the problem: the findings were correct and the
 report still had to be re-verified before it could be used, which costs more
 than it saved.
 
+**Line numbers rot silently, and the branch under review is the usual cause.**
+Verify cited line numbers against the HEAD you are reviewing, not against
+`main` — a diff that adds lines above a citation invalidates it without
+touching the cited code. The pro-rata gate found `WhatIfTab.tsx:2021` correct
+on `main` and wrong on the branch, because the branch's own +44 lines had moved
+the write site to 2064. Nothing about the claim changed; only its address did.
+
+So when a documented citation points into a file this branch modified, re-check
+it as a matter of course. Report the corrected number rather than the fact of
+drift — and distinguish drift the branch caused from drift that predates it,
+because only the first is the branch's to answer for.
+
 **A citation the reader cannot follow is a defect in the report, regardless of
 whether the underlying finding holds.** Do not treat "but I was right" as a
 defence. The value of a report is that it can be acted on without redoing the
