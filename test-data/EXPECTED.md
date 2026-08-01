@@ -897,6 +897,51 @@ fallback rather than dropping the event.
 
 Leaf-targeted events are unaffected on all three paths (+10,000 → +10,000).
 
+### Pro-rata leaf weights are PER METRIC — fixed 2026-08-01
+
+Leaf weights used to ignore which metric an event moved.
+`scenarioHelper.ts` weighted every event by `Inflow_Mean` unconditionally;
+`WhatIfTab.tsx` summed the value column over every row for a leaf with no
+filter on the metric column. So an Outflow or Retention event was distributed
+across leaves in proportion to their INFLOW mix.
+
+**Totals always reconciled**, which is why this survived the original pro-rata
+work: the aggregate equalled the sum of its leaves throughout. The error was
+entirely *within* the cohort.
+
+Measured before the fix, `Corporate · Mobile Voice · Direct`, June 2026, a 10%
+Retention event over five tariff leaves: RED L +4.3 subscribers, RED XL −3.4,
+±2% per leaf. After: every leaf takes exactly its own share of the metric being
+moved, verified through the real `eventProRataShare` rather than a
+reimplementation.
+
+**Blast radius, measured across the trimmed fixture:** 82 leaf-shares compared,
+34 moved (41.5%), 48 unmoved, largest single-leaf change 2.39 pp
+(`SOHO · Mobile Voice · Direct · RED L`, Retention), 4 of 28 cohorts affected.
+The unmoved population is the one whose metric mix already matched its blend.
+
+#### The zero case needed a new signal, not a new rule
+
+`distributeProRata` fell back to an even split whenever the leaf total was zero,
+so an event targeted at a cohort with no history was never silently discarded.
+Under Inflow-only weighting that branch almost never fired. Under metric-specific
+weighting it fires often — and it must do **two opposite things**:
+
+| Case | Correct result |
+|---|---|
+| Established cohort that churned nobody this month | **zero** for every leaf |
+| Brand-new product with no outflow history at all | **even split**, so the event is not discarded |
+
+A bare volume of 0 cannot tell them apart, so `ProRataLeaf` gained
+`hasMetricData`, set from row PRESENCE rather than value. Omitting it preserves
+the pre-2026-08-01 behaviour: `eventProRataShare` passes `undefined` unless some
+leaf actually carries the flag, because mapping an absent flag to `true` would
+make every un-updated caller take the zero branch — the exact inverse of the
+intent, and a mistake made and caught during implementation.
+
+Guarded by `npm run spec:prorata`, which mutation-tests both directions and
+asserts structurally that no pro-rata call site touches a rate metric.
+
 ### Accuracy scores will move — this is not a regression
 
 **CORRECTED 2026-08-01. This entry named the wrong path, and it is the second
