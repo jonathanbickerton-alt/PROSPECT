@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent } from './types/forecast';
 import { ForecastProvider } from './context/ForecastContext';
@@ -495,8 +495,11 @@ export default function App() {
     );
 
     // ── Sheet 3: Market_Events ────────────────────────────────────────────────
-    const evtRows = marketEvents.map(e => ({
+    // Sorted by sequence so the sheet reads in the order the user sees,
+    // independent of insertion history.
+    const evtRows = [...marketEvents].sort(bySequence).map(e => ({
       ID: e.id,
+      Sequence: e.sequence,
       Name: e.name ?? '',
       Campaign_Name: e.campaignName ?? '',
       Scenario: e.scenario,
@@ -514,6 +517,12 @@ export default function App() {
       ARPU: e.arpu,
       Contract_Length_Months: e.contractLength ?? 24,
       Comment: e.comment ?? '',
+      // Percentage events. Distinct column names from the Pricing_Events sheet's
+      // Input_Mode/Amount pair on purpose: that one is a RATE and this is a
+      // VOLUME, and a shared column name would invite conflating them.
+      Amount_Type: e.amountType ?? 'absolute',
+      Percentage_Basis: e.percentageBasis ?? '',
+      Retention_Linked: e.retentionLinked === false ? 'No' : 'Yes',
       // Phase 4 — Custom Promotion Card
       Is_Promotion: e.isPromotion ? 'Yes' : 'No',
       Promo_Rebanded: e.promoRebanded ? 'Yes' : 'No',
@@ -924,6 +933,11 @@ export default function App() {
             // Sessions exported before 2026-08-01 have no Sequence column;
             // backfillSequences below assigns sheet order to those.
             sequence:         r.Sequence !== undefined && r.Sequence !== '' ? Number(r.Sequence) : undefined as any,
+            amountType:       r.Amount_Type === 'percentage' ? 'percentage' : 'absolute',
+            percentageBasis:  r.Percentage_Basis === 'adjusted' ? 'adjusted' : 'baseline',
+            // Absent means linked, which is both the default and the
+            // pre-2026-08-01 behaviour — only an explicit 'No' unlinks.
+            retentionLinked:  r.Retention_Linked === 'No' ? false : true,
           }));
           setMarketEvents(backfillSequences(restoredEvents));
         }
@@ -1648,6 +1662,14 @@ export default function App() {
               comment: String(r['Comment'] || ''),
               contractLength: Number(r['Contract_Length'] || r['Contract_Length_Months']) || 24,
               sequence: r['Sequence'] !== undefined && r['Sequence'] !== '' ? Number(r['Sequence']) : undefined as any,
+              // Kept deliberately identical to the session-restore path above.
+              // These are the app's TWO independent import routines, and the
+              // promo fields are already missing here — a pre-existing gap
+              // that is exactly the shape of bug adding fields to only one
+              // side would create. See EXPECTED.md.
+              amountType: r['Amount_Type'] === 'percentage' ? 'percentage' : 'absolute',
+              percentageBasis: r['Percentage_Basis'] === 'adjusted' ? 'adjusted' : 'baseline',
+              retentionLinked: r['Retention_Linked'] === 'No' ? false : true,
             };
           });
           setMarketEvents(backfillSequences(restoredEvents));

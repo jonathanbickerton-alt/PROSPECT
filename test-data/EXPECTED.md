@@ -913,6 +913,55 @@ fallback rather than dropping the event.
 
 Leaf-targeted events are unaffected on all three paths (+10,000 → +10,000).
 
+### Percentage events: the traps in the surrounding work — 2026-08-01
+
+Three places where the obvious implementation is quietly wrong, and one
+pre-existing gap left open deliberately.
+
+**The ARPU Δ dash cannot key off `arpu !== 0`.** `resolveEventArpuRevenue`
+auto-fills the cohort trailing average whenever ARPU is left blank on an Inflow
+or Retention event, so a percentage row normally arrives carrying a non-zero
+`arpu`. The rule lives in `eventArpuDelta` and keys off `amountType`. It was
+extracted from the JSX for a reason: while it was inline, the spec could only
+restate it, and a mutation reverting the table to the naive rule passed every
+assertion. **A test that restates a rule tests the restatement.**
+
+**A confirmation's "after" must be the state that will exist.** The mechanism is
+structural: the pending change carries the exact array to be committed, the
+preview is computed from that array, and confirming commits that same array.
+There is no second derivation to drift. The first version of the summary read a
+single month — the last — and so reported "no change" for any event dated
+earlier, which is most events. Flows are now totalled across the horizon and
+Base, being a stock, is read at the final month.
+
+**Percentage rows are barred from campaign group edit by rule.** Group edit
+reverse-engineers a ramp by summing `Math.abs(subscriberVolume)`, meaningless
+for a row storing a percent. An `amountType` clause was also added to the
+homogeneity test and then removed: it sat behind the blanket rule, so it could
+never change an outcome, and deleting it left every assertion green. **An
+unreachable guard reads as protection while providing none** — prefer one rule
+that fires to two where only the first can.
+
+The intra-campaign **date** sort is untouched. It feeds those month offsets and
+answers a different question from the table's display order.
+
+**Provenance comes from the engine.** `applyEventsToMonth` records basis,
+percent, coverage and delta as it uses them. A view-side re-derivation would
+look entirely plausible while drifting from the calculation it claims to
+explain.
+
+#### Still open: import site 2 drops the promo fields
+
+`App.tsx` has TWO independent import routines — session restore and the
+actuals-workbook path. The workbook path has never restored `isPromotion`,
+`promoRebanded`, `promoMixAxis`, `promoMix`, `promoPricingMode` or
+`promoPricingAmount`.
+
+Every percentage field was added to **both**, and a mutation test confirms a
+field removed from either side fails. The promo gap predates this work and was
+left alone rather than folded in, so the scope decision stays with the reader.
+It is worth closing: it is the same shape of bug, sitting in adjacent code.
+
 ### Percentage events: coverage, not share — 2026-08-01
 
 Absolute and percentage events need **different** scoping arithmetic, and the
