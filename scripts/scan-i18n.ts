@@ -348,6 +348,17 @@ const TRANS_BACKLOG = new Set<string>([
  * so a half-finished pass cannot sit unnoticed.
  */
 const I18N_PHASE2 = new Set<string>([
+  // Object literals. The scanner buckets these as "8 object-literal (REVIEW)",
+  // which does NOT fail the build — it cannot follow the data flow to the JSX
+  // that renders them. The first version of this list was built from the
+  // MUST-KEY buckets only, so these six were neither keyed nor declared and the
+  // scanner went green over them. Found by a gate, not by the scanner.
+  'EventChangeConfirmModal.tsx::Delete this event?',
+  'EventChangeConfirmModal.tsx::Save these changes?',
+  'EventChangeConfirmModal.tsx::Clear all market events?',
+  'EventChangeConfirmModal.tsx::The forecast will be recalculated without this event.',
+  'EventChangeConfirmModal.tsx::The forecast will be recalculated with the edited event.',
+  'EventChangeConfirmModal.tsx::Every market event will be removed and the forecast returned to baseline.',
   "EventChangeConfirmModal.tsx::{} event{}.",
   "EventChangeConfirmModal.tsx::Floored at zero after this change",
   "EventChangeConfirmModal.tsx::No baseline forecast loaded, so there is nothing to recalculate.",

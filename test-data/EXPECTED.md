@@ -983,6 +983,29 @@ there: it is a usability defect in its own right, it affects the absolute path
 as much as the percentage one, and folding it into a presentational change
 would have hidden it in that diff. Its own branch.
 
+### Scanner blind spot: object literals are advisory, not enforced — 2026-08-02
+
+`scan-i18n` buckets user-facing strings held in object literals as
+"8 object-literal (REVIEW)". **That bucket does not fail the build.** The
+scanner cannot follow the value from the literal to the JSX that renders it, so
+it reports rather than blocks.
+
+Found by gate stage 1, not by the scanner: `EventChangeConfirmModal` held six
+strings — every modal title and body line — in TITLES and BLURBS objects. They
+were neither keyed nor in `I18N_PHASE2`, because that list was built from the
+MUST-KEY buckets only. The scanner read PASS over them. **A deferral list built
+from the failing buckets inherits the blind spot of whatever does not fail.**
+
+They are now declared. The bucket is still advisory, and deliberately so: 60
+further object-literal items sit in App.tsx (38), ForecastVsActualsTab (12),
+ForecastSummaryBar (4), WhatIfTab (4) and ManageBulkDrawer (2). Making the
+bucket fail would block the build on debt that predates this work; it belongs
+with i18n phase 2.
+
+**Until then, treat a green scanner as covering the MUST-KEY buckets only.**
+When adding user-facing copy inside an object literal, add it to
+`I18N_PHASE2` by hand — nothing will remind you.
+
 ### Band 1 wraps, and that is the intended trade — not a defect
 
 `auto-fit` fits as many tracks as the container allows and moves the surplus

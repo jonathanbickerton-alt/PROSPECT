@@ -58,7 +58,7 @@ export const EventChangeConfirmModal: React.FC<Props> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex items-start gap-3">
           <div className={`mt-0.5 shrink-0 ${kind === 'clear' ? 'text-[#e60000]' : 'text-amber-500'}`}>
