@@ -347,7 +347,6 @@
   "whatif_one_combined_promo_a_volume_ambition_optional": "One combined promo: a volume ambition, optionally with a mix and/or price change on that volume only.",
   "whatif_reuses_ramp_decay_ibro_mechanics_mix_control": "Reuses ramp/decay, IBRO mechanics, mix control and ARPU blending",
   "whatif_volume_target": "Volume Target",
-  "whatif_acquisition_inflow": "Acquisition (Inflow)",
   "whatif_how_long_this_promo_s_subscribers_are_protect": "How long this promo's subscribers are protected from churn (or, for Retention, re-contracted) before entering the at-risk pool. Default 24 months.",
   "whatif_ramp_volume_over_multiple_months": "Ramp volume over multiple months",
   "whatif_ramp_duration_months": "Ramp duration (months)",
@@ -659,5 +658,6 @@
   "whatif_only": "Only",
   "whatif_show_only_kpi": "Show only {{kpi}}",
   "whatif_ibro_type": "Tipo IBRO",
-  "whatif_applies_to": "Aplica-se a"
+  "whatif_applies_to": "Aplica-se a",
+  "whatif_revenue_arpu_not_applicable_to_percentage": "Revenue and ARPU do not apply to a percentage event — the table shows a dash."
 }

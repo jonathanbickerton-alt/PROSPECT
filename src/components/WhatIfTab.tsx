@@ -2916,6 +2916,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
               </div>
+              {isPercentageDraft && (
+                <div className="self-center">
+                  <p className="text-[10px] text-slate-400 leading-snug">
+                    {t('whatif_revenue_arpu_not_applicable_to_percentage')}
+                  </p>
+                </div>
+              )}
               {!isPercentageDraft && (
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_revenue')}</label>
@@ -3979,7 +3986,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       onChange={e => setPromoTarget(e.target.value as 'Inflow' | 'Retention')}
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                     >
-                      <option value="Inflow">{t('whatif_acquisition_inflow')}</option>
+                      <option value="Inflow">Inflow</option>
                       <option value="Retention">Retention</option>
                     </select>
                   </div>

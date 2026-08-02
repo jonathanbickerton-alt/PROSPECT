@@ -492,6 +492,11 @@ const LOCALE_DEFERRED = new Set<string>([
   'bulk_large_run_detail',
   'bulk_large_run_title',
   'bulk_no_source_cohort',
+  // Percentage events, 2026-08-02. Present in all six locales but carrying
+  // ENGLISH in the five non-English ones. Listed here rather than left to look
+  // translated: parity would pass on the key existing, which is exactly the
+  // kind of green that means nothing.
+  'whatif_revenue_arpu_not_applicable_to_percentage',
 ]);
 
 const LOCALES = ['de', 'es', 'fr', 'it', 'pt'];

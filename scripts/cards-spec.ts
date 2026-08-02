@@ -128,6 +128,36 @@ check('the volume card region was located', volume.length > 1000, `${volume.leng
   check('no card hard-codes the stream label outside i18n',
     !/>IBRO Type</.test(src));
 
+  // The OPTIONS, not just the label. Unifying the field name was the point of
+  // the 2B pass, and it left Promotion offering "Acquisition (Inflow)" where
+  // Volume and Value offer "Inflow" — the same field, the same stored value,
+  // two different words on screen. The label assertion above passed throughout,
+  // because it only ever looked at the label.
+  //
+  // A control is its label AND its choices. Checking one and not the other is
+  // the same shape as checking consistency and not correctness.
+  {
+    const optionSets = [...src.matchAll(/<option value="Inflow">([^<]*)<\/option>/g)]
+      .map(m => m[1].trim());
+    check('every IBRO Type control was found', optionSets.length >= 3,
+      `${optionSets.length} Inflow options`);
+    check('the Inflow option reads the same on every card',
+      new Set(optionSets).size === 1, JSON.stringify([...new Set(optionSets)]));
+    check('...and it is the bare stream name, not a card-specific gloss',
+      optionSets.every(o => o === 'Inflow'), JSON.stringify(optionSets));
+
+    const retention = [...src.matchAll(/<option value="Retention">([^<]*)<\/option>/g)]
+      .map(m => m[1].trim());
+    check('the Retention option reads the same on every card',
+      new Set(retention).size === 1, JSON.stringify([...new Set(retention)]));
+
+    // Cards legitimately offer DIFFERENT SUBSETS — Volume has Outflow and ARPU,
+    // Value and Promotion do not. The rule is that a shared option must read
+    // identically, not that every card offers every option.
+    check('a card may still offer a narrower subset',
+      /<option value="Outflow">/.test(src) && /<option value="ARPU">/.test(src));
+  }
+
   // Month: the split is real and must survive. Volume and Promotion are point
   // events; Pricing persists via duration, Value via rollForward.
   check("Value's month follows rollForward rather than the card",
