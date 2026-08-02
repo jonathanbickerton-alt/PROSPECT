@@ -983,6 +983,65 @@ there: it is a usability defect in its own right, it affects the absolute path
 as much as the percentage one, and folding it into a presentational change
 would have hidden it in that diff. Its own branch.
 
+### Band 1 wraps, and that is the intended trade — not a defect
+
+`auto-fit` fits as many tracks as the container allows and moves the surplus
+to a second row. So a card wraps when its controls exceed the available
+tracks, and the wrap point depends on how many controls that card carries.
+
+**Measured wrap thresholds** (`scripts/layout-probe`, real component, long
+selection applied — the card is ~973px at `max-w-5xl`):
+
+| controls in the grid | stays on one row above |
+|---|---|
+| 4 | 780px |
+| 5 | 970px |
+| 6 | 1150px |
+
+Volume with Tariff inactive is 5 controls and sits on one row at 973px — with
+about 3px to spare, so it is genuinely marginal. Activate Tariff and it is 6
+controls, below the 1150px threshold, and Month moves to a second row alone.
+The same happens on resize at any control count.
+
+#### The cards are not identical in wrap point, and cannot be
+
+They carry different numbers of controls, and only Volume has the three-band
+split at all:
+
+| card | grids | labelled cells |
+|---|---|---|
+| Volume | 3 (targeting / effect / details) | 6 + 3 + 4 |
+| Pricing | 1 | 6 |
+| Promotion | 1 | 10 |
+| Value | 1 | its own shape |
+
+That is why the observed behaviour differs per card: Volume shows Month alone
+on a second row when Tariff is active; Promotion, whose single grid holds ten
+cells, shows Month alongside Acquisition Volume and Contract Length; Pricing
+fits its six on one row. All three are the same rule producing different
+results from different inputs.
+
+**What `spec:cards` asserts, and therefore what consistency means here:** one
+grid ladder, one vertical alignment, one name per concept, and the agreed
+ordering of shared targeting controls. It does **not** assert identical wrap
+points, and it should not — that would be asserting the cards carry identical
+controls, which they do not.
+
+#### Why the wrap is the better outcome
+
+Forcing one row needs one of two things, and both are worse:
+
+- **Narrower tracks.** This is exactly what produced the original defect. Six
+  equal `minmax(0, 1fr)` tracks gave 139px each and controls overflowed into
+  their neighbours. A clipped control that silently hides its own text is
+  worse than a control on the next line.
+- **A wider card.** `max-w-5xl` is a deliberate reading-width constraint
+  shared with the rest of the app; widening this one card to fit a row would
+  trade a global convention for a local layout preference.
+
+A clean wrap costs vertical space and nothing else. Treat it as expected
+behaviour in any layout check, not as a finding.
+
 ### CORRECTED 2026-08-02: the month input was never starved
 
 The entry below diagnosed the clipping as a native month input starved of its
