@@ -242,9 +242,16 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       preFloor: applied.preFloor,
       derivations: applied.derivations,
       flooredMetrics: applied.flooredMetrics,
-      // Path A has carried per-month event attribution since it was written;
-      // this path had none, so a floor warning could only ever have existed on
-      // one side. Added here so both can attribute a breach.
+      // derivations IS consumed, below, to size the ARPU pools from the
+      // resolved delta rather than the raw percent.
+      //
+      // preFloor, flooredMetrics and appliedEventIds are NOT read by anything
+      // in this path. computeScenarioForFilter returns a flat row shape that
+      // drops them, and its only caller (ScenarioCompareTab) has no breach UI.
+      // They are kept so the two paths produce the same month record, which is
+      // what lets applyEventsToMonth stay shared — but do not read this as
+      // floor warnings existing here. They do not. An earlier version of this
+      // comment claimed they did.
       appliedEventIds: applied.appliedIds,
     });
   });

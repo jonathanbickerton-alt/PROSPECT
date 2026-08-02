@@ -92,6 +92,24 @@ const ev = (id: string, sequence?: number, date = '2026-01'): MarketEvent => ({
   const tied = [ev('z', 1, '2026-05'), ev('y', 1, '2026-02')];
   const f = [...tied].sort(bySequence).map(e => e.id).join(',');
   const r = [...tied].reverse().sort(bySequence).map(e => e.id).join(',');
+  // A construction site that forgets sequence must degrade to "appears last",
+  // not "jumps to the top". tsc does NOT enforce the required field at every
+  // object literal — verified by removing it and getting zero errors — so this
+  // is the safety net for the one that gets missed.
+  {
+    const withSeq = [ev('a', 1), ev('b', 2)];
+    const orphan = ev('orphan');            // no sequence at all
+    const sorted = [orphan, ...withSeq].sort(bySequence).map(e => e.id).join(',');
+    check('an event with no sequence sorts LAST', sorted === 'a,b,orphan', sorted);
+    check('...and would have sorted FIRST under the old zero default (not vacuous)',
+      [orphan, ...withSeq].sort((x, y) => (x.sequence ?? 0) - (y.sequence ?? 0))
+        .map(e => e.id).join(',') === 'orphan,a,b');
+    const many = [ev('z'), ev('c', 3), ev('y')];
+    check('several orphans do not reorder the sequenced ones',
+      many.sort(bySequence).map(e => e.id).join(',').startsWith('c'),
+      many.map(e => e.id).join(','));
+  }
+
   check('a tie breaks on date, identically from either input order',
     f === 'y,z' && f === r, `${f} vs ${r}`);
 }

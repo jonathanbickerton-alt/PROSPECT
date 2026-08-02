@@ -1882,7 +1882,15 @@ export function resolvedEventVolume(
  * total and stable even for events that somehow share a slot.
  */
 export function bySequence(a: MarketEvent, b: MarketEvent): number {
-  const s = (a.sequence ?? 0) - (b.sequence ?? 0);
+  // A missing slot sorts LAST, not first. It used to read as 0, so any
+  // construction site that forgot to set one sent its rows to the TOP of the
+  // table — the loudest possible failure for the quietest possible omission,
+  // and tsc does not enforce the required field at every literal (verified).
+  // Sorting last degrades to "appears at the end", which is what a newly
+  // created event should do anyway.
+  const av = Number.isFinite(a.sequence) ? a.sequence : Number.POSITIVE_INFINITY;
+  const bv = Number.isFinite(b.sequence) ? b.sequence : Number.POSITIVE_INFINITY;
+  const s = av === bv ? 0 : av - bv;
   if (s !== 0) return s;
   const d = a.date.localeCompare(b.date);
   return d !== 0 ? d : a.id.localeCompare(b.id);

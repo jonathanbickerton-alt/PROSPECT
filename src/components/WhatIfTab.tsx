@@ -1711,6 +1711,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         campaignName:     newEvent.campaignName || '',
         comment:          newEvent.comment      || '',
         contractLength:   newEvent.contractLength ?? 24,
+        // Consecutive slots from the end. Omitting these was invisible to
+        // tsc and put every spread row at the TOP of the table, because
+        // bySequence reads a missing sequence as 0.
+        sequence:         nextSequence(marketEvents) + i,
+        amountType:       newEvent.amountType ?? 'absolute',
+        percentageBasis:  newEvent.percentageBasis ?? 'baseline',
+        retentionLinked:  newEvent.retentionLinked ?? true,
       };
     });
 
@@ -2147,13 +2154,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
       cohortAvgArpu: promoCohortAvgArpu,
       spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [100],
-      startSequence: nextSequence(marketEvents),
+      // The row KEEPS its slot. nextSequence here handed an edited event a
+      // brand-new end-of-table slot, moving it below everything — the exact
+      // behaviour the sequence field exists to prevent, and the Volume tab's
+      // own single edit avoids it by patching rather than rebuilding.
+      startSequence: marketEvents.find(e => e.id === editingPromoId)?.sequence
+        ?? nextSequence(marketEvents),
     });
     if (events.length === 0) return;
     updateMarketEvent(editingPromoId, { ...events[0], id: editingPromoId });
     setEditingPromoId(null);
     resetPromoDraft();
-  }, [editingPromoId, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, updateMarketEvent, resetPromoDraft]);
+  }, [editingPromoId, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, marketEvents, updateMarketEvent, resetPromoDraft]);
 
   const handleSavePromoCampaign = useCallback(() => {
     if (!editingPromoCampaign || !newPromo.date || !newPromo.subscriberVolume) return;
