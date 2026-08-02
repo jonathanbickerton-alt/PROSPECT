@@ -2636,7 +2636,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
           {/* Add event form */}
           <div className="p-6 border-b border-slate-100 bg-slate-50/30">
-            <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 items-start">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4 items-start">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_ibro_type')}</label>
                 <select
@@ -2763,7 +2763,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 nesting it here would teach planners it is a percentage concern.
                 Bands 1 and 3 are separate grids, so nothing outside this one
                 moves when the amount type or scenario changes. */}
-            <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 items-start mt-4">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4 items-start mt-4">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">
                   {isPercentageDraft
@@ -2906,7 +2906,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 Never changes shape. Revenue and ARPU are hidden in percentage
                 mode — a percentage carries no per-subscriber figure, and the
                 remaining fields keep the row from collapsing. */}
-            <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 items-start">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4 items-start">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_customer_volume')}</label>
                 <input
@@ -3514,7 +3514,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
               <div className="p-6 border-b border-slate-100">
                 {/* Dimension selectors */}
-                <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 items-start mb-5">
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4 items-start mb-5">
                   {/* Segment */}
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_segment')}</label>
@@ -3971,7 +3971,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               </div>
 
               <div className="p-6 border-b border-slate-100 bg-slate-50/30">
-                <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 items-start">
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4 items-start">
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_ibro_type')}</label>
                     <select
@@ -4528,7 +4528,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
               <div className="p-6 border-b border-slate-100">
                 {/* Dimension selectors */}
-                <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 items-start mb-5">
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4 items-start mb-5">
                   {/* IBRO */}
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_ibro_type')}</label>

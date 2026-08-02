@@ -983,6 +983,70 @@ there: it is a usability defect in its own right, it affects the absolute path
 as much as the percentage one, and folding it into a presentational change
 would have hidden it in that diff. Its own branch.
 
+### A native month input clips silently — and "uniformly wrong is uniform"
+
+Every card rendered `ugust 2026` instead of `August 2026`. Band 1 was six equal
+`minmax(0, 1fr)` tracks; at the real container width (≈912px inner, after
+`max-w-5xl` and two levels of padding) that is **139px** per track. A native
+`<input type="month">` has an intrinsic minimum of **155px** at this font size
+and padding. Forced to `w-full` in a 139px track, it clipped its own text.
+
+| container | track | month needs | short by |
+|---|---|---|---|
+| 1200 | 187 | 155 | fits |
+| 1050 | 162 | 155 | fits |
+| **912 (real)** | **139** | 155 | **−16** |
+| 860 | 130 | 155 | −25 |
+
+#### Why no check could have caught it geometrically
+
+**`scrollWidth === clientWidth` on a clipped month input.** Measured at 187,
+162, 155, 139 and 130px: equal at every one. The native control clips inside
+its shadow DOM and reports no overflow. Nothing you can ask the element will
+tell you its text is cut.
+
+The only detection is **comparing intrinsic minimum width against allocated
+width** — which requires knowing the intrinsic minimums, which requires
+measuring them once and recording them. `spec:cards` now does exactly that.
+
+#### Uniformly wrong is uniform
+
+`spec:cards` asserted that all four cards used one identical grid ladder. They
+did. It passed while every card was visibly broken, because the ladder was
+uniformly **wrong**.
+
+**Consistency is not correctness, and a spec that only checks consistency will
+certify a uniform defect.** The assertion now checks the property that matters:
+the track floor must clear the widest control's intrinsic minimum. Boundary-
+tested at 155 (passes), 154 (fails) and 139 (fails).
+
+#### The fix, and the two companions
+
+`repeat(auto-fit, minmax(170px, 1fr))` replaces a three-breakpoint ladder with
+one declaration. Content-sized, wraps naturally, and no fixed column count that
+is wrong at some width. Verified across 15 combinations — five container widths
+× three control counts, covering all four cards' shapes: **no starved track and
+no spill in any of them**, narrowest month track 197px against 155px needed.
+
+The hierarchical dropdown carried `min-w-[100px]` and no `min-w-0` on its root,
+so it could not shrink and spilled 6–14px past its cell at narrow widths. It
+now truncates. The DARK variant keeps an explicit cap: it lives in the top
+filter bar, a flex toolbar with no column to size against.
+
+#### Known consequence: band 3 cells stretch when Revenue and ARPU hide
+
+`auto-fit` collapses empty tracks, so when percentage mode hides two of band
+3's four cells the survivors stretch — 216px to 448px at the real width. Band 1
+stays pixel-identical and band 3's top does not move, so the step-5 containment
+property (nothing outside band 2 REFLOWS) still holds; but the cells resize,
+which they did not under the fixed grid.
+
+`auto-fill` would keep them stable by preserving empty tracks — at the cost of
+the trailing empty track that `auto-fit` was chosen to remove. The two cannot
+both be had from one declaration. **Open: which matters more.** Band 1's shape
+is static per deployment (Tariff depends on column mapping); band 3's changes
+at runtime on a toggle, which is the more visible of the two.
+
 ### Every read of `subscriberVolume`, audited — 2026-08-02
 
 Three defects of one shape had been found one at a time (the Outflow Δ column,

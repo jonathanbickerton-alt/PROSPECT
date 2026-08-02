@@ -42,25 +42,43 @@ check('the volume card region was located', volume.length > 1000, `${volume.leng
 
 // ── One grid ladder, one alignment ───────────────────────────────────────
 {
-  const LADDER = 'grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 items-start';
-  // Scoped to TARGETING grids. Bands after targeting are card-specific by
-  // design — Pricing's effect band is four columns because it holds four
-  // controls — so a blanket "every grid" rule would forbid legitimate
-  // variation and force a false uniformity.
-  const ladders = (src.match(/grid grid-cols-\d[^"]*grid-cols-\d[^"]*gap-4[^"]*/g) ?? [])
-    .filter(l => /xl:grid-cols-6/.test(l) || /lg:grid-cols-5/.test(l) || /xl:grid-cols-5/.test(l));
-  const distinct = [...new Set(ladders.map(l => l.replace(/ mb-5| mt-4/g, '').trim()))];
-  check('every targeting grid uses ONE ladder',
-    distinct.length === 1 && distinct[0] === LADDER,
-    JSON.stringify(distinct));
-  check('there is more than one targeting grid to compare (not vacuous)',
-    ladders.length >= 4, `${ladders.length} grids`);
+  // ── The track floor must clear the widest control's intrinsic minimum ──
+  //
+  // This replaced a uniformity assertion on 2026-08-02. Uniformity was the
+  // wrong property: every card used one identical ladder and every card was
+  // visibly broken, because the ladder was uniformly WRONG. Six equal
+  // minmax(0,1fr) tracks gave each control 139px at the real container width,
+  // and a native month input needs 155px — so it clipped, rendering
+  // "ugust 2026".
+  //
+  // Intrinsic minimums measured in Chrome at this font size and padding:
+  const INTRINSIC_MIN_PX: Record<string, number> = {
+    'month input': 155,          // native <input type="month">, the widest
+    'hierarchical trigger': 144, // "Direct — Call Centr…" at max truncation
+    'native select': 100,
+  };
+  const WIDEST = Math.max(...Object.values(INTRINSIC_MIN_PX));
 
-  // The alignment split is what made band 1 sit at different heights when the
-  // user switched tabs — the actual user-visible symptom.
-  check('no event-form grid bottom-aligns its cells',
-    !/md:grid-cols-3[^"]*items-end/.test(src));
-  check('the retired five-column ladder is gone', !/lg:grid-cols-5/.test(src));
+  const grids = src.match(/grid grid-cols-\[repeat\(auto-fit,minmax\((\d+)px,1fr\)\)\][^"]*/g) ?? [];
+  check('band 1 uses content-sized tracks, not a fixed column count',
+    grids.length >= 4, `${grids.length} auto-fit grids`);
+  check('...and no fixed-count ladder survives in the event forms',
+    !/md:grid-cols-3 (lg|xl):grid-cols-\d/.test(src));
+
+  const floors = [...new Set(grids.map(g => Number(/minmax\((\d+)px/.exec(g)![1])))];
+  check('every track floor is the same value', floors.length === 1, JSON.stringify(floors));
+  check(`the track floor clears the widest control's intrinsic minimum (${WIDEST}px)`,
+    floors.length === 1 && floors[0] >= WIDEST,
+    `floor ${floors[0]}px vs required ${WIDEST}px`);
+
+  // The check must be capable of failing: prove the floor is not so large that
+  // any plausible value would pass, and that the required figure is real.
+  check('the requirement is a real constraint, not trivially satisfied',
+    WIDEST > 100 && floors[0] < WIDEST * 2,
+    `floor ${floors[0]}, required ${WIDEST}`);
+
+  check('every grid is top-aligned', grids.every(g => g.includes('items-start')),
+    grids.filter(g => !g.includes('items-start')).join(' | '));
 }
 
 // ── One name per concept ─────────────────────────────────────────────────
