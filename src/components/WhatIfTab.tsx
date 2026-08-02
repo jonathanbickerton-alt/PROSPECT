@@ -2903,10 +2903,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             </div>
 
             {/* ── Band 3: details ──────────────────────────────────────────
-                Never changes shape. Revenue and ARPU are hidden in percentage
-                mode — a percentage carries no per-subscriber figure, and the
-                remaining fields keep the row from collapsing. */}
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4 items-start">
+                Revenue and ARPU are hidden in percentage mode — a percentage
+                carries no per-subscriber figure, and a helper in band 3 says so
+                where they were.
+                
+                The divider is PERMANENT, not conditional on the mode. In
+                absolute mode the bands only look separated because the rows
+                happen to be full; nothing actually marked the boundary. Showing
+                it only when the gap appears would make the rule itself flicker
+                on a toggle — the reflow the band structure exists to avoid.
+                mt-2 pt-2 border-t border-slate-100 is this file own nesting
+                divider, used for the percentage basis block and Cohort type. */}
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4 items-start mt-2 pt-2 border-t border-slate-100">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_customer_volume')}</label>
                 <input
