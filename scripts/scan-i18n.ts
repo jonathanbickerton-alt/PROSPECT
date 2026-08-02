@@ -375,6 +375,46 @@ console.log('\nfull inventory -> scan_i18n_report.json');
 // it is translated, and in the Monthly Variance case it was already broken in
 // English because the key slug collided with a display string.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// LOST INTER-ELEMENT WHITESPACE.
+//
+// Extraction split sentences at their <strong> boundaries and TRIMMED the
+// whitespace that sat between a text node and the element after it. The space
+// belonged to neither side, so it survived in neither: `{t('whatif_use')}
+// <strong>` rendered "UsePromotion". Twenty-one sites across six components
+// carried it before 2026-08-02, and nothing caught it because every key
+// resolved and every locale had it — the check for missing keys cannot see a
+// missing space.
+//
+// The fix is {' '} in the JSX, never a trailing space inside the .json value.
+// A trailing space is invisible in review and the first translator to tidy the
+// file deletes it.
+//
+// A wrapper holding only an icon is exempt: it renders no text, and the flex
+// gap on its parent supplies the separation.
+// ---------------------------------------------------------------------------
+const ICON = /<(Info|Chevron\w*|Alert\w*|Check\w*|X|Pencil|Trash\w*|Activity)\b/;
+const wsErrors: { file: string; line: number; key: string; el: string; val: string }[] = [];
+const enForWs: Record<string, string> = JSON.parse(
+  fs.readFileSync(path.join('src', 'locales', 'en', 'translation.json'), 'utf8'));
+for (const file of files) {
+  const lines = fs.readFileSync(file, 'utf8').split('\n');
+  lines.forEach((line, i) => {
+    const re = /\{t\('([a-z_0-9]+)'\)\}<(strong|b|em|span|a)\b/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(line)) !== null) {
+      const val = String(enForWs[m[1]] ?? '');
+      if (!/[\w,;:)\.]$/.test(val)) continue;           // ends in punctuation that closes
+      const after = (line.slice(m.index + m[0].length) + ' ' + lines.slice(i + 1, i + 3).join(' ')).slice(0, 200);
+      const gapped = line.slice(0, m.index).includes('gap-');
+      if (ICON.test(after) && gapped) continue;          // icon wrapper, separation comes from the gap
+      wsErrors.push({ file, line: i + 1, key: m[1], el: m[2], val: val.slice(-30) });
+    }
+  });
+}
+console.log(`\nINTER-ELEMENT WHITESPACE: ${wsErrors.length} site(s) where a translated string abuts an element with no space`);
+for (const e of wsErrors) console.log(`  ${e.file}:${e.line}  <${e.el}  ${e.key}  ...${JSON.stringify(e.val)}`);
+
 console.log(`\nt() IN IDENTIFIER POSITION: ${identErrors.length}`);
 for (const e of identErrors) console.log(`  ${e.file}:${e.line}  [${e.kind}]  ${e.text}`);
 

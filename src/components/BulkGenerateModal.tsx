@@ -261,7 +261,7 @@ export function BulkGenerateModal({
             {/* Run name + comment */}
             <div className="mx-6 mb-4 space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('common_run_name')}<span className="font-normal text-slate-400">{t('bulk_optional')}</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('common_run_name')}{' '}<span className="font-normal text-slate-400">{t('bulk_optional')}</span>
                 </label>
                 <input
                   type="text"
@@ -272,7 +272,7 @@ export function BulkGenerateModal({
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('common_comment')}<span className="font-normal text-slate-400">{t('bulk_optional')}</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('common_comment')}{' '}<span className="font-normal text-slate-400">{t('bulk_optional')}</span>
                 </label>
                 <textarea
                   value={runComment}

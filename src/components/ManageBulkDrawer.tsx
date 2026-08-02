@@ -315,7 +315,7 @@ export function ManageBulkDrawer({
 
               {/* Run name */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('common_run_name')}<span className="font-normal text-slate-400">(optional)</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('common_run_name')}{' '}<span className="font-normal text-slate-400">(optional)</span>
                 </label>
                 <input
                   type="text"
@@ -329,7 +329,7 @@ export function ManageBulkDrawer({
 
               {/* Comment */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('common_comment')}<span className="font-normal text-slate-400">(optional)</span>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">{t('common_comment')}{' '}<span className="font-normal text-slate-400">(optional)</span>
                 </label>
                 <textarea
                   value={runComment}
@@ -405,7 +405,7 @@ export function ManageBulkDrawer({
               </div>
 
               {/* Summary */}
-              <div className="bg-slate-50 rounded-lg px-3 py-2.5 text-xs text-slate-600">{t('bulkdrawer_applying_to')}<strong>{selected.size}</strong> cohort{selected.size !== 1 ? 's' : ''}.{' '}
+              <div className="bg-slate-50 rounded-lg px-3 py-2.5 text-xs text-slate-600">{t('bulkdrawer_applying_to')}{' '}<strong>{selected.size}</strong> cohort{selected.size !== 1 ? 's' : ''}.{' '}
                 
                 {t('bulkdrawer_existing_forecasts_for_these_cohorts_will_be')}
               </div>
@@ -626,10 +626,10 @@ const BulkRunGroup: React.FC<{
           {/* Run metadata */}
           <div className="px-4 py-3 bg-white border-b border-slate-100">
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-400">
-              <span>{t('bulkdrawer_model')}<strong className="text-slate-600">{run.settings.model}</strong></span>
-              <span>{t('bulkdrawer_horizon')}<strong className="text-slate-600">{run.settings.confidenceHorizon}m</strong></span>
-              <span>{t('bulkdrawer_pre_unc')}<strong className="text-slate-600">{run.settings.preHorizonUncertainty}%</strong></span>
-              <span>{t('bulkdrawer_post_exp')}<strong className="text-slate-600">{run.settings.postHorizonExpansionRate}{t('bulkdrawer_pct_mo')}</strong></span>
+              <span>{t('bulkdrawer_model')}{' '}<strong className="text-slate-600">{run.settings.model}</strong></span>
+              <span>{t('bulkdrawer_horizon')}{' '}<strong className="text-slate-600">{run.settings.confidenceHorizon}m</strong></span>
+              <span>{t('bulkdrawer_pre_unc')}{' '}<strong className="text-slate-600">{run.settings.preHorizonUncertainty}%</strong></span>
+              <span>{t('bulkdrawer_post_exp')}{' '}<strong className="text-slate-600">{run.settings.postHorizonExpansionRate}{t('bulkdrawer_pct_mo')}</strong></span>
               <span>
                 <span className={run.generated > 0 ? 'text-emerald-600' : 'text-slate-400'}>
                   {run.generated} generated

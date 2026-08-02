@@ -4076,7 +4076,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                               <span
                                 className="relative group inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 mt-0.5 cursor-help"
                               >
-                                <Info size={10} className="shrink-0" />{t('actuals_best_model_applied_still_outside_threshold')}<span className="absolute bottom-full left-0 mb-1.5 hidden group-hover:block w-72 bg-white border border-slate-200 rounded-xl shadow-lg text-xs text-slate-600 p-2.5 z-50 pointer-events-none font-normal normal-case">{t('actuals_the_most_appropriate_model_has_been_selected')}</span>
+                                <Info size={10} className="shrink-0" />{t('actuals_best_model_applied_still_outside_threshold')}{' '}<span className="absolute bottom-full left-0 mb-1.5 hidden group-hover:block w-72 bg-white border border-slate-200 rounded-xl shadow-lg text-xs text-slate-600 p-2.5 z-50 pointer-events-none font-normal normal-case">{t('actuals_the_most_appropriate_model_has_been_selected')}</span>
                               </span>
                             ) : (
                               <p className="text-[10px] text-indigo-600 font-medium mt-0.5">

@@ -178,7 +178,7 @@ export const RemoveActualsModal: React.FC<RemoveActualsModalProps> = ({
 
           {/* Dimension filters */}
           <section>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">{t('removeactuals_dimension_filters')}<span className="normal-case font-normal text-slate-400">{t('removeactuals_optional_leave_all_to_match_every_cohort')}</span>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">{t('removeactuals_dimension_filters')}{' '}<span className="normal-case font-normal text-slate-400">{t('removeactuals_optional_leave_all_to_match_every_cohort')}</span>
             </p>
             <div className="flex flex-wrap gap-3">
               <div className="flex items-center gap-1.5">

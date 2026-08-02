@@ -2261,7 +2261,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             <Activity size={28} className="text-slate-400" />
           </div>
           <h2 className="text-xl font-semibold text-slate-900">{t('whatif_no_baseline_forecast_yet')}</h2>
-          <p className="text-sm text-slate-500">{t('whatif_complete')}<strong>{t('whatif_step_1_baseline_forecast')}</strong> {t('whatif_and_save_at_least_one_forecast_before_applyin')}
+          <p className="text-sm text-slate-500">{t('whatif_complete')}{' '}<strong>{t('whatif_step_1_baseline_forecast')}</strong> {t('whatif_and_save_at_least_one_forecast_before_applyin')}
           </p>
           <button
             onClick={() => setActiveView('standard')}
@@ -2580,8 +2580,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         </div>
         {/* Phase 4 — in-UI guidance: when to reach for the combined card vs the
             three single-dimension ones. */}
-        <p className="text-xs text-slate-500 -mt-2">{t('whatif_use')}<strong className="text-slate-600">{t('whatif_promotion')}</strong> {t('whatif_for_one_combined_scenario_anchored_on_a_volum')}<strong className="text-slate-600">{t('common_volume')}</strong>,{' '}
-          <strong className="text-slate-600">{t('common_value')}</strong>{t('whatif_or')}<strong className="text-slate-600">{t('whatif_pricing')}</strong> {t('whatif_for_single_dimension_events_with_no_volume_as')}
+        <p className="text-xs text-slate-500 -mt-2">{t('whatif_use')}{' '}<strong className="text-slate-600">{t('whatif_promotion')}</strong> {t('whatif_for_one_combined_scenario_anchored_on_a_volum')}{' '}<strong className="text-slate-600">{t('common_volume')}</strong>,{' '}
+          <strong className="text-slate-600">{t('common_value')}</strong>{t('whatif_or')}{' '}<strong className="text-slate-600">{t('whatif_pricing')}</strong> {t('whatif_for_single_dimension_events_with_no_volume_as')}
         </p>
 
         {/* ── Tariff scoping control (Phase 2b) — pick the tariffs to plan with.
@@ -3748,8 +3748,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         const delta = adjusted - baseArpu;
                         return (
                           <>
-                            <p className="text-[10px] text-slate-400">{t('whatif_baseline_arpu')}<span className="font-medium text-slate-600">{formatNumber(baseArpu)}</span></p>
-                            <p className="text-[10px] text-slate-400 mt-0.5">{t('whatif_adjusted_arpu')}<span className={`font-semibold ${delta >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatNumber(Math.max(0, adjusted))}</span></p>
+                            <p className="text-[10px] text-slate-400">{t('whatif_baseline_arpu')}{' '}<span className="font-medium text-slate-600">{formatNumber(baseArpu)}</span></p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">{t('whatif_adjusted_arpu')}{' '}<span className={`font-semibold ${delta >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatNumber(Math.max(0, adjusted))}</span></p>
                             <p className={`text-[10px] font-medium mt-0.5 ${delta >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                               {delta >= 0 ? '+' : ''}{formatNumber(delta)} ({delta >= 0 ? '+' : ''}{baseArpu !== 0 ? ((delta / baseArpu) * 100).toFixed(1) : '0.0'}%)
                             </p>
@@ -4301,7 +4301,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               );
                             })}
                           </div>
-                          <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">{t('whatif_promo_blended_arpu')}<span className="font-semibold text-slate-700">{formatNumber(promoDraftBlendedArpu)}</span>
+                          <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">{t('whatif_promo_blended_arpu')}{' '}<span className="font-semibold text-slate-700">{formatNumber(promoDraftBlendedArpu)}</span>
                           </div>
                         </div>
                       )}

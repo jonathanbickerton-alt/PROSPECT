@@ -953,7 +953,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
 
               {oneOffFormOpen && (
                 <div className="mt-2 p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2.5">
-                  <p className="text-[10px] text-slate-500 leading-relaxed">{t('baseline_excludes_an_exceptional_month_e_g_a_one_time')}<strong>{t('baseline_and_tightens_the_confidence_bands')}</strong> {t('baseline_for_this_cohort_the_band_change_is_a_direct_e')}
+                  <p className="text-[10px] text-slate-500 leading-relaxed">{t('baseline_excludes_an_exceptional_month_e_g_a_one_time')}{' '}<strong>{t('baseline_and_tightens_the_confidence_bands')}</strong> {t('baseline_for_this_cohort_the_band_change_is_a_direct_e')}
                   </p>
 
                   <div>
@@ -984,8 +984,8 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                       the anomaly, computed by the same substituteOneOffValue the engine
                       calls — lets the user sanity-check the heuristic before committing. */}
                   {draftOneOffPreview && (
-                    <div className="px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-600">{t('baseline_file_value')}<span className="font-mono font-semibold text-slate-800">{formatNumber(draftOneOffPreview.fileValue)}</span>
-                      <span className="mx-1.5 text-slate-300">·</span>{t('baseline_model_will_use')}<span className="font-mono font-semibold text-emerald-700">{formatNumber(draftOneOffPreview.modelWillUse)}</span>
+                    <div className="px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-600">{t('baseline_file_value')}{' '}<span className="font-mono font-semibold text-slate-800">{formatNumber(draftOneOffPreview.fileValue)}</span>
+                      <span className="mx-1.5 text-slate-300">·</span>{t('baseline_model_will_use')}{' '}<span className="font-mono font-semibold text-emerald-700">{formatNumber(draftOneOffPreview.modelWillUse)}</span>
                       <span className="text-slate-400"> (trend and seasonal-consistent)</span>
                     </div>
                   )}
