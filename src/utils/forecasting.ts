@@ -1851,6 +1851,33 @@ export function eventArpuDelta(e: MarketEvent): number | null {
 }
 
 /**
+ * The subscriber volume an event actually contributed to one month at one view.
+ *
+ * For an ABSOLUTE event that is subscriberVolume times the pro-rata share, as
+ * it always was. For a PERCENTAGE event subscriberVolume holds the PERCENT — 10
+ * means 10%, not ten people — so reading it as a count sizes an ARPU pool at
+ * ten subscribers instead of the several hundred the event actually added.
+ *
+ * The real figure only exists after applyEventsToMonth has resolved it against
+ * a basis, which is why it comes from that function's own derivations rather
+ * than being recomputed here. A second derivation would drift from the engine
+ * exactly where the engine was taught a case the derivation was not.
+ *
+ * Zero when the event produced no derivation for this month and metric: it did
+ * not apply at this view, so it contributed nobody.
+ */
+export function resolvedEventVolume(
+  event: { id: string; amountType?: 'absolute' | 'percentage' },
+  sharedAbsolute: number,
+  derivations: PercentageDerivation[] | undefined,
+  metric: 'inflow' | 'outflow' | 'retention' = 'inflow',
+): number {
+  if (event.amountType !== 'percentage') return sharedAbsolute;
+  const d = (derivations ?? []).find(x => x.eventId === event.id && x.metric === metric);
+  return d ? d.delta : 0;
+}
+
+/**
  * The display order. Sequence first; date then id break ties so the result is
  * total and stable even for events that somehow share a slot.
  */

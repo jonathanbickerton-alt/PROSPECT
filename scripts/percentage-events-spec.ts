@@ -12,7 +12,7 @@
  */
 import {
   nextSequence, backfillSequences, bySequence, resequenceRebuild,
-  applyEventsToMonth, eventCoverage, eventProRataShare, resolveEventArpuRevenue, eventArpuDelta,
+  applyEventsToMonth, eventCoverage, eventProRataShare, resolveEventArpuRevenue, eventArpuDelta, resolvedEventVolume,
   type MarketEvent, type MonthMetrics, type EventApplication,
 } from '../src/utils/forecasting';
 import { groupByCampaign } from '../src/components/WhatIfTab';
@@ -375,6 +375,35 @@ const app = (o: Partial<EventApplication>): EventApplication => ({
     order === 'd1,d2,d3', order);
   check('...and the sequence order would have differed (not vacuous)',
     order !== 'd3,d1,d2');
+}
+
+// ── resolvedEventVolume: the ARPU pool must not read the raw percent ─────
+{
+  // Pass 2 sizes each event ARPU pool from the volume the view received. For a
+  // percentage event subscriberVolume holds the PERCENT, so reading it raw
+  // sized the pool at ten subscribers instead of the hundreds actually added.
+  // Invisible in the blend while percentage events carry arpu 0 — which they do
+  // only because the add path zeroes it, a side effect rather than a rule.
+  const derivs = [
+    { eventId: 'p', metric: 'inflow' as const, basisKind: 'baseline' as const,
+      basis: 8325, percent: 10, coverage: 1, delta: 832.5 },
+  ];
+  check('a percentage event takes its RESOLVED delta, not its percent',
+    resolvedEventVolume({ id: 'p', amountType: 'percentage' }, 10, derivs) === 832.5,
+    String(resolvedEventVolume({ id: 'p', amountType: 'percentage' }, 10, derivs)));
+  check('...and the raw percent would have been a different number (not vacuous)',
+    resolvedEventVolume({ id: 'p', amountType: 'percentage' }, 10, derivs)
+      !== resolvedEventVolume({ id: 'p' }, 10, derivs));
+  check('an absolute event still takes its pro-rata share',
+    resolvedEventVolume({ id: 'a' }, 4162.5, derivs) === 4162.5);
+  check('an absolute event ignores any derivation that happens to share its id',
+    resolvedEventVolume({ id: 'p', amountType: 'absolute' }, 77, derivs) === 77);
+  check('a percentage event with no derivation contributed nobody',
+    resolvedEventVolume({ id: 'zzz', amountType: 'percentage' }, 10, derivs) === 0);
+  check('the metric is matched, not just the id',
+    resolvedEventVolume({ id: 'p', amountType: 'percentage' }, 10, derivs, 'outflow') === 0);
+  check('absent derivations do not throw',
+    resolvedEventVolume({ id: 'p', amountType: 'percentage' }, 10, undefined) === 0);
 }
 
 console.log(`percentage-events spec: ${pass} passed, ${fails.length} failed`);

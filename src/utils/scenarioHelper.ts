@@ -1,5 +1,5 @@
 import { format, addMonths, parse } from 'date-fns';
-import { eventProRataShare, eventCoverage, applyEventsToMonth } from './forecasting';
+import { eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume } from './forecasting';
 import type { ProRataLeaf, ProRataScope } from './forecasting';
 
 export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod: any, vchan: any, vtariff?: any) {
@@ -240,6 +240,7 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
         arpu: applied.metrics.arpu,
       },
       preFloor: applied.preFloor,
+      derivations: applied.derivations,
       flooredMetrics: applied.flooredMetrics,
       // Path A has carried per-month event attribution since it was written;
       // this path had none, so a floor warning could only ever have existed on
@@ -379,7 +380,16 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
             arpu,
             contractLength: Number(ev.Contract_Length_Months || 24),
             enterMonthIdx: idx,
-            size: Number(ev.Subscriber_Volume) * poolShare,
+            // Percentage events store a PERCENT in Subscriber_Volume, so the
+            // resolved delta comes from the engine derivations. Same rule as
+            // the WhatIfTab pool, via the same shared helper — these two have
+            // drifted twice and this is exactly the shape that does it.
+            size: resolvedEventVolume(
+              { id: String(ev.ID ?? ev.Name ?? ''), amountType: ev.Amount_Type === 'percentage' ? 'percentage' : 'absolute' },
+              Number(ev.Subscriber_Volume) * poolShare,
+              computed[idx - 1]?.derivations,
+              'inflow',
+            ),
           });
         } else {
           p_basePool += Number(ev.Subscriber_Volume || 0);

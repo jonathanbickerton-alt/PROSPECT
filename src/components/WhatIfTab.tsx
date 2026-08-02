@@ -10,7 +10,7 @@ import { useForecast } from '../context/ForecastContext';
 import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent } from '../types/forecast';
 import { EventChangeConfirmModal } from './EventChangeConfirmModal';
 import type { MarketEvent } from '../utils/forecasting';
-import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix, eventProRataShare, eventCoverage, applyEventsToMonth, nextSequence, resequenceRebuild, bySequence, eventArpuDelta } from '../utils/forecasting';
+import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
@@ -889,10 +889,19 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
               arpu: derivedArpu,
               contractLength: e.contractLength ?? DEFAULT_CONTRACT_N,
               enterMonthIdx: idx,
-              // Same pro-rata share as Pass 1 — the pool must hold exactly the
-              // volume this view actually received, or the blended ARPU would be
-              // computed over subscribers that were never added to Base.
-              size: Math.max(0, e.subscriberVolume * eventShare(e)),
+              // The pool must hold exactly the volume this view actually
+              // received, or the blended ARPU is computed over subscribers that
+              // were never added to Base.
+              //
+              // For a percentage event that is NOT subscriberVolume — that field
+              // holds the percent — so the resolved delta comes from the
+              // engine own derivations for the month the event landed in.
+              size: Math.max(0, resolvedEventVolume(
+                e,
+                e.subscriberVolume * eventShare(e),
+                computed[idx - 1]?.derivations,
+                'inflow',
+              )),
             });
           });
       } else {

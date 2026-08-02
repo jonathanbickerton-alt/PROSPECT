@@ -983,6 +983,80 @@ there: it is a usability defect in its own right, it affects the absolute path
 as much as the percentage one, and folding it into a presentational change
 would have hidden it in that diff. Its own branch.
 
+### The ARPU pool read a percentage event's percent as a headcount — 2026-08-02
+
+Pass 2 sizes each event's ARPU pool from the volume the view received:
+`size: e.subscriberVolume * eventShare(e)`, with no `amountType` guard. For a
+percentage event `subscriberVolume` holds the PERCENT, so a +10% event that
+added 755.6 subscribers built a pool of **10**. Both paths had it —
+`WhatIfTab` and `scenarioHelper` — and neither had `derivations` available to
+do better.
+
+**Measured, on the fixture:** blended ARPU 25.00 where the correct figure was
+25.13; the wrong value matched a pool of size 10 exactly. Path B: 25.000614
+against a correct 25.046397, within 1.1e-6 of the raw-percent case. After the
+fix both match the correct figure, Path B to full precision.
+
+**It did not bite through the UI, and that is the uncomfortable part.** The add
+path forces `arpu: 0, revenue: 0` on percentage events, so their pool derives
+the baseline ARPU, which is the base pool's ARPU, so a wrong SIZE moves a blend
+of identical rates by nothing. Verified: with ARPU 0 the defect is invisible.
+
+**That protection was a side effect, not a rule.** Nothing declared it, nothing
+tested it, and the first caller to bake a real ARPU onto a percentage event —
+a promo mix arm, precisely the feature under discussion — would have removed it
+silently. `resolvedEventVolume` now makes it explicit, shared by both paths so
+this cannot become a fourth implementation of "what volume did this event
+contribute".
+
+The class of defect is the one already recorded above for the Outflow Δ column:
+**a derived value computed independently of the engine drifts exactly where the
+engine was taught a case the derivation was not.** Second instance in two days.
+When percentage support was added, every site that reads `subscriberVolume` as
+a count became a candidate; two were found by reading, both by looking for the
+pattern rather than the symptom.
+
+### Percentage on the Promotion card — declined, and the reason is the
+### resolution model, not the interaction count — 2026-08-02
+
+The original exclusion cited interaction complexity: an optional mix arm plus
+an optional pricing arm plus a percentage volume basis multiplies the cases.
+That was the wrong reason, and the user has said so. The blocker is structural.
+
+**Percentage events defer resolution.** The actual delta is computed per view,
+per month, inside `applyEventsToMonth`, and everything upstream is deliberately
+left unresolved — which is why percentage rows dash ARPU and revenue.
+
+**`buildPromoEvents` resolves eagerly.** It bakes a concrete volume, ARPU and
+revenue once at creation. Three downstream mechanisms depend on that being a
+real, scale-bound number: the Inflow pool's `revenue ÷ volume` ARPU derivation,
+the `promoRebanded` Retention pool, and campaign-edit spread reconstruction.
+
+A percentage anchor cannot supply what eager resolution needs. That is not a
+form problem and no amount of form design fixes it.
+
+**Order, if it is ever taken up:**
+
+1. Settle the pool question. *(Done 2026-08-02, above — it was a real defect.)*
+2. Teach the pool code to consume `applyEventsToMonth`'s derivations in BOTH
+   paths, verified byte-identical for absolute cases first. *(Done for the
+   Inflow pool; `promoRebanded` still reads `e.subscriberVolume` directly.)*
+3. Then the form — and only then, with the volume % and the price % visually
+   and lexically separated well beyond a shared "%" glyph.
+
+#### Pre-existing drift: `computeScenarioForFilter` has no `promoRebanded`
+
+`WhatIfTab`'s adjusted-forecast engine carves an isolated re-banded ARPU pool
+for a Retention promo carrying a mix and/or pricing arm. **`scenarioHelper` has
+no equivalent block at all.** Retention-promo re-banding therefore happens in
+one of the two event-application paths and not the other, today, for absolute
+events.
+
+Found 2026-08-02 while scoping percentage-on-promo. It predates that work and
+is not caused by it. Recorded rather than fixed: it is a behavioural difference
+between the two paths that needs a decision about which is correct, not a
+mechanical alignment.
+
 ### Percentage events: the display bug only the browser could find — 2026-08-01
 
 The table computed Outflow Δ for a Retention event as `-subscriberVolume`,
