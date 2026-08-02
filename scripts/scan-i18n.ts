@@ -326,9 +326,56 @@ const TRANS_BACKLOG = new Set<string>([
   'WhatIfTab.tsx::tier',
 ]);
 
+/**
+ * PHASE 2 i18n BACKLOG — percentage market events, 2026-08-02.
+ *
+ * These strings ship in English deliberately. Keying them costs six locales
+ * each, and the five non-English values would be mine to invent with nobody
+ * able to check them — an unverifiable translation reads as finished work and
+ * is worse than an obvious gap. Shipping English is honest; shipping guessed
+ * German is not.
+ *
+ * They are listed rather than pattern-excluded so the list has to shrink
+ * deliberately. Adding a string here is a decision; forgetting to key one is
+ * not possible.
+ *
+ * Keyed by file + TEXT for the same reason as TRANS_BACKLOG above: line
+ * numbers shift and would silently un-defer an entry, failing the build for an
+ * unrelated edit.
+ *
+ * To close: key each string, add all six locales, delete its entry here. The
+ * check fails again the moment an entry names a string that no longer exists,
+ * so a half-finished pass cannot sit unnoticed.
+ */
+const I18N_PHASE2 = new Set<string>([
+  "EventChangeConfirmModal.tsx::{} event{}.",
+  "EventChangeConfirmModal.tsx::Floored at zero after this change",
+  "EventChangeConfirmModal.tsx::No baseline forecast loaded, so there is nothing to recalculate.",
+  "EventChangeConfirmModal.tsx::Clear all",
+  "EventChangeConfirmModal.tsx::Delete",
+  "EventChangeConfirmModal.tsx::Save",
+  "WhatIfTab.tsx::Change to {}",
+  "WhatIfTab.tsx::Subs",
+  "WhatIfTab.tsx::Applied to each cohort's own {}. Negative reduces it.",
+  "WhatIfTab.tsx::Subscribers added or removed this month.",
+  "WhatIfTab.tsx::Percentage of",
+  "WhatIfTab.tsx::Baseline is the original forecast. Adjusted is the value once absolute events in the same",
+  "WhatIfTab.tsx::Forecast to leave?",
+  "WhatIfTab.tsx::Were these customers already forecast to leave? Applies to both subscriber and percentage",
+  "WhatIfTab.tsx::Reduces forecast outflow, so Base rises.",
+  "WhatIfTab.tsx::Retention moves alone; Base is unchanged.",
+  "WhatIfTab.tsx::Hide derivation",
+  "WhatIfTab.tsx::Show how this was applied",
+  "WhatIfTab.tsx::How this was applied",
+  "WhatIfTab.tsx::This event does not apply in the current view.",
+  "WhatIfTab.tsx::In scope",
+  "WhatIfTab.tsx::Applied = basis x % x in-scope share. \"In scope\" is how much of this view lies inside the",
+]);
+
 function bucketOf(h: Hit): string {
   const base = h.file.split(/[\\/]/).pop() ?? h.file;
   if (TRANS_BACKLOG.has(`${base}::${h.text.trim()}`)) return '1b fragment (DEFERRED Trans)';
+  if (I18N_PHASE2.has(`${base}::${h.text.trim()}`)) return '9 english-only (DEFERRED phase 2)';
   const t = h.text.trim();
   if (h.note === 'IDENTIFIER-OPERAND') return 'ident (excluded)';
   if (DATEFMT.test(t) && t.length <= 20) return 'date-format (excluded)';

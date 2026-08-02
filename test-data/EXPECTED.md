@@ -983,6 +983,71 @@ there: it is a usability defect in its own right, it affects the absolute path
 as much as the percentage one, and folding it into a presentational change
 would have hidden it in that diff. Its own branch.
 
+### Every read of `subscriberVolume`, audited — 2026-08-02
+
+Three defects of one shape had been found one at a time (the Outflow Δ column,
+the Inflow ARPU pool, then the pool again in the second path). Finding a fourth
+the same way would have been a process failure, so every read was enumerated
+and classified instead: **67 sites**, across both application paths and the
+display layer.
+
+The rule that decides each one: **does this site treat the field as a count?**
+If yes, a percentage event — which stores a PERCENT there — makes it wrong.
+
+#### Fixed, because they were reachable
+
+| Site | What went wrong |
+|---|---|
+| `scenarioHelper` base pool | The `else` branch adds `Subscriber_Volume` raw to `p_basePool`. It is reached whenever an event carries no ARPU of its own — which is **every** percentage event, since the add path zeroes ARPU for them. It put the percent into the base pool. |
+| `retentionWarnings` | Compared `subscriberVolume × share` against forecast outflow. For a percentage event that compares ~10 against thousands, so the warning could never fire — a **false negative**, the worse direction for a warning. |
+| The warning text | Printed the stored figure through `formatNumber`, rendering "10" as a subscriber count for a 10% event. |
+
+#### Unsafe but unreachable — recorded, not fixed
+
+`WhatIfTab`'s **`promoRebanded` pool** still sizes from `e.subscriberVolume *
+eventShare(e)` with no `amountType` guard.
+
+It cannot be hit today: that pool is built only for events with
+`promoRebanded`, which is set exclusively by `buildPromoEvents`, and
+`buildPromoEvents` never sets `amountType` — percentage is a Volume-tab
+capability by rule. There is no path by which a percentage event acquires
+`promoRebanded`.
+
+Left as-is deliberately rather than defensively patched, so that it fails
+loudly if percentage-on-promo is ever attempted without doing the engine work
+first. **It is step 2 of the order recorded in the promo-card entry below,**
+and a silent guard here would remove exactly the signal that order depends on.
+A one-line change to `resolvedEventVolume` closes it whenever that work starts.
+
+#### Safe, and why
+
+- **`sharedVolume` at both application sites** — passed to `applyEventsToMonth`,
+  which ignores it entirely for percentage events (phase 1 returns early). Safe
+  by construction, not by coincidence.
+- **`percentAmount`** — reads the field *as* a percent. Correct.
+- **`revenue ÷ subscriberVolume`** ARPU derivation — guarded by
+  `Math.abs(e.revenue) > 0`, and percentage events carry revenue 0. **This is
+  the same accidental protection the pool relied on**; it holds only while
+  nothing bakes revenue onto a percentage event.
+- **Campaign spread reconstruction** (`Math.abs(e.subscriberVolume)` summed) —
+  gated behind `group.editable`, and `groupByCampaign` bars any campaign
+  containing a percentage row. Safe by rule.
+- **Table delta columns** — render through a percent-aware formatter.
+- **Form state, export, import, validation** — store and round-trip the field
+  without interpreting it.
+
+#### The lesson, since this is the third instance
+
+**Adding a second meaning to an existing field makes every existing reader a
+candidate defect.** `amountType` changed what `subscriberVolume` means, and the
+engine was taught the new meaning while sixty-odd other readers were not. None
+of them broke loudly; two were invisible because an unrelated value happened to
+be zero.
+
+When a field gains a mode, enumerate its readers **at that moment** and classify
+every one. Finding them individually afterwards, by symptom, is what happened
+here and it took three rounds.
+
 ### The ARPU pool read a percentage event's percent as a headcount — 2026-08-02
 
 Pass 2 sizes each event's ARPU pool from the volume the view received:

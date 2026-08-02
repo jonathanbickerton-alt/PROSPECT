@@ -2238,7 +2238,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         // A missing share means the engine never applied this event in this
         // view (out of scope, or filtered out), so the applied volume is 0 and
         // there is nothing to warn about here.
-        const appliedVol = e.subscriberVolume * (eventShares.get(e.id) ?? 0);
+        // A percentage event stores the PERCENT here, so the raw product would
+        // compare 10 against an outflow of thousands and the warning would
+        // never fire — a false negative, which is the worse direction for a
+        // warning. adjustedMonths carries the resolved delta for the month.
+        const evMonth = adjustedMonths.find(m => m.month === e.date);
+        const appliedVol = e.amountType === 'percentage'
+          ? Math.abs(resolvedEventVolume(e, 0, evMonth?.derivations, 'retention'))
+          : e.subscriberVolume * (eventShares.get(e.id) ?? 0);
         if (bm && appliedVol > bm.outflow.mean) {
           warned.add(e.id);
         }
@@ -3412,7 +3419,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               <td colSpan={wiTariffL1Col ? 14 : 13} className="px-5 py-2 text-xs text-amber-700 flex items-center gap-2">
                                 <AlertTriangle size={12} className="text-amber-500 shrink-0 inline mr-1" />
                                 
-                                {t('whatif_retention_volume')}{formatNumber(event.subscriberVolume)}{t('whatif_exceeds_forecast_outflow_for')}{fmtMonth(event.date)}{t('whatif_the_retained_volume_will_be_clamped_to_the_av')}
+                                {t('whatif_retention_volume')}{isPercentage ? `${event.subscriberVolume.toFixed(1)}%` : formatNumber(event.subscriberVolume)}{t('whatif_exceeds_forecast_outflow_for')}{fmtMonth(event.date)}{t('whatif_the_retained_volume_will_be_clamped_to_the_av')}
                               </td>
                             </tr>
                           )}

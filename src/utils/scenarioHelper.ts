@@ -392,7 +392,16 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
             ),
           });
         } else {
-          p_basePool += Number(ev.Subscriber_Volume || 0);
+          // Reached whenever an event carries no ARPU of its own — which is
+          // EVERY percentage event, because the add path zeroes arpu for them.
+          // Adding Subscriber_Volume raw would put the percent (10) into the
+          // base pool instead of the subscribers the event actually added.
+          p_basePool += resolvedEventVolume(
+            { id: String(ev.ID ?? ev.Name ?? ''), amountType: ev.Amount_Type === 'percentage' ? 'percentage' : 'absolute' },
+            Number(ev.Subscriber_Volume || 0),
+            computed[idx - 1]?.derivations,
+            'inflow',
+          );
         }
       });
     }
