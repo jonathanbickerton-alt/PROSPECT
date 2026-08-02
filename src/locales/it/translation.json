@@ -657,5 +657,7 @@
   "importactuals_import": "Import",
   "removeactuals_preview": "Preview",
   "whatif_only": "Only",
-  "whatif_show_only_kpi": "Show only {{kpi}}"
+  "whatif_show_only_kpi": "Show only {{kpi}}",
+  "whatif_ibro_type": "Tipo IBRO",
+  "whatif_applies_to": "Si applica a"
 }

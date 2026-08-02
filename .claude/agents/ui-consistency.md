@@ -164,6 +164,42 @@ plausible and wrong in context: it competes with the primary navigation right
 above it. Find the nearest existing control of the *same* tier and diff against
 that one specifically.
 
+## The four Market Events cards share a targeting layout
+
+Volume, Value, Pricing and Promotion describe the same concepts. They drifted
+into four names, two grid ladders and two vertical alignments, and a planner
+moving between them re-learned the form each time. Unified 2026-08-02.
+
+**The mechanical half is enforced by `npm run spec:cards`** — names, order,
+ladder, alignment, and the deliberate differences. Do not re-check those by
+eye; run the script and trust it, or improve it if it is wrong.
+
+**Your half is the judgement the script cannot make.** When a card gains a NEW
+control, ask:
+
+1. **Is it shared targeting, or card-specific?** Shared targeting is who the
+   event hits: IBRO Type, Segment, Product, Channel, Tariff, Month. It goes in
+   band 1, in that order, under those names. Everything else goes AFTER band 1,
+   never interleaved into it.
+2. **Is it a peer or a refinement?** Pricing's `Applies to` is a refinement of
+   Target and is nested under it. A refinement promoted to band 1 becomes a
+   control that vanishes because of a control further down the form. If a new
+   control is only meaningful when another is set a certain way, it belongs
+   with that other one.
+3. **Is a difference real, or drift?** Value has no Product L2 or Tariff
+   targeting because `YieldEvent` has neither field — Product L2 is the axis
+   being redistributed, and filtering to one tier before redistributing across
+   tiers is incoherent. That absence is the design working. Before flagging a
+   difference, read the type and find out which it is. **Report the ones you
+   cannot settle rather than guessing.**
+4. **Does the same concept keep the same name?** And conversely: a different
+   concept must NOT borrow a shared name. `Start Month` differs from `Month`
+   because one event persists forward; that distinction is carried by the label
+   deliberately and is not drift to be tidied away.
+
+A new card, or a new control in an existing one, that satisfies the script but
+fails these is still a FAIL. Say which of the four it fails and why.
+
 ## How you report
 A list of consistency checks with PASS or FAIL. For each FAIL, name the new
 element, the established pattern it should match, and exactly how it

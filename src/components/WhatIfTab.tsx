@@ -1453,13 +1453,6 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     [data, wiChannelCol],
   );
   // ── Unique options for Pricing Event form ────────────────────────────────
-  const pricingProductL2Options = useMemo(() => {
-    if (!wiProductL2Col) return [];
-    const filtered = newPricingEvent.product && newPricingEvent.product !== 'All'
-      ? data.filter(r => String(r[wiProductCol]) === newPricingEvent.product)
-      : data;
-    return Array.from(new Set(filtered.map(r => String(r[wiProductL2Col])).filter(v => v && v !== 'undefined'))).sort();
-  }, [data, wiProductCol, wiProductL2Col, newPricingEvent.product]);
 
   // ── Add Yield Event ────────────────────────────────────────────────────────
   // Individual edit for the Value and Pricing cards. Volume and Promotion had
@@ -2627,9 +2620,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
           {/* Add event form */}
           <div className="p-6 border-b border-slate-100 bg-slate-50/30">
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 items-start">
+            <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 items-start">
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_scenario')}</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_ibro_type')}</label>
                 <select
                   value={newEvent.scenario}
                   onChange={e => setNewEvent({ ...newEvent, scenario: e.target.value as any })}
@@ -2754,7 +2747,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 nesting it here would teach planners it is a percentage concern.
                 Bands 1 and 3 are separate grids, so nothing outside this one
                 moves when the amount type or scenario changes. */}
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 items-start mt-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 items-start mt-4">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">
                   {isPercentageDraft
@@ -2897,7 +2890,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 Never changes shape. Revenue and ARPU are hidden in percentage
                 mode — a percentage carries no per-subscriber figure, and the
                 remaining fields keep the row from collapsing. */}
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 items-start">
+            <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 items-start">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_customer_volume')}</label>
                 <input
@@ -3505,7 +3498,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
               <div className="p-6 border-b border-slate-100">
                 {/* Dimension selectors */}
-                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-5">
+                <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 items-start mb-5">
                   {/* Segment */}
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_segment')}</label>
@@ -3519,31 +3512,39 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     </select>
                   </div>
 
-                  {/* Product L1 */}
+                  {/* Product — one hierarchical L1+L2 control, matching Volume,
+                      Promotion, and this card's own Channel and Tariff controls.
+                      It was two flat selects until 2026-08-02; the pair conveyed
+                      nothing the tree does not and made Pricing inconsistent with
+                      itself. */}
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_product')}</label>
-                    <select
-                      value={newPricingEvent.product ?? 'All'}
-                      onChange={e => setNewPricingEvent({ ...newPricingEvent, product: e.target.value, productL2: 'All' })}
-                      className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
-                    >
-                      <option value="All">{t('common_all_products')}</option>
-                      {yProductOptions.map(p => <option key={p} value={p}>{p}</option>)}
-                    </select>
-                  </div>
-
-                  {/* Product L2 */}
-                  <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_product_l2')}</label>
-                    <select
-                      value={newPricingEvent.productL2 ?? 'All'}
-                      onChange={e => setNewPricingEvent({ ...newPricingEvent, productL2: e.target.value })}
-                      className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
-                      disabled={pricingProductL2Options.length === 0}
-                    >
-                      <option value="All">{t('whatif_all_tiers')}</option>
-                      {pricingProductL2Options.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    {productTree.size > 0 ? (
+                      <HierarchicalDropdown
+                        label=""
+                        tree={productTree}
+                        value={{
+                          l1: newPricingEvent.product && newPricingEvent.product !== 'All' ? newPricingEvent.product : null,
+                          l2: newPricingEvent.productL2 && newPricingEvent.productL2 !== 'All' ? newPricingEvent.productL2 : null,
+                        }}
+                        onChange={(v: HierarchicalSelection) => setNewPricingEvent({
+                          ...newPricingEvent,
+                          product: v.l1 ?? 'All',
+                          productL2: v.l2 ?? 'All',
+                        })}
+                        variant="light"
+                        className="w-full"
+                      />
+                    ) : (
+                      <select
+                        value={newPricingEvent.product ?? 'All'}
+                        onChange={e => setNewPricingEvent({ ...newPricingEvent, product: e.target.value, productL2: 'All' })}
+                        className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
+                      >
+                        <option value="All">{t('common_all_products')}</option>
+                        {yProductOptions.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    )}
                   </div>
 
                   {/* Channel — hierarchical dropdown */}
@@ -3687,7 +3688,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     </p>
                     {(newPricingEvent.target === 'cohorts' || newPricingEvent.target === 'cohorts+base') && (
                       <div className="mt-2 pt-2 border-t border-slate-100">
-                        <p className="text-[10px] font-medium text-slate-500 mb-1.5">{t('whatif_cohort_type')}</p>
+                        <p className="text-[10px] font-medium text-slate-500 mb-1.5">{t('whatif_applies_to')}</p>
                         <div className="flex gap-3">
                           {(['inflow', 'retention', 'both'] as const).map(scope => (
                             <label key={scope} className="flex items-center gap-1.5 cursor-pointer">
@@ -3954,9 +3955,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               </div>
 
               <div className="p-6 border-b border-slate-100 bg-slate-50/30">
-                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 items-end">
+                <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 items-start">
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_volume_target')}</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_ibro_type')}</label>
                     <select
                       value={promoTarget}
                       onChange={e => setPromoTarget(e.target.value as 'Inflow' | 'Retention')}
@@ -4511,10 +4512,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
               <div className="p-6 border-b border-slate-100">
                 {/* Dimension selectors */}
-                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-5">
+                <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4 items-start mb-5">
                   {/* IBRO */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">IBRO Type</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_ibro_type')}</label>
                     <select
                       value={newYieldEvent.ibro ?? 'Inflow'}
                       onChange={e => setNewYieldEvent({ ...newYieldEvent, ibro: e.target.value as 'Inflow' | 'Retention' })}
@@ -4587,7 +4588,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                   {/* Month */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_activity_month')}</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">
+                      {/* rollForward makes ONE event persist forward, which is
+                          exactly what Pricing's duration:'recurring' does — so the
+                          label follows the behaviour rather than the card. */}
+                      {newYieldEvent.rollForward ? t('whatif_start_month') : t('common_month')}
+                    </label>
                     <input
                       type="month"
                       value={newYieldEvent.month ?? ''}

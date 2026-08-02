@@ -913,6 +913,76 @@ fallback rather than dropping the event.
 
 Leaf-targeted events are unaffected on all three paths (+10,000 → +10,000).
 
+### The four Market Events cards share one targeting layout — 2026-08-02
+
+Volume, Value, Pricing and Promotion describe the same concepts and had
+drifted into four names, two grid ladders and two vertical alignments.
+
+**Established first which differences were real**, because most of them were
+not what the labels suggested:
+
+| Concept | Was | Now | Verdict |
+|---|---|---|---|
+| Stream | `Scenario` / `IBRO Type` / `Volume Target` | `IBRO Type` | Drift. Promotion literally writes `MarketEvent.scenario` (`buildPromoEvents`) |
+| Month | `Month` / `Activity Month` / `Start Month` | `Month`, or `Start Month` where one event persists | **Real**, but not on the card boundary — see below |
+| Product L2 on Pricing | two flat selects | folded into the hierarchical dropdown | Drift. Pricing was inconsistent with its own Channel and Tariff |
+| Product L2 / Tariff on Value | absent | absent | **Real.** `YieldEvent` has neither field |
+| Pricing `Cohort Type` | a peer-sounding name | `Applies to`, still nested under Target | **Real** concept, wrong name |
+
+**The month split is not where the labels put it.** Volume's spread emits N
+separate point events, each with its own date. Pricing persists ONE event via
+`duration: recurring` — but `YieldEvent.rollForward` does exactly the same
+thing on Value. So Value's month is a start month too, when rollForward is on,
+and `Activity Month` was the least accurate of the three labels. Value's label
+now follows `rollForward` rather than the card.
+
+**Where consistency would have made a card worse**, and was therefore not
+applied: Value must not gain Product L2 or Tariff targeting, because Product L2
+is the axis being *redistributed* and filtering to one tier before
+redistributing across tiers is incoherent. Pricing's `Applies to` must stay
+nested under Target, because it is meaningless when Target is base-only and
+promoting it would create a control that vanishes because of a control further
+down the form.
+
+**Four implementations that agree by convention, not a shared component.** The
+draft state shapes are closer than expected — Volume and Promotion are
+field-identical, Pricing and Value are field-identical to each other, and the
+two families differ on two key names (`channel`/`channelL1`, `date`/`month`).
+An adapter would have been trivial. The blocker was which controls RENDER: a
+shared component would need props for `showStream` plus its option list
+(4/2/2/none), `showTariff`, `showProductL2` and `monthLabel` — a switchboard,
+not an abstraction. Enforcement lives in `npm run spec:cards` instead.
+
+#### Band 1 holds six controls, and Month stays in it
+
+The ladder is `md:grid-cols-3 xl:grid-cols-6`, deliberately skipping `lg`. At
+`lg` six controls are two clean rows of three; six columns at `lg` (1024px)
+would put a `type="month"` input near 140px, which is tight for the native
+picker. Known residual: five controls give a 3+2 rag at `md`/`lg`. Pre-existing,
+not introduced.
+
+**Moving Month down beside Campaign Name was considered and rejected.** The
+history table places Campaign and Month adjacent, so the pairing has a
+precedent — but it is the wrong kind. The table *identifies* an event that
+already exists; the form *determines* one. Reading order and authoring order
+are different arguments.
+
+The deciding fact is that **Month is required and gates the Add button
+silently** on both add paths. Putting the one field whose absence stops the
+form into the section that reads as optional metadata is the worst available
+place for it.
+
+#### OPEN DEFECT: Month fails silently
+
+`if (!newEvent.date || newEvent.subscriberVolume === undefined) return;` at
+`WhatIfTab.tsx` (volume add) and `App.tsx` (the App-level add). No message, no
+disabled state, no focus move — the Add button simply does nothing.
+
+Recorded 2026-08-02 while deciding the layout above, and deliberately NOT fixed
+there: it is a usability defect in its own right, it affects the absolute path
+as much as the percentage one, and folding it into a presentational change
+would have hidden it in that diff. Its own branch.
+
 ### Percentage events: the display bug only the browser could find — 2026-08-01
 
 The table computed Outflow Δ for a Retention event as `-subscriberVolume`,
