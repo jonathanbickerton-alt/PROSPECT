@@ -527,8 +527,18 @@ const staleDeferred: string[] = [];
   }
   // A deferred key that HAS been translated everywhere should leave the list,
   // or it silently exempts a key that no longer needs exempting.
+  //
+  // PRESENCE IS NOT TRANSLATION. This tested only that the key existed in each
+  // locale, so a key carrying identical ENGLISH in all six read as "translated
+  // everywhere" and the scanner advised removing its exemption — recommending
+  // that untranslated copy be treated as done. Found by gate stage 3 on
+  // whatif_revenue_arpu_not_applicable_to_percentage, which is English in all
+  // six by design. A locale now counts as translated only if its value DIFFERS
+  // from the English one.
   for (const k of LOCALE_DEFERRED) {
-    if (k in enBundle && LOCALES.every(l => k in others[l])) staleDeferred.push(k);
+    if (!(k in enBundle)) continue;
+    const en = String(enBundle[k]);
+    if (LOCALES.every(l => k in others[l] && String(others[l][k]) !== en)) staleDeferred.push(k);
   }
   console.log(`\nLOCALE PARITY: ${localeGaps.length} key(s) in en missing from another locale ` +
     `(${LOCALE_DEFERRED.size} explicitly deferred)`);
