@@ -41,6 +41,35 @@ because its absence produced a false pass.
    and run it. Never reimplement its maths to compute an expected answer —
    that only confirms your own arithmetic, and it agrees with itself even
    when the production code is wrong.
+   **Standard 1 covers LAYOUT, not just arithmetic.** The wording says "run the
+   actual function" and reads as being about calculations. It is not. A
+   hand-written repro of a component — markup you retyped from reading its
+   source — is a reimplementation in exactly the sense this standard forbids,
+   and measuring it proves nothing about what the app renders.
+
+   On 2026-08-02 a month input rendered "ugust 2026" on three of four cards.
+   THREE consecutive measurements were taken against reconstructions of
+   `HierarchicalDropdown`. Each was internally consistent. Each reported "no
+   spill at any width". All three were wrong, and one of them was written into
+   a commit message as evidence the layout was verified.
+
+   Measured against the REAL component, mounted: the trigger was **236.7px in
+   a 172.2px cell** — 70.5px of overflow, painting 54.5px over its neighbour.
+   The diagnosis built on the repros (that the month input was starved of its
+   155px intrinsic minimum) was **entirely wrong**; the month input was never
+   starved.
+
+   **The tell was never in the measurement.** Every repro agreed with itself
+   and returned clean numbers. The only signal was a screenshot disagreeing
+   with a green result. When a measurement contradicts what someone can see,
+   the measurement is the thing to doubt first — and the specific doubt is
+   whether it touched the real object at all.
+
+   For UI, that means: mount the actual component and read the actual DOM.
+   `scripts/layout-probe` exists for this and is the instrument to reach for;
+   `npm run spec:cards` asserts it still imports the real component and renders
+   the real grid classes, so it cannot quietly become another reconstruction.
+
 2. **Never report a pass for something you could not genuinely exercise.**
    If a check was inconclusive, blocked, or you reasoned it out
    structurally rather than running it, say exactly that. A stated gap is

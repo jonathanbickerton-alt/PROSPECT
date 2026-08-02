@@ -42,22 +42,47 @@ check('the volume card region was located', volume.length > 1000, `${volume.leng
 
 // ── One grid ladder, one alignment ───────────────────────────────────────
 {
-  // ── The track floor must clear the widest control's intrinsic minimum ──
+  // ── Track floor, and the truncation that makes a static floor valid ────
   //
-  // This replaced a uniformity assertion on 2026-08-02. Uniformity was the
-  // wrong property: every card used one identical ladder and every card was
-  // visibly broken, because the ladder was uniformly WRONG. Six equal
-  // minmax(0,1fr) tracks gave each control 139px at the real container width,
-  // and a native month input needs 155px — so it clipped, rendering
-  // "ugust 2026".
+  // History, because this assertion has been wrong twice.
   //
-  // Intrinsic minimums measured in Chrome at this font size and padding:
-  const INTRINSIC_MIN_PX: Record<string, number> = {
-    'month input': 155,          // native <input type="month">, the widest
-    'hierarchical trigger': 144, // "Direct — Call Centr…" at max truncation
-    'native select': 100,
-  };
-  const WIDEST = Math.max(...Object.values(INTRINSIC_MIN_PX));
+  // v1 asserted all four cards used ONE ladder. They did, and every card was
+  // visibly broken: the ladder was uniformly WRONG. Consistency is not
+  // correctness.
+  //
+  // v2 asserted the track floor cleared each control's intrinsic minimum. The
+  // minimums came from a hand-written repro measured with an EMPTY dropdown.
+  // Measured for real (scripts/layout-probe), a populated one is 236.7px in a
+  // 172.2px cell — it overflowed 70.5px and painted 54.5px over the month
+  // input. The month input was never starved. Both earlier assertions passed
+  // while three of four cards were unusable.
+  //
+  // v3 asserts the property that makes a static floor MEANINGFUL: the
+  // dropdown must be unable to exceed its cell, whatever is selected. Its
+  // content is user data with no upper bound, so bounding it is not possible —
+  // the variable has to be removed instead.
+  const dd = fs.readFileSync(path.join('src', 'components', 'HierarchicalDropdown.tsx'), 'utf8');
+
+  // Every box between the grid cell and the text must be able to shrink. A
+  // flex item defaults to min-width:auto and will NOT go below its content, so
+  // one missing min-w-0 anywhere in the chain restores the overflow.
+  const root = /<div className="flex items-center gap-1\.5 relative min-w-0">/.test(dd);
+  const inner = /<div className="relative min-w-0">/.test(dd);
+  const trigger = (dd.match(/flex items-center gap-1 min-w-0/g) ?? []).length;
+  check('dropdown root can shrink', root);
+  check('dropdown inner wrapper can shrink (the box that actually overflowed)', inner);
+  check('both trigger variants can shrink', trigger === 2, `${trigger} of 2`);
+  check('the label truncates rather than pushing the box wider',
+    /<span className="truncate">\{displayText\}<\/span>/.test(dd));
+  check('the icons cannot be squeezed into the label',
+    (dd.match(/shrink-0/g) ?? []).length >= 3, `${(dd.match(/shrink-0/g) ?? []).length} shrink-0`);
+
+  // With truncation guaranteed, the only content with a fixed intrinsic
+  // minimum is the native month input. Measured in Chrome at this font size
+  // and padding; a native month input clips inside its shadow DOM and reports
+  // scrollWidth === clientWidth even when cut, so this figure cannot be
+  // derived at runtime and has to be recorded.
+  const MONTH_INTRINSIC_MIN_PX = 155;
 
   const grids = src.match(/grid grid-cols-\[repeat\(auto-fit,minmax\((\d+)px,1fr\)\)\][^"]*/g) ?? [];
   check('band 1 uses content-sized tracks, not a fixed column count',
@@ -67,18 +92,26 @@ check('the volume card region was located', volume.length > 1000, `${volume.leng
 
   const floors = [...new Set(grids.map(g => Number(/minmax\((\d+)px/.exec(g)![1])))];
   check('every track floor is the same value', floors.length === 1, JSON.stringify(floors));
-  check(`the track floor clears the widest control's intrinsic minimum (${WIDEST}px)`,
-    floors.length === 1 && floors[0] >= WIDEST,
-    `floor ${floors[0]}px vs required ${WIDEST}px`);
-
-  // The check must be capable of failing: prove the floor is not so large that
-  // any plausible value would pass, and that the required figure is real.
+  check(`the track floor clears the month input's intrinsic minimum (${MONTH_INTRINSIC_MIN_PX}px)`,
+    floors.length === 1 && floors[0] >= MONTH_INTRINSIC_MIN_PX,
+    `floor ${floors[0]}px vs required ${MONTH_INTRINSIC_MIN_PX}px`);
   check('the requirement is a real constraint, not trivially satisfied',
-    WIDEST > 100 && floors[0] < WIDEST * 2,
-    `floor ${floors[0]}, required ${WIDEST}`);
+    MONTH_INTRINSIC_MIN_PX > 100 && floors[0] < MONTH_INTRINSIC_MIN_PX * 2,
+    `floor ${floors[0]}, required ${MONTH_INTRINSIC_MIN_PX}`);
 
   check('every grid is top-aligned', grids.every(g => g.includes('items-start')),
     grids.filter(g => !g.includes('items-start')).join(' | '));
+
+  // The probe is the instrument these figures came from. If it stops matching
+  // what the cards render, the numbers above stop meaning anything.
+  const probe = fs.readFileSync(path.join('scripts', 'layout-probe', 'main.tsx'), 'utf8');
+  const probeGrid = /const BAND_GRID = '([^']+)'/.exec(probe)?.[1];
+  check('the layout probe renders the same grid the cards do',
+    !!probeGrid && grids.some(g => g.startsWith(probeGrid)),
+    `probe: ${probeGrid}`);
+  check('the probe imports the REAL dropdown, not a copy',
+    /from '\.\.\/\.\.\/src\/components\/HierarchicalDropdown'/.test(probe));
+
 }
 
 // ── One name per concept ─────────────────────────────────────────────────

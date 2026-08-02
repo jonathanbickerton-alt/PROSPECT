@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>PROSPECT — layout probe</title>
+  </head>
+  <body>
+    <!--
+      Layout probe. Mounts the REAL components in the REAL grid classes so
+      layout can be measured instead of reconstructed.
+
+      It exists because three consecutive hand-written repros of
+      HierarchicalDropdown each agreed with themselves and each disagreed with
+      the running app. A reconstruction of a component is a reimplementation,
+      and measuring one proves nothing about the original.
+
+      Run:  npm run dev,  then open /scripts/layout-probe/index.html
+      Drive: window.__probe(width, controlCount, selectionLabel)
+    -->
+    <div id="probe-root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

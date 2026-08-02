@@ -192,7 +192,13 @@ export function HierarchicalDropdown({
   return (
     <div className="flex items-center gap-1.5 relative min-w-0">
       <span className="text-[10px] uppercase tracking-wide text-slate-500 shrink-0">{label}</span>
-      <div className="relative">
+      {/* min-w-0 is load-bearing. This is a flex item, so its min-width
+          defaults to auto and it will not shrink below its content — which
+          made the trigger size to the selected label (236.7px measured for
+          "Direct — Call Centre / Tele-sales") and paint 70px over the next
+          grid cell. w-full on the button resolves against THIS box, so
+          without it the width constraint is circular and never binds. */}
+      <div className="relative min-w-0">
         <button
           ref={triggerRef}
           type="button"

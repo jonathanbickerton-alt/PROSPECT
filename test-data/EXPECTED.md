@@ -983,6 +983,40 @@ there: it is a usability defect in its own right, it affects the absolute path
 as much as the percentage one, and folding it into a presentational change
 would have hidden it in that diff. Its own branch.
 
+### CORRECTED 2026-08-02: the month input was never starved
+
+The entry below diagnosed the clipping as a native month input starved of its
+155px intrinsic minimum. **That was wrong.** It was built on three hand-written
+repros of `HierarchicalDropdown`, each internally consistent and each measuring
+markup I had retyped rather than the component itself.
+
+Measured against the real component, mounted (`scripts/layout-probe`):
+
+| | measured |
+|---|---|
+| Channel trigger, long selection | **236.7px** in a 172.2px cell |
+| Overflow past its own cell | **70.5px** |
+| Overlap onto the Month cell | **54.5px** |
+| Month input | 172.2px — **not starved** |
+
+**The real mechanism.** The trigger sat inside `<div className=relative>`, a
+flex item, whose `min-width` defaults to `auto` — so it would not shrink below
+its content. `w-full` on the button resolves against that box, making the
+constraint circular so it never binds. The trigger therefore sized itself to
+the selected label and painted over its neighbour. Adding `min-w-0` to that one
+wrapper takes the overflow from 70.5px to 0; removing it again reproduces
+70.5px exactly.
+
+The 155px figure and the shadow-DOM clipping note below are both accurate. They
+were simply not the cause. The intrinsic-minimum entry is kept because the
+scrollWidth finding is worth having; treat its DIAGNOSIS as superseded.
+
+**Why a static floor is now a valid assertion.** It was not before: a
+dropdown's width followed its selected value, which is user data with no upper
+bound, so no constant could be correct. With truncation guaranteed the variable
+is removed rather than bounded, and the only remaining fixed minimum is the
+month input's.
+
 ### A native month input clips silently — and "uniformly wrong is uniform"
 
 Every card rendered `ugust 2026` instead of `August 2026`. Band 1 was six equal
