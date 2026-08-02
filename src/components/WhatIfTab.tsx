@@ -2931,7 +2931,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   placeholder={cohortAvgArpu != null ? cohortAvgArpu.toFixed(2) : undefined}
                   onChange={e => {
                     const arpu = Number(e.target.value);
-                    setNewEvent({ ...newEvent, arpu, revenue: (newEvent.subscriberVolume || 0) * arpu });
+                    // subscriberVolume holds a PERCENT in percentage mode, so
+                    // multiplying it by ARPU fabricates a revenue figure — 10% x
+                    // 30 reading as 300. The stored event is unaffected
+                    // (addMarketEvent zeroes both for percentages), so this only
+                    // ever showed a wrong number in the draft form. The ARPU cell
+                    // is now hidden in percentage mode as well; this guard is the
+                    // one that survives a future change to that.
+                    setNewEvent({
+                      ...newEvent,
+                      arpu,
+                      revenue: isPercentageDraft ? 0 : (newEvent.subscriberVolume || 0) * arpu,
+                    });
                   }}
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
