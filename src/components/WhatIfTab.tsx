@@ -2627,7 +2627,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
           {/* Add event form */}
           <div className="p-6 border-b border-slate-100 bg-slate-50/30">
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 items-end">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 items-start">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_scenario')}</label>
                 <select
@@ -2744,11 +2744,25 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
               </div>
-              {/* Amount type. Percentage is a Volume-tab capability only — the
-                  promo card never offers it, by the settled decision. */}
+            </div>
+
+            {/* ── Band 2: the effect ────────────────────────────────────────
+                The only band whose shape changes. Amount type, amount and basis
+                are one cell (the Pricing-tab pattern at ~3575); the retention
+                question sits beside them but OUTSIDE that group, because
+                retentionLinked applies to absolute Retention events too and
+                nesting it here would teach planners it is a percentage concern.
+                Bands 1 and 3 are separate grids, so nothing outside this one
+                moves when the amount type or scenario changes. */}
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 items-start mt-4">
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Amount type</label>
-                <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
+                <label className="block text-xs font-medium text-slate-500 mb-1">
+                  {isPercentageDraft
+                    ? `Change to ${String(newEvent.scenario ?? 'Inflow')}`
+                    : t('whatif_subscriber_volume')}
+                </label>
+                {/* Toggle and input share one bordered container, as Pricing does. */}
+                <div className="flex rounded-lg border border-slate-200 overflow-hidden bg-white">
                   {(['absolute', 'percentage'] as const).map(mode => (
                     <button
                       key={mode}
@@ -2768,24 +2782,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         // otherwise persist invisibly and still apply on Add.
                         if (mode === 'percentage') setSpreadEnabled(false);
                       }}
-                      className={`flex-1 px-3 py-2 transition-colors ${
+                      className={`px-3 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
                         (newEvent.amountType ?? 'absolute') === mode
-                          ? 'bg-[#e60000] text-white font-medium'
-                          : 'bg-white text-slate-600 hover:bg-slate-50'
+                          ? 'bg-[#e60000] text-white'
+                          : 'bg-white text-slate-500 hover:bg-slate-50'
                       }`}
                     >
-                      {mode === 'absolute' ? 'Subscribers' : 'Percentage'}
+                      {mode === 'absolute' ? 'Subs' : '%'}
                     </button>
                   ))}
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">
-                  {isPercentageDraft
-                    ? `Percentage change to ${String(newEvent.scenario ?? 'Inflow')}`
-                    : t('whatif_subscriber_volume')}
-                </label>
-                <div className="relative">
                   <input
                     type="number"
                     step={isPercentageDraft ? 0.1 : 1}
@@ -2800,72 +2805,99 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         revenue: isPercentageDraft ? 0 : vol * (newEvent.arpu || 0),
                       });
                     }}
-                    className={`w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000] ${
-                      isPercentageDraft ? 'pr-7' : ''
-                    }`}
+                    className="flex-1 min-w-0 text-sm p-2 bg-white outline-none focus:border-[#e60000]"
                   />
-                  {isPercentageDraft && (
-                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none">%</span>
-                  )}
                 </div>
-                {isPercentageDraft && (
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    Applied to each cohort's own {String(newEvent.scenario ?? 'Inflow').toLowerCase()}. Negative reduces it.
-                  </p>
-                )}
+                <p className="text-[10px] text-slate-400 mt-1 leading-snug">
+                  {isPercentageDraft
+                    ? `Applied to each cohort's own ${String(newEvent.scenario ?? 'Inflow').toLowerCase()}. Negative reduces it.`
+                    : 'Subscribers added or removed this month.'}
+                </p>
+                {/* Basis — nested inside the amount cell under a divider, the
+                    same nesting this file uses for Cohort type (~3641). Labels
+                    match the stored percentageBasis value so an exported sheet
+                    reads the same as the UI. */}
+                {/* Rendered in BOTH modes and merely hidden when absolute, so
+                    band 2 keeps a constant height and band 3 never moves. Using
+                    invisible rather than a pixel min-height keeps the reservation
+                    correct at any font size or zoom. */}
+                <div
+                  className={`mt-2 pt-2 border-t border-slate-100 ${
+                    isPercentageDraft ? '' : 'invisible pointer-events-none'
+                  }`}
+                  aria-hidden={!isPercentageDraft}
+                >
+                    <span className="flex items-center gap-1 text-[10px] font-medium text-slate-500 mb-1">
+                      Percentage of
+                      <span className="relative group cursor-help">
+                        <Info size={10} />
+                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block bg-slate-800 text-white text-[10px] rounded px-2 py-1 w-56 z-20 leading-snug">
+                          Baseline is the original forecast. Adjusted is the value once
+                          absolute events in the same month have applied. Percentage
+                          events never compound with each other, whichever you choose.
+                        </span>
+                      </span>
+                    </span>
+                    <div className="flex gap-3">
+                      {([['baseline', 'Baseline'], ['adjusted', 'Adjusted']] as const).map(([val, label]) => (
+                        <label key={val} className="flex items-center gap-1 text-[10px] text-slate-600 cursor-pointer">
+                          <input
+                            type="radio"
+                            className="accent-[#e60000]"
+                            checked={(newEvent.percentageBasis ?? 'baseline') === val}
+                            onChange={() => setNewEvent({ ...newEvent, percentageBasis: val })}
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                </div>
               </div>
-              {isPercentageDraft && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Percentage of</label>
-                  <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
-                    {([['baseline', 'Baseline'], ['adjusted', 'After other events']] as const).map(([val, label]) => (
-                      <button
-                        key={val}
-                        type="button"
-                        onClick={() => setNewEvent({ ...newEvent, percentageBasis: val })}
-                        className={`flex-1 px-3 py-2 transition-colors ${
-                          (newEvent.percentageBasis ?? 'baseline') === val
-                            ? 'bg-[#e60000] text-white font-medium'
-                            : 'bg-white text-slate-600 hover:bg-slate-50'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    Percentage events never compound with each other, whichever basis is chosen.
-                  </p>
-                </div>
-              )}
+              {/* Retention linkage — an EFFECT question, so it belongs in this
+                  band, but its own cell rather than nested above: it applies to
+                  absolute Retention events just as much as percentage ones. */}
               {newEvent.scenario === 'Retention' && (
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">
-                    Were these customers forecast to leave?
+                  <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">
+                    Forecast to leave?
+                    <span className="relative group cursor-help">
+                      <Info size={11} />
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block bg-slate-800 text-white text-[10px] rounded px-2 py-1 w-52 z-20 leading-snug">
+                        Were these customers already forecast to leave? Applies to both
+                        subscriber and percentage amounts.
+                      </span>
+                    </span>
                   </label>
-                  <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
+                  <div className="flex rounded-lg border border-slate-200 overflow-hidden bg-white w-fit">
                     {([[true, 'Yes'], [false, 'No']] as const).map(([val, label]) => (
                       <button
                         key={String(val)}
                         type="button"
                         onClick={() => setNewEvent({ ...newEvent, retentionLinked: val })}
-                        className={`flex-1 px-3 py-2 transition-colors ${
+                        className={`px-4 py-2 text-xs font-semibold border-r border-slate-200 last:border-r-0 transition-colors ${
                           (newEvent.retentionLinked ?? true) === val
-                            ? 'bg-[#e60000] text-white font-medium'
-                            : 'bg-white text-slate-600 hover:bg-slate-50'
+                            ? 'bg-[#e60000] text-white'
+                            : 'bg-white text-slate-500 hover:bg-slate-50'
                         }`}
                       >
                         {label}
                       </button>
                     ))}
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-1">
+                  <p className="text-[10px] text-slate-400 mt-1 leading-snug">
                     {(newEvent.retentionLinked ?? true)
-                      ? 'Retaining them reduces forecast outflow, so Base rises.'
-                      : 'Retention moves on its own; outflow and Base are unchanged.'}
+                      ? 'Reduces forecast outflow, so Base rises.'
+                      : 'Retention moves alone; Base is unchanged.'}
                   </p>
                 </div>
               )}
+            </div>
+
+            {/* ── Band 3: details ──────────────────────────────────────────
+                Never changes shape. Revenue and ARPU are hidden in percentage
+                mode — a percentage carries no per-subscriber figure, and the
+                remaining fields keep the row from collapsing. */}
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 items-start">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_customer_volume')}</label>
                 <input
@@ -2875,6 +2907,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
               </div>
+              {!isPercentageDraft && (
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_revenue')}</label>
                 <input
@@ -2888,6 +2921,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
               </div>
+              )}
+              {!isPercentageDraft && (
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">ARPU (+/−)</label>
                 <input
@@ -2908,6 +2943,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   </p>
                 )}
               </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">{t('whatif_contract_length')}<span className="relative group text-slate-400 cursor-help">
                     <Info size={11} />
