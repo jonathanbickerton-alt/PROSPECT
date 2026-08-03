@@ -10,9 +10,9 @@
  */
 
 import { format, addMonths } from 'date-fns';
-import { buildCohortDataMap, calculateHoltWinters, calculateBaseForecast, analyzeAndRecommendModel, analyzeAndRecommendConfidence, applyOneOffFlagsToSeries, aggregateForecastBands } from '../utils/forecasting';
+import { buildCohortDataMap, calculateHoltWinters, calculateBaseForecast, analyzeAndRecommendModel, analyzeAndRecommendConfidence, applyOneOffFlagsToSeries, aggregateForecastBands, classifySkip } from '../utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, AggBand } from '../utils/forecasting';
-import type { BaseForecast, ForecastModel } from '../types/forecast';
+import type { BaseForecast, ForecastModel, SkippedCohort } from '../types/forecast';
 
 /**
  * Minimum history for a seasonal (Holt-Winters) fit — mirrors
@@ -102,6 +102,9 @@ export interface WorkerOutMessage {
   /** Cohorts skipped because they had 0 matching rows (expected — an aggregate
    *  slice with no data; not surfaced as a failure). */
   empty: number;
+  /** Cohorts asked for on the TYPED path that produced no forecast, each named
+   *  with why. Always present; empty array when nothing was skipped. */
+  skipped: SkippedCohort[];
   /**
    * Aggregates whose seasonal amplitude may be understated because more than
    * half their constituent leaves have too little history to fit seasonality.
@@ -164,6 +167,10 @@ export function runForecastJob(input: WorkerInMessage): WorkerOutMessage {
   const newForecasts: Record<string, unknown[]> = {};
   const generatedIds: string[] = [];
   const shortLeafWarnings = new Map<string, ShortLeafWarning>();
+  // Named, not counted — see SkippedCohort. Declared alongside the three
+  // existing counters so the contrast is visible: those are numbers, this is a
+  // list, and that is deliberate.
+  const skipped: SkippedCohort[] = [];
   let generated = 0;
   let failed = 0;
   let empty = 0;
@@ -527,8 +534,17 @@ export function runForecastJob(input: WorkerInMessage): WorkerOutMessage {
         ibroFlags,
       );
 
+      // A null here used to vanish silently: `if (bf)` had no else, and neither
+      // arm carried a counter, so a bulk run reporting "0 failed, 0 empty" said
+      // nothing whatever about the typed path. A leaf skipped here contributes
+      // NOTHING to any aggregate summed from it while contributing its full
+      // weight to that aggregate's actuals — understatement that presents as
+      // forecast bias rather than as a coverage gap.
       if (bf) {
         newTypedForecasts.push([fKey, bf]);
+      } else {
+        const reason = classifySkip(allIBRO, bf);
+        if (reason) skipped.push({ fKey, reason });
       }
     }
   }
@@ -542,6 +558,10 @@ export function runForecastJob(input: WorkerInMessage): WorkerOutMessage {
     failed,
     empty,
     shortLeafWarnings: Array.from(shortLeafWarnings.entries()),
+    // Always an array, never omitted. An absent field and an empty one read the
+    // same at a call site using `?? []`, and "no skips" is a result worth being
+    // able to distinguish from "this worker predates the field".
+    skipped,
   };
 
   return result;

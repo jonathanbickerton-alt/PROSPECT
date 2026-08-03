@@ -1,5 +1,5 @@
 import { addMonths, format, isValid } from 'date-fns';
-import type { BaseForecast, BaseForecastMonth, CohortKey, ForecastBand, ForecastModel, FittedParams } from '../types/forecast';
+import type { BaseForecast, BaseForecastMonth, CohortKey, ForecastBand, ForecastModel, FittedParams, SkipReason } from '../types/forecast';
 
 export interface MarketEvent {
   id: string;
@@ -869,6 +869,34 @@ export interface AggregatedIBRORow {
  *   fitting happens. Omit or pass undefined for a cohort with no flags — the
  *   function is then byte-identical to before this parameter existed.
  */
+/**
+ * Classify why a cohort produced no forecast — or that it did.
+ *
+ * This exists as a function, not as an inline ternary at the worker's `else`,
+ * for one reason: the condition it classifies is UNREACHABLE on both fixtures.
+ * Every leaf in the trimmed and full files carries all 42 months, so a spec
+ * that drove the worker would pass while asserting nothing. Extracting the rule
+ * lets the spec drive the REAL rule directly rather than a restatement of it.
+ *
+ * Takes the raw inputs rather than a precomputed count so a caller cannot pass
+ * the wrong bucket's length alongside the right bucket's forecast.
+ *
+ * @param rows  the cohort's own data rows (`cohortDataMap.get(fKey)`)
+ * @param forecast  what calculateBaseForecast returned for those rows
+ * @returns null when a forecast was produced; otherwise why it was not
+ */
+export function classifySkip(
+  rows: readonly unknown[] | undefined | null,
+  forecast: unknown | null | undefined,
+): SkipReason | null {
+  if (forecast) return null;
+  // No bucket, or an empty one: the key does not exist in the data. Note this
+  // is checked BEFORE insufficient-history — a key with no rows is not a
+  // cohort with a short history, it is not a cohort.
+  if (!rows || rows.length === 0) return 'never-enumerated';
+  return 'insufficient-history';
+}
+
 export function calculateBaseForecast(
   aggregatedData: AggregatedIBRORow[],
   cohort: CohortKey,
