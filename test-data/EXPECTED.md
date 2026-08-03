@@ -1216,6 +1216,37 @@ end is the case that breaks this, and no fixture contains one. Do not read the
 0.0 as evidence the risk is absent — read it as evidence the fixtures cannot
 see it.
 
+#### The seed IS read from actuals, and the grain matches — by construction
+
+Base actuals are read from file and never derived, so the question is whether
+the leaf grain of that read matches the leaf grain of the forecast. It does, and
+not by coincidence: the worker (`:487`) and both bulk sites in `App.tsx`
+(`:2208`, `:2397`) build `baseReadings` by iterating **`allIBRO`**, which *is*
+`cohortDataMap.get(fKey)` — the same array the forecast is fitted from. One
+array, one key, one grain.
+
+Two caveats.
+
+*It sums within the leaf-month*, so it collapses any dimension NOT in the 7-part
+key — `Accounting_View`, `Refresh_Frequency`, `Simulation_Type`. Measured on the
+full fixture: 90,720 rows ÷ 540 leaves ÷ 42 months ÷ 4 metrics = exactly 1.0, so
+no collapsing occurs on present data and the sum is a pass-through. On a file
+where those vary it collapses them — correct for the leaf, but silent.
+
+*One site does not read from actuals at all.* `runChallengerForecast`,
+`App.tsx:2723-2725`:
+
+```js
+const existingBf = forecastStore.get(makeForecastKey(...cohort));
+return existingBf?.seedBaseVolume ?? baseForecast?.seedBaseVolume ?? 0;
+```
+
+The fallback is **the currently loaded cohort's seed** — a different cohort's
+stock. It fires exactly when the store misses, which since bottom-up landed
+means exactly for aggregates. Same shape as `scaledBandFlow`: borrow an
+unrelated cohort's number rather than decline to answer. Second known instance;
+recorded here, not fixed.
+
 #### The constraint to build against
 
 Summation is safe today and silently wrong on the first ragged cohort. So the
@@ -1227,8 +1258,68 @@ derivation must not inherit a leaf's notion of "last historical month":
   happened to end on;
 - decide explicitly what a leaf that has no row at that month contributes.
 
-**Unchased discrepancy:** 540 leaves here against the 541 typed forecasts a
-bulk run produced. One key unaccounted for. Noted, not explained.
+**RESOLVED:** 541 = 540 leaves + the one hand-generated aggregate. It
+reconciles. But see Q4b below — the totals reconciling does NOT establish that
+the fitted set equals the populated set; 540 is the count that was fitted.
+
+### Q4b — enumerated ≠ fitted, and only write-time can see the difference — 2026-08-04
+
+Does the leaf set with forecasts equal the leaf set with data?
+
+**Enumeration** (`App.tsx:3488`) is `data.forEach` over every row, collecting
+every distinct 7-part tuple. **No metric filter, no volume filter, no
+month-count filter.** "Enumerated" means "appears in the file at all".
+
+**Fitting** drops a leaf later and elsewhere: `ibroArr` keeps only months where
+`inflow > 0 || outflow > 0 || retention > 0`, and `calculateBaseForecast`
+returns null below four surviving months (`forecasting.ts:895`; the
+`fitAndBuildBands` null at `:733` is the same threshold, so it adds no distinct
+case). The worker then does `if (bf) newTypedForecasts.push(...)` — **no counter
+on either arm**, already recorded.
+
+**Measured 2026-08-04.** Full fixture: 540 enumerated, 540 fittable, **0
+missing**. Trimmed: 74 / 74 / **0**. Missing-leaf contribution 0.0000% of the
+aggregate Base stock on both.
+
+**And, as with Q4a, the fixtures cannot exercise it.** Surviving-month counts
+are min/median/max = 42/42/42 on both files. Perfectly rectangular. The set is
+empty on the data available; that is not a statement about data in general.
+
+#### The shape that produces a non-empty set
+
+A leaf with a **large Base stock and near-zero flows** — a stable legacy cohort
+that neither acquires nor churns. It passes enumeration (it has rows), fails
+fitting (fewer than four months with a positive flow), contributes **0** to a
+summed aggregate, and contributes its **full stock** to that aggregate's
+actuals.
+
+That presents as **forecast bias, not as a coverage gap** — a persistent
+under-forecast against actuals with no error, no empty state, and no counter.
+It is the harder failure to spot, and nothing currently would.
+
+#### This is asymmetric between write-time and read-time
+
+Recorded because it bears on a decision that is not mine.
+
+At **write time** the worker holds both `ibroCohorts` (enumerated) and
+`newTypedForecasts` (fitted) in the same scope. The skipped set is
+`enumerated − fitted`, available for free, and a summed aggregate can carry and
+surface its own coverage.
+
+At **read time** the derivation sees only `forecastStore`, which contains the
+fitted leaves. **A leaf that was skipped is indistinguishable from a leaf that
+does not exist.** A read-time derivation cannot compute the coverage of its own
+answer — not expensively, at all.
+
+#### The constraint, stated rather than routed around
+
+Can derivation produce a correct aggregate as-is? On present data **yes** — both
+Q4a and Q4b measure empty. As a design, **no, unconditionally**: it produces an
+aggregate whose coverage it cannot state. Cheap to fix at write time; not
+available at read time.
+
+Do not read "0 missing on both fixtures" as closing this. Read it as: the
+failure mode is unexercised, undetected, and silent by construction.
 
 ### The V-shaped dip on Outflow is correct — measured 2026-08-04
 
