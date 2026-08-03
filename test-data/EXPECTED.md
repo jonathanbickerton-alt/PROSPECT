@@ -1552,7 +1552,28 @@ for leaves as well as aggregates. Every model recommendation that tab has made
 since the tariff dimension landed rests on a scaled comparison against a
 different cohort's forecast.
 
-**NOT YET OBSERVED: the arm firing.** `hits: 0, misses: 0, rowsSeen: 0` — the
+**OBSERVED 2026-08-04 — the arm never fires.** Actuals loaded by hand (654
+months compared), AutoML Challenger tab, "Review All Cohorts Anyway" to bypass
+the score threshold:
+
+```
+hits:         0
+misses:       10          <- every row
+sampleKeys:   "SME|All|All|All|All"            (4 pipes)
+              "MNC|All|All|All|All"
+              "Large Enterprise|All|All|All|All"
+storeSize:    541
+storeArities: [7]         <- every store key (6 pipes)
+```
+
+**Ten rows, ten misses, zero hits.** The diagnosis is now observed, not only
+argued from arity. Note the sample keys are also all AGGREGATE shapes
+(`SEG|All|All|All|All`) at the default grouping, so even a corrected 7-part key
+would miss until derivation lands - the fix needs both.
+
+The observation below is retained for the record of how it was reached.
+
+**Previously not observed:** `hits: 0, misses: 0, rowsSeen: 0` — the
 map body never executed because the actuals import did not register (MAPE cards
 stayed at "0 months compared"; the tab rendered "All Models Performing Well").
 Cause: the documented React-controlled-input blocker, **fourth occurrence** —
