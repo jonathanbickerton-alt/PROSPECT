@@ -1758,6 +1758,21 @@ The count sums **cohort-months**, not months. Against a 42-month history it
 reads as a time span, and 654 is not one. Separate from the ARPU defect above
 and not a prerequisite for anything; queued as copy.
 
+### Phase 0 — MERGED to main at `9177d9b` — 2026-08-04
+
+Branch `phase0-skip-reporting`, three commits (`7502a6b`, `807c7c1`,
+`844258a`), merged with `--no-ff`. Post-merge on main: lint clean, build
+clean, `npm run traps` 3 pass / 0 fail / 0 inconclusive, and all six spec
+suites green — skip 20, scope 61, mix 17, prorata 21, pct 72, cards 36, zero
+failures. No conflicts.
+
+**Still open and carried forward, not closed by this merge:** the new amber
+panel and its named list are **unreachable on both fixtures**, so the UI was
+never rendered — only the engineered unit spec reaches the branch. And
+`never-enumerated` is unreachable from the worker call site, since
+enumeration is built from rows that exist; only `insufficient-history` fires
+there. The second code is reserved for Phase 2.
+
 ### Phase 0 gate: regression-guard OVERRULED on its verdict line — 2026-08-04
 
 Branch `phase0-skip-reporting`, HEAD `807c7c1`. Stage 3 printed:
