@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import { format, parse, isValid, addMonths, differenceInCalendarMonths } from 'date-fns';
 import { useForecast } from '../context/ForecastContext';
-import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent } from '../types/forecast';
+import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent, ActiveView } from '../types/forecast';
 import { EventChangeConfirmModal } from './EventChangeConfirmModal';
 import type { MarketEvent } from '../utils/forecasting';
 import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta } from '../utils/forecasting';
@@ -96,7 +96,7 @@ interface WhatIfTabProps {
   clearAllPricingEvents: () => void;
   downloadExcel: (data: any[], filename: string, params?: any[]) => void;
   formatNumber: (v: any) => string;
-  setActiveView: (v: string) => void;
+  setActiveView: (v: ActiveView) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -3512,7 +3512,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         <td className="px-5 py-2.5 text-center">
                           {isOk
                             ? <CheckCircle2 size={16} className="text-emerald-500 inline" />
-                            : <XCircle size={16} className="text-rose-500 inline" title={t('whatif_expected', { p0: expected.toFixed(2) })} />
+                            : <span title={t('whatif_expected', { p0: expected.toFixed(2) })}><XCircle size={16} className="text-rose-500 inline" /></span>
                           }
                         </td>
                       </tr>

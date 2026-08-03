@@ -84,7 +84,10 @@ check('the volume card region was located', volume.length > 1000, `${volume.leng
   // derived at runtime and has to be recorded.
   const MONTH_INTRINSIC_MIN_PX = 155;
 
-  const grids = src.match(/grid grid-cols-\[repeat\(auto-fit,minmax\((\d+)px,1fr\)\)\][^"]*/g) ?? [];
+  // Annotated because `?? []` infers never[] when the match returns null,
+  // which silently poisons every downstream string operation. Type-only:
+  // this spec has always passed 36/36 at runtime.
+  const grids: string[] = src.match(/grid grid-cols-\[repeat\(auto-fit,minmax\((\d+)px,1fr\)\)\][^"]*/g) ?? [];
   check('band 1 uses content-sized tracks, not a fixed column count',
     grids.length >= 4, `${grids.length} auto-fit grids`);
   check('...and no fixed-count ladder survives in the event forms',

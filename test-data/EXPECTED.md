@@ -2269,6 +2269,31 @@ provenance union and must keep working exactly as they do.
 **21 real sites: 18 found by the removal test, plus App 472, 2643 and 2892 which
 the compiler does not see.**
 
+### Deployment exclusions live in the Dockerfile — gitignore is not a boundary
+
+`server.ts` was untracked to stop it shipping. That put a **deployment**
+boundary in a **version-control** tool, where it did not belong and did not
+work as protection.
+
+**Verified before changing anything:** the Dockerfile builds in stage 1 and
+stage 2 copies **only `/app/dist`** into `nginx:1.27-alpine`. Nothing else in
+the repository can reach the production image, whatever is tracked. The
+exclusion was already enforced in the right place; the gitignore entry added
+nothing but a cost.
+
+**The cost was real.** While untracked, `server.ts` existed on the author's
+machine and not in a clone, so `tsc` — which had no `include` and walked the
+directory — checked a different set of files per machine. A typecheck that
+answers differently to different people is worse than one that checks less.
+
+`server.ts` is now tracked, carries the constraint as a header comment, and
+tsconfig has an **explicit `include`**: `src`, `scripts`, `server.ts`,
+`vite.config.ts`. Coverage is now a decision rather than a side effect — it
+previously swept in `dist/` build output and loose root `.cjs` scratch files.
+
+Making it explicit immediately surfaced **3 more errors** in `scripts/` that
+the implicit walk had missed. That is the point.
+
 ### FAILURE MODE: the compiler was absent from ALL component state, since day one
 
 `@types/react` was never installed. React 19 ships no bundled declarations, so

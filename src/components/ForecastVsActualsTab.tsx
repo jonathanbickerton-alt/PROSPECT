@@ -5,7 +5,7 @@ import {
   Search, X, Trash2, HelpCircle
 } from 'lucide-react';
 import { RemoveActualsModal } from './RemoveActualsModal';
-import type { ForecastModel, BaseForecast } from '../types/forecast';
+import type { ForecastModel, BaseForecast, ActiveView } from '../types/forecast';
 import {
   ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Tooltip,
   Legend, Line, ReferenceLine, Brush, Bar, Cell,
@@ -43,7 +43,7 @@ interface ForecastVsActualsTabProps {
   /** Column name for Tariff L2 — optional (Phase 2a) */
   wiTariffL2Col?: string;
   formatNumber: (v: any) => string;
-  setActiveView: (v: string) => void;
+  setActiveView: (v: ActiveView) => void;
   onAcceptChallengerModel: (model: ForecastModel, switchoverMonth: string | null) => void;
   onAcceptAllChallengerModels: (groups: Array<{ key: string; model: ForecastModel }>, switchoverMonth: string | null) => void;
   /** Run the real forecast for a cohort with a challenger model — returns result without saving */
@@ -483,6 +483,21 @@ type CohortAccuracyRow = {
   outflowScore:      number | null;
   retentionScore:    number | null;
   baseScore:         number | null;
+  /**
+   * OPEN DEFECT — DO NOT TREAT THIS DECLARATION AS A FIX.
+   *
+   * See EXPECTED.md, heading: "`row.arpuScore` - OPEN, and a TRAP for
+   * whoever repairs it". Read at :4540 in the overall-score tooltip and
+   * NEVER produced anywhere - buildCohortAccuracy does not set it, so it is
+   * `undefined` at runtime and the ARPU row silently drops out of the
+   * component list.
+   *
+   * Declared optional here ONLY so the typecheck baseline reflects what the
+   * code actually does. Behaviour is byte-identical: absent before, absent
+   * now. The defect is unchanged and the EXPECTED.md entry stays OPEN.
+   * Repairing it needs the decisions recorded there, not a type.
+   */
+  arpuScore?:        number | null;
   // Per-scenario ARPU scores (replaces single blended arpu score)
   inflowArpuScore:    number | null;
   outflowArpuScore:   number | null;
