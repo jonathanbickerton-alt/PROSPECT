@@ -96,6 +96,27 @@ because its absence produced a false pass.
    guarantee turns out to be softer than assumed, make the failure mode benign
    rather than relying harder on the guarantee.**
 
+   **Date every persisted artefact against HEAD before reading a number from
+   it.** Exports, saved sessions, fixtures, stored forecasts — anything written
+   earlier and read now. One command:
+   `git log --oneline --since=<artefact date> | wc -l`. If that is not near
+   zero, the artefact describes a different build.
+
+   **A version-skewed artefact is not weaker evidence. It is a different
+   system.** "Weaker" invites using the number with a caveat; there is no
+   caveat that makes an old store answer a question about the current one.
+
+   A single 22 April export produced two wrong findings on the same branch: a
+   phantom cross-path divergence (194 commits of real change, read as drift),
+   and a 55.8% filter-miss ratio that nearly redirected a fix, when the current
+   build enumerates the very keys the old store lacked.
+
+   And distinguish the artefact from its container. **A store is a runtime
+   thing; a file is one way to persist it.** Not being able to export from the
+   browser did not mean a current store was unobtainable — the generation path
+   runs headlessly over the current data at the current commit. Before
+   declaring evidence unobtainable, name the specific thing you cannot do.
+
 2. **Never report a pass for something you could not genuinely exercise.**
    If a check was inconclusive, blocked, or you reasoned it out
    structurally rather than running it, say exactly that. A stated gap is

@@ -1028,6 +1028,40 @@ work; the harness was the only thing bypassing it.
 internally consistent. Where that happens, stop correcting the harness and
 change the class of evidence.
 
+### Establish an artefact's provenance before reading a number from it — 2026-08-04
+
+The 22 April session export has now produced a wrong instrument **twice, from
+two different directions**:
+
+1. Comparing its `Adjusted_Forecasts` against today's engine, which measured 194
+   commits of deliberate change and read as path divergence.
+2. Inspecting its `Baseline_Forecasts` as "a real store", which showed 0 fully-
+   aggregate keys and a 55.8% filter-miss ratio — and was about to be reported as
+   a reason to change the fix. Current `allCohorts` explicitly enumerates
+   aggregate combinations, and a user screenshot showed `Corporate|All|All|All`
+   hitting the store, so the current build does not behave that way at all.
+
+Both times the file was chosen because it was real, and "real" was treated as
+sufficient. It is not.
+
+**The rule: establish an artefact's commit or date against current HEAD BEFORE
+reading a number from it.** One command — `git log --oneline <date>..HEAD | wc -l`
+— and if the answer is not close to zero, the artefact describes a different
+system.
+
+**A version-skewed artefact is not a weaker source of evidence. It is a
+different system.** That distinction matters because "weaker" invites
+discounting the number and using it anyway, with a caveat. There is no discount
+that makes April's store answer a question about today's store; the two differ
+in kind, not in confidence.
+
+The second occurrence also hid a category error worth naming: **a store is a
+runtime artefact, not a file.** Being unable to export from the browser did not
+mean a current store was unobtainable — the generation path can be invoked
+directly over the current test data at the current commit. "I cannot get a real
+store" was false; "I cannot get an exported file" was true, and they were
+conflated.
+
 ### An exported session measures the engine that wrote it — 2026-08-03
 
 Driving both paths from a real exported `.xlsx` was the right instinct: it

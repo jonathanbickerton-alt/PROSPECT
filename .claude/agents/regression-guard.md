@@ -145,6 +145,11 @@ it as a matter of course. Report the corrected number rather than the fact of
 drift — and distinguish drift the branch caused from drift that predates it,
 because only the first is the branch's to answer for.
 
+**The same applies to artefacts, not just citations.** If a check reads a
+saved session, an export or any file produced earlier, date it against HEAD
+first and say so in the report. A number lifted from a stale artefact is a
+citation to a build that no longer exists, and it will read as current.
+
 **A citation the reader cannot follow is a defect in the report, regardless of
 whether the underlying finding holds.** Do not treat "but I was right" as a
 defence. The value of a report is that it can be acted on without redoing the
