@@ -9,6 +9,7 @@
     "start": "vite preview --port 3000",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "dev:express": "tsx server.ts",
     "build:trimmed-fixture": "node scripts/build-trimmed-fixture.mjs",
     "traps": "tsx scripts/regression-traps.tsx",

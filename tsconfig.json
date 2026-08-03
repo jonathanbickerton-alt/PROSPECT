@@ -22,5 +22,10 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  // _archive/ is dead code, kept for reference only. It is NOT held to gate
+  // standard: it does not ship, nothing imports it, and holding abandoned
+  // subsystems to the same typecheck as live code buys nothing while making
+  // a green baseline impossible. Excluded deliberately, 2026-08-04.
+  "exclude": ["_archive"]
 }

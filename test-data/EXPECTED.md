@@ -2269,6 +2269,64 @@ provenance union and must keep working exactly as they do.
 **21 real sites: 18 found by the removal test, plus App 472, 2643 and 2892 which
 the compiler does not see.**
 
+### FAILURE MODE: the compiler was absent from ALL component state, since day one
+
+`@types/react` was never installed. React 19 ships no bundled declarations, so
+`useState` was `any`, `React.FC` was `any`, and **every piece of component state
+and every destructured prop in the codebase was `any`**. Vite does not
+typecheck, so every build passed throughout.
+
+**Duration: the life of the project.** This was never a regression. There was
+never a point at which these types worked.
+
+#### The signature was in generated output, unread
+
+Under `noImplicitAny`: **TS7026 x 7,270** — *"JSX element implicitly has type
+'any' because no interface 'JSX.IntrinsicElements' exists"* — and **TS7016 x
+107** — *"could not find declaration file"*. Both name the cause almost
+literally. Both had been generated, in this session, before the cause was found.
+
+I summarised that output as "every TS7xxx is TS7006" **without counting by
+code** — I counted by FILE and asserted a distribution by CODE. The summary was
+wrong and it pointed away from the answer.
+
+**This is the no-figure-for-a-population-you-have-not-opened rule, applied to
+error lists.** An error list is a population. Summarising it by the wrong axis
+is the same failure as quoting a number for rows nobody has read: the summary
+sounds like a measurement and is a guess. **Count by the axis you are about to
+make a claim about.**
+
+#### CORRECTED AT THE LEAD: the "compiler silently allowed a sixth site"
+#### limitation WAS this mechanism
+
+The recorded case: `MarketEvent.sequence` was made required so the compiler
+would enumerate the construction sites; it reported five and silently allowed a
+sixth, the spread branch of `handleAddMarketEvent`, which shipped rows with no
+slot.
+
+**Tested 2026-08-04 with `@types/react` installed.** Omitting `sequence` from
+that literal now errors:
+
+```
+src/components/WhatIfTab.tsx(1688,11): error TS2322:
+  Property 'sequence' is missing in type '{ ... }' but required in type 'MarketEvent'.
+```
+
+**The site is checked. It always would have been.** `setMarketEvents` is a prop
+typed `(e: MarketEvent[]) => void`, but the component is `React.FC<Props>` — and
+`React.FC` was `any`, so every destructured prop was `any`, so the argument was
+unchecked. Same root, one level further out.
+
+So the limitation was never a TypeScript weakness. It was this missing package,
+and it is fixed.
+
+**A methodological note on how it was nearly mis-tested.** My first probe added
+an *excess* property to that literal and saw no error — and excess-property
+checks do not fire on non-fresh values, so the probe was measuring literal
+freshness, not whether the site was checked. It would have produced the wrong
+conclusion. **Removing a required field, not adding a spurious one, is the test
+for "is this construction site checked".**
+
 ### MECHANISM FOUND: `@types/react` was never installed — 2026-08-04
 
 **The entry below is superseded as to cause. The probes in it remain accurate;
