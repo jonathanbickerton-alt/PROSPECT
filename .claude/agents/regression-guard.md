@@ -75,6 +75,19 @@ branches are out of scope and the preserved ai-capability branch is
 expected." Do not shorten it to "no AI capability present" — that claim is
 broader than the evidence.
 
+## Aggregate cohorts must have a typed forecast
+
+After any change touching forecast generation, cohort enumeration or key
+handling, check one thing directly: does an `All`-bearing cohort key resolve to
+a `BaseForecast` in `forecastStore`?
+
+A defect of this shape passed all three gate stages on 2026-08-04 — no aggregate
+cohort had a typed forecast at all, so market events applied to nothing for any
+aggregate selection. It was invisible to every existing check because the specs
+supply a `baseForecast` rather than obtaining one.
+
+Report it as its own line with the key you tried and what came back.
+
 ## How you report
 Produce a single structured table: each checklist item with PASS or FAIL.
 For any FAIL, give the exact symptom and the cohort/filter combination that

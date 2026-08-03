@@ -1028,6 +1028,92 @@ work; the harness was the only thing bypassing it.
 internally consistent. Where that happens, stop correcting the harness and
 change the class of evidence.
 
+### Bottom-up is half-implemented: aggregates never get a typed forecast — 2026-08-04
+
+**Reported defect:** market events appeared to have no effect on the Market
+Events chart, at the targeted cohort and at aggregate level, on the Volume card
+and the Promotion card.
+
+**Cause.** No forecast exists for any aggregate cohort, so `baseForecast` is
+absent and events have nothing to apply to.
+
+Three facts in `forecasting.worker.ts`, together:
+
+1. The typed-forecast loop iterates `ibroCohorts`, which is enumerated from data
+   rows — **leaves only**. There is no aggregate in the list.
+2. It looks its data up with `cohortDataMap.get(fKey)`, an exact hit. The O(N)
+   fallback that once served `All`-bearing keys was **removed deliberately**;
+   the comment naming the case it served survives above the line that replaced
+   it: *"aggregate ('All') keys that have no single map entry (e.g.
+   Corporate|Mobile Voice|All|All|All spans multiple channel buckets)"*.
+3. **Nothing builds or derives a typed aggregate anywhere.**
+   `aggregateForecastBands` and `aggregateArpu` are exported and have **zero**
+   call sites — every hit in `src/` is prose in a comment. The worker does sum
+   leaves for aggregates, but emits chart-series rows and `continue`s; it never
+   constructs a `BaseForecast`. And the four filter handlers use a bare
+   `forecastStore.get(key)` with nothing between lookup and assignment, so
+   there is no read-time derivation either.
+
+So bottom-up changed how aggregates are produced **for the Standard Forecast
+chart only**, and the typed path was never completed to match.
+
+**DISPROVEN, recorded because it was reported as the cause:** that the cohort
+was skipped by a "fewer than four data points" guard in `calculateBaseForecast`.
+It was not. That guard exists but is not what excludes aggregates — they never
+reach it. Do not reinstate this explanation.
+
+#### The run counters describe the other loop
+
+`generated++`, `failed++` and `empty++` all sit in the chart-series loop, before
+its `continue`. The typed loop's only guard is `if (bf)`, with **no counter on
+either arm**. A bulk run reporting `31,860 generated, 0 failed, 0 empty`
+produced 541 typed forecasts, and the counters say nothing about that path.
+
+**A zero failure count is not evidence of success for a path that is not
+counted.** Check which loop a counter lives in before reading it as coverage.
+
+### The V-shaped dip on Outflow is correct — measured 2026-08-04
+
+A linked Retention event makes Outflow (Adjusted) dip for one month and return,
+rather than stepping down and staying. Measured against Base over a 12-month
+horizon, retention +15,000 at 2025-10:
+
+| month | Outflow Δ | Base Δ |
+|---|---|---|
+| 2025-09 | 0 | 0 |
+| **2025-10** | **−12,806** | 0 |
+| 2025-11 onward | 0 | **+12,806**, held to horizon end |
+
+Outflow is a flow and the event moves it in its own month only; Base is a stock
+and steps at T+1, permanently. Both correct, and consistent with the chart's own
+T+1 caption. **Not a defect.**
+
+The −12,806 rather than −15,000 is the zero floor: the event exceeded that
+month's outflow. See the entry below.
+
+### Retention floors on outflow but splits on retention — 2026-08-04
+
+**Corrected at the lead.** An earlier version of this claimed a pro-rata
+reconciliation break, with a worked table showing an aggregate delivering 900
+while its leaves delivered 550. **That table was constructed, not measured** —
+the leaf shares were hand-set to 0.5 each, an even split the engine never
+produces. Under real pro-rata the small leaf would not have floored. **The
+reconciliation claim does not stand and is withdrawn.**
+
+What remains, and is unmeasured: the two quantities genuinely differ.
+
+- **Distribution weight** — `eventProRataShare(…, leavesByMetric[e.scenario])`,
+  so a Retention event splits by each leaf's **retention** volume.
+- **What floors** — `Math.max(0, outflow)` in `applyEventsToMonth`, i.e.
+  **outflow**.
+
+A leaf with high retention and low outflow could therefore floor even under a
+correct split. Whether that occurs on real data is **not measured**, and should
+not be asserted until it is.
+
+Separately and also unfixed: a retention event larger than available outflow
+delivers less than requested, silently.
+
 ### Establish an artefact's provenance before reading a number from it — 2026-08-04
 
 The 22 April session export has now produced a wrong instrument **twice, from

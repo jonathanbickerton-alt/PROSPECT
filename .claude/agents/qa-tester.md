@@ -117,6 +117,26 @@ because its absence produced a false pass.
    runs headlessly over the current data at the current commit. Before
    declaring evidence unobtainable, name the specific thing you cannot do.
 
+   **After any change touching generation, cohort enumeration or key handling,
+   assert that an aggregate filter selection resolves to a typed forecast.**
+
+   Concretely: pick a cohort with `All` at one or more levels, build the key the
+   filter bar would build, and confirm `forecastStore` returns a `BaseForecast`
+   for it. One lookup.
+
+   This is here because a defect of exactly that shape passed all three gate
+   stages. Bottom-up aggregation changed how aggregates are produced for the
+   Standard Forecast chart and left the typed path enumerating leaves only, so
+   NO aggregate cohort had a forecast at all — the Market Events chart had
+   nothing to apply events to for any `All`-bearing selection. Every stage
+   passed: the engine specs are driven with a hand-supplied `baseForecast` and
+   never ask where one comes from, and the checklist has no item asserting
+   coverage.
+
+   The generalisation worth carrying: **a spec that supplies an input never
+   tests whether the app can obtain that input.** Where a harness constructs a
+   precondition, something must separately assert the app produces it.
+
 2. **Never report a pass for something you could not genuinely exercise.**
    If a check was inconclusive, blocked, or you reasoned it out
    structurally rather than running it, say exactly that. A stated gap is
