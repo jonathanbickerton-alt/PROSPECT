@@ -1101,6 +1101,52 @@ produced 541 typed forecasts, and the counters say nothing about that path.
 **A zero failure count is not evidence of success for a path that is not
 counted.** Check which loop a counter lives in before reading it as coverage.
 
+### `scaledBandFlow` is a pure fallback — it gets DELETED, not fixed — 2026-08-04
+
+A consequence of the entry above, recorded before the fix is built so that the
+fix does not quietly preserve it.
+
+**What it is.** One call site, `ForecastVsActualsTab.tsx:1267`:
+
+```js
+const directBand = flowBandMaps?.[kpi]?.get(month);
+// Fallback to share-scaled band from baseForecast when no direct matchingBfs band.
+const fallbackBm = directBand ? null : baseForecast.months.find(m => m.month === month);
+const baseBand   = directBand ?? (fallbackBm ? scaledBandFlow(fallbackBm, kpi) : null);
+```
+
+`flowBandMaps` is summed from `matchingBfs` — the row's OWN resolved forecasts.
+When that resolves, `directBand` wins and `scaledBandFlow` is never reached. Its
+firing condition is exactly **"this row's cohort has no forecast of its own"**,
+which since bottom-up landed is every aggregate cohort.
+
+**What it does in that case.** Scales the LOADED cohort's bands by a ratio of
+two unrelated cohorts' totals. The comment at `:714` already describes the
+result: a number, never a blank, and the number moves with whoever's filter is
+active — SOHO · RED S read 60/75/61/74 with a tariff filter set and 0/0/0/0
+with it cleared. That is the recorded fabricated-accuracy defect, and this
+function is its mechanism.
+
+**It goes when derivation lands, and the navigation-order dependence goes with
+it.** No condition attached.
+
+#### The deletion is NOT conditional on the actuals-only cohort set being empty
+
+I first framed it that way and it was wrong. If a cohort has actuals and no
+forecast anywhere, scaling an unrelated cohort's bands is **the same
+fabrication in a smaller case**. The correct output for a row with no forecast
+is a blank, not a borrowed number. So the function goes regardless of how many
+rows still fall through.
+
+The actuals-only question — cohorts present in `cohortActualsMap` and absent
+from forecast enumeration — is worth answering, but it answers **how many rows
+render blank**, which is an empty-state and copy question. It is a build
+consideration for the deletion, not a gate on it.
+
+Generally: "the fallback is wrong, but removing it leaves gaps" is an argument
+about what to show in the gaps. It is never an argument for keeping a
+fabrication.
+
 ### The V-shaped dip on Outflow is correct — measured 2026-08-04
 
 A linked Retention event makes Outflow (Adjusted) dip for one month and return,
