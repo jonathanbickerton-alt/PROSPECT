@@ -1917,6 +1917,90 @@ that has to be re-verified by hand — which is most of the cost the
 classification was supposed to save. Folded into `regression-guard.md` on that
 basis.
 
+### THE EDGE-CASE FIXTURE — what it newly makes reachable — 2026-08-04
+
+`test-data/VBU_IBRO_EdgeCases_ShortHistory_PerScenarioARPU_Jan2023_Jun2026.xlsx`
+
+Built by `npm run build:trimmed-fixture` (second output), proven by
+`npm run spec:edge` — **15 cases, 0 failed**. Built FROM the trimmed set, so it
+inherits every preservation rule and differs only in the two properties it
+exists to introduce.
+
+#### Property 1 — short history
+
+| | |
+|---|---|
+| leaves enumerated | 74 |
+| typed forecasts | 72 |
+| **skipped** | **2**, both `insufficient-history` |
+| MIXED aggregate | `Corporate\|Fixed Connectivity` — 1 of 4 leaves short |
+| ALL-SHORT aggregate | `Large Enterprise\|Fixed Connectivity` — 1 of 1 short |
+
+Truncated to 2 months against a fitting floor of 4. The kept months are the
+EARLIEST, so these leaves also END before every other leaf — the ragged-lifetime
+shape Q4a says the three seed fields cannot survive. A second thing the
+rectangular fixtures cannot express, obtained for free.
+
+#### Property 2 — per-scenario prices, and the trap inside it
+
+Raw ARPU by scenario on a healthy leaf, 2023-01: **72.34 / 75.96 / 68.72 /
+79.57**. Revenue is recomputed as price x volume, asserted internally consistent.
+
+**A CONSTANT per-scenario factor is not enough, and the first build proved it.**
+MAPE is **scale-invariant** — multiply a scenario's price by k and both the
+actual and the fitted forecast scale by k, leaving |actual - forecast| / actual
+unchanged. The level-only variant produced four ARPU MAPEs agreeing to five
+significant figures: technically distinct, distinct only through rounding noise,
+and a fixture that looked like it had fixed the vacuity while not having done so.
+
+Each scenario therefore also carries its own **drift** — a per-month slope, so
+the four price TRAJECTORIES differ in shape and not only in level. Shape is what
+a forecaster gets right or wrong, so shape is what makes the MAPEs diverge:
+
+```
+factor(scenario, monthIndex) = level + drift x monthIndex
+  Inflow     level=1.00  drift= 0.000     <- deliberately unchanged, so any
+  Outflow    level=1.05  drift= 0.004        divergence is attributable
+  Retention  level=0.95  drift=-0.003
+  Base       level=1.10  drift= 0.006
+```
+
+Four ARPU MAPEs, real forecast-and-score path: **13.88 / 13.43 / 14.39 /
+13.02** — a 1.37pp spread. The spec asserts distinctness **and** that the spread
+exceeds 0.5pp, so the level-only trap cannot return silently.
+
+#### What this fixture newly makes reachable
+
+Everything below was **unreachable on the trimmed and full fixtures** and could
+only be asserted against engineered unit inputs, or not at all:
+
+- **The Phase 0 amber panel and its named skip list.** Previously the UI could
+  not be rendered by any real run; declared as an open gap at the Phase 0 merge.
+  **That gap is now closable.**
+- **The Q4b shape** — a leaf with data and no forecast, contributing nothing to
+  an aggregate summed from it while contributing its full weight to that
+  aggregate's actuals. Measured as 0 on both other fixtures, so the
+  understatement-as-forecast-bias failure had never been seen.
+- **Phase 2's coverage counting** — an aggregate whose coverage is genuinely
+  partial, so `leafCount` and `coverage` can be wrong in a detectable way.
+- **Phase 2's zero-contributing-leaves case** — the all-short aggregate has NO
+  fittable leaves, so derivation must return `null` rather than a zero-valued
+  forecast. There was previously no data on which that could be exercised.
+- **Phase 3's excluded-leaf completion message** — the "6 excluded for
+  insufficient history: [named]" branch, declared unreachable in the approved
+  plan.
+- **Non-vacuous per-scenario ARPU assertions.** Every such test on the other
+  fixtures would pass against an implementation that read `inflowArpu` four
+  times. **This is the fixture Phase 2 must pin its ARPU baseline on** — see the
+  corrected ARPU entry, where pinning on the old fixtures would have had the
+  gate defend an untested path.
+
+#### It does not replace the other fixtures
+
+Routine agent runs still use the trimmed file. This one is for the branches the
+trimmed file cannot reach. Both are needed; a fixture that only contains edge
+cases stops being representative of anything.
+
 ### The V-shaped dip on Outflow is correct — measured 2026-08-04
 
 A linked Retention event makes Outflow (Adjusted) dip for one month and return,
