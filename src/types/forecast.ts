@@ -112,6 +112,39 @@ export interface BaseForecastMonth {
 }
 
 /**
+ * Why a cohort has no forecast.
+ *
+ * ONE shared vocabulary, defined once. Phase 0 uses it for the bulk run's
+ * skipped list; Phase 2 will use the SAME codes for resolveForecast's
+ * null-reason. Two vocabularies for one concept is a pattern this codebase has
+ * recorded three separate instances of — do not add a second set.
+ *
+ * These are INTERNAL codes. They are never rendered directly: the UI maps them
+ * to i18n keys (`skip_reason_never_enumerated`, `skip_reason_insufficient_history`).
+ *
+ *   never-enumerated      — no data rows exist for this key at all. Enumeration
+ *                           is built from distinct tuples present in the data,
+ *                           so a key with no rows was never enumerated from it;
+ *                           whoever asked for it invented the key.
+ *   insufficient-history  — rows exist, but too few months survive the
+ *                           nonzero-flow filter for a model to be fitted
+ *                           (calculateBaseForecast returns null below four).
+ */
+export type SkipReason = 'never-enumerated' | 'insufficient-history';
+
+/**
+ * A cohort that was asked for and produced no forecast.
+ *
+ * NAMED, not counted. A count tells a user how many cohorts are missing from an
+ * aggregate; only the fKey tells them which, and that is the difference between
+ * a warning they can act on and one they cannot.
+ */
+export interface SkippedCohort {
+  fKey: string;
+  reason: SkipReason;
+}
+
+/**
  * The full Holt-Winters forecast for a single cohort across all forecast months.
  * Historical months that seeded the model are stored separately for reference.
  */

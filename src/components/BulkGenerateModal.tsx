@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CheckCircle2, Zap, X, AlertTriangle, Loader2 } from 'lucide-react';
-import type { ForecastModel } from '../types/forecast';
+import type { ForecastModel, SkipReason, SkippedCohort } from '../types/forecast';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,7 +41,7 @@ export interface BulkGenerateModalProps {
    *   generated — forecasts successfully written
    *   failed    — combos skipped due to insufficient data
    */
-  onConfirm: (opts: { name: string; comment: string; autoModel: boolean; autoConfidence: boolean }) => Promise<{ generated: number; failed: number }>;
+  onConfirm: (opts: { name: string; comment: string; autoModel: boolean; autoConfidence: boolean }) => Promise<{ generated: number; failed: number; skipped: SkippedCohort[] }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -70,7 +70,7 @@ export function BulkGenerateModal({
 }: BulkGenerateModalProps) {
   const { t } = useTranslation();
   const [phase, setPhase] = useState<Phase>('confirm');
-  const [summary, setSummary] = useState<{ generated: number; failed: number } | null>(null);
+  const [summary, setSummary] = useState<{ generated: number; failed: number; skipped: SkippedCohort[] } | null>(null);
   const [runName, setRunName] = useState('');
   const [runComment, setRunComment] = useState('');
   const [autoModel, setAutoModel] = useState(true);
@@ -97,7 +97,7 @@ export function BulkGenerateModal({
       setPhase('complete');
     } catch {
       setPhase('complete');
-      setSummary({ generated: 0, failed: missingCount });
+      setSummary({ generated: 0, failed: missingCount, skipped: [] });
     }
   };
 
@@ -319,6 +319,7 @@ export function BulkGenerateModal({
           <BulkCompletePanel
             generated={summary.generated}
             failed={summary.failed}
+            skipped={summary.skipped}
             onClose={handleClose}
           />
         )}
@@ -367,17 +368,33 @@ function BulkGeneratingPanel({ progress }: { progress?: { current: number; total
   );
 }
 
+/**
+ * Internal skip codes -> i18n keys. The codes are never rendered directly, and
+ * this is the ONLY place they become words, so a new code cannot ship as a
+ * hardcoded English string by accident.
+ */
+const SKIP_REASON_KEY: Record<SkipReason, string> = {
+  'never-enumerated':     'skip_reason_never_enumerated',
+  'insufficient-history': 'skip_reason_insufficient_history',
+};
+
 function BulkCompletePanel({
   generated,
   failed,
+  skipped,
   onClose,
 }: {
   generated: number;
   failed: number;
+  skipped: SkippedCohort[];
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const allSucceeded = failed === 0;
+  // A skipped leaf is not a failure - the run did what it was asked. It IS a
+  // coverage gap, and the panel stays amber rather than green because any
+  // aggregate summed from these leaves is understated by exactly their
+  // contribution, with nothing on screen to say so.
+  const allSucceeded = failed === 0 && skipped.length === 0;
 
   return (
     <>
@@ -398,6 +415,28 @@ function BulkCompletePanel({
                 <span className="text-emerald-700"> forecast{generated !== 1 ? 's' : ''} generated successfully</span>
               </span>
             </div>
+
+            {skipped.length > 0 && (
+              <div className="bg-amber-50 rounded-lg px-4 py-2.5">
+                <div className="flex items-center gap-3">
+                  <AlertTriangle size={15} className="text-amber-500 shrink-0" />
+                  <span>
+                    <strong className="text-amber-800">{skipped.length}</strong>
+                    <span className="text-amber-700"> {t('bulk_leaves_no_forecast')}</span>
+                  </span>
+                </div>
+                {/* NAMED, not counted. The count says an aggregate is
+                    incomplete; only the key says which one, and by what. */}
+                <ul className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                  {skipped.map(sk => (
+                    <li key={sk.fKey} className="text-[11px] leading-snug text-amber-800">
+                      <span className="font-mono">{sk.fKey.split('|').join(' \u00b7 ')}</span>
+                      <span className="text-amber-600"> {'\u2014'} {t(SKIP_REASON_KEY[sk.reason])}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {failed > 0 && (
               <div className="flex items-center gap-3 bg-amber-50 rounded-lg px-4 py-2.5">

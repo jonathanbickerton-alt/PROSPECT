@@ -5,7 +5,7 @@ import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
-import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent } from './types/forecast';
+import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort } from './types/forecast';
 import { ForecastProvider } from './context/ForecastContext';
 import HomeTab from './components/HomeTab';
 import { StandardForecastTab } from './components/StandardForecastTab';
@@ -3434,7 +3434,7 @@ export default function App() {
     comment?: string;
     autoModel?: boolean;
     autoConfidence?: boolean;
-  }): Promise<{ generated: number; failed: number }> => {
+  }): Promise<{ generated: number; failed: number; skipped: SkippedCohort[] }> => {
     // Show a "preparing" state and yield to the event loop so React can paint the
     // generating panel BEFORE the synchronous pre-flight (cohort enumeration +
     // data-map build + worker payload clone). Without this the main thread is
@@ -3574,6 +3574,10 @@ export default function App() {
 
     // Bottom-up short-leaf warnings collected across the worker pool.
     const collectedShortLeafWarnings = new Map<string, { shortLeaves: number; totalLeaves: number; share: number }>();
+    // Typed-path cohorts that produced no forecast, NAMED. Accumulated across
+    // the whole pool: each worker only sees its own slice, so a per-worker
+    // list would understate coverage for the run as a whole.
+    const collectedSkipped: SkippedCohort[] = [];
 
     setGenerationProgress({ current: 0, total: targets.length });
     const newTypedForecasts = new Map<string, BaseForecast>();
@@ -3595,9 +3599,11 @@ export default function App() {
               failed: number;
               empty?: number;
               shortLeafWarnings?: Array<[string, { shortLeaves: number; totalLeaves: number; share: number }]>;
+              skipped?: SkippedCohort[];
             };
             // Bottom-up: aggregates whose seasonal amplitude may be understated
             // because most constituent leaves are too short to fit seasonality.
+            collectedSkipped.push(...(result.skipped ?? []));
             for (const [cohortId, w] of result.shortLeafWarnings ?? []) {
               collectedShortLeafWarnings.set(cohortId, w);
             }
@@ -3674,7 +3680,7 @@ export default function App() {
     console.log('[generateAllMissingForecasts] saving BulkRunRecord:', { name: record.name, comment: record.comment, generated, failed });
     setBulkRuns(prev => [...prev, record]);
 
-    return { generated, failed };
+    return { generated, failed, skipped: collectedSkipped };
   }, [allCohorts, missingStandardCohorts, computeCohortForecastData, selectedForecastModel, genPreHorizonUncertainty, genPostHorizonExpansionRate, confidenceHorizon, genLength, data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, oneOffMonths]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // After a single-combo forecast is saved, check whether there are remaining combinations

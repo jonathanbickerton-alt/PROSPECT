@@ -1758,6 +1758,67 @@ The count sums **cohort-months**, not months. Against a 42-month history it
 reads as a time span, and 654 is not one. Separate from the ARPU defect above
 and not a prerequisite for anything; queued as copy.
 
+### Phase 0 gate: regression-guard OVERRULED on its verdict line — 2026-08-04
+
+Branch `phase0-skip-reporting`, HEAD `807c7c1`. Stage 3 printed:
+
+> **REGRESSIONS FOUND — DO NOT SHIP**
+
+**Overruled.** Recorded with the evidence rather than the decision, so the
+override can be judged rather than taken on trust.
+
+#### The sole finding, in the agent's own words
+
+Its one substantive finding was that no `All`-bearing cohort key resolves to a
+typed `BaseForecast` — reproduced by looking up
+`SOHO|All|All|All|All|All|All` and `All|All|All|All|All|All|All` against a
+`cohortDataMap` built from the trimmed fixture, both returning `undefined`.
+
+That is the defect already recorded above as **"Bottom-up is half-implemented:
+aggregates never get a typed forecast"**. The agent said so itself:
+
+> This is an **open, pre-existing defect, unresolved by this branch, not newly
+> introduced by it.** ... this diff neither fixes nor worsens it — it is
+> orthogonal, operating entirely within the leaf-only typed loop.
+
+And in its recommendation:
+
+> the skip-reporting feature itself is clean and safe to merge on its own merits.
+
+**A report cannot conclude DO NOT SHIP on a finding it has itself classified as
+pre-existing and orthogonal.** The verdict line contradicted the body.
+
+#### The evidence the override rests on
+
+| check | result |
+|---|---|
+| `npm run traps` | 3 pass, 0 fail, 0 inconclusive |
+| `spec:skip` | 20 passed, 0 failed |
+| `spec:scope` / `spec:mix` / `spec:prorata` / `spec:pct` / `spec:cards` | 61 / 17 / 21 / 72 / 36, all 0 failed |
+| `npm run lint`, `npm run build` | clean |
+| scoped no-AI, no secrets | confirmed, search terms named |
+| working tree | clean |
+
+And the diff itself: the only change to the loop the defect lives in is the
+`else` arm that names *why* a leaf produced no forecast. It adds no aggregate
+enumeration and no derivation, so it cannot move a defect about aggregates
+never being enumerated.
+
+Tracked for **Phase 2**, which exists to fix it.
+
+#### The mis-citation, recorded because it is why the rule now names citations
+
+The agent cited the aggregate defect as **§16b**. It is not. §16b is *"Known
+coverage gaps — cannot be measured on the current fixtures"*, and it is
+**out of bounds as a source for anything** by standing rule. The entry it meant
+is in §16, at the line it correctly quoted alongside the wrong section number.
+
+A pre-existing finding is only dismissible if the reader can find the record it
+claims to duplicate. A wrong section number turns "already tracked" into a claim
+that has to be re-verified by hand — which is most of the cost the
+classification was supposed to save. Folded into `regression-guard.md` on that
+basis.
+
 ### The V-shaped dip on Outflow is correct — measured 2026-08-04
 
 A linked Retention event makes Outflow (Adjusted) dip for one month and return,
