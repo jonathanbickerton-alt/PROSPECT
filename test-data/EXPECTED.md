@@ -2001,6 +2001,76 @@ Routine agent runs still use the trimmed file. This one is for the branches the
 trimmed file cannot reach. Both are needed; a fixture that only contains edge
 cases stops being representative of anything.
 
+## WORKING PRACTICE: data issues are told to the user, not handled silently
+
+**Standing principle, set by the user 2026-08-04.**
+
+**Data issues in uploaded files are communicated to the user in the interface —
+never silently handled, never worked around in code.**
+
+The user owns their data. A tool that quietly compensates for a problem in it
+takes away the only chance to fix it at source, and leaves the user reading
+numbers whose caveats exist only in the code. Silent compensation also hides the
+problem from the next person, who then finds it as an inexplicable result rather
+than as a stated limitation.
+
+**Worked example: Phase 0's named-skip panel.** A leaf that could not be fitted
+used to vanish — `if (bf)` with no else, no counter on either arm. The aggregate
+built from it was understated by exactly its contribution, and presented as
+forecast bias rather than as a coverage gap. The fix was not to substitute a
+value, infer one, or borrow a neighbour's: it was to **name the skipped cohorts
+on screen** and let the user decide what that means for their data.
+
+That is the shape. Not "handle it well" — **say it**.
+
+This connects to the borrow-an-unrelated-cohort pattern recorded above. Every
+instance of that pattern is the same instinct: produce a number rather than
+decline. The principle here is the general form of the rule those three
+deletions apply.
+
+### Two rules for any check built under this principle
+
+1. **No check fires on a property it cannot state accurately.** A warning that
+   is approximately right about your data is worse than no warning, because it
+   spends the user's trust on something they then have to go and disprove.
+2. **Warnings are sparing.** A panel that cries wolf on every upload trains
+   users to dismiss it, and the one upload that mattered is dismissed with the
+   rest. This is the regression-guard verdict-line lesson applied to the UI: a
+   signal that fires on everything carries no information, and the failure is
+   silent because it looks like the signal is working.
+
+### And distinguish "the file is WRONG" from "the file is LIMITED"
+
+Two different sentences to the user, and mixing them is how a tool starts
+accusing correct data of being broken:
+
+- **Wrong** — internally inconsistent, e.g. revenue that does not equal price x
+  volume. The file contradicts itself; something upstream is at fault.
+- **Limited** — internally consistent but unable to support some analysis, e.g.
+  one price shared across all four IBRO scenarios, or a cohort with two months
+  of history. The data is fine. What it can answer is narrower.
+
+Wording must never imply the second is the first.
+
+### FACTUAL CORRECTION, recorded so the premise does not recur: there is no Data Quality Service
+
+Searched `dataQuality`, `DataQuality`, `data-quality` and `data quality`
+case-insensitively across the repo excluding `node_modules`. **The only match in
+the entire codebase is a comment** on the worker's `failed` counter
+(`forecasting.worker.ts:100`): *"a genuine data-quality warning"*.
+
+There is no service, no module, no directory. `src/services/` does not exist.
+
+Data-quality surfacing today is **five independent features, none at import
+time, none aggregated**: `missingMonths` (calendar gaps within one cohort),
+`seasonalFallback`, `shortLeafWarnings`, Phase 0's `skipped` list, and a handful
+of `alert()`/`setError` failures for unreadable or unmapped files. Four of the
+five surface at FORECAST time, per cohort, on the Baseline screen.
+
+Do not describe this as a service, and do not describe it as coverage. Naming
+scattered features as a system is the same error as characterising dead code as
+live protection — it makes absent checks look present.
+
 ### The V-shaped dip on Outflow is correct — measured 2026-08-04
 
 A linked Retention event makes Outflow (Adjusted) dip for one month and return,
