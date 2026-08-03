@@ -2208,6 +2208,67 @@ enumeration method is evidence about what it found, never about what it did not
 find.** The compiler-enumeration lesson, the scanner's bucket-8 blind spot, and
 this are one lesson.
 
+### Phase 0 gate FULLY CLOSED — visual check passed 2026-08-04
+
+The last open item from the Phase 0 merge was that the amber panel and its named
+skip list were **unreachable on both fixtures and had never been rendered**. The
+edge fixture closed it.
+
+User-run visual check on
+`VBU_IBRO_EdgeCases_ShortHistory_PerScenarioARPU_Jan2023_Jun2026.xlsx`:
+amber panel present, both leaves named with their reasons, counts reconciling —
+**7588 + 144 = 7732**, which is the predicted 7736 minus the 4 scenario rows of
+one earlier single generation.
+
+The prediction was made before the run and matched. **Phase 0 is closed.**
+
+### The completion modal states one fact in two vocabularies — Phase 3 work
+
+Two lines, unlinked, on the same screen:
+
+> 2 leaves have no forecast — too few months to fit a model
+> 144 skipped — insufficient data points
+
+**Which counter feeds which, confirmed by reading rather than assumed:**
+
+- The **2** is `skipped`, from the TYPED loop's `else` arm — leaf grain.
+- The **144** is `failed`, incremented in the **STANDARD-cohort loop** at
+  `forecasting.worker.ts:292` and `:317`. `:317` is the bottom-up arm: *"No
+  constituent leaf could be fitted: 0 raw rows anywhere => empty, otherwise
+  genuinely insufficient data."* Cohort grain — roll-up keys x 4 scenarios.
+
+So they are **the same defect counted at two grains**: the short leaves
+themselves, and the Standard-Forecast cohorts whose every constituent leaf was
+one of them. 144 = 36 roll-up keys x 4 scenarios, all descending from the
+all-short aggregate.
+
+Neither line says the other exists, and the two phrasings ("too few months to
+fit a model" / "insufficient data points") describe one condition in two
+wordings. A user cannot tell whether 144 includes the 2, is caused by the 2, or
+is unrelated.
+
+**Unification belongs to Phase 3's completion-message work**, where the message
+becomes a coverage summary rather than a success count. One vocabulary, and the
+relationship between the grains stated rather than left to be inferred.
+
+### CORRECTED working list: 21 sites, not 24 — 2026-08-04
+
+The earlier union of 24 was wrong. Three of the grep hits are **false positives
+that must NOT be edited**, named here so nobody rediscovers and "fixes" them:
+
+| site | what it actually reads | why it is not ours |
+|---|---|---|
+| `App.tsx:842` | `first.Model_Used` | a **spreadsheet column**, written into `cohortGenLog.modelUsed` |
+| `App.tsx:897` | `first.Model_Used` | same column, same destination |
+| `App.tsx:1098` | `r.Model` | a spreadsheet column, written into `BulkRunRecord.model` |
+
+`cohortGenLog.modelUsed` and `BulkRunRecord.model` are **different fields that
+share a name with `BaseForecast.modelUsed`**. They are unaffected by the
+provenance union and must keep working exactly as they do.
+
+**21 real sites: 18 found by the removal test, plus App 472, 2643 and 2892 which
+the compiler does not see.**
+
 ### The V-shaped dip on Outflow is correct — measured 2026-08-04
 
 A linked Retention event makes Outflow (Adjusted) dip for one month and return,
