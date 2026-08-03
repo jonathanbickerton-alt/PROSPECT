@@ -70,6 +70,32 @@ because its absence produced a false pass.
    `npm run spec:cards` asserts it still imports the real component and renders
    the real grid classes, so it cannot quietly become another reconstruction.
 
+   **A required field does not guarantee the compiler found every construction
+   site.** Object literals in some positions satisfy a required field without
+   `tsc` reporting the omission — this project's `tsconfig` has neither `strict`
+   nor `strictNullChecks`, and the behaviour is not uniform across positions.
+
+   Worked example, `MarketEvent.sequence`, 2026-08-01/02. It was declared
+   REQUIRED deliberately, so that the compiler would enumerate the construction
+   sites rather than leaving me to guess at them. It reported five. A sixth —
+   the spread branch of `handleAddMarketEvent`, wired to a live button — was
+   silently allowed, and shipped rows with no slot. The claim that "the compiler
+   enumerated the construction sites" was then repeated in a commit message as
+   though it were established.
+
+   **When an approach depends on the compiler enumerating call sites, verify the
+   enumeration: remove the field again and confirm the error count matches the
+   number of sites you believe exist.** One removal, one count. Do not infer
+   enumeration from the field being required — that is inferring a tool's
+   behaviour from its documentation instead of running it, which is standard 1
+   pointed at the type system.
+
+   And design for the miss. `bySequence` read an absent slot as 0, so an
+   orphaned row sorted to the TOP of the table: the loudest possible symptom for
+   the quietest possible omission. It now sorts last. **Where a compiler
+   guarantee turns out to be softer than assumed, make the failure mode benign
+   rather than relying harder on the guarantee.**
+
 2. **Never report a pass for something you could not genuinely exercise.**
    If a check was inconclusive, blocked, or you reasoned it out
    structurally rather than running it, say exactly that. A stated gap is

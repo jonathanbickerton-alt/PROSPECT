@@ -293,6 +293,42 @@ console.log('\nBY KIND (to extract):');
 for (const [k, v] of [...byKind.entries()].sort((a, b) => b[1] - a[1])) console.log(`  ${k.padEnd(22)}${v}`);
 
 // ---------------------------------------------------------------------------
+// READ THIS BEFORE TRUSTING A GREEN RUN, OR BEFORE BUILDING A LIST FROM ONE.
+//
+// A DEFERRAL OR EXCLUSION LIST BUILT FROM THE BUCKETS THAT FAIL INHERITS THE
+// BLIND SPOT OF WHATEVER DOES NOT FAIL.
+//
+// Buckets 1a, 6 and 7 fail the check. Bucket 8 (object literals) does NOT: the
+// scanner cannot follow a value from a literal to the JSX that renders it, so
+// it reports and moves on.
+//
+// Worked example, 2026-08-02. I18N_PHASE2 was built by taking the run's
+// failures and listing them. EventChangeConfirmModal held six strings — every
+// modal title and every body line — in TITLES and BLURBS object literals. They
+// were bucket 8, so they never appeared in the failures, so they never entered
+// the list. The result: six user-facing English strings that were neither keyed
+// NOR declared, invisible both to the check and to the list that exists to
+// track the check's gaps. The scanner read PASS over them. A gate found them.
+//
+// The limitation is LIVE, not theoretical. Making bucket 8 fail is phase-2 work
+// because 60 pre-existing object-literal items sit behind it — App.tsx (38),
+// ForecastVsActualsTab (12), ForecastSummaryBar (4), WhatIfTab (4),
+// ManageBulkDrawer (2) — and blocking the build on debt that predates the
+// change being checked helps nobody.
+//
+// So, concretely: a green run covers the MUST-KEY buckets. When adding
+// user-facing copy inside an object literal, add it to I18N_PHASE2 by hand.
+// Nothing here will remind you.
+//
+// The same shape bit the staleness check below, which asked whether a deferred
+// key was PRESENT in every locale and called that "translated everywhere" — so
+// a key carrying identical English in all six was recommended for removal from
+// its own exemption. Presence is not translation. Fixed 2026-08-02; noted here
+// because it is the same error twice: a check answering a cheaper question than
+// the one it is named for.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // Bucket classification. Buckets 1a / 6 / 7 must be empty — anything in them is
 // a user-facing string sitting outside a translation key. Buckets 1b and 5 are
 // known-deferred work (<Trans> conversion, displayLabel helper): reported, but
