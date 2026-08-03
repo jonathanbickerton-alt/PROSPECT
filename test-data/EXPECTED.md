@@ -1028,6 +1028,35 @@ work; the harness was the only thing bypassing it.
 internally consistent. Where that happens, stop correcting the harness and
 change the class of evidence.
 
+### generateStandardForecast fits a model to an aggregated series — DEFECT
+
+Bottom-up is settled: **leaves are fitted, aggregates are derived by
+summation.** `generateStandardForecast` does not do that. For an `All`-bearing
+cohort it treats `All` as "skip the filter":
+
+```js
+let allIBRO = data
+if (wiSegmentCol && segKey  !== 'All') allIBRO = allIBRO.filter(...);
+if (wiProductCol && prodKey !== 'All') allIBRO = allIBRO.filter(...);
+if (wiChannelCol && chanKey !== 'All') allIBRO = allIBRO.filter(...);
+```
+
+…then sums the surviving raw rows by month and fits one model to that summed
+series.
+
+**This is a defect against the bottom-up decision, not an alternative method
+with its own merits.** It is a second implementation of the thing bottom-up
+replaced, and it is currently the ONLY way an aggregate cohort acquires a typed
+forecast — the bulk path cannot produce one at all (see the entry below). So
+every aggregate a user has is fit-on-aggregate, reachable only where someone
+happened to click Generate in Step 1.
+
+**When derivation lands, `generateStandardForecast` is rewired to it.** Two
+implementations of one concept is this codebase's recurring failure mode and
+the reason for `applyEventsToMonth`, `cohortScope`, `resolvedEventVolume` and
+`eventProRataShare`. Hand-generated aggregates get regenerated under derivation
+and their values will move; that is expected, not a question to resolve.
+
 ### Bottom-up is half-implemented: aggregates never get a typed forecast — 2026-08-04
 
 **Reported defect:** market events appeared to have no effect on the Market
