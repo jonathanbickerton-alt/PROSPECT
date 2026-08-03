@@ -2147,6 +2147,67 @@ decides which months survive. Saying it earlier, twice, and less precisely
 violates the rule that **no check fires on a property it cannot state
 accurately**.
 
+### Phase 1 enumeration: the removal test is ALSO incomplete — 2026-08-04
+
+Run before building Phase 1, as the plan requires. The result changes the plan.
+
+**Removal test.** Deleted `modelUsed` from `BaseForecast` and counted:
+**18 errors, 18 distinct sites.**
+
+```
+App.tsx                 808, 880, 1057, 2423, 2762, 2766
+ForecastVsActualsTab    2960, 4354
+StandardForecastTab     464, 465, 1273, 1276, 1281, 1293, 1295, 1298, 1305
+forecasting.ts          1064   (the construction site)
+```
+
+**Reconciliation against the recorded 12 `?? 'Holt Linear'` grep sites.** The two
+lists are NOT nested. They overlap in six.
+
+- **Both (6):** App 808, 880, 1057, 2765/2766; FvA 2960, 4354.
+- **Grep only, and THREE OF THEM ARE FALSE POSITIVES (6):** App 842, 897, 1098
+  read `first.Model_Used` / `r.Model` — spreadsheet columns feeding
+  `cohortGenLog.modelUsed` and `BulkRunRecord.model`, **different fields that
+  merely share a name**. App 472, 2643, 2892 are genuine `BaseForecast` reads
+  that the compiler did not catch — see below.
+- **Removal test only (12):** App 2423, 2762; all nine StandardForecastTab
+  sites; forecasting.ts 1064. The grep missed every one, because none uses
+  `?? 'Holt Linear'`.
+
+So the grep list was **both incomplete and contaminated** — it missed 12 real
+sites and included 3 that have nothing to do with `BaseForecast`.
+
+#### And the removal test misses sites too — PROVEN, not inferred
+
+App.tsx:472 is `bf.modelUsed ?? 'Holt Linear'` inside
+`forecastStore.forEach((bf, storeKey) => …)`, where `forecastStore` is
+`Map<string, BaseForecast>`. It did not error.
+
+Probe: replaced it with **`bf.zzzNoSuchProp`** — a property name that exists
+nowhere in the codebase — and ran `tsc`. **Zero errors.** That site is not
+type-checked at all. Restored immediately.
+
+**Why it is unchecked is UNEXPLAINED.** No index signature on `BaseForecast`, no
+duplicate declaration, and the sibling sites in the same file do check. I could
+not establish the cause and am not guessing at one.
+
+#### The rule this supersedes
+
+`qa-tester.md` says: when an approach depends on the compiler enumerating call
+sites, verify the enumeration by removing the field and counting. **That is
+necessary and NOT sufficient.** A removal test proves the sites it finds are
+real; it cannot prove there are no others, because a site in an unchecked
+position produces no error for a fabricated property either.
+
+**The working list for Phase 1 is the UNION of removal test, grep, and manual
+review — 24 sites**, and the three unchecked ones (App 472, 2643, 2892) must be
+edited by hand because nothing will flag them if they are missed.
+
+The general form, and it is the third time this shape has appeared: **an
+enumeration method is evidence about what it found, never about what it did not
+find.** The compiler-enumeration lesson, the scanner's bucket-8 blind spot, and
+this are one lesson.
+
 ### The V-shaped dip on Outflow is correct — measured 2026-08-04
 
 A linked Retention event makes Outflow (Adjusted) dip for one month and return,
