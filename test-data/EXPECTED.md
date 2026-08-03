@@ -2269,6 +2269,68 @@ provenance union and must keep working exactly as they do.
 **21 real sites: 18 found by the removal test, plus App 472, 2643 and 2892 which
 the compiler does not see.**
 
+### App.tsx:472 is `any`-rooted — HYPOTHESIS FAILED, Phase 1 BLOCKED — 2026-08-04
+
+Bounded investigation into why `bf.zzzNoSuchProp` compiles clean at
+`App.tsx:472`. **The stated hypothesis was disproven. The build did not start.**
+
+#### What IS established, by probe
+
+1. **`forecastStore` itself is `any` at that scope.**
+   `forecastStore.zzzNoSuchMethod()` inserted at `:455` -> **0 errors**. Not the
+   property access; the binding.
+2. **The type system is not broken.** Casting at the same site —
+   `(bf as BaseForecast).zzzNoSuchProp` -> **1 error, immediately**. Checking
+   works the moment the root is typed.
+3. **So the unchecked surface is PER-BINDING, not per-region.** That half of the
+   hypothesis holds.
+4. **`:2643` and `:2892` are the same shape.** `baseForecast.zzzProbeA` and
+   `.zzzProbeB` -> **0 errors**. All three compiler-blind sites are any-rooted.
+
+#### What DISPROVES the stated mechanism
+
+`noImplicitAny` was turned on temporarily and measured, then reverted:
+**8,925 errors — and ZERO of TS7005 / TS7034 / TS7043**, the implicit-any
+*variable* codes. Every TS7xxx is TS7006, an implicit-any **parameter**, almost
+all React/JSX callbacks.
+
+`forecastStore` is not an untyped local or parameter. It is
+`useState<Map<string, BaseForecast>>` at `:1210`, with an explicit type
+argument, and there is exactly one such binding in the file (searched; `App()`
+at `:116` is the only component containing both it and `exportSession` at
+`:419`).
+
+**So an explicitly-typed `useState` binding is `any` at a forward reference from
+earlier in the same function body, and I cannot say why.** The remaining
+candidate is circular inference through the `App()` body, which I have NOT
+demonstrated and am not asserting.
+
+#### Why this blocks Phase 1 rather than merely annoying it
+
+`exportSession` is where **export option C lands**. `Model_Used` (`:472`) and
+`Fitted_Params_JSON` (`:478`) are both written inside the
+`forecastStore.forEach` block, which this investigation has just shown is
+**entirely unchecked** — every `BaseForecast` field read in the export sheet
+included.
+
+Phase 1's export work would therefore be written into a region where the
+compiler validates nothing: a wrong field name, a missing arm of the provenance
+union, a stale property — all compile clean. That is not a hazard to manage with
+care; it is the specific tool the phase depends on being absent exactly where
+the phase does its work.
+
+**Per the standing instruction — do not build on an unexplained type hole — the
+build did not start.**
+
+#### Blast radius is larger than three sites
+
+Three sites were found because three were looked for. The correct statement is
+that **an unknown number of `BaseForecast` reads across the file are
+unchecked**, and the only reliable detector found so far is inserting a
+fabricated property name one binding at a time. Do not treat 21 as a complete
+enumeration; treat it as the largest list produced by methods now known to be
+individually incomplete.
+
 ### The V-shaped dip on Outflow is correct — measured 2026-08-04
 
 A linked Retention event makes Outflow (Adjusted) dip for one month and return,
