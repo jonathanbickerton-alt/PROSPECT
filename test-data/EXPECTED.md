@@ -1297,19 +1297,36 @@ That presents as **forecast bias, not as a coverage gap** — a persistent
 under-forecast against actuals with no error, no empty state, and no counter.
 It is the harder failure to spot, and nothing currently would.
 
-#### This is asymmetric between write-time and read-time
+#### WITHDRAWN: this is NOT asymmetric between write-time and read-time
 
-Recorded because it bears on a decision that is not mine.
+I claimed read-time derivation could not state its own coverage, because it
+sees only `forecastStore` and a skipped leaf is indistinguishable from a leaf
+that does not exist. **That was wrong, and Q5 disproves it.**
 
-At **write time** the worker holds both `ibroCohorts` (enumerated) and
-`newTypedForecasts` (fitted) in the same scope. The skipped set is
-`enumerated − fitted`, available for free, and a summed aggregate can carry and
-surface its own coverage.
+The enumeration comes from the data, and the data is on the read side.
+`populatedCohortKeys` (`App.tsx:3241`) is a **component-level memo** that calls
+`buildCohortDataMap(data, …)` on every render where `data` changes, and it is
+in scope at the `forecastStore.get` seam. Comparing leaves-in-scope against
+leaves-with-a-forecast states coverage at the seam, at read time, using a
+structure that is already built.
 
-At **read time** the derivation sees only `forecastStore`, which contains the
-fitted leaves. **A leaf that was skipped is indistinguishable from a leaf that
-does not exist.** A read-time derivation cannot compute the coverage of its own
-answer — not expensively, at all.
+What survives is much weaker and is not a coverage claim: read time can say
+**which** in-scope leaves have no forecast, but not **why** — never enumerated,
+enumerated and fitted to null, or generated and later evicted. Write time knows
+which. That is a diagnostic distinction, not a coverage one.
+
+**Do not use this entry as an argument for write-time.** It was mine, it was
+wrong, and it is recorded here so the withdrawn version is not re-derived.
+
+#### The missing counter is a PREREQUISITE for both, not a discriminator
+
+The cause of the gap is independent of the choice. A skipped leaf vanishes
+because `if (bf)` has **no counter on either arm** — the same missing-counter
+finding already recorded above. Have the worker record the skipped set, and
+read-time derivation can consult it just as write-time can.
+
+That work is required whichever option is chosen. It must not be counted on
+either side of the ledger.
 
 #### The constraint, stated rather than routed around
 
@@ -1320,6 +1337,135 @@ available at read time.
 
 Do not read "0 missing on both fixtures" as closing this. Read it as: the
 failure mode is unexercised, undetected, and silent by construction.
+
+### PATTERN: borrow an unrelated cohort's number rather than decline — 3 sites — 2026-08-04
+
+One concept, implemented three times independently, each time as a local
+convenience. Enumerated in full **before any of them is fixed**, because fixing
+them one at a time is what produced three of them.
+
+The shape: an exact lookup for this cohort misses → take another cohort's value
+and scale or use it → **always return a number, never a blank**. Every instance
+fires exactly when the store misses, which since bottom-up landed means **for
+every aggregate**.
+
+**1. `scaledBandFlow` — `ForecastVsActualsTab.tsx:1267`.** Scales the loaded
+cohort's bands by a ratio of two unrelated cohorts' totals. Cause of the
+recorded SOHO · RED S fabricated-accuracy defect. Already recorded above as a
+deletion.
+
+**2. `runChallengerForecast` — `App.tsx:2723-2725`.**
+`existingBf?.seedBaseVolume ?? baseForecast?.seedBaseVolume ?? 0` — falls back
+to the **currently loaded cohort's stock** as the seed for a different cohort's
+forecast.
+
+**3. The challenger comparison — `ForecastVsActualsTab.tsx:2958-2975`.**
+`const cohortFcExact = forecastStore.get(cohortFcKey) ?? null;` then
+`cohortFc = cohortFcExact ?? baseForecast`, with the loaded forecast scaled by
+"the cohort's average inflow share over matched actuals months" — which is
+`computeAvgShare` by another name. The comment calls it Issue 9.
+
+#### And instance 3 is not a fallback — it is the only path
+
+`cohortFcKey` is a hand-rolled **5-part** `.join('|')` of
+`seg|prod|prodL2|chan|chanL2`. `forecastStore` is keyed by `makeForecastKey`
+(`App.tsx:1405-1413`), which **always emits 7 parts** — every branch of the
+template appends `tariffL1 || 'All'` and `tariffL2 || 'All'`.
+
+A 5-part string carries 4 pipes; a 7-part key carries 6. **They can never be
+equal.** So `cohortFcExact` is always `null`, `chosenModel` always comes from
+`baseForecast`, and the share-scaling branch runs unconditionally — for leaves
+as well as aggregates.
+
+Established by reading arity, not by running it. The arity argument is
+conclusive on its own, but confirm at runtime before acting on it.
+
+**Enumeration status: three found, searched by the fallback shape
+(`?? baseForecast`, `?? baseForecast?.`, `: baseForecast.`) across `src`.** A
+fourth may exist under a different spelling — a store miss handled by scaling
+some other cohort need not mention `baseForecast` by name.
+
+### Q5 — the aggregate helpers, and reachability at the seam — 2026-08-04
+
+**What the two exported helpers expect.** Neither takes a store, a scope, or a
+cohort. They are pure functions over already-extracted arrays, so they say
+nothing about reachability — that question is entirely about the seam.
+
+`aggregateForecastBands(leafBands: AggBand[][])` — one band array per leaf.
+Sums means; combines half-widths **in quadrature**
+(`halfWidth = sqrt(Σ(opt−mean)²)`), which assumes leaf errors are
+**independent**. They are not — leaves in one segment share demand shocks — so
+the aggregate band is narrower than the truth. Deliberate or not, it is an
+assumption, not an identity.
+
+`aggregateArpu(parts: {arpu, volume}[])` — volume-weighted, correct by
+construction, returns 0 on zero volume. No issues.
+
+#### `aggregateForecastBands` already embodies the Q4a failure mode
+
+It indexes leaves by **array position** `t`, takes `horizon = max(lengths)`,
+and does `if (!b) continue`. That is exactly what the Q4a constraint says not to
+do: **key on the month label, never the index.** A leaf whose months start a
+month later contributes its month-1 value to the aggregate's month 0, and a
+leaf with a shorter array silently contributes **nothing** to the tail rather
+than erroring.
+
+On the present rectangular fixtures this is invisible. **This function cannot be
+used as-is** for derivation; it needs a label-keyed signature.
+
+#### Reachability at the `forecastStore.get` seam — by `populatedCohortKeys`
+
+The seam is the four handlers at `App.tsx:1547-1578`. In scope there:
+
+- **`forecastStore`** — `useState<Map<string, BaseForecast>>` at `:1210`. A
+  plain Map; its keys enumerate.
+- **`data`** — `useState<any[]>` at `:119`. The raw rows.
+- **`populatedCohortKeys`** — `useMemo` at `:3241`. Runs
+  `buildCohortDataMap(data, …)` and expands **each leaf into its 2×3×3×3 = 54
+  roll-up keys**. Component scope, initialised before any handler fires.
+
+**NOT in scope: `cohortDataMap` itself.** It is a local `const` inside the
+bulk-generation callback (`:3456`) and a parameter of
+`computeCohortForecastData` (`:3301`). It never reaches the seam directly — only
+through `populatedCohortKeys`, which wraps it.
+
+**NOT relevant: `cohortScope`.** `rowInScope` / `cohortInScope` are predicates
+over a row or a cohort against a scope. They answer "is this in scope", not
+"what leaves compose this aggregate". They are not the enumeration.
+
+**So: read-time derivation CAN state its own coverage.** One gap —
+`populatedCohortKeys` is a flat `Set` of expanded keys and **discards leaf
+identity**, so it answers "does this key have data", not "which leaves compose
+it". Derivation needs aggregate-key → constituent-leaf-keys, which is the same
+loop over the same `dm.keys()` in the same memo. Cheap, but it does not exist
+yet.
+
+### Q6 — cost, measured — 2026-08-04
+
+**The key population, measured on the full fixture:**
+
+| | count |
+|---|---|
+| leaves | 540 |
+| `populatedCohortKeys` (leaves + every roll-up) | **7,964** |
+| aggregate-only keys, i.e. what would need deriving | **7,424** |
+| vs the 541 keys stored today | **14.7×** |
+
+**Write-time.** The export is ~102 MB at 541 keys ≈ **193 KB per key**. Storing
+every aggregate is 7,964 × 193 KB ≈ **1.5 GB** of export, with the in-memory
+store the same order. That is not a tuning problem.
+
+**Invalidation.** Regenerating **one** leaf invalidates every aggregate
+containing it — its own 54-key roll-up expansion. Write-time must recompute 54
+aggregates per leaf regeneration or serve stale ones, and nothing today tracks
+that dependency. Read-time has no invalidation problem: it derives from
+whatever is in the store at the moment it is asked.
+
+**Read-time.** Derive only the key being viewed. Worst case is the grand total:
+540 leaves × 42 months × 9 band series ≈ 204k float operations per filter
+change. Sub-frame.
+
+Both figures are stated so the trade is visible. **The decision is not mine.**
 
 ### The V-shaped dip on Outflow is correct — measured 2026-08-04
 
