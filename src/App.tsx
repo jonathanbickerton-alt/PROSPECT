@@ -5,7 +5,7 @@ import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
-import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent , SkippedCohort} from './types/forecast';
+import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort } from './types/forecast';
 import { ForecastProvider } from './context/ForecastContext';
 import HomeTab from './components/HomeTab';
 import { StandardForecastTab } from './components/StandardForecastTab';
