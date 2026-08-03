@@ -2269,6 +2269,102 @@ provenance union and must keep working exactly as they do.
 **21 real sites: 18 found by the removal test, plus App 472, 2643 and 2892 which
 the compiler does not see.**
 
+### MECHANISM FOUND: `@types/react` was never installed — 2026-08-04
+
+**The entry below is superseded as to cause. The probes in it remain accurate;
+the conclusion "unexplained" is now answered.**
+
+#### The mechanism
+
+**React 19 ships no bundled type declarations, and `@types/react` /
+`@types/react-dom` were not in `package.json`.** So `import { useState } from
+'react'` resolved to nothing, `useState` was `any`, and **every `useState`-rooted
+binding in the codebase was `any`** — `forecastStore`, `baseForecast`, and every
+other piece of component state.
+
+Property access on an `any` root compiles clean, including fabricated names.
+That is the whole of it.
+
+It explains every observation, including the ones that looked contradictory:
+
+- `forecastStore.zzzNoSuchMethod()` compiled — the binding, not the access.
+- An explicit cast restored checking — the type system was never broken.
+- Reordering the declaration changed nothing — **order was never the mechanism**,
+  and the forward-reference hypothesis was wrong.
+- Some `BaseForecast` reads DID error — those come from typed sources
+  (`calculateBaseForecast`'s return, annotated literals, typed props), not from
+  `useState`.
+- Under `noImplicitAny`: **TS7026 x 7,270** ("no interface
+  `JSX.IntrinsicElements` exists") and **TS7016 x 107** ("could not find
+  declaration file"). Both are React-types-missing signatures, and both were
+  sitting in the output the whole time.
+
+**A 14-line reproduction inside the real tsconfig reproduces it** — a typed
+`useState<Map<string, Thing>>` and a bogus method call, zero errors. It is not
+scale, and it is not `App()`.
+
+#### Correction to my own earlier claim
+
+I reported that under `noImplicitAny` "every TS7xxx is TS7006". **That was
+wrong.** The actual breakdown is TS7026 7,270 / TS7006 1,094 / TS7031 412 /
+TS7016 107 / TS7053 20 / TS7018 18 / TS7011 4. I had counted by FILE and
+asserted a distribution by CODE. The corrected figures are what point at the
+cause — the claim I made would have hidden it.
+
+#### The fix, and it is the whole fix
+
+`npm i -D @types/react@^19 @types/react-dom@^19`. Three packages.
+
+**Verified by the same probes at all three formerly-blind sites:**
+
+```
+src/App.tsx:472   error TS2339: Property 'zzzSite472' does not exist on type 'BaseForecast'.
+src/App.tsx:2643  error TS2339: Property 'zzzSite2643' does not exist on type 'BaseForecast'.
+src/App.tsx:2892  error TS2339: Property 'zzzSite2892' does not exist on type 'BaseForecast'.
+```
+
+#### AUTHORITATIVE ENUMERATION: 27 sites, superseding 21
+
+The removal test re-run with types resolving. `_archive/` excluded as dead code.
+
+```
+src/App.tsx                     472, 808, 880, 1057, 2423, 2643, 2762, 2765, 2766, 2892
+src/components/ForecastVsActualsTab.tsx   2960, 3124, 4159, 4167, 4185, 4201, 4354
+src/components/StandardForecastTab.tsx    464, 465, 1273, 1276, 1281, 1293, 1295, 1298, 1305
+src/utils/forecasting.ts        1064   (the construction site)
+```
+
+**The 21-site list is superseded.** Six sites it never contained are now visible
+— `ForecastVsActualsTab` 3124, 4159, 4167, 4185, 4201 (the challenger preview
+UI) plus `App:2765`. **The derived-arm table must be rebuilt from these 27.**
+
+The three grep false positives (`App` 842, 897, 1098) remain excluded: they read
+spreadsheet columns into `cohortGenLog.modelUsed` and `BulkRunRecord.model`, and
+correctly produce no error here.
+
+#### The fix reveals 28 latent errors — NOT fixed, NOT in scope
+
+`npm run lint` now fails. The errors were always real; nothing could see them.
+
+| area | count |
+|---|---|
+| `_archive/` (dead code) | 13 |
+| `src/` (live) | 12 |
+| `scripts/cards-spec.ts` | 3 |
+
+Among the live ones, two are already-recorded open items surfacing as type
+errors for the first time: `Property 'arpuScore' does not exist on type
+'CohortAccuracyRow'` (`ForecastVsActualsTab:4540`) and `Property 'channel' does
+not exist on type 'Cohort'` (`OverallForecastTab` x3). Also
+`ConfidenceRecommendation.reasonParams` and six `Dispatch<SetStateAction<...>>`
+prop mismatches.
+
+**`npm run build` still succeeds and every spec suite still passes** — Vite does
+not typecheck. So this is a lint-gate failure, not a broken app.
+
+**Deciding what to do with the 28 is the user's call and is queued, not done.**
+Nothing was edited to make them go away.
+
 ### App.tsx:472 is `any`-rooted — HYPOTHESIS FAILED, Phase 1 BLOCKED — 2026-08-04
 
 Bounded investigation into why `bf.zzzNoSuchProp` compiles clean at
