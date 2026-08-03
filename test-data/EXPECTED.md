@@ -813,7 +813,7 @@ event, and want to see how it lands on one tariff without regenerating."*
 
 Recorded as an open product question. Do not fold it into a UI change.
 
-### Bulk edit is delete-and-rebuild, not an update loop — decide before percentage events
+### Bulk edit is delete-and-rebuild, not an update loop — SETTLED 2026-08-01
 
 On the Volume and Promotion cards, **individual** edit patches by id and keeps
 the row's identity. **Bulk (campaign) edit does not**: `handleSaveCampaign`
@@ -832,10 +832,26 @@ events precede them, and so changing their result, without the user editing
 anything about ordering.
 
 Nothing observable depends on it today, because order is only positional in the
-array and current event types do not read each other's output. Percentage /
-adjusted-targeting events would make it observable. Options are to preserve
-array position on rebuild, to give events an explicit order field, or to make
-bulk edit patch by id like individual edit does — **not yet decided**.
+array and current event types do not read each other's output.
+
+**Resolution: an explicit `sequence` field on `MarketEvent`, and both bulk
+rebuild sites restore the slots their replaced rows held rather than appending.**
+
+One correction to the reasoning above, because it is the interesting part. This
+entry expected percentage events to make array order *computationally*
+observable — "adjusted-targeting events depend on the result of earlier ones".
+They do not. Percentage events are flat and non-compounding by decision: each
+resolves against a single basis and none can observe another's output, so the
+maths is order-independent by construction.
+
+What was actually at risk was never the arithmetic. It was that a bulk edit
+silently moved rows to the end of the table, so the user's own ordering — the
+thing they arranged and read — was rearranged by an edit that had nothing to do
+with ordering. `sequence` exists for display stability and edit-slot retention.
+
+The distinction matters because the wrong reason argues for a strict processing
+order in the engine, and that is exactly the over-engineering to avoid. See the
+two-phase comment in `computeAdjustedForecast`.
 
 ### Value and Pricing cards: individual edit only, deliberately
 
@@ -896,6 +912,556 @@ fallback rather than dropping the event.
 | C | +10,000 / +40,000 | 30,000 (4 legs) | +10,000 / +10,000 | 0 |
 
 Leaf-targeted events are unaffected on all three paths (+10,000 → +10,000).
+
+### The four Market Events cards share one targeting layout — 2026-08-02
+
+Volume, Value, Pricing and Promotion describe the same concepts and had
+drifted into four names, two grid ladders and two vertical alignments.
+
+**Established first which differences were real**, because most of them were
+not what the labels suggested:
+
+| Concept | Was | Now | Verdict |
+|---|---|---|---|
+| Stream | `Scenario` / `IBRO Type` / `Volume Target` | `IBRO Type` | Drift. Promotion literally writes `MarketEvent.scenario` (`buildPromoEvents`) |
+| Month | `Month` / `Activity Month` / `Start Month` | `Month`, or `Start Month` where one event persists | **Real**, but not on the card boundary — see below |
+| Product L2 on Pricing | two flat selects | folded into the hierarchical dropdown | Drift. Pricing was inconsistent with its own Channel and Tariff |
+| Product L2 / Tariff on Value | absent | absent | **Real.** `YieldEvent` has neither field |
+| Pricing `Cohort Type` | a peer-sounding name | `Applies to`, still nested under Target | **Real** concept, wrong name |
+
+**The month split is not where the labels put it.** Volume's spread emits N
+separate point events, each with its own date. Pricing persists ONE event via
+`duration: recurring` — but `YieldEvent.rollForward` does exactly the same
+thing on Value. So Value's month is a start month too, when rollForward is on,
+and `Activity Month` was the least accurate of the three labels. Value's label
+now follows `rollForward` rather than the card.
+
+**Where consistency would have made a card worse**, and was therefore not
+applied: Value must not gain Product L2 or Tariff targeting, because Product L2
+is the axis being *redistributed* and filtering to one tier before
+redistributing across tiers is incoherent. Pricing's `Applies to` must stay
+nested under Target, because it is meaningless when Target is base-only and
+promoting it would create a control that vanishes because of a control further
+down the form.
+
+**Four implementations that agree by convention, not a shared component.** The
+draft state shapes are closer than expected — Volume and Promotion are
+field-identical, Pricing and Value are field-identical to each other, and the
+two families differ on two key names (`channel`/`channelL1`, `date`/`month`).
+An adapter would have been trivial. The blocker was which controls RENDER: a
+shared component would need props for `showStream` plus its option list
+(4/2/2/none), `showTariff`, `showProductL2` and `monthLabel` — a switchboard,
+not an abstraction. Enforcement lives in `npm run spec:cards` instead.
+
+#### Band 1 holds six controls, and Month stays in it
+
+The ladder is `md:grid-cols-3 xl:grid-cols-6`, deliberately skipping `lg`. At
+`lg` six controls are two clean rows of three; six columns at `lg` (1024px)
+would put a `type="month"` input near 140px, which is tight for the native
+picker. Known residual: five controls give a 3+2 rag at `md`/`lg`. Pre-existing,
+not introduced.
+
+**Moving Month down beside Campaign Name was considered and rejected.** The
+history table places Campaign and Month adjacent, so the pairing has a
+precedent — but it is the wrong kind. The table *identifies* an event that
+already exists; the form *determines* one. Reading order and authoring order
+are different arguments.
+
+The deciding fact is that **Month is required and gates the Add button
+silently** on both add paths. Putting the one field whose absence stops the
+form into the section that reads as optional metadata is the worst available
+place for it.
+
+#### OPEN DEFECT: Month fails silently
+
+`if (!newEvent.date || newEvent.subscriberVolume === undefined) return;` at
+`WhatIfTab.tsx` (volume add) and `App.tsx` (the App-level add). No message, no
+disabled state, no focus move — the Add button simply does nothing.
+
+Recorded 2026-08-02 while deciding the layout above, and deliberately NOT fixed
+there: it is a usability defect in its own right, it affects the absolute path
+as much as the percentage one, and folding it into a presentational change
+would have hidden it in that diff. Its own branch.
+
+### Scanner blind spot: object literals are advisory, not enforced — 2026-08-02
+
+`scan-i18n` buckets user-facing strings held in object literals as
+"8 object-literal (REVIEW)". **That bucket does not fail the build.** The
+scanner cannot follow the value from the literal to the JSX that renders it, so
+it reports rather than blocks.
+
+Found by gate stage 1, not by the scanner: `EventChangeConfirmModal` held six
+strings — every modal title and body line — in TITLES and BLURBS objects. They
+were neither keyed nor in `I18N_PHASE2`, because that list was built from the
+MUST-KEY buckets only. The scanner read PASS over them. **A deferral list built
+from the failing buckets inherits the blind spot of whatever does not fail.**
+
+They are now declared. The bucket is still advisory, and deliberately so: 60
+further object-literal items sit in App.tsx (38), ForecastVsActualsTab (12),
+ForecastSummaryBar (4), WhatIfTab (4) and ManageBulkDrawer (2). Making the
+bucket fail would block the build on debt that predates this work; it belongs
+with i18n phase 2.
+
+**Until then, treat a green scanner as covering the MUST-KEY buckets only.**
+When adding user-facing copy inside an object literal, add it to
+`I18N_PHASE2` by hand — nothing will remind you.
+
+### Band 1 wraps, and that is the intended trade — not a defect
+
+`auto-fit` fits as many tracks as the container allows and moves the surplus
+to a second row. So a card wraps when its controls exceed the available
+tracks, and the wrap point depends on how many controls that card carries.
+
+**Measured wrap thresholds** (`scripts/layout-probe`, real component, long
+selection applied — the card is ~973px at `max-w-5xl`):
+
+| controls in the grid | stays on one row above |
+|---|---|
+| 4 | 780px |
+| 5 | 970px |
+| 6 | 1150px |
+
+Volume with Tariff inactive is 5 controls and sits on one row at 973px — with
+about 3px to spare, so it is genuinely marginal. Activate Tariff and it is 6
+controls, below the 1150px threshold, and Month moves to a second row alone.
+The same happens on resize at any control count.
+
+#### The cards are not identical in wrap point, and cannot be
+
+They carry different numbers of controls, and only Volume has the three-band
+split at all:
+
+| card | grids | labelled cells |
+|---|---|---|
+| Volume | 3 (targeting / effect / details) | 6 + 3 + 4 |
+| Pricing | 1 | 6 |
+| Promotion | 1 | 10 |
+| Value | 1 | its own shape |
+
+That is why the observed behaviour differs per card: Volume shows Month alone
+on a second row when Tariff is active; Promotion, whose single grid holds ten
+cells, shows Month alongside Acquisition Volume and Contract Length; Pricing
+fits its six on one row. All three are the same rule producing different
+results from different inputs.
+
+**What `spec:cards` asserts, and therefore what consistency means here:** one
+grid ladder, one vertical alignment, one name per concept, and the agreed
+ordering of shared targeting controls. It does **not** assert identical wrap
+points, and it should not — that would be asserting the cards carry identical
+controls, which they do not.
+
+#### Why the wrap is the better outcome
+
+Forcing one row needs one of two things, and both are worse:
+
+- **Narrower tracks.** This is exactly what produced the original defect. Six
+  equal `minmax(0, 1fr)` tracks gave 139px each and controls overflowed into
+  their neighbours. A clipped control that silently hides its own text is
+  worse than a control on the next line.
+- **A wider card.** `max-w-5xl` is a deliberate reading-width constraint
+  shared with the rest of the app; widening this one card to fit a row would
+  trade a global convention for a local layout preference.
+
+A clean wrap costs vertical space and nothing else. Treat it as expected
+behaviour in any layout check, not as a finding.
+
+### CORRECTED 2026-08-02: the month input was never starved
+
+The entry below diagnosed the clipping as a native month input starved of its
+155px intrinsic minimum. **That was wrong.** It was built on three hand-written
+repros of `HierarchicalDropdown`, each internally consistent and each measuring
+markup I had retyped rather than the component itself.
+
+Measured against the real component, mounted (`scripts/layout-probe`):
+
+| | measured |
+|---|---|
+| Channel trigger, long selection | **236.7px** in a 172.2px cell |
+| Overflow past its own cell | **70.5px** |
+| Overlap onto the Month cell | **54.5px** |
+| Month input | 172.2px — **not starved** |
+
+**The real mechanism.** The trigger sat inside `<div className=relative>`, a
+flex item, whose `min-width` defaults to `auto` — so it would not shrink below
+its content. `w-full` on the button resolves against that box, making the
+constraint circular so it never binds. The trigger therefore sized itself to
+the selected label and painted over its neighbour. Adding `min-w-0` to that one
+wrapper takes the overflow from 70.5px to 0; removing it again reproduces
+70.5px exactly.
+
+The 155px figure and the shadow-DOM clipping note below are both accurate. They
+were simply not the cause. The intrinsic-minimum entry is kept because the
+scrollWidth finding is worth having; treat its DIAGNOSIS as superseded.
+
+**Why a static floor is now a valid assertion.** It was not before: a
+dropdown's width followed its selected value, which is user data with no upper
+bound, so no constant could be correct. With truncation guaranteed the variable
+is removed rather than bounded, and the only remaining fixed minimum is the
+month input's.
+
+### A native month input clips silently — and "uniformly wrong is uniform"
+
+Every card rendered `ugust 2026` instead of `August 2026`. Band 1 was six equal
+`minmax(0, 1fr)` tracks; at the real container width (≈912px inner, after
+`max-w-5xl` and two levels of padding) that is **139px** per track. A native
+`<input type="month">` has an intrinsic minimum of **155px** at this font size
+and padding. Forced to `w-full` in a 139px track, it clipped its own text.
+
+| container | track | month needs | short by |
+|---|---|---|---|
+| 1200 | 187 | 155 | fits |
+| 1050 | 162 | 155 | fits |
+| **912 (real)** | **139** | 155 | **−16** |
+| 860 | 130 | 155 | −25 |
+
+#### Why no check could have caught it geometrically
+
+**`scrollWidth === clientWidth` on a clipped month input.** Measured at 187,
+162, 155, 139 and 130px: equal at every one. The native control clips inside
+its shadow DOM and reports no overflow. Nothing you can ask the element will
+tell you its text is cut.
+
+The only detection is **comparing intrinsic minimum width against allocated
+width** — which requires knowing the intrinsic minimums, which requires
+measuring them once and recording them. `spec:cards` now does exactly that.
+
+#### Uniformly wrong is uniform
+
+`spec:cards` asserted that all four cards used one identical grid ladder. They
+did. It passed while every card was visibly broken, because the ladder was
+uniformly **wrong**.
+
+**Consistency is not correctness, and a spec that only checks consistency will
+certify a uniform defect.** The assertion now checks the property that matters:
+the track floor must clear the widest control's intrinsic minimum. Boundary-
+tested at 155 (passes), 154 (fails) and 139 (fails).
+
+#### The fix, and the two companions
+
+`repeat(auto-fit, minmax(170px, 1fr))` replaces a three-breakpoint ladder with
+one declaration. Content-sized, wraps naturally, and no fixed column count that
+is wrong at some width. Verified across 15 combinations — five container widths
+× three control counts, covering all four cards' shapes: **no starved track and
+no spill in any of them**, narrowest month track 197px against 155px needed.
+
+The hierarchical dropdown carried `min-w-[100px]` and no `min-w-0` on its root,
+so it could not shrink and spilled 6–14px past its cell at narrow widths. It
+now truncates. The DARK variant keeps an explicit cap: it lives in the top
+filter bar, a flex toolbar with no column to size against.
+
+#### Known consequence: band 3 cells stretch when Revenue and ARPU hide
+
+`auto-fit` collapses empty tracks, so when percentage mode hides two of band
+3's four cells the survivors stretch — 216px to 448px at the real width. Band 1
+stays pixel-identical and band 3's top does not move, so the step-5 containment
+property (nothing outside band 2 REFLOWS) still holds; but the cells resize,
+which they did not under the fixed grid.
+
+`auto-fill` would keep them stable by preserving empty tracks — at the cost of
+the trailing empty track that `auto-fit` was chosen to remove. The two cannot
+both be had from one declaration. **Open: which matters more.** Band 1's shape
+is static per deployment (Tariff depends on column mapping); band 3's changes
+at runtime on a toggle, which is the more visible of the two.
+
+### Every read of `subscriberVolume`, audited — 2026-08-02
+
+Three defects of one shape had been found one at a time (the Outflow Δ column,
+the Inflow ARPU pool, then the pool again in the second path). Finding a fourth
+the same way would have been a process failure, so every read was enumerated
+and classified instead: **67 sites**, across both application paths and the
+display layer.
+
+The rule that decides each one: **does this site treat the field as a count?**
+If yes, a percentage event — which stores a PERCENT there — makes it wrong.
+
+#### Fixed, because they were reachable
+
+| Site | What went wrong |
+|---|---|
+| `scenarioHelper` base pool | The `else` branch adds `Subscriber_Volume` raw to `p_basePool`. It is reached whenever an event carries no ARPU of its own — which is **every** percentage event, since the add path zeroes ARPU for them. It put the percent into the base pool. |
+| `retentionWarnings` | Compared `subscriberVolume × share` against forecast outflow. For a percentage event that compares ~10 against thousands, so the warning could never fire — a **false negative**, the worse direction for a warning. |
+| The warning text | Printed the stored figure through `formatNumber`, rendering "10" as a subscriber count for a 10% event. |
+
+#### Unsafe but unreachable — recorded, not fixed
+
+`WhatIfTab`'s **`promoRebanded` pool** still sizes from `e.subscriberVolume *
+eventShare(e)` with no `amountType` guard.
+
+It cannot be hit today: that pool is built only for events with
+`promoRebanded`, which is set exclusively by `buildPromoEvents`, and
+`buildPromoEvents` never sets `amountType` — percentage is a Volume-tab
+capability by rule. There is no path by which a percentage event acquires
+`promoRebanded`.
+
+Left as-is deliberately rather than defensively patched, so that it fails
+loudly if percentage-on-promo is ever attempted without doing the engine work
+first. **It is step 2 of the order recorded in the promo-card entry below,**
+and a silent guard here would remove exactly the signal that order depends on.
+A one-line change to `resolvedEventVolume` closes it whenever that work starts.
+
+#### Safe, and why
+
+- **`sharedVolume` at both application sites** — passed to `applyEventsToMonth`,
+  which ignores it entirely for percentage events (phase 1 returns early). Safe
+  by construction, not by coincidence.
+- **`percentAmount`** — reads the field *as* a percent. Correct.
+- **`revenue ÷ subscriberVolume`** ARPU derivation — guarded by
+  `Math.abs(e.revenue) > 0`, and percentage events carry revenue 0. **This is
+  the same accidental protection the pool relied on**; it holds only while
+  nothing bakes revenue onto a percentage event.
+- **Campaign spread reconstruction** (`Math.abs(e.subscriberVolume)` summed) —
+  gated behind `group.editable`, and `groupByCampaign` bars any campaign
+  containing a percentage row. Safe by rule.
+- **Table delta columns** — render through a percent-aware formatter.
+- **Form state, export, import, validation** — store and round-trip the field
+  without interpreting it.
+
+#### The lesson, since this is the third instance
+
+**Adding a second meaning to an existing field makes every existing reader a
+candidate defect.** `amountType` changed what `subscriberVolume` means, and the
+engine was taught the new meaning while sixty-odd other readers were not. None
+of them broke loudly; two were invisible because an unrelated value happened to
+be zero.
+
+When a field gains a mode, enumerate its readers **at that moment** and classify
+every one. Finding them individually afterwards, by symptom, is what happened
+here and it took three rounds.
+
+### The ARPU pool read a percentage event's percent as a headcount — 2026-08-02
+
+Pass 2 sizes each event's ARPU pool from the volume the view received:
+`size: e.subscriberVolume * eventShare(e)`, with no `amountType` guard. For a
+percentage event `subscriberVolume` holds the PERCENT, so a +10% event that
+added 755.6 subscribers built a pool of **10**. Both paths had it —
+`WhatIfTab` and `scenarioHelper` — and neither had `derivations` available to
+do better.
+
+**Measured, on the fixture:** blended ARPU 25.00 where the correct figure was
+25.13; the wrong value matched a pool of size 10 exactly. Path B: 25.000614
+against a correct 25.046397, within 1.1e-6 of the raw-percent case. After the
+fix both match the correct figure, Path B to full precision.
+
+**It did not bite through the UI, and that is the uncomfortable part.** The add
+path forces `arpu: 0, revenue: 0` on percentage events, so their pool derives
+the baseline ARPU, which is the base pool's ARPU, so a wrong SIZE moves a blend
+of identical rates by nothing. Verified: with ARPU 0 the defect is invisible.
+
+**That protection was a side effect, not a rule.** Nothing declared it, nothing
+tested it, and the first caller to bake a real ARPU onto a percentage event —
+a promo mix arm, precisely the feature under discussion — would have removed it
+silently. `resolvedEventVolume` now makes it explicit, shared by both paths so
+this cannot become a fourth implementation of "what volume did this event
+contribute".
+
+The class of defect is the one already recorded above for the Outflow Δ column:
+**a derived value computed independently of the engine drifts exactly where the
+engine was taught a case the derivation was not.** Second instance in two days.
+When percentage support was added, every site that reads `subscriberVolume` as
+a count became a candidate; two were found by reading, both by looking for the
+pattern rather than the symptom.
+
+### Percentage on the Promotion card — declined, and the reason is the
+### resolution model, not the interaction count — 2026-08-02
+
+The original exclusion cited interaction complexity: an optional mix arm plus
+an optional pricing arm plus a percentage volume basis multiplies the cases.
+That was the wrong reason, and the user has said so. The blocker is structural.
+
+**Percentage events defer resolution.** The actual delta is computed per view,
+per month, inside `applyEventsToMonth`, and everything upstream is deliberately
+left unresolved — which is why percentage rows dash ARPU and revenue.
+
+**`buildPromoEvents` resolves eagerly.** It bakes a concrete volume, ARPU and
+revenue once at creation. Three downstream mechanisms depend on that being a
+real, scale-bound number: the Inflow pool's `revenue ÷ volume` ARPU derivation,
+the `promoRebanded` Retention pool, and campaign-edit spread reconstruction.
+
+A percentage anchor cannot supply what eager resolution needs. That is not a
+form problem and no amount of form design fixes it.
+
+**Order, if it is ever taken up:**
+
+1. Settle the pool question. *(Done 2026-08-02, above — it was a real defect.)*
+2. Teach the pool code to consume `applyEventsToMonth`'s derivations in BOTH
+   paths, verified byte-identical for absolute cases first. *(Done for the
+   Inflow pool; `promoRebanded` still reads `e.subscriberVolume` directly.)*
+3. Then the form — and only then, with the volume % and the price % visually
+   and lexically separated well beyond a shared "%" glyph.
+
+#### Pre-existing drift: `computeScenarioForFilter` has no `promoRebanded`
+
+`WhatIfTab`'s adjusted-forecast engine carves an isolated re-banded ARPU pool
+for a Retention promo carrying a mix and/or pricing arm. **`scenarioHelper` has
+no equivalent block at all.** Retention-promo re-banding therefore happens in
+one of the two event-application paths and not the other, today, for absolute
+events.
+
+Found 2026-08-02 while scoping percentage-on-promo. It predates that work and
+is not caused by it. Recorded rather than fixed: it is a behavioural difference
+between the two paths that needs a decision about which is correct, not a
+mechanical alignment.
+
+### Percentage events: the display bug only the browser could find — 2026-08-01
+
+The table computed Outflow Δ for a Retention event as `-subscriberVolume`,
+unconditionally. An UNLINKED retention event does not touch outflow, so the
+table advertised a movement the engine would never make.
+
+Every unit measurement passed. The engine was right — `applyEventsToMonth`
+skips the outflow coupling when `retentionLinked === false`, and that is
+mutation-tested. The table was right about linked events, which is every event
+that existed before this feature. **The two were only wrong together, on
+screen.** No harness compared them, because comparing a rendered table cell
+against an engine field is not a comparison either one invites.
+
+Found by creating a percentage Retention event through the UI with the link set
+to No, and reading the row. That was the first percentage event in this feature
+not constructed in a harness.
+
+The lesson is narrower than "test in a browser". It is: **a derived display
+value computed independently of the engine is a second implementation of the
+rule**, and it drifts exactly where the two disagree about a case only one of
+them was taught. Prefer reading the engine’s own output; where the table must
+derive, make the derivation depend on the same flag the engine reads.
+
+#### The other three the form had to get right
+
+- **Sign.** Absolute Outflow volumes are stored negative; percentage amounts
+  are not, because a percentage applies in its natural direction. `neg()`
+  excludes percentages, or +10% outflow would store as −10%.
+- **ARPU auto-fill.** `resolveEventArpuRevenue` is skipped for percentages. Its
+  trailing average is a per-subscriber figure that means nothing here, and
+  storing one would put a misleading number behind a deliberately dashed column.
+- **Spread.** Hidden for percentages rather than guarded: spreading 10% over
+  three months is ambiguous between 10% total and 10% each, and no answer was
+  settled. Switching to percentage also clears a spread already toggled on,
+  which would otherwise persist invisibly and still apply on Add.
+
+### Percentage events: the traps in the surrounding work — 2026-08-01
+
+Three places where the obvious implementation is quietly wrong, and one
+pre-existing gap left open deliberately.
+
+**The ARPU Δ dash cannot key off `arpu !== 0`.** `resolveEventArpuRevenue`
+auto-fills the cohort trailing average whenever ARPU is left blank on an Inflow
+or Retention event, so a percentage row normally arrives carrying a non-zero
+`arpu`. The rule lives in `eventArpuDelta` and keys off `amountType`. It was
+extracted from the JSX for a reason: while it was inline, the spec could only
+restate it, and a mutation reverting the table to the naive rule passed every
+assertion. **A test that restates a rule tests the restatement.**
+
+**A confirmation's "after" must be the state that will exist.** The mechanism is
+structural: the pending change carries the exact array to be committed, the
+preview is computed from that array, and confirming commits that same array.
+There is no second derivation to drift. The first version of the summary read a
+single month — the last — and so reported "no change" for any event dated
+earlier, which is most events. Flows are now totalled across the horizon and
+Base, being a stock, is read at the final month.
+
+**Percentage rows are barred from campaign group edit by rule.** Group edit
+reverse-engineers a ramp by summing `Math.abs(subscriberVolume)`, meaningless
+for a row storing a percent. An `amountType` clause was also added to the
+homogeneity test and then removed: it sat behind the blanket rule, so it could
+never change an outcome, and deleting it left every assertion green. **An
+unreachable guard reads as protection while providing none** — prefer one rule
+that fires to two where only the first can.
+
+The intra-campaign **date** sort is untouched. It feeds those month offsets and
+answers a different question from the table's display order.
+
+**Provenance comes from the engine.** `applyEventsToMonth` records basis,
+percent, coverage and delta as it uses them. A view-side re-derivation would
+look entirely plausible while drifting from the calculation it claims to
+explain.
+
+#### Still open: import site 2 drops the promo fields
+
+`App.tsx` has TWO independent import routines — session restore and the
+actuals-workbook path. The workbook path has never restored `isPromotion`,
+`promoRebanded`, `promoMixAxis`, `promoMix`, `promoPricingMode` or
+`promoPricingAmount`.
+
+Every percentage field was added to **both**, and a mutation test confirms a
+field removed from either side fails. The promo gap predates this work and was
+left alone rather than folded in, so the scope decision stays with the reader.
+It is worth closing: it is the same shape of bug, sitting in adjacent code.
+
+### Percentage events: coverage, not share — 2026-08-01
+
+Absolute and percentage events need **different** scoping arithmetic, and the
+two functions are one character apart in intent and easy to swap by accident:
+
+| | formula | used by |
+|---|---|---|
+| `eventProRataShare` | metric(view ∩ target) / metric(**target**) | absolute |
+| `eventCoverage` | metric(view ∩ target) / metric(**view**) | percentage |
+
+An absolute event carries a fixed quantity that must be **split** between the
+cohorts under its target. A percentage carries no quantity — it scales whatever
+it lands on — so splitting it would shrink it wrongly. What it needs instead is
+how much of what it landed on it is entitled to touch.
+
+Concretely: event targets All, view is one cohort. Coverage is 1, so +10% means
++10% of that cohort. The share would be well under 1 and would understate it.
+Reverse the containment — event targets one tariff, view is the whole cohort —
+and coverage is that tariff's fraction, so +10% of that tariff lands as the
+right absolute number at the aggregate.
+
+**Measured:** each of 5 tariff leaves took exactly 10% of its own inflow
+(RED L 369.4, RED M 212.8, RED S 19.0, RED ULTD 22.6, RED XL 208.7) and the
+leaves summed to 832.500000 against an aggregate effect of 832.500000 — exact.
+
+**Known characteristic, not a defect.** `buildLeaves` applies no date filter, so
+leaf weights are all-time totals and coverage is an all-time ratio applied to
+one month. On the measured case that is 0.442442 against the month's own
+0.443724, 0.128 pp apart. `eventProRataShare` has always behaved this way for
+absolute events; the two are consistent with each other, which matters more.
+
+#### The `sequence` field is not load-bearing for the maths
+
+Worth stating plainly because the natural assumption is the opposite, and the
+design note that motivated this feature made it (see the bulk-edit entry).
+
+Percentage events are flat: each resolves against a basis frozen before any of
+them ran, so none can observe another's output. Two +10% events give +20%, not
++21% — **verified, and verified to be distinguishable**, since 1200 and 1210 are
+different numbers. Reversing the array changes nothing, and neither does moving
+an absolute event between two percentages.
+
+So there is no processing order to get right, and adding one would create the
+coupling it appears to guard against. `sequence` exists for display stability
+and edit-slot retention. If percentages are ever made to compound, this stops
+being true and sequence becomes load-bearing for the numbers — a much larger
+change than it looks.
+
+#### Why two phases
+
+`adjusted` basis has to mean something stable. Resolved inside the original
+single mutating pass, "the adjusted value" would have meant whatever the running
+total happened to be when that event's turn came — making the result depend on
+array position, which the user neither controls nor sees. Absolutes apply, the
+result is snapshotted, then every percentage resolves against baseline or that
+snapshot. **Verified:** an absolute event placed before or after a percentage
+event gives the identical answer, and the two bases give different answers
+(13157.5 vs 13557.5) so the check is not vacuous.
+
+#### One spec assertion had to change, and why that was legitimate
+
+`spec:prorata` asserted `forecasting.ts carries no RATE-event matcher`. True when
+written — EXPECTED.md claimed it did and grep found none. It stopped being true
+hours later, when both paths were refactored to delegate to
+`applyEventsToMonth` and the ARPU branch moved into `forecasting.ts`.
+
+The old assertion was about **where** rate handling lived, which is not the
+property worth protecting. It now asserts the durable one: wherever it lives, a
+rate is added directly and never scaled by a share or coverage, and the
+percentage phase never assigns to `arpu`. Both mutation-tested.
+
+The general point: when a structural assertion fails because of a deliberate
+refactor, check whether it was asserting the invariant or merely its current
+address. Deleting it loses the invariant; leaving it forces the code to keep an
+arrangement nobody chose.
 
 ### Pro-rata leaf weights are PER METRIC — fixed 2026-08-01
 
@@ -1566,6 +2132,28 @@ pre-existing, not introduced. That is the point: **removing a dead subsystem
 does not automatically remove what fed it or what it fed.** After deleting one,
 grep for the state it wrote and the props it filled, or the tail survives and
 still reads as live.
+
+#### A fourth: `MarketEventType`, dead by decoy rather than by orphaning
+
+`src/types/forecast.ts:276` declares
+`export type MarketEventType = 'Inflow' | 'Retention' | 'Outflow'`. It has
+exactly one reference in `src/` — its own declaration. Verified by grep during
+the percentage-events mapping pass, 2026-08-01.
+
+This one is a different failure mode from the three above, and the more
+dangerous one. Those were dead because their callers went away. This has been
+dead since it was written, and it survives because it is **plausible**: it has
+the obvious name for the event type, it sits in the file called `types`, and it
+is exported. The real record is the `MarketEvent` interface in
+`src/utils/forecasting.ts:4` — a utils file, which is not where anyone looks
+first.
+
+So the reachability rule needs a second half. **A symbol can be unreachable and
+still cost you, by being the thing a reader finds before the live one.** Grep
+for references before extending a type you found by name; a zero-reference
+export is not a base to build on, it is a decoy. Left in place deliberately
+pending removal, recorded here so the next reader who reaches for it by name
+has been warned.
 
 **The tail was removed too, 2026-07-31.** `WhatIfTab`'s `missingMonths` prop and
 its gap-warning block are gone. It was not a working capability being deleted —

@@ -326,9 +326,67 @@ const TRANS_BACKLOG = new Set<string>([
   'WhatIfTab.tsx::tier',
 ]);
 
+/**
+ * PHASE 2 i18n BACKLOG — percentage market events, 2026-08-02.
+ *
+ * These strings ship in English deliberately. Keying them costs six locales
+ * each, and the five non-English values would be mine to invent with nobody
+ * able to check them — an unverifiable translation reads as finished work and
+ * is worse than an obvious gap. Shipping English is honest; shipping guessed
+ * German is not.
+ *
+ * They are listed rather than pattern-excluded so the list has to shrink
+ * deliberately. Adding a string here is a decision; forgetting to key one is
+ * not possible.
+ *
+ * Keyed by file + TEXT for the same reason as TRANS_BACKLOG above: line
+ * numbers shift and would silently un-defer an entry, failing the build for an
+ * unrelated edit.
+ *
+ * To close: key each string, add all six locales, delete its entry here. The
+ * check fails again the moment an entry names a string that no longer exists,
+ * so a half-finished pass cannot sit unnoticed.
+ */
+const I18N_PHASE2 = new Set<string>([
+  // Object literals. The scanner buckets these as "8 object-literal (REVIEW)",
+  // which does NOT fail the build — it cannot follow the data flow to the JSX
+  // that renders them. The first version of this list was built from the
+  // MUST-KEY buckets only, so these six were neither keyed nor declared and the
+  // scanner went green over them. Found by a gate, not by the scanner.
+  'EventChangeConfirmModal.tsx::Delete this event?',
+  'EventChangeConfirmModal.tsx::Save these changes?',
+  'EventChangeConfirmModal.tsx::Clear all market events?',
+  'EventChangeConfirmModal.tsx::The forecast will be recalculated without this event.',
+  'EventChangeConfirmModal.tsx::The forecast will be recalculated with the edited event.',
+  'EventChangeConfirmModal.tsx::Every market event will be removed and the forecast returned to baseline.',
+  "EventChangeConfirmModal.tsx::{} event{}.",
+  "EventChangeConfirmModal.tsx::Floored at zero after this change",
+  "EventChangeConfirmModal.tsx::No baseline forecast loaded, so there is nothing to recalculate.",
+  "EventChangeConfirmModal.tsx::Clear all",
+  "EventChangeConfirmModal.tsx::Delete",
+  "EventChangeConfirmModal.tsx::Save",
+  "WhatIfTab.tsx::Change to {}",
+  "WhatIfTab.tsx::Subs",
+  "WhatIfTab.tsx::Applied to each cohort's own {}. Negative reduces it.",
+  "WhatIfTab.tsx::Subscribers added or removed this month.",
+  "WhatIfTab.tsx::Percentage of",
+  "WhatIfTab.tsx::Baseline is the original forecast. Adjusted is the value once absolute events in the same",
+  "WhatIfTab.tsx::Forecast to leave?",
+  "WhatIfTab.tsx::Were these customers already forecast to leave? Applies to both subscriber and percentage",
+  "WhatIfTab.tsx::Reduces forecast outflow, so Base rises.",
+  "WhatIfTab.tsx::Retention moves alone; Base is unchanged.",
+  "WhatIfTab.tsx::Hide derivation",
+  "WhatIfTab.tsx::Show how this was applied",
+  "WhatIfTab.tsx::How this was applied",
+  "WhatIfTab.tsx::This event does not apply in the current view.",
+  "WhatIfTab.tsx::In scope",
+  "WhatIfTab.tsx::Applied = basis x % x in-scope share. \"In scope\" is how much of this view lies inside the",
+]);
+
 function bucketOf(h: Hit): string {
   const base = h.file.split(/[\\/]/).pop() ?? h.file;
   if (TRANS_BACKLOG.has(`${base}::${h.text.trim()}`)) return '1b fragment (DEFERRED Trans)';
+  if (I18N_PHASE2.has(`${base}::${h.text.trim()}`)) return '9 english-only (DEFERRED phase 2)';
   const t = h.text.trim();
   if (h.note === 'IDENTIFIER-OPERAND') return 'ident (excluded)';
   if (DATEFMT.test(t) && t.length <= 20) return 'date-format (excluded)';
@@ -375,6 +433,46 @@ console.log('\nfull inventory -> scan_i18n_report.json');
 // it is translated, and in the Monthly Variance case it was already broken in
 // English because the key slug collided with a display string.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// LOST INTER-ELEMENT WHITESPACE.
+//
+// Extraction split sentences at their <strong> boundaries and TRIMMED the
+// whitespace that sat between a text node and the element after it. The space
+// belonged to neither side, so it survived in neither: `{t('whatif_use')}
+// <strong>` rendered "UsePromotion". Twenty-one sites across six components
+// carried it before 2026-08-02, and nothing caught it because every key
+// resolved and every locale had it — the check for missing keys cannot see a
+// missing space.
+//
+// The fix is {' '} in the JSX, never a trailing space inside the .json value.
+// A trailing space is invisible in review and the first translator to tidy the
+// file deletes it.
+//
+// A wrapper holding only an icon is exempt: it renders no text, and the flex
+// gap on its parent supplies the separation.
+// ---------------------------------------------------------------------------
+const ICON = /<(Info|Chevron\w*|Alert\w*|Check\w*|X|Pencil|Trash\w*|Activity)\b/;
+const wsErrors: { file: string; line: number; key: string; el: string; val: string }[] = [];
+const enForWs: Record<string, string> = JSON.parse(
+  fs.readFileSync(path.join('src', 'locales', 'en', 'translation.json'), 'utf8'));
+for (const file of files) {
+  const lines = fs.readFileSync(file, 'utf8').split('\n');
+  lines.forEach((line, i) => {
+    const re = /\{t\('([a-z_0-9]+)'\)\}<(strong|b|em|span|a)\b/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(line)) !== null) {
+      const val = String(enForWs[m[1]] ?? '');
+      if (!/[\w,;:)\.]$/.test(val)) continue;           // ends in punctuation that closes
+      const after = (line.slice(m.index + m[0].length) + ' ' + lines.slice(i + 1, i + 3).join(' ')).slice(0, 200);
+      const gapped = line.slice(0, m.index).includes('gap-');
+      if (ICON.test(after) && gapped) continue;          // icon wrapper, separation comes from the gap
+      wsErrors.push({ file, line: i + 1, key: m[1], el: m[2], val: val.slice(-30) });
+    }
+  });
+}
+console.log(`\nINTER-ELEMENT WHITESPACE: ${wsErrors.length} site(s) where a translated string abuts an element with no space`);
+for (const e of wsErrors) console.log(`  ${e.file}:${e.line}  <${e.el}  ${e.key}  ...${JSON.stringify(e.val)}`);
+
 console.log(`\nt() IN IDENTIFIER POSITION: ${identErrors.length}`);
 for (const e of identErrors) console.log(`  ${e.file}:${e.line}  [${e.kind}]  ${e.text}`);
 
@@ -405,6 +503,11 @@ const LOCALE_DEFERRED = new Set<string>([
   'bulk_large_run_detail',
   'bulk_large_run_title',
   'bulk_no_source_cohort',
+  // Percentage events, 2026-08-02. Present in all six locales but carrying
+  // ENGLISH in the five non-English ones. Listed here rather than left to look
+  // translated: parity would pass on the key existing, which is exactly the
+  // kind of green that means nothing.
+  'whatif_revenue_arpu_not_applicable_to_percentage',
 ]);
 
 const LOCALES = ['de', 'es', 'fr', 'it', 'pt'];
@@ -424,8 +527,18 @@ const staleDeferred: string[] = [];
   }
   // A deferred key that HAS been translated everywhere should leave the list,
   // or it silently exempts a key that no longer needs exempting.
+  //
+  // PRESENCE IS NOT TRANSLATION. This tested only that the key existed in each
+  // locale, so a key carrying identical ENGLISH in all six read as "translated
+  // everywhere" and the scanner advised removing its exemption — recommending
+  // that untranslated copy be treated as done. Found by gate stage 3 on
+  // whatif_revenue_arpu_not_applicable_to_percentage, which is English in all
+  // six by design. A locale now counts as translated only if its value DIFFERS
+  // from the English one.
   for (const k of LOCALE_DEFERRED) {
-    if (k in enBundle && LOCALES.every(l => k in others[l])) staleDeferred.push(k);
+    if (!(k in enBundle)) continue;
+    const en = String(enBundle[k]);
+    if (LOCALES.every(l => k in others[l] && String(others[l][k]) !== en)) staleDeferred.push(k);
   }
   console.log(`\nLOCALE PARITY: ${localeGaps.length} key(s) in en missing from another locale ` +
     `(${LOCALE_DEFERRED.size} explicitly deferred)`);

@@ -172,13 +172,16 @@ export function HierarchicalDropdown({
     ? [
         'appearance-none bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs',
         'px-2 py-1.5 pr-7 rounded-lg border border-slate-200 focus:outline-none focus:border-[#e60000]',
-        'cursor-pointer transition-colors flex items-center gap-1 min-w-[100px] max-w-[180px] truncate',
+        'cursor-pointer transition-colors flex items-center gap-1 min-w-0 max-w-full truncate',
         className,
       ].join(' ')
     : [
         'appearance-none bg-slate-700 hover:bg-slate-600 text-slate-100 text-xs',
         'px-2.5 py-1 pr-7 rounded border border-slate-600 focus:outline-none focus:border-slate-400',
-        'cursor-pointer transition-colors flex items-center gap-1 max-w-[160px] truncate',
+        // Dark is the top filter bar — a flex toolbar with no column to size
+        // to, so it keeps an explicit cap. Only the light variant, which sits
+        // in a grid cell, is fluid.
+        'cursor-pointer transition-colors flex items-center gap-1 min-w-0 max-w-[180px] truncate',
         className,
       ].join(' ');
 
@@ -187,9 +190,15 @@ export function HierarchicalDropdown({
   if (tree.size === 0) return null;
 
   return (
-    <div className="flex items-center gap-1.5 relative">
+    <div className="flex items-center gap-1.5 relative min-w-0">
       <span className="text-[10px] uppercase tracking-wide text-slate-500 shrink-0">{label}</span>
-      <div className="relative">
+      {/* min-w-0 is load-bearing. This is a flex item, so its min-width
+          defaults to auto and it will not shrink below its content — which
+          made the trigger size to the selected label (236.7px measured for
+          "Direct — Call Centre / Tele-sales") and paint 70px over the next
+          grid cell. w-full on the button resolves against THIS box, so
+          without it the width constraint is circular and never binds. */}
+      <div className="relative min-w-0">
         <button
           ref={triggerRef}
           type="button"

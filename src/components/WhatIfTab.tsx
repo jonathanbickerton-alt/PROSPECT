@@ -1,6 +1,6 @@
 import React, { useMemo, useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Info, Download, Trash2, CheckCircle2, XCircle, Activity, AlertTriangle, Pencil } from 'lucide-react';
+import { ArrowLeft, Info, Download, Trash2, CheckCircle2, XCircle, Activity, AlertTriangle, Pencil, ChevronRight, ChevronDown } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip,
   Legend, Line, Brush, ReferenceLine,
@@ -8,8 +8,9 @@ import {
 import { format, parse, isValid, addMonths, differenceInCalendarMonths } from 'date-fns';
 import { useForecast } from '../context/ForecastContext';
 import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent } from '../types/forecast';
+import { EventChangeConfirmModal } from './EventChangeConfirmModal';
 import type { MarketEvent } from '../utils/forecasting';
-import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix, eventProRataShare } from '../utils/forecasting';
+import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
@@ -96,7 +97,6 @@ interface WhatIfTabProps {
   downloadExcel: (data: any[], filename: string, params?: any[]) => void;
   formatNumber: (v: any) => string;
   setActiveView: (v: string) => void;
-  /** Calendar months absent from the cohort's historical series — populated by gap detection in computeWhatIfData */
 }
 
 // ---------------------------------------------------------------------------
@@ -273,12 +273,24 @@ interface BuildPromoEventsParams {
   spreadMonths: number;
   spreadDistType: 'even' | 'custom';
   customDist: number[];
+  /** First display slot for the rows produced; a spread takes consecutive
+   *  slots from here. Required so a caller cannot forget to allocate one. */
+  startSequence: number;
 }
 
 /** Builds one or more MarketEvent rows for the Custom Promotion Card — a
  *  single event, or a ramp/decay spread, depending on spreadEnabled. Shared by
  *  Add, Save Edit, and Save Campaign so the mix-blend / pricing-delta /
- *  cohort-average resolution logic is never duplicated. */
+ *  cohort-average resolution logic is never duplicated.
+ *
+ *  Percentage amounts are a Volume-tab capability and are deliberately absent
+ *  here: this function never sets amountType, so every promo row is absolute.
+ *  The card is already compositional — an optional mix arm and an optional
+ *  pricing arm — and putting a percentage volume basis underneath both
+ *  multiplies the interaction space for a case nobody has asked for. The
+ *  exclusion is a rule, not a guard: percentage rows are also barred from
+ *  campaign group-editing rather than defensively handled there. Revisit only
+ *  on a real request, and cost the combinations before agreeing. */
 function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
   const applyPricing = (arpu: number) =>
     p.pricingMode === 'percentage' ? arpu * (1 + p.pricingAmount / 100) : arpu + p.pricingAmount;
@@ -332,6 +344,7 @@ function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
       promoMix: p.mixEnabled ? { ...p.draftMix } : undefined,
       promoPricingMode: p.pricingEnabled ? p.pricingMode : undefined,
       promoPricingAmount: p.pricingEnabled ? p.pricingAmount : undefined,
+      sequence: p.startSequence + i,
     };
   });
 }
@@ -344,7 +357,7 @@ function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
  * pre-filter `events` to their own card's rows (e.g. `!e.isPromotion` for
  * Volume, `e.isPromotion` for Promotion) before calling this.
  */
-function groupByCampaign(events: MarketEvent[]): Map<string, { rows: MarketEvent[]; editable: boolean; reason: string }> {
+export function groupByCampaign(events: MarketEvent[]): Map<string, { rows: MarketEvent[]; editable: boolean; reason: string }> {
   const groups = new Map<string, { rows: MarketEvent[]; editable: boolean; reason: string }>();
   events.forEach(e => {
     if (!e.campaignName) return;
@@ -368,7 +381,23 @@ function groupByCampaign(events: MarketEvent[]): Map<string, { rows: MarketEvent
     const d0 = parse(first.date, 'yyyy-MM', new Date());
     const dN = parse(g.rows[g.rows.length - 1].date, 'yyyy-MM', new Date());
     const span = isValid(d0) && isValid(dN) ? differenceInCalendarMonths(dN, d0) + 1 : 0;
-    if (!homogeneous) {
+    const anyPercentage = g.rows.some(e => e.amountType === 'percentage');
+    if (anyPercentage) {
+      // Barred by RULE, and checked before homogeneity so it is the reason the
+      // user sees. Campaign group edit reverse-engineers a ramp by summing
+      // Math.abs(subscriberVolume) across the rows (handleEditCampaignStart) —
+      // arithmetic that is meaningless for a row storing a percent rather than
+      // a quantity, and would produce a plausible, wrong spread.
+      //
+      // The homogeneity test below deliberately does NOT also compare
+      // amountType. It was written that way first, and it is unobservable: this
+      // branch catches every campaign containing a percentage row, so the extra
+      // clause could never change an outcome. An unreachable guard reads as
+      // protection while providing none, and a mutation test proved it — the
+      // clause could be deleted with every assertion still green.
+      g.editable = false;
+      g.reason = 'Percentage events are edited individually, not as a campaign spread';
+    } else if (!homogeneous) {
       g.editable = false;
       g.reason = 'Events in this campaign target different scenarios or cohorts — edit rows individually';
     } else if (first.scenario === 'ARPU' && g.rows.length > 1) {
@@ -589,6 +618,12 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
       tariffL1: vtarL1 ?? 'All',
       tariffL2: vtarL2 ?? 'All',
     };
+    /** The leaf set weighted by the metric an event moves — shared by the
+     *  pro-rata share and the coverage fraction so they can never disagree
+     *  about which leaves an event sees. */
+    const leavesFor = (e: MarketEvent) =>
+      leavesByMetric[(e.scenario as LeafMetric) in leavesByMetric
+        ? (e.scenario as LeafMetric) : 'Inflow'];
     const shareCache = new Map<string, number>();
     /** Share of a VOLUME event belonging to the current view. Rate events never use this. */
     const eventShare = (e: MarketEvent): number => {
@@ -624,38 +659,28 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
         return segMatch && prodL1Match && prodL2Match && chanL1Match && chanL2Match && tarL1Match && tarL2Match;
       });
 
-      let adjInflow = month.inflow.mean;
-      let adjOutflow = month.outflow.mean;
-      let adjRetention = month.retention.mean;
-      let adjArpu = month.arpu.mean;   // direct ARPU-event adjustments only
-      const appliedIds: string[] = [];
-
-      applicable.forEach(e => {
-        // VOLUME events take only this view's pro-rata share of the event.
-        const vol = e.subscriberVolume * eventShare(e);
-        if (e.scenario === 'Inflow') {
-          adjInflow += vol;
-        } else if (e.scenario === 'Outflow') {
-          // subscriberVolume is stored as a negative number for Outflow events.
-          // Subtracting a negative value adds its absolute magnitude to adjOutflow,
-          // which correctly increases outflow and reduces Base (T+1 via lagged formula).
-          adjOutflow -= vol;
-        } else if (e.scenario === 'Retention') {
-          // Retention events reduce Outflow AND increase Retention tracking.
-          // Because Retention is not in the base stock formula, only the Outflow
-          // reduction affects Base (one month later, via the lagged formula).
-          adjOutflow -= vol;
-          adjRetention += vol;
-        } else if (e.scenario === 'ARPU') {
-          // RATE event — deliberately NOT pro-rated. ARPU is a rate, not a
-          // quantity: a volume-weighted average of (leafArpu + delta) already
-          // equals (aggregateArpu + delta), so the same delta applies correctly
-          // at every level. Splitting it by volume share would understate the
-          // price change at leaf level. Do not route this through eventShare().
-          adjArpu += e.arpu;
-        }
-        appliedIds.push(e.id);
-      });
+      const applied = applyEventsToMonth(
+        {
+          inflow: month.inflow.mean,
+          outflow: month.outflow.mean,
+          retention: month.retention.mean,
+          arpu: month.arpu.mean,
+        },
+        applicable.map(e => ({
+          id: e.id,
+          scenario: e.scenario,
+          // VOLUME events take only this view's pro-rata share of the event.
+          sharedVolume: e.subscriberVolume * eventShare(e),
+          arpuDelta: e.arpu,
+          amountType: e.amountType,
+          percentageBasis: e.percentageBasis,
+          retentionLinked: e.retentionLinked,
+          percentAmount: e.subscriberVolume,
+          // A percentage scales what it lands on rather than being split
+          // across it — coverage, not share. See eventCoverage.
+          coverage: e.amountType === 'percentage' ? eventCoverage(e, viewScope, leavesFor(e)) : 1,
+        })),
+      );
 
       computed.push({
         month: month.month,
@@ -666,14 +691,17 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
           arpu: month.arpu.mean,
         },
         uplifted: {
-          inflow: Math.max(0, adjInflow),
-          retention: Math.max(0, adjRetention),
-          outflow: Math.max(0, adjOutflow),
+          inflow: applied.metrics.inflow,
+          retention: applied.metrics.retention,
+          outflow: applied.metrics.outflow,
           // uplifted.arpu starts as the direct-event-adjusted value; it will be
           // overwritten below with the blended ARPU once Base volumes are known.
-          arpu: Math.max(0, adjArpu),
+          arpu: applied.metrics.arpu,
         },
-        appliedEventIds: appliedIds,
+        preFloor: applied.preFloor,
+        derivations: applied.derivations,
+        flooredMetrics: applied.flooredMetrics,
+        appliedEventIds: applied.appliedIds,
       });
     });
 
@@ -861,10 +889,19 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
               arpu: derivedArpu,
               contractLength: e.contractLength ?? DEFAULT_CONTRACT_N,
               enterMonthIdx: idx,
-              // Same pro-rata share as Pass 1 — the pool must hold exactly the
-              // volume this view actually received, or the blended ARPU would be
-              // computed over subscribers that were never added to Base.
-              size: Math.max(0, e.subscriberVolume * eventShare(e)),
+              // The pool must hold exactly the volume this view actually
+              // received, or the blended ARPU is computed over subscribers that
+              // were never added to Base.
+              //
+              // For a percentage event that is NOT subscriberVolume — that field
+              // holds the percent — so the resolved delta comes from the
+              // engine own derivations for the month the event landed in.
+              size: Math.max(0, resolvedEventVolume(
+                e,
+                e.subscriberVolume * eventShare(e),
+                computed[idx - 1]?.derivations,
+                'inflow',
+              )),
             });
           });
       } else {
@@ -1243,7 +1280,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // Historical per-tier ARPU is sum(Revenue)/sum(Volume) over the columns the
     // user selected in Data Mapping/Baseline Forecast generation — never a
     // name-matched "ARPU" column. This mirrors computeCohortTrailingArpu (P4)
-    // and computeWhatIfData's own aggregation, so cohort-average ARPU is derived
+    // and the what-if row aggregation, so cohort-average ARPU is derived
     // the same way everywhere in the app, including the Custom Promotion Card's
     // mix arm (Phase 4), which calls the same computeTierData helper below.
     return computeTierData({
@@ -1403,6 +1440,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
       cohortAvgArpu: promoCohortAvgArpu,
       spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
+      startSequence: nextSequence(marketEvents),
     });
     if (events.length === 0) return;
 
@@ -1424,13 +1462,6 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     [data, wiChannelCol],
   );
   // ── Unique options for Pricing Event form ────────────────────────────────
-  const pricingProductL2Options = useMemo(() => {
-    if (!wiProductL2Col) return [];
-    const filtered = newPricingEvent.product && newPricingEvent.product !== 'All'
-      ? data.filter(r => String(r[wiProductCol]) === newPricingEvent.product)
-      : data;
-    return Array.from(new Set(filtered.map(r => String(r[wiProductL2Col])).filter(v => v && v !== 'undefined'))).sort();
-  }, [data, wiProductCol, wiProductL2Col, newPricingEvent.product]);
 
   // ── Add Yield Event ────────────────────────────────────────────────────────
   // Individual edit for the Value and Pricing cards. Volume and Promotion had
@@ -1680,6 +1711,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         campaignName:     newEvent.campaignName || '',
         comment:          newEvent.comment      || '',
         contractLength:   newEvent.contractLength ?? 24,
+        // Consecutive slots from the end. Omitting these was invisible to
+        // tsc and put every spread row at the TOP of the table, because
+        // bySequence reads a missing sequence as 0.
+        sequence:         nextSequence(marketEvents) + i,
+        amountType:       newEvent.amountType ?? 'absolute',
+        percentageBasis:  newEvent.percentageBasis ?? 'baseline',
+        retentionLinked:  newEvent.retentionLinked ?? true,
       };
     });
 
@@ -1695,11 +1733,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setCustomDist([34, 33, 33]);
   }, [newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, addMarketEvent, setMarketEvents, marketEvents, setNewEvent, cohortAvgArpu]);
 
+  /** Is the draft a percentage event? Read in several places in the form,
+   *  so derived once rather than re-tested. */
+  const isPercentageDraft = newEvent.amountType === 'percentage';
+
   const BLANK_EVENT: Partial<MarketEvent> = {
     scenario: 'Inflow', segment: 'All', product: 'All', productL2: 'All',
     channel: 'All', channelL2: 'All', tariffL1: 'All', tariffL2: 'All', date: format(new Date(), 'yyyy-MM'),
     subscriberVolume: 0, customerVolume: 0, revenue: 0, arpu: 0,
     name: '', campaignName: '', comment: '', contractLength: 24,
+    // Stated rather than left undefined, so a fresh form and a restored
+    // one describe the same state.
+    amountType: 'absolute', percentageBasis: 'baseline', retentionLinked: true,
   };
 
   const handleEditStart = useCallback((event: MarketEvent) => {
@@ -1724,6 +1769,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       campaignName: event.campaignName ?? '',
       comment: event.comment,
       contractLength: event.contractLength,
+      // Restoring these is not optional. Without them, opening a percentage
+      // event for edit and saving would rewrite it as absolute, and the
+      // amount would change meaning from 10 per cent to 10 subscribers.
+      amountType: event.amountType ?? 'absolute',
+      percentageBasis: event.percentageBasis ?? 'baseline',
+      retentionLinked: event.retentionLinked ?? true,
     });
     setEditingEventId(event.id);
     setEditingCampaign(null);
@@ -1843,6 +1894,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         campaignName: newEvent.campaignName || '',
         comment: newEvent.comment || '',
         contractLength: newEvent.contractLength ?? 24,
+        // Overwritten by resequenceRebuild below, which restores the slots
+        // the replaced rows held.
+        sequence: 0,
       }];
     } else {
       const pcts = spreadDistType === 'even'
@@ -1876,6 +1930,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           campaignName: newEvent.campaignName || '',
           comment: newEvent.comment || '',
           contractLength: newEvent.contractLength ?? 24,
+          sequence: 0,
         };
       });
     }
@@ -1883,7 +1938,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // Only replace THIS card's rows for the campaign — a Promotion Card
     // campaign that happens to share this name is a different group
     // (promoCampaignGroups) and must never be touched here.
-    setMarketEvents([...marketEvents.filter(e => e.campaignName !== editingCampaign || e.isPromotion), ...newEvents]);
+    const isMine = (e: MarketEvent) => e.campaignName === editingCampaign && !e.isPromotion;
+    const survivors = marketEvents.filter(e => !isMine(e));
+    const replaced  = marketEvents.filter(isMine);
+    setMarketEvents([...survivors, ...resequenceRebuild(newEvents, replaced, survivors)]);
     setEditingCampaign(null);
     setNewEvent(BLANK_EVENT);
     setSpreadEnabled(false);
@@ -1892,15 +1950,90 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setCustomDist([34, 33, 33]);
   }, [editingCampaign, newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, marketEvents, setMarketEvents, setNewEvent, cohortAvgArpu]);
 
+  // ── Confirmation for changes that recalculate the forecast ───────────────
+  //
+  // The pending change carries the EXACT array that will be committed. The
+  // preview is computed from that array and confirming commits that same array,
+  // so the figures on screen cannot describe a state the user never reaches.
+  // Deriving the outcome a second time on confirm is the failure this avoids.
+  /** Which percentage event has its derivation row open. Follows the
+   *  chevron-expand pattern used by ForecastVsActualsTab. */
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+
+  const [pendingChange, setPendingChange] = useState<
+    { kind: 'delete' | 'edit' | 'clear'; nextEvents: MarketEvent[] } | null
+  >(null);
+
+  const changeSummary = useMemo(() => {
+    if (!pendingChange || !baseForecast) return null;
+    const shared = {
+      baseForecast, yieldEvents, pricingEvents, data,
+      viewSegment: cohortScope.seg, viewProduct: cohortScope.prod,
+      viewChannel: cohortScope.chan, viewTariff: cohortScope.tar,
+      wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
+      wiTariffL1Col, wiTariffL2Col, wiValueCol,
+      wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
+    };
+    const before = computeAdjustedForecast({ ...shared, marketEvents });
+    const after = computeAdjustedForecast({ ...shared, marketEvents: pendingChange.nextEvents });
+    if (!before.adjustedMonths.length || !after.adjustedMonths.length) return null;
+
+    // Inflow, Outflow and Retention are FLOWS: summed across the horizon, so a
+    // change to an early month still shows. Reading a single month — the last
+    // one — was the first version here, and it reported "no change" for an
+    // event six months before the horizon end, which is most events.
+    //
+    // Base is a STOCK, so it is read at the final month instead. Summing a
+    // stock would be meaningless.
+    const flows = (ms: any[]) => ms.reduce((acc, m) => ({
+      inflow: acc.inflow + m.uplifted.inflow,
+      outflow: acc.outflow + m.uplifted.outflow,
+      retention: acc.retention + m.uplifted.retention,
+    }), { inflow: 0, outflow: 0, retention: 0 });
+    const finalBase = (chart: any[]) => {
+      const row = chart[chart.length - 1];
+      return Number(row?.['Base (Adjusted)'] ?? row?.adjustedBase ?? 0);
+    };
+    const fb = flows(before.adjustedMonths);
+    const fa = flows(after.adjustedMonths);
+    const first = after.adjustedMonths[0].month;
+    const last = after.adjustedMonths[after.adjustedMonths.length - 1].month;
+
+    return {
+      month: `${first} to ${last} · flows totalled, Base at ${last}`,
+      before: { ...fb, base: finalBase(before.chartData) },
+      after: { ...fa, base: finalBase(after.chartData) },
+      floorWarnings: after.adjustedMonths
+        .filter(m => (m.flooredMetrics ?? []).length > 0)
+        .map(m => ({ month: m.month, metrics: m.flooredMetrics as string[] })),
+    };
+  }, [pendingChange, baseForecast, marketEvents, yieldEvents, pricingEvents, data,
+      cohortScope, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol,
+      wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiValueCol,
+      wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal]);
+
+  /** Commits exactly the array that was previewed. */
+  const confirmPendingChange = useCallback(() => {
+    if (!pendingChange) return;
+    setMarketEvents(pendingChange.nextEvents);
+    setPendingChange(null);
+    setEditingEventId(null);
+    setNewEvent(BLANK_EVENT);
+  }, [pendingChange, setMarketEvents, setNewEvent]);
+
   const handleSaveEdit = useCallback(() => {
     if (!editingEventId || !newEvent.date) return;
     const isOutflow = newEvent.scenario === 'Outflow';
-    const neg = (v: number) => isOutflow ? -Math.abs(v) : v;
+    // See addMarketEvent: percentage amounts keep their sign.
+    const isPctEdit = newEvent.amountType === 'percentage';
+    const neg = (v: number) => (isOutflow && !isPctEdit) ? -Math.abs(v) : v;
     // Phase 3 P4: re-resolve ARPU on save too — if the user clears the field back
     // to blank while editing, they get the cohort placeholder again rather than a
     // stale explicit value or a diluting zero.
-    const resolved = resolveEventArpuRevenue(newEvent.subscriberVolume ?? 0, newEvent.arpu, newEvent.revenue, newEvent.scenario, cohortAvgArpu);
-    updateMarketEvent(editingEventId, {
+    const resolved = isPctEdit
+      ? { arpu: 0, revenue: 0 }
+      : resolveEventArpuRevenue(newEvent.subscriberVolume ?? 0, newEvent.arpu, newEvent.revenue, newEvent.scenario, cohortAvgArpu);
+    const patch: Partial<MarketEvent> = {
       scenario: newEvent.scenario as MarketEvent['scenario'],
       segment: newEvent.segment ?? 'All',
       product: newEvent.product ?? 'All',
@@ -1918,10 +2051,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       campaignName: newEvent.campaignName ?? '',
       comment: newEvent.comment ?? '',
       contractLength: newEvent.contractLength ?? 24,
+      amountType: newEvent.amountType ?? 'absolute',
+      percentageBasis: newEvent.percentageBasis ?? 'baseline',
+      retentionLinked: newEvent.retentionLinked ?? true,
+    };
+    // Previewed and committed from the same array — see pendingChange.
+    setPendingChange({
+      kind: 'edit',
+      nextEvents: marketEvents.map(e => (e.id === editingEventId ? { ...e, ...patch } : e)),
     });
-    setEditingEventId(null);
-    setNewEvent(BLANK_EVENT);
-  }, [editingEventId, newEvent, updateMarketEvent, setNewEvent, cohortAvgArpu]);
+  }, [editingEventId, newEvent, marketEvents, setNewEvent, cohortAvgArpu]);
 
   const handleCancelEdit = useCallback(() => {
     setEditingEventId(null);
@@ -2015,12 +2154,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
       cohortAvgArpu: promoCohortAvgArpu,
       spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [100],
+      // The row KEEPS its slot. nextSequence here handed an edited event a
+      // brand-new end-of-table slot, moving it below everything — the exact
+      // behaviour the sequence field exists to prevent, and the Volume tab's
+      // own single edit avoids it by patching rather than rebuilding.
+      startSequence: marketEvents.find(e => e.id === editingPromoId)?.sequence
+        ?? nextSequence(marketEvents),
     });
     if (events.length === 0) return;
     updateMarketEvent(editingPromoId, { ...events[0], id: editingPromoId });
     setEditingPromoId(null);
     resetPromoDraft();
-  }, [editingPromoId, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, updateMarketEvent, resetPromoDraft]);
+  }, [editingPromoId, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, marketEvents, updateMarketEvent, resetPromoDraft]);
 
   const handleSavePromoCampaign = useCallback(() => {
     if (!editingPromoCampaign || !newPromo.date || !newPromo.subscriberVolume) return;
@@ -2030,12 +2175,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
       cohortAvgArpu: promoCohortAvgArpu,
       spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
+      startSequence: nextSequence(marketEvents),
     });
     if (events.length === 0) return;
     // Only replace THIS card's rows for the campaign — a Volume-tab campaign
     // that happens to share this name is a different group (campaignGroups)
     // and must never be touched here.
-    setMarketEvents([...marketEvents.filter(e => e.campaignName !== editingPromoCampaign || !e.isPromotion), ...events]);
+    // Promo rows carry no percentage capability, but slot preservation is
+    // about the user's table order and applies to both cards alike.
+    const isMinePromo = (e: MarketEvent) => e.campaignName === editingPromoCampaign && !!e.isPromotion;
+    const promoSurvivors = marketEvents.filter(e => !isMinePromo(e));
+    const promoReplaced  = marketEvents.filter(isMinePromo);
+    setMarketEvents([...promoSurvivors, ...resequenceRebuild(events, promoReplaced, promoSurvivors)]);
     setEditingPromoCampaign(null);
     resetPromoDraft();
   }, [editingPromoCampaign, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, marketEvents, setMarketEvents, resetPromoDraft]);
@@ -2099,7 +2250,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         // A missing share means the engine never applied this event in this
         // view (out of scope, or filtered out), so the applied volume is 0 and
         // there is nothing to warn about here.
-        const appliedVol = e.subscriberVolume * (eventShares.get(e.id) ?? 0);
+        // A percentage event stores the PERCENT here, so the raw product would
+        // compare 10 against an outflow of thousands and the warning would
+        // never fire — a false negative, which is the worse direction for a
+        // warning. adjustedMonths carries the resolved delta for the month.
+        const evMonth = adjustedMonths.find(m => m.month === e.date);
+        const appliedVol = e.amountType === 'percentage'
+          ? Math.abs(resolvedEventVolume(e, 0, evMonth?.derivations, 'retention'))
+          : e.subscriberVolume * (eventShares.get(e.id) ?? 0);
         if (bm && appliedVol > bm.outflow.mean) {
           warned.add(e.id);
         }
@@ -2131,7 +2289,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             <Activity size={28} className="text-slate-400" />
           </div>
           <h2 className="text-xl font-semibold text-slate-900">{t('whatif_no_baseline_forecast_yet')}</h2>
-          <p className="text-sm text-slate-500">{t('whatif_complete')}<strong>{t('whatif_step_1_baseline_forecast')}</strong> {t('whatif_and_save_at_least_one_forecast_before_applyin')}
+          <p className="text-sm text-slate-500">{t('whatif_complete')}{' '}<strong>{t('whatif_step_1_baseline_forecast')}</strong> {t('whatif_and_save_at_least_one_forecast_before_applyin')}
           </p>
           <button
             onClick={() => setActiveView('standard')}
@@ -2167,6 +2325,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
+      {pendingChange && (
+        <EventChangeConfirmModal
+          kind={pendingChange.kind}
+          affectedCount={pendingChange.kind === 'clear' ? marketEvents.length : 1}
+          summary={changeSummary}
+          formatNumber={formatNumber}
+          onConfirm={confirmPendingChange}
+          onCancel={() => setPendingChange(null)}
+        />
+      )}
       <div className="flex-1 overflow-y-auto p-8">
       <div className="max-w-5xl mx-auto space-y-6">
 
@@ -2440,8 +2608,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         </div>
         {/* Phase 4 — in-UI guidance: when to reach for the combined card vs the
             three single-dimension ones. */}
-        <p className="text-xs text-slate-500 -mt-2">{t('whatif_use')}<strong className="text-slate-600">{t('whatif_promotion')}</strong> {t('whatif_for_one_combined_scenario_anchored_on_a_volum')}<strong className="text-slate-600">{t('common_volume')}</strong>,{' '}
-          <strong className="text-slate-600">{t('common_value')}</strong>{t('whatif_or')}<strong className="text-slate-600">{t('whatif_pricing')}</strong> {t('whatif_for_single_dimension_events_with_no_volume_as')}
+        <p className="text-xs text-slate-500 -mt-2">{t('whatif_use')}{' '}<strong className="text-slate-600">{t('whatif_promotion')}</strong> {t('whatif_for_one_combined_scenario_anchored_on_a_volum')}{' '}<strong className="text-slate-600">{t('common_volume')}</strong>,{' '}
+          <strong className="text-slate-600">{t('common_value')}</strong>{t('whatif_or')}{' '}<strong className="text-slate-600">{t('whatif_pricing')}</strong> {t('whatif_for_single_dimension_events_with_no_volume_as')}
         </p>
 
         {/* ── Tariff scoping control (Phase 2b) — pick the tariffs to plan with.
@@ -2480,9 +2648,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
           {/* Add event form */}
           <div className="p-6 border-b border-slate-100 bg-slate-50/30">
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 items-end">
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4 items-start">
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_scenario')}</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_ibro_type')}</label>
                 <select
                   value={newEvent.scenario}
                   onChange={e => setNewEvent({ ...newEvent, scenario: e.target.value as any })}
@@ -2597,18 +2765,168 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
               </div>
+            </div>
+
+            {/* ── Band 2: the effect ────────────────────────────────────────
+                The only band whose shape changes. Amount type, amount and basis
+                are one cell (the Pricing-tab pattern at ~3575); the retention
+                question sits beside them but OUTSIDE that group, because
+                retentionLinked applies to absolute Retention events too and
+                nesting it here would teach planners it is a percentage concern.
+                Bands 1 and 3 are separate grids, so nothing outside this one
+                moves when the amount type or scenario changes. */}
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4 items-start mt-4">
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_subscriber_volume')}</label>
-                <input
-                  type="number"
-                  value={newEvent.subscriberVolume || ''}
-                  onChange={e => {
-                    const vol = Number(e.target.value);
-                    setNewEvent({ ...newEvent, subscriberVolume: vol, revenue: vol * (newEvent.arpu || 0) });
-                  }}
-                  className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
-                />
+                <label className="block text-xs font-medium text-slate-500 mb-1">
+                  {isPercentageDraft
+                    ? `Change to ${String(newEvent.scenario ?? 'Inflow')}`
+                    : t('whatif_subscriber_volume')}
+                </label>
+                {/* Toggle and input share one bordered container, as Pricing does. */}
+                <div className="flex rounded-lg border border-slate-200 overflow-hidden bg-white">
+                  {(['absolute', 'percentage'] as const).map(mode => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => {
+                        setNewEvent({
+                          ...newEvent,
+                          amountType: mode,
+                          // The number means something different under each mode,
+                          // so carrying it across would reinterpret it silently:
+                          // 5000 subscribers becoming 5000 per cent.
+                          subscriberVolume: 0,
+                          revenue: 0,
+                        });
+                        // The spread control is hidden for percentages, so a
+                        // spread left enabled from an earlier draft would
+                        // otherwise persist invisibly and still apply on Add.
+                        if (mode === 'percentage') setSpreadEnabled(false);
+                      }}
+                      className={`px-3 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
+                        (newEvent.amountType ?? 'absolute') === mode
+                          ? 'bg-[#e60000] text-white'
+                          : 'bg-white text-slate-500 hover:bg-slate-50'
+                      }`}
+                    >
+                      {mode === 'absolute' ? 'Subs' : '%'}
+                    </button>
+                  ))}
+                  <input
+                    type="number"
+                    step={isPercentageDraft ? 0.1 : 1}
+                    placeholder={isPercentageDraft ? 'e.g. 10 for +10%' : ''}
+                    value={newEvent.subscriberVolume || ''}
+                    onChange={e => {
+                      const vol = Number(e.target.value);
+                      setNewEvent({
+                        ...newEvent,
+                        subscriberVolume: vol,
+                        // A percentage carries no per-subscriber revenue.
+                        revenue: isPercentageDraft ? 0 : vol * (newEvent.arpu || 0),
+                      });
+                    }}
+                    className="flex-1 min-w-0 text-sm p-2 bg-white outline-none focus:border-[#e60000]"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1 leading-snug">
+                  {isPercentageDraft
+                    ? `Applied to each cohort's own ${String(newEvent.scenario ?? 'Inflow').toLowerCase()}. Negative reduces it.`
+                    : 'Subscribers added or removed this month.'}
+                </p>
+                {/* Basis — nested inside the amount cell under a divider, the
+                    same nesting this file uses for Cohort type (~3641). Labels
+                    match the stored percentageBasis value so an exported sheet
+                    reads the same as the UI. */}
+                {/* Rendered in BOTH modes and merely hidden when absolute, so
+                    band 2 keeps a constant height and band 3 never moves. Using
+                    invisible rather than a pixel min-height keeps the reservation
+                    correct at any font size or zoom. */}
+                <div
+                  className={`mt-2 pt-2 border-t border-slate-100 ${
+                    isPercentageDraft ? '' : 'invisible pointer-events-none'
+                  }`}
+                  aria-hidden={!isPercentageDraft}
+                >
+                    <span className="flex items-center gap-1 text-[10px] font-medium text-slate-500 mb-1">
+                      Percentage of
+                      <span className="relative group cursor-help">
+                        <Info size={10} />
+                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block bg-slate-800 text-white text-[10px] rounded px-2 py-1 w-56 z-20 leading-snug">
+                          Baseline is the original forecast. Adjusted is the value once
+                          absolute events in the same month have applied. Percentage
+                          events never compound with each other, whichever you choose.
+                        </span>
+                      </span>
+                    </span>
+                    <div className="flex gap-3">
+                      {([['baseline', 'Baseline'], ['adjusted', 'Adjusted']] as const).map(([val, label]) => (
+                        <label key={val} className="flex items-center gap-1 text-[10px] text-slate-600 cursor-pointer">
+                          <input
+                            type="radio"
+                            className="accent-[#e60000]"
+                            checked={(newEvent.percentageBasis ?? 'baseline') === val}
+                            onChange={() => setNewEvent({ ...newEvent, percentageBasis: val })}
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                </div>
               </div>
+              {/* Retention linkage — an EFFECT question, so it belongs in this
+                  band, but its own cell rather than nested above: it applies to
+                  absolute Retention events just as much as percentage ones. */}
+              {newEvent.scenario === 'Retention' && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">
+                    Forecast to leave?
+                    <span className="relative group cursor-help">
+                      <Info size={11} />
+                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block bg-slate-800 text-white text-[10px] rounded px-2 py-1 w-52 z-20 leading-snug">
+                        Were these customers already forecast to leave? Applies to both
+                        subscriber and percentage amounts.
+                      </span>
+                    </span>
+                  </label>
+                  <div className="flex rounded-lg border border-slate-200 overflow-hidden bg-white w-fit">
+                    {([[true, 'Yes'], [false, 'No']] as const).map(([val, label]) => (
+                      <button
+                        key={String(val)}
+                        type="button"
+                        onClick={() => setNewEvent({ ...newEvent, retentionLinked: val })}
+                        className={`px-4 py-2 text-xs font-semibold border-r border-slate-200 last:border-r-0 transition-colors ${
+                          (newEvent.retentionLinked ?? true) === val
+                            ? 'bg-[#e60000] text-white'
+                            : 'bg-white text-slate-500 hover:bg-slate-50'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1 leading-snug">
+                    {(newEvent.retentionLinked ?? true)
+                      ? 'Reduces forecast outflow, so Base rises.'
+                      : 'Retention moves alone; Base is unchanged.'}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* ── Band 3: details ──────────────────────────────────────────
+                Revenue and ARPU are hidden in percentage mode — a percentage
+                carries no per-subscriber figure, and a helper in band 3 says so
+                where they were.
+                
+                The divider is PERMANENT, not conditional on the mode. In
+                absolute mode the bands only look separated because the rows
+                happen to be full; nothing actually marked the boundary. Showing
+                it only when the gap appears would make the rule itself flicker
+                on a toggle — the reflow the band structure exists to avoid.
+                mt-2 pt-2 border-t border-slate-100 is this file own nesting
+                divider, used for the percentage basis block and Cohort type. */}
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4 items-start mt-2 pt-2 border-t border-slate-100">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_customer_volume')}</label>
                 <input
@@ -2618,6 +2936,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
               </div>
+              {isPercentageDraft && (
+                <div className="self-center">
+                  <p className="text-[10px] text-slate-400 leading-snug">
+                    {t('whatif_revenue_arpu_not_applicable_to_percentage')}
+                  </p>
+                </div>
+              )}
+              {!isPercentageDraft && (
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_revenue')}</label>
                 <input
@@ -2631,6 +2957,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
               </div>
+              )}
+              {!isPercentageDraft && (
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">ARPU (+/−)</label>
                 <input
@@ -2639,7 +2967,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   placeholder={cohortAvgArpu != null ? cohortAvgArpu.toFixed(2) : undefined}
                   onChange={e => {
                     const arpu = Number(e.target.value);
-                    setNewEvent({ ...newEvent, arpu, revenue: (newEvent.subscriberVolume || 0) * arpu });
+                    // subscriberVolume holds a PERCENT in percentage mode, so
+                    // multiplying it by ARPU fabricates a revenue figure — 10% x
+                    // 30 reading as 300. The stored event is unaffected
+                    // (addMarketEvent zeroes both for percentages), so this only
+                    // ever showed a wrong number in the draft form. The ARPU cell
+                    // is now hidden in percentage mode as well; this guard is the
+                    // one that survives a future change to that.
+                    setNewEvent({
+                      ...newEvent,
+                      arpu,
+                      revenue: isPercentageDraft ? 0 : (newEvent.subscriberVolume || 0) * arpu,
+                    });
                   }}
                   className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                 />
@@ -2651,6 +2990,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   </p>
                 )}
               </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">{t('whatif_contract_length')}<span className="relative group text-slate-400 cursor-help">
                     <Info size={11} />
@@ -2670,8 +3010,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               </div>
             </div>
 
-            {/* Volume spread section — only shown for non-ARPU scenarios */}
-            {newEvent.scenario !== 'ARPU' && (
+            {/* Volume spread section — non-ARPU scenarios only, and not for
+                percentage events: spreading a percentage is ambiguous (is 10%
+                over three months a total of 10%, or 10% in each month?) and no
+                answer to that was settled. Hidden rather than guarded, so the
+                question is not raised in the UI at all. */}
+            {newEvent.scenario !== 'ARPU' && !isPercentageDraft && (
               <div className="mt-4">
                 {/* Toggle */}
                 <button
@@ -2871,12 +3215,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 ) : (
                   marketEvents
                     .slice()
-                    .sort((a, b) => {
-                      const ca = a.campaignName || '';
-                      const cb = b.campaignName || '';
-                      if (ca !== cb) return ca.localeCompare(cb);
-                      return String(a.date).localeCompare(String(b.date));
-                    })
+                    // Sequence is the primary sort. Campaign membership is now
+                    // shown by the badge in the first column and no longer
+                    // groups rows, so a campaign's events sit wherever the user
+                    // created them rather than being gathered alphabetically.
+                    .sort(bySequence)
                     .map(event => {
                       const isRetention = event.scenario === 'Retention';
                       const isInflow    = event.scenario === 'Inflow';
@@ -2892,15 +3235,28 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       const retentionDelta  = isRetention ? event.subscriberVolume : null;
                       // Outflow Δ — Outflow events (stored negative) and Retention events
                       //   (outflow reduced by the retained volume, so negative).
+                      //
+                      //   An UNLINKED retention event does not touch outflow, so it must
+                      //   dash here. Without the check the table advertises an outflow
+                      //   movement the engine will not make — found in the browser, not
+                      //   by any unit measurement, because both halves are individually
+                      //   correct and only disagree on screen.
                       const outflowDelta    = isOutflow   ? event.subscriberVolume        // already negative
-                                           : isRetention  ? -event.subscriberVolume        // positive stored → negative Outflow Δ
+                                           : isRetention && event.retentionLinked !== false
+                                                          ? -event.subscriberVolume        // positive stored → negative Outflow Δ
                                            : null;
-                      // ARPU Δ — ARPU events directly; Inflow/Outflow show their per-subscriber
-                      //   ARPU if non-zero (contextual blending info).
-                      const arpuDelta       = event.arpu !== 0 ? event.arpu : null;
+                      const isPercentage = event.amountType === 'percentage';
+                      // ARPU Δ — see eventArpuDelta for why percentage rows dash.
+                      const arpuDelta       = eventArpuDelta(event);
 
                       // Helper: render a signed numeric delta cell
-                      const fmtDelta = (v: number) => (v > 0 ? '+' : '') + formatNumber(v);
+                      // A percentage row stores a PERCENT in subscriberVolume, not a
+                      // quantity, so it must never be run through formatNumber as if
+                      // it were subscribers — "+10" for a 10% uplift reads as ten
+                      // people. The unit is what distinguishes them.
+                      const fmtDelta = (v: number) => isPercentage
+                        ? (v > 0 ? '+' : '') + v.toFixed(1) + '%'
+                        : (v > 0 ? '+' : '') + formatNumber(v);
 
                       const isEditing = editingEventId === event.id
                         || (editingCampaign !== null && event.campaignName === editingCampaign);
@@ -2913,8 +3269,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             isEditing ? 'bg-amber-50/60 ring-1 ring-inset ring-amber-300' :
                             hasWarning ? 'bg-amber-50/40' : ''
                           }`}>
-                            {/* Campaign column — badge doubles as the group-edit control */}
+                            {/* Campaign column — badge doubles as the group-edit control.
+                                A percentage row also carries the chevron that opens its
+                                derivation, since that is the row whose number needs explaining. */}
                             <td className="px-5 py-3 text-xs max-w-[160px]">
+                              {isPercentage && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setExpandedEventId(expandedEventId === event.id ? null : event.id); }}
+                                  className="align-middle mr-1 text-slate-400 hover:text-slate-600 transition-colors"
+                                  title={expandedEventId === event.id ? 'Hide derivation' : 'Show how this was applied'}
+                                  aria-expanded={expandedEventId === event.id}
+                                >
+                                  {expandedEventId === event.id ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                </button>
+                              )}
                               {campaignLabel ? (
                                 group?.editable ? (
                                   <button
@@ -3004,19 +3373,80 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             <td className="px-5 py-3 text-center">
                               <button
                                 type="button"
-                                onClick={(e) => { e.stopPropagation(); removeMarketEvent(event.id); }}
+                                onClick={(e) => { e.stopPropagation(); setPendingChange({ kind: 'delete', nextEvents: marketEvents.filter(x => x.id !== event.id) }); }}
                                 className="text-rose-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors"
                               >
                                 <Trash2 size={14} />
                               </button>
                             </td>
                           </tr>
+                          {isPercentage && expandedEventId === event.id && (
+                            <tr className="bg-slate-50/70">
+                              <td colSpan={wiTariffL1Col ? 14 : 13} className="px-5 py-3">
+                                <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-1.5">
+                                  How this was applied
+                                </div>
+                                {(() => {
+                                  // Straight from the engine's own record — not
+                                  // recomputed here, so what is shown is the
+                                  // arithmetic that actually ran.
+                                  const rowsFor = adjustedMonths
+                                    .flatMap(m => (m.derivations ?? [])
+                                      .filter(d => d.eventId === event.id)
+                                      .map(d => ({ month: m.month, ...d })));
+                                  if (!rowsFor.length) {
+                                    return (
+                                      <div className="text-xs text-slate-400 italic">
+                                        This event does not apply in the current view.
+                                      </div>
+                                    );
+                                  }
+                                  return (
+                                    <table className="text-xs w-full max-w-2xl">
+                                      <thead className="text-slate-400">
+                                        <tr>
+                                          <th className="text-left font-medium pb-1">Month</th>
+                                          <th className="text-left font-medium pb-1">Metric</th>
+                                          <th className="text-right font-medium pb-1">Basis</th>
+                                          <th className="text-right font-medium pb-1">%</th>
+                                          <th className="text-right font-medium pb-1">In scope</th>
+                                          <th className="text-right font-medium pb-1">Applied</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-200/60">
+                                        {rowsFor.map(d => (
+                                          <tr key={d.month + d.metric}>
+                                            <td className="py-1 text-slate-600">{fmtMonth(d.month)}</td>
+                                            <td className="py-1 text-slate-600 capitalize">
+                                              {d.metric}
+                                              <span className="text-slate-400 ml-1">({d.basisKind})</span>
+                                            </td>
+                                            <td className="py-1 text-right tabular-nums text-slate-500">{formatNumber(d.basis)}</td>
+                                            <td className="py-1 text-right tabular-nums text-slate-500">{d.percent.toFixed(1)}%</td>
+                                            <td className="py-1 text-right tabular-nums text-slate-500">{(d.coverage * 100).toFixed(1)}%</td>
+                                            <td className="py-1 text-right tabular-nums text-slate-800 font-medium">
+                                              {(d.delta > 0 ? '+' : '') + formatNumber(d.delta)}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  );
+                                })()}
+                                <div className="text-[11px] text-slate-400 mt-1.5">
+                                  Applied = basis x % x in-scope share. "In scope" is how much of this
+                                  view lies inside the event's target; it is 100% whenever the view sits
+                                  entirely within it.
+                                </div>
+                              </td>
+                            </tr>
+                          )}
                           {hasWarning && (
                             <tr className="bg-amber-50">
                               <td colSpan={wiTariffL1Col ? 14 : 13} className="px-5 py-2 text-xs text-amber-700 flex items-center gap-2">
                                 <AlertTriangle size={12} className="text-amber-500 shrink-0 inline mr-1" />
                                 
-                                {t('whatif_retention_volume')}{formatNumber(event.subscriberVolume)}{t('whatif_exceeds_forecast_outflow_for')}{fmtMonth(event.date)}{t('whatif_the_retained_volume_will_be_clamped_to_the_av')}
+                                {t('whatif_retention_volume')}{isPercentage ? `${event.subscriberVolume.toFixed(1)}%` : formatNumber(event.subscriberVolume)}{t('whatif_exceeds_forecast_outflow_for')}{fmtMonth(event.date)}{t('whatif_the_retained_volume_will_be_clamped_to_the_av')}
                               </td>
                             </tr>
                           )}
@@ -3031,7 +3461,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           {marketEvents.length > 0 && (
             <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex justify-start">
               <button
-                onClick={() => setMarketEvents([])}
+                onClick={() => setPendingChange({ kind: 'clear', nextEvents: [] })}
                 className="text-xs font-medium text-slate-500 hover:text-rose-600 transition-colors flex items-center gap-1.5"
               >
                 <Trash2 size={12} />{t('whatif_clear_all_events')}</button>
@@ -3111,7 +3541,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
               <div className="p-6 border-b border-slate-100">
                 {/* Dimension selectors */}
-                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-5">
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4 items-start mb-5">
                   {/* Segment */}
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_segment')}</label>
@@ -3125,31 +3555,39 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     </select>
                   </div>
 
-                  {/* Product L1 */}
+                  {/* Product — one hierarchical L1+L2 control, matching Volume,
+                      Promotion, and this card's own Channel and Tariff controls.
+                      It was two flat selects until 2026-08-02; the pair conveyed
+                      nothing the tree does not and made Pricing inconsistent with
+                      itself. */}
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_product')}</label>
-                    <select
-                      value={newPricingEvent.product ?? 'All'}
-                      onChange={e => setNewPricingEvent({ ...newPricingEvent, product: e.target.value, productL2: 'All' })}
-                      className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
-                    >
-                      <option value="All">{t('common_all_products')}</option>
-                      {yProductOptions.map(p => <option key={p} value={p}>{p}</option>)}
-                    </select>
-                  </div>
-
-                  {/* Product L2 */}
-                  <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_product_l2')}</label>
-                    <select
-                      value={newPricingEvent.productL2 ?? 'All'}
-                      onChange={e => setNewPricingEvent({ ...newPricingEvent, productL2: e.target.value })}
-                      className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
-                      disabled={pricingProductL2Options.length === 0}
-                    >
-                      <option value="All">{t('whatif_all_tiers')}</option>
-                      {pricingProductL2Options.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    {productTree.size > 0 ? (
+                      <HierarchicalDropdown
+                        label=""
+                        tree={productTree}
+                        value={{
+                          l1: newPricingEvent.product && newPricingEvent.product !== 'All' ? newPricingEvent.product : null,
+                          l2: newPricingEvent.productL2 && newPricingEvent.productL2 !== 'All' ? newPricingEvent.productL2 : null,
+                        }}
+                        onChange={(v: HierarchicalSelection) => setNewPricingEvent({
+                          ...newPricingEvent,
+                          product: v.l1 ?? 'All',
+                          productL2: v.l2 ?? 'All',
+                        })}
+                        variant="light"
+                        className="w-full"
+                      />
+                    ) : (
+                      <select
+                        value={newPricingEvent.product ?? 'All'}
+                        onChange={e => setNewPricingEvent({ ...newPricingEvent, product: e.target.value, productL2: 'All' })}
+                        className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
+                      >
+                        <option value="All">{t('common_all_products')}</option>
+                        {yProductOptions.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    )}
                   </div>
 
                   {/* Channel — hierarchical dropdown */}
@@ -3293,7 +3731,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     </p>
                     {(newPricingEvent.target === 'cohorts' || newPricingEvent.target === 'cohorts+base') && (
                       <div className="mt-2 pt-2 border-t border-slate-100">
-                        <p className="text-[10px] font-medium text-slate-500 mb-1.5">{t('whatif_cohort_type')}</p>
+                        <p className="text-[10px] font-medium text-slate-500 mb-1.5">{t('whatif_applies_to')}</p>
                         <div className="flex gap-3">
                           {(['inflow', 'retention', 'both'] as const).map(scope => (
                             <label key={scope} className="flex items-center gap-1.5 cursor-pointer">
@@ -3353,8 +3791,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         const delta = adjusted - baseArpu;
                         return (
                           <>
-                            <p className="text-[10px] text-slate-400">{t('whatif_baseline_arpu')}<span className="font-medium text-slate-600">{formatNumber(baseArpu)}</span></p>
-                            <p className="text-[10px] text-slate-400 mt-0.5">{t('whatif_adjusted_arpu')}<span className={`font-semibold ${delta >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatNumber(Math.max(0, adjusted))}</span></p>
+                            <p className="text-[10px] text-slate-400">{t('whatif_baseline_arpu')}{' '}<span className="font-medium text-slate-600">{formatNumber(baseArpu)}</span></p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">{t('whatif_adjusted_arpu')}{' '}<span className={`font-semibold ${delta >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatNumber(Math.max(0, adjusted))}</span></p>
                             <p className={`text-[10px] font-medium mt-0.5 ${delta >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                               {delta >= 0 ? '+' : ''}{formatNumber(delta)} ({delta >= 0 ? '+' : ''}{baseArpu !== 0 ? ((delta / baseArpu) * 100).toFixed(1) : '0.0'}%)
                             </p>
@@ -3560,15 +3998,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               </div>
 
               <div className="p-6 border-b border-slate-100 bg-slate-50/30">
-                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 items-end">
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4 items-start">
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_volume_target')}</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_ibro_type')}</label>
                     <select
                       value={promoTarget}
                       onChange={e => setPromoTarget(e.target.value as 'Inflow' | 'Retention')}
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                     >
-                      <option value="Inflow">{t('whatif_acquisition_inflow')}</option>
+                      <option value="Inflow">Inflow</option>
                       <option value="Retention">Retention</option>
                     </select>
                   </div>
@@ -3906,7 +4344,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               );
                             })}
                           </div>
-                          <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">{t('whatif_promo_blended_arpu')}<span className="font-semibold text-slate-700">{formatNumber(promoDraftBlendedArpu)}</span>
+                          <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">{t('whatif_promo_blended_arpu')}{' '}<span className="font-semibold text-slate-700">{formatNumber(promoDraftBlendedArpu)}</span>
                           </div>
                         </div>
                       )}
@@ -4117,10 +4555,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
               <div className="p-6 border-b border-slate-100">
                 {/* Dimension selectors */}
-                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-5">
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4 items-start mb-5">
                   {/* IBRO */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">IBRO Type</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_ibro_type')}</label>
                     <select
                       value={newYieldEvent.ibro ?? 'Inflow'}
                       onChange={e => setNewYieldEvent({ ...newYieldEvent, ibro: e.target.value as 'Inflow' | 'Retention' })}
@@ -4193,7 +4631,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                   {/* Month */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_activity_month')}</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">
+                      {/* rollForward makes ONE event persist forward, which is
+                          exactly what Pricing's duration:'recurring' does — so the
+                          label follows the behaviour rather than the card. */}
+                      {newYieldEvent.rollForward ? t('whatif_start_month') : t('common_month')}
+                    </label>
                     <input
                       type="month"
                       value={newYieldEvent.month ?? ''}

@@ -297,6 +297,28 @@ export interface AdjustedForecastMonth {
   };
   /** IDs of market events that contributed to the uplift for this month */
   appliedEventIds: string[];
+  /** The uplifted values BEFORE the zero floor. Equal to `uplifted` unless an
+   *  event drove a metric negative — which is what makes a floor breach
+   *  reportable rather than silently clipped. */
+  preFloor?: {
+    inflow: number;
+    retention: number;
+    outflow: number;
+    arpu: number;
+  };
+  /** Per-event derivation for percentage events applied this month, emitted
+   *  by the engine so the provenance row shows the arithmetic that ran. */
+  derivations?: Array<{
+    eventId: string;
+    metric: 'inflow' | 'outflow' | 'retention';
+    basisKind: 'baseline' | 'adjusted';
+    basis: number;
+    percent: number;
+    coverage: number;
+    delta: number;
+  }>;
+  /** Metrics the floor caught this month, empty when none did. */
+  flooredMetrics?: Array<'inflow' | 'outflow' | 'retention' | 'arpu'>;
 }
 
 /**

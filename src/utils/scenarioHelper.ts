@@ -1,5 +1,5 @@
 import { format, addMonths, parse } from 'date-fns';
-import { eventProRataShare } from './forecasting';
+import { eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume } from './forecasting';
 import type { ProRataLeaf, ProRataScope } from './forecasting';
 
 export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod: any, vchan: any, vtariff?: any) {
@@ -26,8 +26,8 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
 
   if (!matchingBaseline.length) return [];
 
-  // Market-event pro-rata scoping — SAME shared rule as computeWhatIfData and
-  // the WhatIfTab engine (see eventProRataShare). No parallel implementation.
+  // Market-event pro-rata scoping — SAME shared rule as the WhatIfTab
+  // engine (see eventProRataShare). No parallel implementation.
   //
   // Note this deliberately leaves the AGGREGATE case untouched: when the view
   // scope is exactly the event's target, the cohort covers the whole target and
@@ -90,18 +90,22 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
   /** Share of a VOLUME event belonging to this view. Rate events never use this.
    *  Dispatches on the event's own scenario so the weights come from the metric
    *  actually being moved. */
+  /** Event scope and leaf set, built once so eventProRataShare and
+   *  eventCoverage can never disagree about what an event targets. */
+  const scopeOf = (e: any) => ({
+    segment: String(e.Segment ?? 'All'), product: String(e.Product ?? 'All'),
+    productL2: String(e.Product_L2 ?? 'All'),
+    channel: String(e.Channel ?? 'All'), channelL2: String(e.Channel_L2 ?? 'All'),
+    tariffL1: String(e.Tariff_L1 ?? 'All'), tariffL2: String(e.Tariff_L2 ?? 'All'),
+  });
+  const leavesFor = (e: any) =>
+    leavesByMetric[(String(e.Scenario) as MetricKey) in leavesByMetric
+      ? (String(e.Scenario) as MetricKey) : 'Inflow'];
   const eventShare = (e: any): number => {
     const id = String(e.ID ?? e.Name ?? '') + '|' + String(e.Start_Month ?? e.Date ?? e.Month ?? '') + '|' + String(e.Scenario ?? '');
     const hit = shareCache.get(id);
     if (hit !== undefined) return hit;
-    const v = eventProRataShare(
-      { segment: String(e.Segment ?? 'All'), product: String(e.Product ?? 'All'), productL2: String(e.Product_L2 ?? 'All'),
-        channel: String(e.Channel ?? 'All'), channelL2: String(e.Channel_L2 ?? 'All'),
-        tariffL1: String(e.Tariff_L1 ?? 'All'), tariffL2: String(e.Tariff_L2 ?? 'All') },
-      viewScope,
-      leavesByMetric[(String(e.Scenario) as MetricKey) in leavesByMetric
-        ? (String(e.Scenario) as MetricKey) : 'Inflow'],
-    );
+    const v = eventProRataShare(scopeOf(e), viewScope, leavesFor(e));
     shareCache.set(id, v);
     return v;
   };
@@ -196,31 +200,30 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       return segMatch && prodL1Match && prodL2Match && chanL1Match && chanL2Match && tarL1Match && tarL2Match;
     });
 
-    let adjInflow = month.inflow.mean;
-    let adjOutflow = month.outflow.mean;
-    let adjRetention = month.retention.mean;
-    let adjArpu = month.arpu.mean;
-
-    applicable.forEach((e: any) => {
-      // VOLUME events take only this view's pro-rata share (share is 1 for an
-      // aggregate view, so the already-correct aggregate case is unchanged).
-      const vol = Number(e.Subscriber_Volume || 0) * eventShare(e);
-      if (e.Scenario === 'Inflow') {
-        adjInflow += vol;
-      } else if (e.Scenario === 'Outflow') {
-        adjOutflow -= vol;
-      } else if (e.Scenario === 'Retention') {
-        adjOutflow -= vol;
-        adjRetention += vol;
-      } else if (e.Scenario === 'ARPU') {
-        // RATE event — deliberately NOT pro-rated. ARPU is a rate: a
-        // volume-weighted average of (leafArpu + delta) already equals
-        // (aggregateArpu + delta), so the same delta is correct at every level.
-        // Splitting it by volume share would understate the price change at
-        // leaf level. Do not route this through eventShare().
-        adjArpu += Number(e.ARPU || 0);
-      }
-    });
+    const applied = applyEventsToMonth(
+      {
+        inflow: month.inflow.mean,
+        outflow: month.outflow.mean,
+        retention: month.retention.mean,
+        arpu: month.arpu.mean,
+      },
+      applicable.map((e: any) => ({
+        id: String(e.ID ?? e.Name ?? ''),
+        scenario: String(e.Scenario) as 'Inflow' | 'Retention' | 'Outflow' | 'ARPU',
+        // VOLUME events take only this view's pro-rata share (share is 1 for an
+        // aggregate view, so the already-correct aggregate case is unchanged).
+        sharedVolume: Number(e.Subscriber_Volume || 0) * eventShare(e),
+        arpuDelta: Number(e.ARPU || 0),
+        amountType: e.Amount_Type === 'percentage' ? 'percentage' as const : 'absolute' as const,
+        percentageBasis: e.Percentage_Basis === 'adjusted' ? 'adjusted' as const : 'baseline' as const,
+        retentionLinked: e.Retention_Linked !== 'No',
+        percentAmount: Number(e.Subscriber_Volume || 0),
+        // A percentage scales what it lands on rather than being split across
+        // it — coverage, not share. See eventCoverage.
+        coverage: e.Amount_Type === 'percentage'
+          ? eventCoverage(scopeOf(e), viewScope, leavesFor(e)) : 1,
+      })),
+    );
 
     computed.push({
       month: month.month,
@@ -231,11 +234,25 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
         arpu: month.arpu.mean,
       },
       uplifted: {
-        inflow: Math.max(0, adjInflow),
-        retention: Math.max(0, adjRetention),
-        outflow: Math.max(0, adjOutflow),
-        arpu: Math.max(0, adjArpu),
-      }
+        inflow: applied.metrics.inflow,
+        retention: applied.metrics.retention,
+        outflow: applied.metrics.outflow,
+        arpu: applied.metrics.arpu,
+      },
+      preFloor: applied.preFloor,
+      derivations: applied.derivations,
+      flooredMetrics: applied.flooredMetrics,
+      // derivations IS consumed, below, to size the ARPU pools from the
+      // resolved delta rather than the raw percent.
+      //
+      // preFloor, flooredMetrics and appliedEventIds are NOT read by anything
+      // in this path. computeScenarioForFilter returns a flat row shape that
+      // drops them, and its only caller (ScenarioCompareTab) has no breach UI.
+      // They are kept so the two paths produce the same month record, which is
+      // what lets applyEventsToMonth stay shared — but do not read this as
+      // floor warnings existing here. They do not. An earlier version of this
+      // comment claimed they did.
+      appliedEventIds: applied.appliedIds,
     });
   });
 
@@ -370,10 +387,28 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
             arpu,
             contractLength: Number(ev.Contract_Length_Months || 24),
             enterMonthIdx: idx,
-            size: Number(ev.Subscriber_Volume) * poolShare,
+            // Percentage events store a PERCENT in Subscriber_Volume, so the
+            // resolved delta comes from the engine derivations. Same rule as
+            // the WhatIfTab pool, via the same shared helper — these two have
+            // drifted twice and this is exactly the shape that does it.
+            size: resolvedEventVolume(
+              { id: String(ev.ID ?? ev.Name ?? ''), amountType: ev.Amount_Type === 'percentage' ? 'percentage' : 'absolute' },
+              Number(ev.Subscriber_Volume) * poolShare,
+              computed[idx - 1]?.derivations,
+              'inflow',
+            ),
           });
         } else {
-          p_basePool += Number(ev.Subscriber_Volume || 0);
+          // Reached whenever an event carries no ARPU of its own — which is
+          // EVERY percentage event, because the add path zeroes arpu for them.
+          // Adding Subscriber_Volume raw would put the percent (10) into the
+          // base pool instead of the subscribers the event actually added.
+          p_basePool += resolvedEventVolume(
+            { id: String(ev.ID ?? ev.Name ?? ''), amountType: ev.Amount_Type === 'percentage' ? 'percentage' : 'absolute' },
+            Number(ev.Subscriber_Volume || 0),
+            computed[idx - 1]?.derivations,
+            'inflow',
+          );
         }
       });
     }

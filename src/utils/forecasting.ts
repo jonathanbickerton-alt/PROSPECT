@@ -16,7 +16,52 @@ export interface MarketEvent {
   /** Tariff L2 — 'All' or absent means apply to all L2 within the L1 tariff (Phase 2a) */
   tariffL2?: string;
   date: string; // yyyy-MM
+  /**
+   * Explicit display order, independent of array position. Editing an event
+   * keeps its slot instead of moving to the end, and campaign bulk-edit —
+   * which deletes and rebuilds its rows — restores the original slots rather
+   * than appending.
+   *
+   * This does NOT order the calculation. See the two-phase comment in
+   * computeAdjustedForecast: percentage events are flat and cannot observe
+   * each other, so the maths is order-independent by construction.
+   */
+  sequence: number;
   subscriberVolume: number;
+  /**
+   * How subscriberVolume is to be read. 'absolute' (the default, and the only
+   * value before 2026-08-01) means it is a subscriber count. 'percentage'
+   * means it is a percent of the metric named by `scenario`, resolved per
+   * cohort-month against the basis in `percentageBasis`.
+   *
+   * Percentage amounts are VOLUME-like and therefore pro-rated through
+   * eventProRataShare exactly as absolute amounts are. Do not confuse this
+   * with promoPricingMode below, which carries the same union on this same
+   * interface and takes the opposite rule.
+   *
+   * Volume tab only — the promo card never sets this. See buildPromoEvents.
+   */
+  amountType?: 'absolute' | 'percentage';
+  /**
+   * What a percentage resolves against. 'baseline' (default) is the untouched
+   * forecast for the month; 'adjusted' is the value after every absolute event
+   * for that month has been applied, but before any percentage event has.
+   * Ignored unless amountType === 'percentage'.
+   */
+  percentageBasis?: 'baseline' | 'adjusted';
+  /**
+   * Retention events reduce Outflow as well as raising Retention, because
+   * retained subscribers are subscribers who did not leave. Setting this false
+   * decouples them: Retention moves and Outflow does not.
+   *
+   * Because Base is driven by Outflow and not by Retention, an unlinked
+   * Retention event has NO effect on Base — it moves the Retention line alone.
+   * That is a deliberate reporting choice, not an oversight.
+   *
+   * Absent means linked, which is both the default and the pre-2026-08-01
+   * behaviour.
+   */
+  retentionLinked?: boolean;
   customerVolume: number;
   revenue: number;
   arpu: number;
@@ -47,7 +92,13 @@ export interface MarketEvent {
   promoMixAxis?: 'value' | 'tariff';
   promoMix?: Record<string, number>;
   /** Phase 4 — Custom Promotion Card: the pricing arm's raw inputs, stored for
-   *  the same edit-restoration reason as promoMix above. */
+   *  the same edit-restoration reason as promoMix above.
+   *
+   *  NOT the same thing as amountType above, despite carrying the same union on
+   *  this same interface. This one is a RATE — it scales ARPU, and a rate must
+   *  never be pro-rated, because a volume-weighted average of (leafArpu + delta)
+   *  already equals (aggregateArpu + delta). amountType is a VOLUME and must be
+   *  pro-rated. Same shape, opposite rule; check which one you are holding. */
   promoPricingMode?: 'percentage' | 'absolute';
   promoPricingAmount?: number;
 }
@@ -740,7 +791,7 @@ function fitAndBuildBands(
 }
 
 // ---------------------------------------------------------------------------
-// Public legacy API — unchanged output format, used by App.tsx and computeWhatIfData
+// Public legacy API — unchanged output format, used by App.tsx
 // ---------------------------------------------------------------------------
 
 /**
@@ -1178,11 +1229,15 @@ export function distributeProRata(
 // in total however many cohorts are computed, and an aggregate always equals
 // the sum of its adjusted leaves — the reconciliation guarantee.
 //
-// This is the ONE implementation of that rule. computeWhatIfData, WhatIfTab's
-// adjusted-forecast engine and scenarioHelper all call it. They differ only in
-// how they read their rows (raw vs exported PascalCase); the share arithmetic
-// must never be duplicated, because these three paths have drifted apart
-// before.
+// This is the ONE implementation of that rule. TWO paths call it: WhatIfTab's
+// adjusted-forecast engine (computeAdjustedForecast) and scenarioHelper
+// (computeScenarioForFilter). They differ only in how they read their rows
+// (raw camelCase vs exported PascalCase); the share arithmetic must never be
+// duplicated, because these paths have drifted apart before.
+//
+// It said "three paths" and named computeWhatIfData until 2026-08-01. That
+// function was deleted on 2026-07-31 and the count was never updated — the
+// kind of comment that survives a deletion because nothing compiles it.
 //
 // SCOPE — VOLUME EVENTS ONLY. Inflow / Outflow / Retention events carry
 // quantities (subscriberVolume, revenue, customerVolume) and must be split.
@@ -1296,6 +1351,248 @@ export function eventProRataShare(
 }
 
 /**
+ * What fraction of THIS view's metric lies inside the event's target scope.
+ *
+ * The sibling of eventProRataShare, and easy to confuse with it. They divide
+ * the same numerator by different denominators:
+ *
+ *   eventProRataShare  =  metric(view ∩ target) / metric(target)
+ *   eventCoverage      =  metric(view ∩ target) / metric(view)
+ *
+ * An ABSOLUTE event carries a fixed quantity that has to be split between the
+ * cohorts under its target, so it wants the share. A PERCENTAGE event carries
+ * no quantity at all — it scales whatever it lands on — so splitting it would
+ * be wrong. What it needs to know instead is how much of what it landed on it
+ * is actually entitled to touch.
+ *
+ * Two cases make the difference concrete. If the event targets All and the view
+ * is one cohort, the whole view is inside the target: coverage is 1 and +10%
+ * means +10% of that cohort — while the share would be well under 1 and would
+ * wrongly shrink the effect. If the event targets Corporate and the view is
+ * All, only part of the view is entitled: coverage is Corporate's fraction of
+ * the total, so +10% of Corporate lands as the right absolute number at the
+ * aggregate.
+ *
+ * Reconciliation holds by construction: each leaf takes the same percentage of
+ * its own value, and those sum to that percentage of the aggregate.
+ */
+export function eventCoverage(
+  event: ProRataScope,
+  cohort: ProRataScope,
+  leaves: ProRataLeaf[],
+): number {
+  let inView = 0;
+  let inBoth = 0;
+  let anyInView = false;
+  leaves.forEach(leaf => {
+    if (!leafWithinScope(cohort, leaf)) return;
+    anyInView = true;
+    inView += leaf.volume;
+    if (leafWithinScope(event, leaf)) inBoth += leaf.volume;
+  });
+
+  // No populated leaf under the view. Mirror eventProRataShare's fallback: the
+  // event applies in full where its own dimensions match, rather than being
+  // silently dropped for want of history.
+  if (!anyInView) {
+    return leafWithinScope(event, cohort) || leafWithinScope(cohort, event) ? 1 : 0;
+  }
+  // The view is populated in the hierarchy but zero on this metric. A ratio is
+  // undefined; fall back to whether the scopes overlap at all, which keeps a
+  // percentage event on a brand-new cohort from vanishing.
+  if (inView <= 0) {
+    return leaves.some(l => leafWithinScope(cohort, l) && leafWithinScope(event, l)) ? 1 : 0;
+  }
+  return inBoth / inView;
+}
+
+/** The metrics a month carries through event application. */
+export interface MonthMetrics {
+  inflow: number;
+  outflow: number;
+  retention: number;
+  arpu: number;
+}
+
+/**
+ * One event, already reduced to numbers this view can use. Both application
+ * paths build this from their own row shape, so the rule below is written once.
+ */
+export interface EventApplication {
+  id: string;
+  scenario: 'Inflow' | 'Retention' | 'Outflow' | 'ARPU';
+  /** Pro-rata'd absolute subscriber volume. Outflow keeps its negative
+   *  storage convention. Unused when amountType is 'percentage'. */
+  sharedVolume: number;
+  /** ARPU delta. A rate: never pro-rated, never a percentage. */
+  arpuDelta: number;
+  amountType?: 'absolute' | 'percentage';
+  percentageBasis?: 'baseline' | 'adjusted';
+  retentionLinked?: boolean;
+  /** Signed percent, e.g. 10 for +10%. Applies to the metric named by
+   *  `scenario` in its natural direction — +10% Outflow means MORE outflow —
+   *  so percentage events do NOT use the negative-storage convention that
+   *  absolute Outflow volumes do. */
+  percentAmount?: number;
+  /** eventCoverage for this view. Defaults to 1. */
+  coverage?: number;
+}
+
+/** How one percentage event's contribution to one month was arrived at.
+ *  Emitted by the engine rather than re-derived in the view, so what the user
+ *  is shown is the arithmetic that actually ran. */
+export interface PercentageDerivation {
+  eventId: string;
+  metric: 'inflow' | 'outflow' | 'retention';
+  basisKind: 'baseline' | 'adjusted';
+  basis: number;
+  percent: number;
+  coverage: number;
+  delta: number;
+}
+
+export interface MonthApplication {
+  metrics: MonthMetrics;
+  /** One entry per percentage event applied this month. */
+  derivations: PercentageDerivation[];
+  /** Before the zero floor, so a breach can be shown rather than just clipped. */
+  preFloor: MonthMetrics;
+  appliedIds: string[];
+  /** Metrics the floor actually caught, and the events that were applied when
+   *  it did — enough to attach a warning to this cohort-month. */
+  flooredMetrics: Array<'inflow' | 'outflow' | 'retention' | 'arpu'>;
+}
+
+/**
+ * Apply one month's events to one month's baseline.
+ *
+ * THE TWO PHASES, AND WHY THERE ARE TWO
+ * -------------------------------------
+ * Absolute events apply first; the result is snapshotted; percentage events
+ * then resolve against either the untouched baseline or that snapshot, and
+ * their deltas are summed and added afterwards.
+ *
+ * The reason for the snapshot is that 'adjusted' has to mean something stable.
+ * Resolved inside a single pass, "the adjusted value" would mean whatever the
+ * running total happened to be when this event's turn came, so a percentage
+ * event's result would depend on where it sat relative to the absolute events
+ * in the array — and array position is not something the user controls or can
+ * even see.
+ *
+ * ORDER AMONG PERCENTAGE EVENTS IS IRRELEVANT, AND MUST STAY THAT WAY
+ * ------------------------------------------------------------------
+ * Percentage events are flat, not compounding: every one of them resolves
+ * against a basis fixed before any of them ran, so none can observe another's
+ * output. Two +10% events on a baseline of 100 give +20, never +21.
+ *
+ * This means the maths here is order-independent BY CONSTRUCTION, and the
+ * `sequence` field exists for display stability and edit-slot retention only.
+ * Do not add a strict processing order for percentage events, and do not sort
+ * this array before calling. There is nothing for an order to fix, and adding
+ * one would quietly create the coupling it appears to protect against.
+ *
+ * The natural assumption is the opposite — the design note that led to this
+ * feature assumed percentage events would read each other, and EXPECTED.md
+ * records that correction. If a future change makes percentages compound, this
+ * comment stops being true and sequence becomes load-bearing for the numbers;
+ * that is a much larger change than it looks and should be treated as one.
+ */
+export function applyEventsToMonth(
+  baseline: MonthMetrics,
+  events: EventApplication[],
+): MonthApplication {
+  const appliedIds: string[] = [];
+  let inflow = baseline.inflow;
+  let outflow = baseline.outflow;
+  let retention = baseline.retention;
+  let arpu = baseline.arpu;
+
+  const isPct = (e: EventApplication) => e.amountType === 'percentage';
+
+  // ── Phase 1: absolute events ───────────────────────────────────────────
+  events.forEach(e => {
+    appliedIds.push(e.id);
+    if (isPct(e)) return;
+    const vol = e.sharedVolume;
+    if (e.scenario === 'Inflow') {
+      inflow += vol;
+    } else if (e.scenario === 'Outflow') {
+      // subscriberVolume is stored negative for Outflow, so subtracting adds
+      // its magnitude — more outflow, and less Base one month later.
+      outflow -= vol;
+    } else if (e.scenario === 'Retention') {
+      // Retained subscribers are subscribers who did not leave, so retention
+      // normally reduces outflow too. Unlinked moves the retention line alone,
+      // which means it does not reach Base at all.
+      if (e.retentionLinked !== false) outflow -= vol;
+      retention += vol;
+    } else if (e.scenario === 'ARPU') {
+      // RATE event — deliberately NOT pro-rated. A volume-weighted average of
+      // (leafArpu + delta) already equals (aggregateArpu + delta), so the same
+      // delta is correct at every level.
+      arpu += e.arpuDelta;
+    }
+  });
+
+  // ── The snapshot that gives 'adjusted' a fixed meaning ─────────────────
+  const afterAbsolute: MonthMetrics = { inflow, outflow, retention, arpu };
+
+  // ── Phase 2: percentage events, all against a frozen basis ─────────────
+  let dInflow = 0, dOutflow = 0, dRetention = 0;
+  const derivations: PercentageDerivation[] = [];
+  events.forEach(e => {
+    if (!isPct(e)) return;
+    const basisKind = e.percentageBasis === 'adjusted' ? 'adjusted' as const : 'baseline' as const;
+    const basis = basisKind === 'adjusted' ? afterAbsolute : baseline;
+    const pct = (e.percentAmount ?? 0) / 100;
+    const coverage = e.coverage ?? 1;
+    const record = (metric: 'inflow' | 'outflow' | 'retention', basisVal: number, delta: number) =>
+      derivations.push({ eventId: e.id, metric, basisKind, basis: basisVal,
+                         percent: e.percentAmount ?? 0, coverage, delta });
+    if (e.scenario === 'Inflow') {
+      const delta = pct * basis.inflow * coverage;
+      dInflow += delta;
+      record('inflow', basis.inflow, delta);
+    } else if (e.scenario === 'Outflow') {
+      // Natural direction: +10% means more outflow.
+      const delta = pct * basis.outflow * coverage;
+      dOutflow += delta;
+      record('outflow', basis.outflow, delta);
+    } else if (e.scenario === 'Retention') {
+      const delta = pct * basis.retention * coverage;
+      dRetention += delta;
+      record('retention', basis.retention, delta);
+      // Same coupling as the absolute case: more retention is less outflow.
+      if (e.retentionLinked !== false) dOutflow -= delta;
+    }
+    // ARPU is a rate and takes no percentage amount — see the scenario guard
+    // at the input sites. Nothing to do here.
+  });
+  inflow += dInflow;
+  outflow += dOutflow;
+  retention += dRetention;
+
+  const preFloor: MonthMetrics = { inflow, outflow, retention, arpu };
+  const flooredMetrics: MonthApplication['flooredMetrics'] = [];
+  (['inflow', 'outflow', 'retention', 'arpu'] as const).forEach(k => {
+    if (preFloor[k] < 0) flooredMetrics.push(k);
+  });
+
+  return {
+    metrics: {
+      inflow: Math.max(0, inflow),
+      outflow: Math.max(0, outflow),
+      retention: Math.max(0, retention),
+      arpu: Math.max(0, arpu),
+    },
+    preFloor,
+    appliedIds,
+    flooredMetrics,
+    derivations,
+  };
+}
+
+/**
  * Single O(N) pass over `data` that groups each valid row into a CohortDataMap.
  *
  * Call this ONCE before the bulk forecasting loop, then replace per-cohort
@@ -1402,7 +1699,7 @@ export interface TrailingArpuConfig {
  * IBRO metric value — the canonical "cohort average" used to auto-populate a
  * volume-only market event's ARPU field so it doesn't dilute the blended ARPU
  * toward zero (Phase 3 P4). Mirrors the row-level revenue derivation already
- * used by computeWhatIfData's own aggregation: the revenue column if mapped
+ * used by the what-if row aggregation: the revenue column if mapped
  * and non-zero, else volume × per-row ARPU. Dimensions are matched only when
  * both a column is mapped and a non-'All' value is supplied — omitted/'All'
  * dims are unfiltered, same convention as the rest of the app.
@@ -1470,6 +1767,135 @@ export function computeCohortTrailingArpu(
  * other value. Outflow/ARPU-scenario events, or an explicit non-zero ARPU,
  * pass through unchanged — this never overrides a value the user provided.
  */
+/**
+ * Next free display slot. Appends go to the end; nothing else should invent a
+ * sequence number, so that "highest wins" holds no matter which path created
+ * the event.
+ */
+export function nextSequence(events: MarketEvent[]): number {
+  // Non-finite slots are skipped rather than compared: Math.max(2, NaN) is NaN,
+  // so one corrupt row would otherwise poison every subsequent allocation.
+  return events.reduce(
+    (max, e) => (Number.isFinite(e.sequence) ? Math.max(max, e.sequence) : max),
+    0,
+  ) + 1;
+}
+
+/**
+ * Backfill sequences for events that have none — sessions exported before
+ * 2026-08-01 carry no Sequence column.
+ *
+ * The fallback is array position, because that IS the order those sessions
+ * displayed in: before an explicit field existed, the table sorted by campaign
+ * then date, but storage order was insertion order and the export wrote rows
+ * in storage order. Reading the sheet top to bottom therefore recovers the
+ * order the user last saw their events accumulate in.
+ *
+ * Events that already carry a sequence keep it, so a partially-migrated
+ * session — hand-edited, or merged from two exports — does not get renumbered
+ * underneath the user.
+ */
+export function backfillSequences(events: MarketEvent[]): MarketEvent[] {
+  const anySequenced = events.some(e => Number.isFinite(e.sequence));
+  let next = nextSequence(events);
+  return events.map((e, i) =>
+    Number.isFinite(e.sequence) ? e : { ...e, sequence: anySequenced ? next++ : i + 1 },
+  );
+}
+
+/**
+ * Campaign bulk edit deletes every row of a campaign and rebuilds it from the
+ * form, with new ids. Left to itself that appends, so a user who edits the
+ * spread on a campaign sitting third in their table finds it at the bottom
+ * afterwards — an edit about volumes silently reordering their work.
+ *
+ * This hands the rebuilt rows the slots the replaced rows held. Both are in
+ * date order within a campaign, so pairing them by position pairs first month
+ * with first month.
+ *
+ * A rebuild may change the row count: a 3-month spread edited to 5 months, or
+ * collapsed to a single event. Extra rows take fresh slots at the end; surplus
+ * slots are simply left unused. Fresh slots are allocated above EVERY
+ * pre-edit event rather than filling the gap, so a slot freed by this edit is
+ * never handed to a row that did not previously occupy it.
+ */
+export function resequenceRebuild(
+  rebuilt: MarketEvent[],
+  replaced: MarketEvent[],
+  survivors: MarketEvent[],
+): MarketEvent[] {
+  const slots = replaced
+    .map(e => e.sequence)
+    .filter((s): s is number => Number.isFinite(s))
+    .sort((a, b) => a - b);
+  let next = nextSequence([...survivors, ...replaced]);
+  return rebuilt.map((e, i) => ({ ...e, sequence: i < slots.length ? slots[i] : next++ }));
+}
+
+/**
+ * What the table's ARPU Δ column shows for an event, or null for a dash.
+ *
+ * Percentage rows always dash. The condition keys off amountType and NOT off
+ * `arpu !== 0`, which is the implementation that suggests itself and is wrong:
+ * resolveEventArpuRevenue auto-fills the cohort trailing average whenever the
+ * user leaves ARPU blank on an Inflow or Retention event, so a percentage row
+ * normally arrives carrying a non-zero arpu and would render a number.
+ *
+ * Extracted rather than inlined in the JSX so there is one definition of the
+ * rule and a test can drive it. Inline, a spec can only restate it, and a
+ * restatement agrees with itself no matter what the table does.
+ */
+export function eventArpuDelta(e: MarketEvent): number | null {
+  if (e.amountType === 'percentage') return null;
+  return e.arpu !== 0 ? e.arpu : null;
+}
+
+/**
+ * The subscriber volume an event actually contributed to one month at one view.
+ *
+ * For an ABSOLUTE event that is subscriberVolume times the pro-rata share, as
+ * it always was. For a PERCENTAGE event subscriberVolume holds the PERCENT — 10
+ * means 10%, not ten people — so reading it as a count sizes an ARPU pool at
+ * ten subscribers instead of the several hundred the event actually added.
+ *
+ * The real figure only exists after applyEventsToMonth has resolved it against
+ * a basis, which is why it comes from that function's own derivations rather
+ * than being recomputed here. A second derivation would drift from the engine
+ * exactly where the engine was taught a case the derivation was not.
+ *
+ * Zero when the event produced no derivation for this month and metric: it did
+ * not apply at this view, so it contributed nobody.
+ */
+export function resolvedEventVolume(
+  event: { id: string; amountType?: 'absolute' | 'percentage' },
+  sharedAbsolute: number,
+  derivations: PercentageDerivation[] | undefined,
+  metric: 'inflow' | 'outflow' | 'retention' = 'inflow',
+): number {
+  if (event.amountType !== 'percentage') return sharedAbsolute;
+  const d = (derivations ?? []).find(x => x.eventId === event.id && x.metric === metric);
+  return d ? d.delta : 0;
+}
+
+/**
+ * The display order. Sequence first; date then id break ties so the result is
+ * total and stable even for events that somehow share a slot.
+ */
+export function bySequence(a: MarketEvent, b: MarketEvent): number {
+  // A missing slot sorts LAST, not first. It used to read as 0, so any
+  // construction site that forgot to set one sent its rows to the TOP of the
+  // table — the loudest possible failure for the quietest possible omission,
+  // and tsc does not enforce the required field at every literal (verified).
+  // Sorting last degrades to "appears at the end", which is what a newly
+  // created event should do anyway.
+  const av = Number.isFinite(a.sequence) ? a.sequence : Number.POSITIVE_INFINITY;
+  const bv = Number.isFinite(b.sequence) ? b.sequence : Number.POSITIVE_INFINITY;
+  const s = av === bv ? 0 : av - bv;
+  if (s !== 0) return s;
+  const d = a.date.localeCompare(b.date);
+  return d !== 0 ? d : a.id.localeCompare(b.id);
+}
+
 export function resolveEventArpuRevenue(
   vol: number,
   rawArpu: number | undefined,
