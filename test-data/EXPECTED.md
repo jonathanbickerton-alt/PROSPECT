@@ -1147,6 +1147,89 @@ Generally: "the fallback is wrong, but removing it leaves gaps" is an argument
 about what to show in the gaps. It is never an argument for keeping a
 fabrication.
 
+### The three seed fields are AS-OF-A-DATE reads — measured 2026-08-04
+
+Q4 for the aggregate-derivation build: do `seedBaseVolume`,
+`lastHistoricalInflow` and `lastHistoricalOutflow` sum meaningfully across
+leaves?
+
+**Answer: yes on all present data, and all three carry the SAME condition.**
+
+**The hypothesis I started with was wrong.** I expected the two flows to sum
+cleanly and the stock to be the binding constraint. Stock versus flow is not the
+distinction that matters here. All three are read *at a date computed per leaf*,
+and they are exact under summation precisely when that date is the same on every
+leaf. They fail together or not at all.
+
+#### Where each leaf value comes from
+
+`seedBaseVolume` is **not derived inside `calculateBaseForecast`** — it is
+parameter 3, supplied by the caller, six call sites. In the worker (the only
+path that builds leaf forecasts in bulk) it is computed from `allIBRO`, the
+leaf's own rows: filter to the Base metric, sum within a timestamp, take the
+value at `Math.max(...baseReadings.keys())`.
+
+`lastHistoricalInflow` / `lastHistoricalOutflow` are
+`sorted[sorted.length - 1].inflow / .outflow`, where `sorted` is `ibroArr` —
+and `ibroArr` is **filtered** to months where `inflow > 0 || outflow > 0 ||
+retention > 0`.
+
+#### Double-counting: no
+
+`buildCohortDataMap` places each source row in exactly one bucket, keyed by that
+row's literal dimension values. Leaf keys therefore **partition** the data, and
+summing leaves cannot double-count. The one way that could break is a source row
+carrying the literal string `All` in a dimension, which would make a key both a
+leaf and a roll-up. **Measured: zero such rows** in either fixture, across all
+seven dimensions.
+
+#### Gaps: three ways, none of which fire on present data
+
+1. **Across leaves.** The max-timestamp is per leaf. Leaves ending in different
+   months make the sum add a June stock to a May stock — a wrong number that
+   nothing in the summation can detect.
+2. **Within a leaf.** The seed date comes from *unfiltered* Base rows; the flow
+   date from *filtered* flow rows. A leaf whose final month has a Base reading
+   but all-zero flows reads its seed at T and its flows at T−1, while its
+   `months` array starts at T (from `sorted`'s last date). Same field set, two
+   epochs.
+3. **Month-array alignment — the one that actually constrains the build.** Each
+   leaf's `months` begin at `addMonths(lastDate, 1)`. Leaves that end at
+   different months produce arrays misaligned by index *and* by label. This
+   constrains derivation more than the seeds do.
+
+#### Measurement, both fixtures, 2026-08-04
+
+| | trimmed | full tariff-hierarchy |
+|---|---|---|
+| leaves | 74 | 540 |
+| leaves whose last Base month is 2026-06 | 74 | 540 |
+| leaves whose last non-empty flow month is 2026-06 | 74 | 540 |
+| leaves where the two dates disagree | 0 | 0 |
+| rows with a literal `All` in any dimension | 0 | 0 |
+| Σ per-leaf seeds vs true one-month total | 2,754,259 vs 2,754,259 — **0.0** | (trimmed: 292,846 vs 292,846 — **0.0**) |
+
+**And that is also the limit of the measurement.** Both fixtures are perfectly
+rectangular: every leaf carries every month. They therefore **cannot exercise**
+any of the three gaps. A cohort that launches mid-history or stops before the
+end is the case that breaks this, and no fixture contains one. Do not read the
+0.0 as evidence the risk is absent — read it as evidence the fixtures cannot
+see it.
+
+#### The constraint to build against
+
+Summation is safe today and silently wrong on the first ragged cohort. So the
+derivation must not inherit a leaf's notion of "last historical month":
+
+- **key on the month LABEL, never the array index**;
+- **compute the aggregate's own last historical month** and read every leaf's
+  seed and last flows at that month, rather than summing whatever each leaf
+  happened to end on;
+- decide explicitly what a leaf that has no row at that month contributes.
+
+**Unchased discrepancy:** 540 leaves here against the 541 typed forecasts a
+bulk run produced. One key unaccounted for. Noted, not explained.
+
 ### The V-shaped dip on Outflow is correct — measured 2026-08-04
 
 A linked Retention event makes Outflow (Adjusted) dip for one month and return,
