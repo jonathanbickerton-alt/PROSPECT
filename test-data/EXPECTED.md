@@ -1576,9 +1576,23 @@ The observation below is retained for the record of how it was reached.
 **Previously not observed:** `hits: 0, misses: 0, rowsSeen: 0` — the
 map body never executed because the actuals import did not register (MAPE cards
 stayed at "0 months compared"; the tab rendered "All Models Performing Well").
-Cause: the documented React-controlled-input blocker, **fourth occurrence** —
-programmatic `DataTransfer` + `change` dispatch does not drive this app's actuals
-import. The user is loading the file by hand to close the observation. **The
+**CORRECTED 2026-08-04 — this attribution was half wrong.** Two causes were
+present and I named only one, then named it as the whole explanation.
+
+*Real:* the programmatic `DataTransfer` + `change` dispatch genuinely did not
+drive the actuals import; the user loaded the file by hand. The
+React-controlled-input blocker occurrence is genuine and the count stands at
+**four**. What was wrong was the causal claim, not the occurrence.
+
+*The actual cause of `rowsSeen: 0`:* the **>=85 score threshold**. The challenger
+memo only maps rows scoring below 85, and none did. Even with actuals fully
+loaded the map body did not run until "Review All Cohorts Anyway"
+(`challengerShowAll`) bypassed the threshold.
+
+**The lesson is the attribution, not the blocker.** A known, recently-recorded
+failure mode is the cheapest explanation available, which is exactly why
+reaching for it first is dangerous — it fits without being checked. Two causes
+were in play; naming the familiar one closed the question early. **The
 defect does not depend on it**; the store-arity evidence is sufficient for the
 diagnosis and the arity argument is conclusive on its own.
 
@@ -1652,6 +1666,97 @@ retroactively, because nothing in a stored `BaseForecast` records it.
 
 **Pre-existing sessions stay unflaggable.** That constraint is recorded above
 and stands; this closes it going forward only.
+
+### APPROVED BUILD PLAN — aggregate derivation, 4 phases — 2026-08-04
+
+Approved by the user 2026-08-04. **Nothing built in the session that produced
+it.** The unit is `resolveForecast(key)`, and every reader goes through it:
+store hit -> the stored fit verbatim; miss on an aggregate key -> `deriveAggregate`
+over the leaves in scope; miss on a leaf key -> `null` with a reason.
+
+| Phase | Content | Control |
+|---|---|---|
+| **0** | Worker counters + skip reporting. `if (bf)` gains an else recording `{fKey, reason}`; new `skipped` field; `generated`/`failed`/`empty` untouched. Standalone. | existing counter semantics byte-identical |
+| **1** | The type change. `provenance` discriminant (`fitted` / `derived` / `accepted`); top-level `modelUsed` and `fittedParams` removed; the defaults re-enumerated **by the removal test**, not by grep; export option C; importer discriminant at `:826`, `:808`, `:842`, `:880`, `:1057`. | leaf behaviour byte-identical; provably aggregate-free (nothing produces `derived` yet) |
+| **2** | `deriveAggregate` + month-key alignment + `resolveForecast`; every reader routed; `flowBandMaps` and its 7 sibling seed sums retired; `scaledBandFlow` deleted; instances 2 and 3 fixed via `makeForecastKey`; `populatedCohortKeys` keeps leaf identity; `.has()` becomes resolvable. | leaf behaviour byte-identical (1-leaf passthrough makes this hold **by construction**) **plus** the pinned new aggregate scoring baseline. Coverage annotates; it never gates derivation. |
+| **3** | Both fit-on-aggregate removals (`~:2401` and the `:2436` companion write) + Generate-on-All behaviour. | the leaf sum, **not** the old path numbers — they differ by construction, and that is the settled decision becoming visible |
+
+**Mutation-tested spec cases.** Phase 0: skipped leaf named with its fKey;
+reason distinguishes insufficient-history from never-enumerated. Phase 1:
+derived row round-trips without acquiring `Holt Linear`; a file with no
+`Provenance` column imports as fitted. Phase 2: month-key alignment; ragged
+leaves; **1-leaf passthrough** (object identity AND rounding); coverage
+counting; **zero-contributing leaves derive to `null`, never a zero-valued
+forecast**; quadrature not linear; leaf miss returns null with a reason, never a
+borrowed number. Phase 3: excluded leaves named in the completion message; an
+all-unforecastable selection reports that and derives nothing.
+
+**Generate-on-All reports coverage, not a success count** — "68 of 74 leaves in
+scope now forecast; 6 excluded for insufficient history: [named]", not "68
+forecasts generated".
+
+**Declared gap:** on both fixtures (42/42/42 rectangular) the excluded-leaf
+message is **unreachable**. qa-tester declares it unexercised. That is a
+declared gap, not a pass.
+
+#### SEQUENCING AMENDMENT — the ARPU anomaly gates Phase 2
+
+**The ARPU-MAPE anomaly must be established engine-versus-display BEFORE Phase 2
+pins its scoring baseline.** If the ARPU path is defective, pinning the baseline
+would make the gate **defend the bug** — the spec case would lock in the wrong
+numbers and every future run would confirm them.
+
+Phases 0 and 1 are unaffected and may proceed first.
+
+The general shape worth carrying: **a pinned baseline is only as good as the
+path that produced it.** Pinning is what makes a number authoritative, so
+anything unexplained upstream of it has to be closed first, not noted alongside.
+
+#### The two settled calls
+
+**`summaryMape` comment, verbatim at the site:**
+
+> summaryMape averages per-leaf MAPEs. It is NOT the MAPE of the derived
+> aggregate — those are different quantities and must not be unified. See
+> EXPECTED.md.
+
+**The reason enum is ONE shared vocabulary**, defined once and used by both
+Phase 0 skip-list and Phase 2 null-reason. Internal codes —
+`never-enumerated` | `insufficient-history` — rendered through **i18n keys**.
+**No hardcoded reason strings.** Two vocabularies for one concept is the pattern
+this codebase has now recorded three separate instances of.
+
+### OPEN DEFECT: four ARPU MAPEs identical at 11.4% — 2026-08-04
+
+Reported by the user from the running app. **Observed only. Not diagnosed.**
+
+Step 3, Corporate segment, Jun2026 actuals loaded, 654 months compared:
+
+| card | value |
+|---|---|
+| Inflow ARPU MAPE | **11.4%** |
+| Outflow ARPU MAPE | **11.4%** |
+| Retention ARPU MAPE | **11.4%** |
+| Base ARPU MAPE | **11.4%** |
+
+The four volume MAPEs beside them are distinct and plausible — 3.2 / 1.1 / 3.7 /
+1.0 — so whatever this is sits on the **ARPU path specifically**.
+
+Four independently-fitted series agreeing to one decimal place is not
+coincidence. **Signature of one series being read four times, or of one shared
+denominator.** That is a hypothesis about the shape, not a diagnosis.
+
+**Nothing traced. No cause established. Do not record one until it is.** Treat
+as the previous defect was treated: establish engine versus display first,
+reproduce, and do not fix until the cause is established.
+
+**This gates Phase 2** — see the sequencing amendment above.
+
+### COPY FIX (queued): "654 months compared" — 2026-08-04
+
+The count sums **cohort-months**, not months. Against a 42-month history it
+reads as a time span, and 654 is not one. Separate from the ARPU defect above
+and not a prerequisite for anything; queued as copy.
 
 ### The V-shaped dip on Outflow is correct — measured 2026-08-04
 
