@@ -2071,6 +2071,82 @@ Do not describe this as a service, and do not describe it as coverage. Naming
 scattered features as a system is the same error as characterising dead code as
 live protection — it makes absent checks look present.
 
+### DQ DECISIONS — settled 2026-08-04, nothing built
+
+Decided by the user against the inventory. **The import summary is its own gated
+phase, AFTER Phase 3 and before UAT. Nothing here preempts Phases 1-3.**
+
+#### A and C — amber warnings on a new import summary panel
+
+**A. Revenue does not equal price x volume beyond rounding.** The "file is
+WRONG" case: the file contradicts itself. The warning must state which value the
+tool used, because that choice is currently invisible.
+
+**C. Ragged month coverage across leaves.** The "file is LIMITED" case, worded
+accordingly. Amber at aggregate level on the Baseline screen as well as on the
+import summary, because this is the one with a live numeric consequence — it
+feeds the Q4a coterminous caveat and Phase 2's partial-sum months.
+
+#### A carries a SECOND defect in the same expression — record it now
+
+```js
+const revVal = rev || (arpu * val);
+```
+
+`forecasting.worker.ts:447`, `ForecastVsActualsTab.tsx:270`, and the two bulk
+sites in `App.tsx`.
+
+Two distinct faults live in that one line:
+
+1. **Silent preference.** When `rev` and `arpu * val` disagree, `rev` wins and
+   nothing says so. That is the silent workaround the working-practice principle
+   forbids.
+2. **Falsy zero.** `||` treats a genuine revenue of **0** as absent and
+   substitutes `arpu * val`. A row that legitimately earned nothing is given a
+   fabricated non-zero value. This is not a variant of the first fault — the
+   first mis-reports a conflict, this one **invents data where the file was
+   explicit**.
+
+`??` is not automatically the fix: a truly missing revenue column should still
+fall back. The distinction needed is **absent** versus **present and zero**, and
+`||` cannot express it.
+
+**Build-time requirement:** measure how often legitimate-zero revenue rows occur
+before choosing the remedy. A fix whose blast radius is unmeasured is the
+recorded failure mode. If the count is zero on the fixtures, say so and say that
+the fixtures cannot exercise it — do not read zero as absence of risk.
+
+#### B and D — NOT warnings. One always-present line.
+
+The design comes from the observation that decided it: **a permanent statement
+of fact reads as orientation; the same content styled as a warning reads as
+noise.** A check that fires on every upload trains users to dismiss it, and B
+(flat-priced books) and D (extra columns) would both fire almost always.
+
+So they become one always-present **"How your data was read"** line on the
+import summary:
+
+- rows, months, leaves;
+- extra columns combined, **named** (e.g. `Accounting_View`,
+  `Refresh_Frequency`, `Simulation_Type`) — a generic message is unactionable;
+- the shared-price statement, when true.
+
+**The D-frequency unknown stops mattering.** I flagged that I had no evidence
+how often extra dimensions vary in real uploads, and that the frequency decided
+whether D was orientation or noise. A line that never fires has no frequency.
+The unknown was dissolved by the design rather than answered — worth noticing as
+a move: when a decision hinges on an unmeasured rate, changing the mechanism so
+the rate is irrelevant beats measuring it.
+
+#### E — dropped
+
+Short-history leaves are already named at generation time with their exact
+cohort keys. Import cannot state it as accurately: it does not know the forecast
+length, nor how the four-month floor interacts with the nonzero-flow filter that
+decides which months survive. Saying it earlier, twice, and less precisely
+violates the rule that **no check fires on a property it cannot state
+accurately**.
+
 ### The V-shaped dip on Outflow is correct — measured 2026-08-04
 
 A linked Retention event makes Outflow (Adjusted) dip for one month and return,
