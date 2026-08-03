@@ -983,6 +983,81 @@ there: it is a usability defect in its own right, it affects the absolute path
 as much as the percentage one, and folding it into a presentational change
 would have hidden it in that diff. Its own branch.
 
+### A gap that narrows under correction is not converging on truth — 2026-08-03
+
+Investigating the `promoRebanded` divergence, a **21.7% Base gap** was reported
+between `computeAdjustedForecast` and `computeScenarioForFilter` for identical
+inputs with no promotion involved. It looked like a second, larger divergence
+sitting behind the promo one, and it held up the decision on the promo fix.
+
+**It was a harness artefact. There is no Base divergence.**
+
+`computeScenarioForFilter` de-duplicates the seed on `Cohort_Key` (the
+`cohortCache` block in `scenarioHelper.ts`) because baseline rows repeat the
+cohort metadata once per month. The harness built `Cohort_Key` including the
+tariff tier, so five tiers became five distinct cohorts and Path B summed five
+seeds where Path A had one.
+
+**The dangerous part is what happened next.** The first correction divided
+`Seed_Base_Volume` by the tier count — but divided `Last_Historical_Inflow` and
+`Last_Historical_Outflow` for Path B only, while Path A kept the undivided
+values. The gap fell from 78% to 21.7% and the remaining figure was reported as
+though it meant something.
+
+**A gap narrowing under successive corrections is not evidence of converging on
+truth.** Each correction made the number more plausible, and more plausible is
+exactly what lets a wrong number survive review: 78% invites suspicion, 21.7%
+reads like a real finding worth chasing. Nothing in the trend indicated the
+remaining error, because the trend was produced by fixing some inputs and not
+others.
+
+What settled it was not a further correction but a different KIND of evidence —
+running Path B against a real exported session and checking its Base against
+the file's own seed columns:
+
+```
+seed 1274 + lastIn 136 - lastOut 114 = 1296
+Path B month-1 baselineBase          = 1296   exact
+```
+
+That export carries 24 rows per cohort, so a naive per-row sum would give
+30,576 — twenty-four times the correct 1,274. The de-duplication is doing real
+work; the harness was the only thing bypassing it.
+
+**Three consecutive measurements of the same quantity were wrong**, each
+internally consistent. Where that happens, stop correcting the harness and
+change the class of evidence.
+
+### An exported session measures the engine that wrote it — 2026-08-03
+
+Driving both paths from a real exported `.xlsx` was the right instinct: it
+removes the hand-built input, which was the source of the error above. But the
+export used was dated **22 April 2026, and 194 commits have landed since** —
+including bottom-up aggregation, the pro-rata distribution fix and the
+tariff-grain correction.
+
+Its `Adjusted_Forecasts` sheet therefore holds what the **April engine**
+computed. Comparing today's `computeScenarioForFilter` against it measures four
+months of deliberate change, not a divergence between paths. The observed
+differences — 13 of 96 values, worst a Retention figure of 616.85 against
+129.85, a factor of 4.75 with the shape of the pre-pro-rata over-application —
+are consistent with version skew and attributable to nothing else.
+
+**Removing the input variable introduced a version variable in its place.** A
+stored artefact carries the semantics of the code that produced it, so an
+export is a valid cross-path input only if it came from the build under test.
+
+To settle whether the two paths agree on flows and ARPU, the export has to be
+generated from the current build: load the fixture, generate a baseline,
+export, then run both paths on that file. **Not yet done.**
+
+**Unaffected: the promo measurement.** Market Events 25.1800 against Scenario
+Compare 25.0000 for a Retention promotion with a value-mix arm, with the
+control — the same event without the promo flags — giving 25.0000 on both
+paths. That comparison never read Base or the seed, so none of the above
+touches it. The `promoRebanded` gap is real, reachable and silent, and is NOT
+sitting behind a larger Base problem.
+
 ### Scanner blind spot: object literals are advisory, not enforced — 2026-08-02
 
 `scan-i18n` buckets user-facing strings held in object literals as
