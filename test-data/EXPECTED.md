@@ -1467,6 +1467,122 @@ change. Sub-frame.
 
 Both figures are stated so the trade is visible. **The decision is not mine.**
 
+### SETTLED: aggregates are derived at READ time — 2026-08-04
+
+Decided by the user 2026-08-04 after Q1–Q6. Bottom-up remains settled; this
+settles *when* the summation happens.
+
+**Aggregate `BaseForecast`s are derived on demand at the `forecastStore.get`
+seam.** They are never stored, never exported, never invalidated.
+
+#### Why write-time was rejected — REJECTED, do not re-propose
+
+| | measured |
+|---|---|
+| key inflation | 540 leaves → 7,964 populated keys → **14.7×** the 541 stored today |
+| export size | 102 MB ÷ 541 ≈ 193 KB/key → **~1.5 GB** |
+| invalidation | **54 roll-ups per leaf regenerated**, and nothing tracks the dependency |
+| enumeration | re-inherits proportionality to the enumeration — the same coupling the populate-only filter was introduced to break |
+
+Read-time costs, for contrast: worst case 540 leaves × 42 months × 9 band series
+≈ 204k float operations per filter change. Sub-frame. No staleness, because it
+derives from whatever is in the store at the moment it is asked.
+
+#### Read-time's obligations — these are part of the decision, not caveats
+
+1. **Coverage must be stated.** Via an aggregate-key → leaf-keys map — the
+   `populatedCohortKeys` loop (`App.tsx:3241`) **keeping leaf identity** instead
+   of flattening to a Set of expanded keys. Without it the derivation cannot say
+   which in-scope leaves it summed.
+2. **`aggregateForecastBands` is NOT usable as-is.** It indexes leaves by array
+   position with `horizon = max(lengths)` and `if (!b) continue`. Alignment must
+   be **by month key**, never by array position — see the Q4a constraint. A leaf
+   offset by one month currently contributes its month-1 to the aggregate's
+   month-0, silently.
+3. **The quadrature assumption is recorded as a known limitation, not kept
+   silently.** Combining half-widths as `sqrt(Σ(opt−mean)²)` assumes leaf errors
+   are **independent**. They are not — leaves in a segment share demand shocks —
+   so the derived band is narrower than the truth. It ships as an explicit,
+   documented limitation of the bands.
+
+### Export provenance — option C, decided 2026-08-04
+
+`Model_Used` **stays an enum** and is **empty for derived rows**. Two new
+columns: **`Provenance`** (`fitted` | `derived`) and **`Leaf_Count`**.
+
+The importer (`App.tsx:826` and its three siblings at `:804`, `:876`, `:1053`)
+**learns the discriminant**. A file with no `Provenance` column defaults to
+`fitted` — correct, since everything in a pre-change export was fitted.
+
+**Every `?? 'Holt Linear'` default on `modelUsed` is enumerated and REMOVED as
+part of the type change.** Each one is a silent-relabelling site: with
+`Model_Used` empty for a derived row, the default would quietly present a
+derived aggregate as a Holt Linear fit. Each is replaced by handling the derived
+arm explicitly. Known sites: `App.tsx:472`, `:2643`, `:2765`, `:2892`;
+`ForecastVsActualsTab.tsx:2960`, `:4354`. **Enumerate again at build time — this
+list was gathered by grep and greps miss.**
+
+### DEFECT (live): the challenger comparison has never used a cohort's own forecast — 2026-08-04
+
+Instance 3 of the borrow-an-unrelated-cohort pattern, recorded above. Live, in
+Step 3 → **AutoML Challenger Analysis**.
+
+`ForecastVsActualsTab.tsx:2952-2958` builds a **5-part** lookup key
+(`seg|prod|prodL2|chan|chanL2`) — **omitting tariff entirely** — and queries
+`forecastStore`, which `makeForecastKey` (`App.tsx:1405-1413`) always writes with
+**7 parts**. Pre-tariff code never updated when the tariff dimension landed,
+which is also why it is a hand-rolled join rather than a call to
+`makeForecastKey`.
+
+**Runtime evidence, 2026-08-04.** Real app, full Dec2025 fixture (77,760 rows),
+real bulk run (*"Generate 31852 Forecasts"* — matches the recorded 31,856
+enumeration). Instrumented store inspection at the memo:
+
+```
+storeSize:    541          ← the same 541 seen in the export
+storeArities: [7]          ← all 541 keys, no exceptions
+```
+
+**541 of 541 keys are 7-part. The lookup key has 4 pipes; every store key has
+6.** The exact-match arm queries a store containing no key it could ever match.
+
+**Consequence:** `cohortFcExact` is always null, so `chosenModel` always comes
+from the loaded cohort and the share-scaling branch runs **unconditionally** —
+for leaves as well as aggregates. Every model recommendation that tab has made
+since the tariff dimension landed rests on a scaled comparison against a
+different cohort's forecast.
+
+**NOT YET OBSERVED: the arm firing.** `hits: 0, misses: 0, rowsSeen: 0` — the
+map body never executed because the actuals import did not register (MAPE cards
+stayed at "0 months compared"; the tab rendered "All Models Performing Well").
+Cause: the documented React-controlled-input blocker, **fourth occurrence** —
+programmatic `DataTransfer` + `change` dispatch does not drive this app's actuals
+import. The user is loading the file by hand to close the observation. **The
+defect does not depend on it**; the store-arity evidence is sufficient for the
+diagnosis and the arity argument is conclusive on its own.
+
+#### Accepted-challenger forecasts in the store — checked 2026-08-04
+
+Asked because any adopted model would have been adopted on a share-scaled
+comparison. **Count: 0** in the session built at `f0f9bfd` — the tab offered no
+rows to accept ("All Models Performing Well", zero cohorts below 85), so
+acceptance was never reachable.
+
+**Two structural findings that matter more than the count:**
+
+- **The store carries no marker.** Both acceptance paths (`App.tsx:2630`,
+  `:2757`) write a plain `BaseForecast` via `setForecastStore(...).set(fKey, bf)`,
+  indistinguishable from a bulk-generated one. **A store cannot be interrogated
+  for this after the fact.**
+- **The audit log's grain is too coarse to name them.** `modelAcceptanceLog` is
+  the only record, and its `cohortKey` is **3-part** (`seg|prod|chan`) — no
+  productL2, channelL2 or tariff. Even a non-empty log could not identify which
+  7-part cohorts to regenerate. `cohortGenLog` is capped at `.slice(0, 10)`, so
+  it is not a census either.
+
+So "flag them for regeneration" is **not currently implementable** for any
+pre-existing session. Recorded as the constraint. Nothing touched.
+
 ### The V-shaped dip on Outflow is correct — measured 2026-08-04
 
 A linked Retention event makes Outflow (Adjusted) dip for one month and return,
