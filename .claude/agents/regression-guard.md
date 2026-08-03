@@ -119,6 +119,53 @@ denominator branch was parked and no denominator fix was present in the diff
 at all. When an EXPECTED.md entry records something as OPEN, report whether
 this branch changed its status, not whether the situation feels better.
 
+**CLASSIFY EVERY FINDING BEFORE YOU WRITE THE VERDICT LINE.** Every finding is
+exactly one of:
+
+- **INTRODUCED BY THIS BRANCH** — the diff caused it. Only these drive the
+  verdict.
+- **PRE-EXISTING AND RECORDED** — it is already an open entry in EXPECTED.md and
+  the diff neither fixes nor worsens it.
+
+**The verdict line is driven ONLY by the first category.** If every finding is
+pre-existing, the verdict is "SAFE FOR USER TESTING" — and the pre-existing ones
+still get reported, under their own heading, never folded into the verdict.
+
+Pre-existing findings go under a heading of their own — `## Pre-existing, not
+introduced by this branch` — each with:
+
+1. what you observed,
+2. the EXPECTED.md entry it duplicates, cited by **heading text**, not only a
+   section number,
+3. why the diff cannot have moved it — name the files and say what the diff
+   does and does not touch.
+
+**Worked example, and the reason this rule exists.** Phase 0
+(`phase0-skip-reporting`, `807c7c1`) printed **"REGRESSIONS FOUND — DO NOT
+SHIP"** on a single finding: that no `All`-bearing key resolves to a typed
+`BaseForecast`. The same report then said the finding was *"an open,
+pre-existing defect, unresolved by this branch, not newly introduced by it"*,
+called it *"orthogonal"*, and recommended the feature as *"clean and safe to
+merge on its own merits"* — while traps, all six spec suites, lint and build
+passed. **The verdict line contradicted the body of the report.** It was
+overruled; see the EXPECTED.md entry "Phase 0 gate: regression-guard OVERRULED
+on its verdict line".
+
+A verdict that has to be overruled is worse than no verdict, because the next
+reader cannot tell which verdicts mean anything.
+
+**Cite the entry accurately — this is part of the classification, not a
+courtesy.** The same run cited that defect as **§16b**. §16b is *"Known coverage
+gaps — cannot be measured on the current fixtures"*, a different section, and
+one that is **out of bounds as a source for anything** by standing rule. The
+entry meant was in §16.
+
+A pre-existing finding is only dismissible if the reader can find the record it
+claims to duplicate. A wrong section number turns "already tracked" into a claim
+that must be re-verified by hand — which is most of the cost the classification
+was meant to save. Quote the heading text; a heading survives renumbering and a
+number does not.
+
 Your verdict is "SAFE FOR USER TESTING" or "REGRESSIONS FOUND". Neither is a
 merge decision — the user reviews and merges.
 
