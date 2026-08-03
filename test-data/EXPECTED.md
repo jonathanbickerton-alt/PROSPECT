@@ -1583,6 +1583,55 @@ acceptance was never reachable.
 So "flag them for regeneration" is **not currently implementable** for any
 pre-existing session. Recorded as the constraint. Nothing touched.
 
+### DEFECT: `buildCohortAccuracy` sums bands LINEARLY — 2026-08-04
+
+Found by the dependency-mapper pass before the derivation build. Recorded as a
+**defect against the settled decision that aggregate bands are combined
+statistically**, not as a style divergence between two acceptable methods.
+
+`flowBandMaps` (`ForecastVsActualsTab.tsx:926-948`) builds an aggregate band by
+adding the leaf bounds directly - `iO += m.inflow.optimistic` at `:939`. That is
+**linear summation of the bound**, which assumes every leaf hits its optimistic
+edge in the same month. `aggregateForecastBands` combines in quadrature for
+exactly that reason.
+
+It is month-label-keyed, so it does NOT carry the Q4a array-index bug. The
+defect is the combination rule only.
+
+The same file re-sums the three seed fields inline at `:953-955`, `:991`,
+`:2121-2123`, `:2182`, `:2228-2230`, `:2481-2483`, `:2533`, `:2596-2598` -
+seven further hand-written copies of one concept. All retire into
+`deriveAggregate`.
+
+#### CONSEQUENCE, recorded BEFORE the build: accuracy scores will move
+
+Band position is an input to the accuracy score. Scoring currently reads
+linearly-summed bands, which are too wide, so **actuals that should have counted
+as outside the cone have been scoring as inside it**. When scoring adopts
+quadrature the bands narrow and those rows lose points.
+
+**This movement is expected and correct. It is the new baseline, not a
+regression.** A spec case pins the new values on the fixture; the gate compares
+against those, and a gate agent reporting "accuracy scores changed" for these
+rows is reporting the fix working.
+
+Second time scores have moved for a correct reason - see "Accuracy scores will
+move - this is not a regression" above. Same rule, new cause.
+
+### Challenger acceptance becomes interrogable at the type change - 2026-08-04
+
+Traced to the recorded constraint that the store carries no marker
+distinguishing an accepted-challenger forecast from a bulk-generated one, and
+that `modelAcceptanceLog`'s 3-part `cohortKey` is too coarse to name them.
+
+**Acceptance writes provenance identifying itself as accepted** - the model, the
+date, and what it replaced - at both write paths (`App.tsx:2630`, `:2757`).
+Cheap now, because the provenance union is being introduced anyway; impossible
+retroactively, because nothing in a stored `BaseForecast` records it.
+
+**Pre-existing sessions stay unflaggable.** That constraint is recorded above
+and stands; this closes it going forward only.
+
 ### The V-shaped dip on Outflow is correct — measured 2026-08-04
 
 A linked Retention event makes Outflow (Adjusted) dip for one month and return,
