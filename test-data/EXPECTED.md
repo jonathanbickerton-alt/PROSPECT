@@ -1726,7 +1726,90 @@ Phase 0 skip-list and Phase 2 null-reason. Internal codes —
 **No hardcoded reason strings.** Two vocabularies for one concept is the pattern
 this codebase has now recorded three separate instances of.
 
-### OPEN DEFECT: four ARPU MAPEs identical at 11.4% — 2026-08-04
+### NOT A DEFECT: four ARPU MAPEs identical — HARNESS ARTEFACT — corrected 2026-08-04
+
+**The entry below was wrong and is superseded. Corrected at the lead, as
+recorded, rather than amended in place further down.**
+
+#### The cause: the fixture carries ONE unit price per leaf-month, for all
+four scenarios
+
+Measured through the app's own code — `runForecastJob` to fit from the
+Dec2025 file, `computeForecastMape` to score against Jun2026, the same
+pairing the running app used. Leaf
+`Corporate|Mobile Voice|Low Value|Direct|Field / Regional Sales|RED L|SIM-only`,
+month 2026-01, raw rows:
+
+```
+Inflow     price=6.49  vol=554   rev=3595.46
+Outflow    price=6.49  vol=505   rev=3277.45
+Retention  price=6.49  vol=351   rev=2277.99
+Base       price=6.49  vol=5154  rev=33449.46
+```
+
+`Avg_Unit_Price_GBP` is **identical across all four scenarios**; only volume
+differs. `Monthly_Revenue_GBP` is exactly price x volume (6.49 x 554 =
+3595.46). So per-scenario ARPU = rev/vol = **the same price, by
+construction** — 6 of 6 overlap months identical to 6 decimal places.
+
+Four identical actuals series produce four identical fitted series (12 of 12
+forecast months identical, real worker output) and therefore four identical
+MAPEs: **9.548740594317** on all four, agreeing to 13 significant figures —
+floating-point noise on one computation, not a coincidence between four.
+Volume MAPEs on the same run were distinct (2.41 / 1.36 / 3.97 / 1.01), the
+same signature the user reported.
+
+**Four identical ARPU MAPEs are CORRECT OUTPUT on this data.** No code
+defect. The engine is doing exactly what the numbers require.
+
+#### The recorded hypothesis was half right, and the half it got right was
+the less useful half
+
+The signature was recorded as *"one series read four times, or one shared
+denominator"*. It IS one series read four times — but the sharing is in the
+**data**, not in the code. The hypothesis pointed at the reader; the cause
+was in what was being read. A shape can be diagnostic of a mechanism and
+still be silent about where the mechanism lives.
+
+#### Why the segment-level cards showed 11.4% rather than agreeing exactly
+
+At segment scope the four ARPUs differ slightly — 12.1744 / 12.2146 /
+12.2187 / 12.1696 for Corporate, 2026-01 — because summing leaves with
+different prices and different per-scenario volume mixes gives four
+volume-weighted blends. **That spread is mix, not per-scenario pricing.**
+About 0.3%, which displays as the same figure at one decimal place. Same
+root cause, one level up.
+
+#### A HARNESS ARTEFACT NEARLY READ AS A FINDING — name it as one
+
+This is the second time on this branch of work. The first was the 21.7% Base
+gap. The pattern: a striking number, a plausible mechanism, and an
+instrument nobody had inspected.
+
+**The generator for the synthetic source files is NOT in the repo.**
+`scripts/build-trimmed-fixture.mjs` only trims an existing file; it does not
+create prices. Searched `scripts/` for a generator — `ls scripts/*.mjs`
+returns that one file. So the property is recorded here as an OBSERVED
+property of the fixtures, and the mechanism that produced it cannot be cited
+because it is not visible from this repo.
+
+**What the next fixture must do differently:** give each IBRO scenario its
+own unit price per leaf-month. Acquisition, churn, retention and installed
+base do not price alike in any real book, and a fixture where they do cannot
+distinguish a working per-scenario ARPU path from a broken one. **Every
+per-scenario ARPU test on the current fixtures is vacuous** — it would pass
+against an implementation that read `inflowArpu` four times.
+
+**Consequence for Phase 2:** the pinned scoring baseline must not be taken
+on these fixtures for ARPU. It would pin four identical numbers and the gate
+would defend an untested path. The sequencing amendment that made this
+anomaly gate Phase 2 is DISCHARGED as to a code defect — there is none — but
+it is REPLACED by a fixture requirement: per-scenario prices before the ARPU
+baseline is pinned.
+
+#### Superseded original entry, kept for the record
+
+### SUPERSEDED — OPEN DEFECT: four ARPU MAPEs identical at 11.4% — 2026-08-04
 
 Reported by the user from the running app. **Observed only. Not diagnosed.**
 
