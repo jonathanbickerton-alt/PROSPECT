@@ -3850,6 +3850,8 @@ export default function App() {
       adjustedForecast={adjustedForecast}
       setAdjustedForecast={setAdjustedForecast}
       forecastStore={forecastStore}
+      resolveForecast={resolveForecast}
+      canResolve={canResolve}
       setForecastStore={setForecastStore}
       hasLegacyBaseline={hasLegacyBaseline}
       updatedAt={forecastUpdatedAt}
