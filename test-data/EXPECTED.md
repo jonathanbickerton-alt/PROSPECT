@@ -2354,6 +2354,29 @@ now grep blind to one file. **The pattern is not that the tools are bad. It is
 that a tool's silence is being read as evidence, and silence is what a broken
 tool produces too.**
 
+### The completion panel's "144 skipped" changes MEANING at the seam — Phase 3
+
+Noted, deliberately not fixed here.
+
+The amber line reports `failed`, incremented in the STANDARD-cohort loop
+(`forecasting.worker.ts:292`, `:317`) - cohorts whose every constituent leaf
+could not be fitted. Nothing about that counter changes in B2.
+
+**What changes is whether the number still means what it says.** It is
+produced at GENERATION time and describes what could not be built then. With
+derivation at the seam, a cohort counted there may now RESOLVE on read - the
+leaves it needed are in the store, they simply were not summed at generation
+time. So the panel can report a cohort as skipped while the app then shows the
+user a forecast for it.
+
+That is not a defect introduced by B2; it is a generation-time count being
+read as a coverage statement, which it never was. **It belongs to Phase 3's
+completion-message work**, alongside the already-recorded finding that the
+panel states one fact in two vocabularies.
+
+Fixing it here would mean redefining a counter mid-phase, in a session whose
+control is that leaf behaviour is byte-identical. Recorded instead.
+
 ### Session B1 MERGED to main at `c806370` — 2026-08-04
 
 The seam, built but **not wired**. `resolveForecast` / `canResolve`, the

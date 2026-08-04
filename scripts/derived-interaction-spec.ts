@@ -1,0 +1,166 @@
+/**
+ * Interaction survey — the engine paths, driven with a DERIVED baseForecast.
+ *
+ *   npm run spec:interaction
+ *
+ * The Phase 2 design named `computeAdjustedForecast` and `computeScenarioForFilter`
+ * as the two consumers that would newly receive a derived aggregate where they
+ * previously received stale-or-nothing. Neither reads `provenance` (verified by
+ * grep across src/), so both treat a derived aggregate exactly like a leaf.
+ *
+ * That is expected to be CORRECT and it was never exercised. This spec exercises
+ * it: a derived aggregate is not a leaf — its ARPU bands are absent, its months
+ * are month-key aligned across ragged leaves, and its seeds are summed at the
+ * aggregate's own as-of month. Any of those could have broken the pro-rata
+ * split, and "we think it is fine" is not a measurement.
+ */
+import * as fs from 'fs';
+import * as XLSX from 'xlsx';
+import { deriveAggregate, buildCohortDataMap, makeForecastKey } from '../src/utils/forecasting';
+import { runForecastJob } from '../src/workers/forecasting.worker';
+import { computeAdjustedForecast } from '../src/components/WhatIfTab';
+import type { BaseForecast, CohortKey } from '../src/types/forecast';
+import type { MarketEvent } from '../src/utils/forecasting';
+
+let pass = 0; const fails: string[] = [];
+const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails.push(n + (d ? `  [${d}]` : '')); };
+const near = (a: number, b: number, eps = 1e-6) => Math.abs(a - b) < eps;
+
+const EDGE = 'test-data/VBU_IBRO_EdgeCases_ShortHistory_PerScenarioARPU_Jan2023_Jun2026.xlsx';
+const C = {
+  date: 'Month', metric: 'IBRO_Scenario_Type', value: 'Subscriber_Volume',
+  seg: 'Customer_Segment', prod: 'Product_L1', prodL2: 'Product_L2_Value_Tier',
+  chan: 'Channel_Level_1', chanL2: 'Channel_Level_2',
+  t1: 'tariff_tier_l1', t2: 'tariff_tier_l2',
+  arpu: 'Avg_Unit_Price_GBP', rev: 'Monthly_Revenue_GBP',
+};
+
+const rows: any[] = XLSX.utils.sheet_to_json(
+  XLSX.read(fs.readFileSync(EDGE), { type: 'buffer', cellDates: true }).Sheets[
+    XLSX.read(fs.readFileSync(EDGE), { type: 'buffer', cellDates: true }).SheetNames[0]]);
+const dm = buildCohortDataMap(rows, C.date, C.seg, C.prod, C.prodL2, C.chan, C.chanL2, C.t1, C.t2);
+const enumerated = [...dm.keys()].sort();
+
+const job = runForecastJob({
+  workerId: 0,
+  config: {
+    wiDateCol: C.date, wiMetricCol: C.metric, wiValueCol: C.value,
+    wiSegmentCol: C.seg, wiProductCol: C.prod, wiProductL2Col: C.prodL2,
+    wiChannelCol: C.chan, wiChannelL2Col: C.chanL2, wiTariffL1Col: C.t1, wiTariffL2Col: C.t2,
+    wiInflowVal: 'Inflow', wiOutflowVal: 'Outflow', wiBaseVal: 'Base', wiRetentionVal: 'Retention',
+    wiArpuCol: C.arpu, wiRevenueCol: C.rev,
+    genLength: 12, runPreUnc: 1.28, runPostExp: 0.02, runConfHor: 3,
+    runModel: 'Holt Linear', autoModel: false, autoConfidence: false, oneOffMonths: {},
+  },
+  rows: rows as any, standardCohorts: [],
+  ibroCohorts: enumerated.map(k => {
+    const [seg, prod, prodL2, chan, chanL2, tariffL1, tariffL2] = k.split('|');
+    return { fKey: k, seg, prod, prodL2, chan, chanL2, tariffL1, tariffL2 };
+  }),
+} as any);
+
+const store = new Map<string, BaseForecast>(job.newTypedForecasts);
+check('GUARD: leaves fitted from the edge fixture', store.size > 0, String(store.size));
+
+// A real aggregate: Corporate, everything else All.
+const AGG_KEY = makeForecastKey('Corporate', 'All', 'All', 'All', 'All', 'All', 'All');
+const aggLeaves = enumerated.filter(k => k.startsWith('Corporate|'))
+  .map(k => store.get(k)).filter((b): b is BaseForecast => !!b);
+const [segment, product, productL2, channel, channelL2, tariffL1, tariffL2] = AGG_KEY.split('|');
+const derived = deriveAggregate(aggLeaves, {
+  segment, product, productL2, channel, channelL2, tariffL1, tariffL2, scenario: 'Base Case',
+} as unknown as CohortKey);
+
+check('GUARD: the aggregate has multiple leaves', aggLeaves.length > 1, String(aggLeaves.length));
+check('GUARD: it derives', derived !== null);
+check('GUARD: and it is genuinely DERIVED, not a passthrough',
+  derived!.provenance.kind === 'derived', derived!.provenance.kind);
+check('GUARD: its ARPU interval is ABSENT — this is what makes it not a leaf',
+  derived!.months[0].arpu.optimistic === undefined);
+
+// ── computeAdjustedForecast with a DERIVED baseForecast ──────────────────
+const month0 = derived!.months[0].month;
+const event = (over: Partial<MarketEvent> = {}): MarketEvent => ({
+  id: 'evt-1', scenario: 'Inflow', segment: 'Corporate',
+  product: 'All', productL2: 'All', channel: 'All', channelL2: 'All',
+  tariffL1: 'All', tariffL2: 'All',
+  date: month0, subscriberVolume: 1000, customerVolume: 0, revenue: 0, arpu: 0,
+  name: 'spec', campaignName: '', comment: '', contractLength: 24,
+  sequence: 0, amountType: 'absolute', percentageBasis: 'baseline', retentionLinked: true,
+  ...over,
+} as MarketEvent);
+
+const runAdj = (bf: BaseForecast, events: MarketEvent[]) => computeAdjustedForecast({
+  baseForecast: bf, marketEvents: events, yieldEvents: [], pricingEvents: [],
+  viewSegment: 'Corporate', viewProduct: { l1: null, l2: null },
+  viewChannel: { l1: null, l2: null }, viewTariff: { l1: null, l2: null },
+  data: rows,
+  wiSegmentCol: C.seg, wiProductCol: C.prod, wiProductL2Col: C.prodL2,
+  wiChannelCol: C.chan, wiChannelL2Col: C.chanL2,
+  wiTariffL1Col: C.t1, wiTariffL2Col: C.t2,
+  wiValueCol: C.value, wiMetricCol: C.metric,
+  wiInflowVal: 'Inflow', wiOutflowVal: 'Outflow', wiRetentionVal: 'Retention',
+} as any);
+
+{
+  const none = runAdj(derived!, []);
+  const withEvt = runAdj(derived!, [event()]);
+
+  check('ENGINE: computeAdjustedForecast accepts a derived baseForecast without throwing',
+    Array.isArray(withEvt.adjustedMonths) && withEvt.adjustedMonths.length > 0,
+    String(withEvt.adjustedMonths?.length));
+
+  const b0 = none.adjustedMonths.find((m: any) => m.month === month0);
+  const a0 = withEvt.adjustedMonths.find((m: any) => m.month === month0);
+  check('ENGINE: no events leaves the derived baseline unchanged',
+    !!b0 && near(b0.uplifted.inflow, b0.baseline.inflow, 0.01),
+    `${b0?.uplifted?.inflow} vs ${b0?.baseline?.inflow}`);
+
+  // The pro-rata split: an event on the aggregate must move the aggregate by
+  // the full amount. Splitting across leaves and summing back must reconcile.
+  check('ENGINE: an event on the aggregate moves inflow by the FULL amount',
+    !!a0 && !!b0 && near(a0.uplifted.inflow - b0.uplifted.inflow, 1000, 1.0),
+    `${a0 && b0 ? (a0.uplifted.inflow - b0.uplifted.inflow).toFixed(2) : 'n/a'} vs 1000`);
+
+  check('ENGINE: months outside the event are untouched',
+    withEvt.adjustedMonths.filter((m: any, i: number) =>
+      m.month !== month0 && !near(m.uplifted.inflow, none.adjustedMonths[i].uplifted.inflow, 0.01)
+    ).length === 0);
+
+  // No NaN anywhere — the absent ARPU interval is the most likely source.
+  const anyNaN = withEvt.adjustedMonths.some((m: any) =>
+    [m.uplifted?.inflow, m.uplifted?.outflow, m.uplifted?.retention, m.uplifted?.arpu]
+      .some(v => typeof v === 'number' && Number.isNaN(v)));
+  check('ENGINE: the absent ARPU interval produces NO NaN downstream', !anyNaN);
+}
+
+// ── The control: a FITTED leaf behaves identically through the same path ─
+{
+  const leaf = aggLeaves[0];
+  const lMonth = leaf.months[0].month;
+  const none = runAdj(leaf, []);
+  const withEvt = runAdj(leaf, [event({ date: lMonth, segment: leaf.cohort.segment })]);
+  const b0 = none.adjustedMonths.find((m: any) => m.month === lMonth);
+  const a0 = withEvt.adjustedMonths.find((m: any) => m.month === lMonth);
+  check('CONTROL: a fitted leaf still moves by the full amount through the same path',
+    !!a0 && !!b0 && near(a0.uplifted.inflow - b0.uplifted.inflow, 1000, 1.0),
+    `${a0 && b0 ? (a0.uplifted.inflow - b0.uplifted.inflow).toFixed(2) : 'n/a'}`);
+  check('CONTROL: a fitted leaf keeps its ARPU interval',
+    typeof leaf.months[0].arpu.optimistic === 'number');
+}
+
+// ── Neither engine path reads provenance ─────────────────────────────────
+// Recorded as a fact rather than an assumption: if either ever starts
+// branching on it, this assertion says so and the survey gets redone.
+{
+  const wi = fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8');
+  const sh = fs.readFileSync('src/utils/scenarioHelper.ts', 'utf8');
+  check('SURVEY: computeAdjustedForecast does not branch on provenance',
+    !/\.provenance/.test(wi), 'WhatIfTab reads .provenance');
+  check('SURVEY: computeScenarioForFilter does not branch on provenance',
+    !/\.provenance/.test(sh), 'scenarioHelper reads .provenance');
+}
+
+console.log(`derived-interaction spec: ${pass} passed, ${fails.length} failed`);
+fails.forEach(f => console.log('  FAIL ' + f));
+process.exit(fails.length ? 1 : 0);
