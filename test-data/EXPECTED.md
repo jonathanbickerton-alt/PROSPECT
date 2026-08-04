@@ -1057,6 +1057,32 @@ the reason for `applyEventsToMonth`, `cohortScope`, `resolvedEventVolume` and
 `eventProRataShare`. Hand-generated aggregates get regenerated under derivation
 and their values will move; that is expected, not a question to resolve.
 
+### RESOLVED 2026-08-04 on `session-b2-wire-seam` — aggregates now derive
+
+**The entry below described the open defect. It is fixed, pending merge.**
+
+Measured at gate stage 3 by driving `resolveForecast`'s exact logic against a
+real store built from the trimmed fixture (74 leaf forecasts):
+
+```
+Corporate|All|All|All|All|All|All        -> derived, 12 months, provenance=derived
+Large Enterprise|All|All|All|All|All|All -> derived, 12 months, provenance=derived
+MNC|All|All|All|All|All|All              -> derived, 12 months, provenance=derived
+SME|All|All|All|All|All|All              -> derived, 12 months, provenance=derived
+SOHO|All|All|All|All|All|All             -> derived, 12 months, provenance=derived
+```
+
+Every `All`-bearing key resolves. The defect that has been re-confirmed by
+every gate since 2026-08-04 - and correctly classified pre-existing each time
+- is closed by the seam.
+
+**Not merged.** Jon walks the branch in a browser first; the merge happens on
+the user's word after that. Until then this entry says fixed-pending-merge,
+not fixed.
+
+The original entry follows, unedited, because the diagnosis in it is the
+reasoning the fix was built from.
+
 ### Bottom-up is half-implemented: aggregates never get a typed forecast — 2026-08-04
 
 **Reported defect:** market events appeared to have no effect on the Market
