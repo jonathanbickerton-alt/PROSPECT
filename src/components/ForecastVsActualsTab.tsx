@@ -150,7 +150,7 @@ function mapeColor(mape: number | null): string {
  *   Outside band, primary score ≥ 65        → –5
  *   Outside band, primary score < 65        → –10
  */
-function scoreMonth(actual: number, mean: number, optimistic: number, pessimistic: number): number {
+function scoreMonth(actual: number, mean: number, optimistic?: number, pessimistic?: number): number {
   if (mean === 0) return 0;
 
   // Primary: deviation from mean
@@ -164,8 +164,14 @@ function scoreMonth(actual: number, mean: number, optimistic: number, pessimisti
   else                primary = Math.max(0, 40 - 40 * (dev - 20) / 20);     //  40 →  0
 
   // Secondary: band-position penalty
-  const withinBand = actual >= pessimistic && actual <= optimistic;
-  if (withinBand) return primary;
+  // Absent bounds mean the band-position adjustment is NOT APPLICABLE - see
+  // ArpuBand. This function is currently unreferenced (the live path
+  // reproduces the formula inline for tooltip detail), but it is migrated
+  // anyway: a dead duplicate of a scoring rule is exactly what gets revived
+  // later carrying the behaviour everything else moved away from.
+  const hasBand = optimistic !== undefined && pessimistic !== undefined;
+  const withinBand = hasBand ? (actual >= pessimistic! && actual <= optimistic!) : true;
+  if (!hasBand || withinBand) return primary;
   const penalty = primary >= 65 ? 5 : 10;
   return Math.max(0, primary - penalty);
 }
@@ -1017,12 +1023,13 @@ function buildCohortAccuracy(
 
     // ── ARPU forecast band — revenue-proxy-weighted average across matching sub-cohorts ──
     const arpuBandMap = (() => {
-      if (!matchingBfs.length) return new Map<string, { mean: number; opt: number; pess: number }>();
+      if (!matchingBfs.length) return new Map<string, { mean: number; opt?: number; pess?: number }>();
       const monthSet = new Set<string>();
       for (const bf of matchingBfs) for (const m of bf.months) monthSet.add(m.month);
-      const map = new Map<string, { mean: number; opt: number; pess: number }>();
+      const map = new Map<string, { mean: number; opt?: number; pess?: number }>();
       for (const month of monthSet) {
         let totalW=0, wMean=0, wOpt=0, wPess=0;
+        let anyArpuBandMissing = false;
         for (const bf of matchingBfs) {
           const m = bf.months.find(mm => mm.month === month);
           if (!m) continue;
@@ -1031,10 +1038,18 @@ function buildCohortAccuracy(
           if (w <= 0) continue;
           totalW += w;
           wMean  += m.arpu.mean        * w;
-          wOpt   += m.arpu.optimistic  * w;
-          wPess  += m.arpu.pessimistic * w;
+          // An aggregate over interval-less inputs has NO interval. Absence is
+          // tracked rather than weighted: `undefined * w` is NaN, which would
+          // silently poison the whole weighted total instead of saying so.
+          if (m.arpu.optimistic === undefined || m.arpu.pessimistic === undefined) anyArpuBandMissing = true;
+          else { wOpt += m.arpu.optimistic * w; wPess += m.arpu.pessimistic * w; }
         }
-        if (totalW > 0) map.set(month, { mean: wMean/totalW, opt: wOpt/totalW, pess: wPess/totalW });
+        // If ANY contributor had no interval, the weighted result has none. A
+        // partial band built from the subset that happened to have one is a
+        // fabrication wearing the shape of an average.
+        if (totalW > 0) map.set(month, anyArpuBandMissing
+          ? { mean: wMean/totalW }
+          : { mean: wMean/totalW, opt: wOpt/totalW, pess: wPess/totalW });
       }
       return map;
     })();
@@ -1042,15 +1057,20 @@ function buildCohortAccuracy(
     // ── Per-scenario ARPU forecast band maps ────────────────────────────────────
     // Each weighted by the scenario's own volume (inflow weight for inflowArpu, etc.)
     const makeArpuScenBandMap = (
-      getter: (m: typeof matchingBfs[0]['months'][0]) => import('../types/forecast').ForecastBand | undefined,
+      getter: (m: typeof matchingBfs[0]['months'][0]) => import('../types/forecast').ArpuBand | undefined,
       volGetter: (m: typeof matchingBfs[0]['months'][0]) => number,
-    ): Map<string, { mean: number; opt: number; pess: number }> => {
+      // Bounds are OPTIONAL: an aggregate over interval-less inputs has no
+      // interval. Propagating absence rather than weighting undefined into a
+      // number is the whole point - a weighted fabrication is still a
+      // fabrication.
+    ): Map<string, { mean: number; opt?: number; pess?: number }> => {
       if (!matchingBfs.length) return new Map();
       const monthSet = new Set<string>();
       for (const bf of matchingBfs) for (const m of bf.months) monthSet.add(m.month);
-      const map = new Map<string, { mean: number; opt: number; pess: number }>();
+      const map = new Map<string, { mean: number; opt?: number; pess?: number }>();
       for (const month of monthSet) {
         let totalW=0, wMean=0, wOpt=0, wPess=0;
+        let anyScenBandMissing = false;
         for (const bf of matchingBfs) {
           const m = bf.months.find(mm => mm.month === month);
           if (!m) continue;
@@ -1058,9 +1078,15 @@ function buildCohortAccuracy(
           if (!band) continue;
           const w = volGetter(m);
           if (w <= 0) continue;
-          totalW += w; wMean += band.mean * w; wOpt += band.optimistic * w; wPess += band.pessimistic * w;
+          totalW += w; wMean += band.mean * w;
+          if (band.optimistic === undefined || band.pessimistic === undefined) anyScenBandMissing = true;
+          else { wOpt += band.optimistic * w; wPess += band.pessimistic * w; }
         }
-        if (totalW > 0) map.set(month, { mean: wMean/totalW, opt: wOpt/totalW, pess: wPess/totalW });
+        // Same rule as arpuBandMap and baseArpuBandMap: if ANY contributor had
+        // no interval, the weighted result has none.
+        if (totalW > 0) map.set(month, anyScenBandMissing
+          ? { mean: wMean/totalW }
+          : { mean: wMean/totalW, opt: wOpt/totalW, pess: wPess/totalW });
       }
       return map;
     };
@@ -1069,20 +1095,28 @@ function buildCohortAccuracy(
     const retentionArpuBandMap = makeArpuScenBandMap(m => m.retentionArpu, m => m.retention.mean);
     // Base ARPU uses derived base stock (bfBaseMap) as weight — computed separately
     const baseArpuBandMap = (() => {
-      if (!matchingBfs.length) return new Map<string, { mean: number; opt: number; pess: number }>();
+      if (!matchingBfs.length) return new Map<string, { mean: number; opt?: number; pess?: number }>();
       const monthSet = new Set<string>();
       for (const bfx of matchingBfs) for (const m of bfx.months) monthSet.add(m.month);
-      const map = new Map<string, { mean: number; opt: number; pess: number }>();
+      const map = new Map<string, { mean: number; opt?: number; pess?: number }>();
       for (const month of monthSet) {
         let totalW=0, wMean=0, wOpt=0, wPess=0;
+        let anyBaseArpuBandMissing = false;
         for (const bfx of matchingBfs) {
           const m = bfx.months.find(mm => mm.month === month);
           if (!m || !m.baseArpu) continue;
           const w = bfBaseMap.get(bfx)?.get(month) ?? 0;
           if (w <= 0) continue;
-          totalW += w; wMean += m.baseArpu.mean * w; wOpt += m.baseArpu.optimistic * w; wPess += m.baseArpu.pessimistic * w;
+          totalW += w; wMean += m.baseArpu.mean * w;
+          if (m.baseArpu.optimistic === undefined || m.baseArpu.pessimistic === undefined) anyBaseArpuBandMissing = true;
+          else { wOpt += m.baseArpu.optimistic * w; wPess += m.baseArpu.pessimistic * w; }
         }
-        if (totalW > 0) map.set(month, { mean: wMean/totalW, opt: wOpt/totalW, pess: wPess/totalW });
+        // If ANY contributor had no interval, the weighted result has none. A
+        // partial band built from the subset that happened to have one is a
+        // fabrication wearing the shape of an average.
+        if (totalW > 0) map.set(month, anyBaseArpuBandMissing
+          ? { mean: wMean/totalW }
+          : { mean: wMean/totalW, opt: wOpt/totalW, pess: wPess/totalW });
       }
       return map;
     })();
@@ -1091,7 +1125,7 @@ function buildCohortAccuracy(
     type ArpuScen = 'inflowArpu' | 'outflowArpu' | 'retentionArpu' | 'baseArpu';
     const calcArpuScenDetail = (
       scenario: ArpuScen,
-      bandMap: Map<string, { mean: number; opt: number; pess: number }>,
+      bandMap: Map<string, { mean: number; opt?: number; pess?: number }>,
     ): ComponentDetail | null => {
       const ARPU_SCEN_LABELS: Record<ArpuScen, string> = {
         inflowArpu: 'Inflow ARPU', outflowArpu: 'Outflow ARPU', retentionArpu: 'Retention ARPU', baseArpu: 'Base ARPU',
@@ -1112,15 +1146,22 @@ function buildCohortAccuracy(
         else if (absDev <= 10) primary =  75 - 15 * (absDev -  5) / 5;
         else if (absDev <= 20) primary =  60 - 20 * (absDev - 10) / 10;
         else                   primary = Math.max(0, 40 - 40 * (absDev - 20) / 20);
-        const inBand = actual >= band.pess && actual <= band.opt;
-        const penalty = inBand ? 0 : (primary >= 65 ? 5 : 10);
+        // An ABSENT interval is not a failed one. A derived aggregate has a
+        // real mean and no honest band, so the band-position adjustment is
+        // NOT APPLICABLE: no penalty, and equally no bonus. Treating absence
+        // as a zero-width band penalised every month, because in-band means
+        // exact float equality; treating it as in-band would hand derived
+        // aggregates a free pass the fitted leaves do not get.
+        const hasBand = band.opt !== undefined && band.pess !== undefined;
+        const inBand = hasBand ? (actual >= band.pess! && actual <= band.opt!) : true;
+        const penalty = (!hasBand || inBand) ? 0 : (primary >= 65 ? 5 : 10);
         detailRows.push({ month, actual, mean: band.mean, dev, inBand, primary, penalty, score: Math.max(0, primary - penalty) });
       }
       if (!detailRows.length) return null;
       const avgDev = detailRows.reduce((s, r) => s + Math.abs(r.dev), 0) / detailRows.length;
       return { label: ARPU_SCEN_LABELS[scenario], rows: detailRows, avgDev, score: detailRows.reduce((s, r) => s + r.score, 0) / detailRows.length };
     };
-    const calcArpuScenBias = (scenario: ArpuScen, bandMap: Map<string, { mean: number; opt: number; pess: number }>): BiasVal => {
+    const calcArpuScenBias = (scenario: ArpuScen, bandMap: Map<string, { mean: number; opt?: number; pess?: number }>): BiasVal => {
       let above = 0, below = 0;
       for (const month of forecastMonths) {
         const act = effectiveActualMap.get(month);
@@ -1136,7 +1177,7 @@ function buildCohortAccuracy(
       if (below / total >= 0.7) return 'below';
       return null;
     };
-    const calcArpuScenTrend = (scenario: ArpuScen, bandMap: Map<string, { mean: number; opt: number; pess: number }>): TrendVal => {
+    const calcArpuScenTrend = (scenario: ArpuScen, bandMap: Map<string, { mean: number; opt?: number; pess?: number }>): TrendVal => {
       const devs: number[] = [];
       for (const month of forecastMonths) {
         const act = effectiveActualMap.get(month);
@@ -1225,18 +1266,20 @@ function buildCohortAccuracy(
     // When adjustedMeanMap is active, shift each per-scenario band by the same
     // blended ARPU ratio so the toggle also affects Inf/Out/Ret/Base ARPU columns.
     const applyArpuRatioToMap = (
-      bandMap: Map<string, { mean: number; opt: number; pess: number }>,
-    ): Map<string, { mean: number; opt: number; pess: number }> => {
+      bandMap: Map<string, { mean: number; opt?: number; pess?: number }>,
+    ): Map<string, { mean: number; opt?: number; pess?: number }> => {
       if (!cohortAdjMeanMap) return bandMap;
-      const out = new Map<string, { mean: number; opt: number; pess: number }>();
+      const out = new Map<string, { mean: number; opt?: number; pess?: number }>();
       for (const [month, band] of bandMap) {
         const adjBlended  = cohortAdjMeanMap.get(month)?.arpu;
         const baseBlended = arpuBandMap.get(month)?.mean;
         if (adjBlended !== undefined && baseBlended && baseBlended > 0) {
           const ratio = adjBlended / baseBlended;
-          const hw = (band.opt - band.pess) / 2;
+          // Absence survives the ratio adjustment. Scaling a mean is fine;
+          // manufacturing a half-width for a band that never had one is not.
           const adjMean = band.mean * ratio;
-          out.set(month, { mean: adjMean, opt: adjMean + hw, pess: adjMean - hw });
+          if (band.opt === undefined || band.pess === undefined) { out.set(month, { mean: adjMean }); }
+          else { const hw = (band.opt - band.pess) / 2; out.set(month, { mean: adjMean, opt: adjMean + hw, pess: adjMean - hw }); }
         } else {
           out.set(month, band);
         }
@@ -1249,12 +1292,19 @@ function buildCohortAccuracy(
     const effectiveBaseArpuBandMap      = cohortAdjMeanMap ? applyArpuRatioToMap(baseArpuBandMap)      : baseArpuBandMap;
 
     // ── Generic per-component actual + band lookup ────────────────────────
-    type BandTrio = { mean: number; opt: number; pess: number };
+    // opt/pess are OPTIONAL so that ABSENCE survives the whole path from
+    // producer to scorer. The moment they are required, absence has to be
+    // encoded as some number, and every number is a claim.
+    type BandTrio = { mean: number; opt?: number; pess?: number };
     type ActBand  = { actual: number; band: BandTrio; isAdjusted?: boolean };
     const getActualAndBand = (month: string, kpi: KpiKey): ActBand | null => {
       // Adjusted mean override: shift the band centre while preserving half-widths.
       const adjMeans = cohortAdjMeanMap?.get(month);
       const applyAdjMean = (band: BandTrio, adjMean: number): BandTrio => {
+        // No bounds, no half-width to preserve: the shifted band is a mean
+        // and nothing else. Inventing a width here would smuggle an
+        // interval back in at the one place that looks like bookkeeping.
+        if (band.opt === undefined || band.pess === undefined) return { mean: adjMean };
         const hw = (band.opt - band.pess) / 2;
         return { mean: adjMean, opt: adjMean + hw, pess: adjMean - hw };
       };
@@ -1310,8 +1360,15 @@ function buildCohortAccuracy(
         else if (absDev <= 10) primary =  75 - 15 * (absDev -  5) / 5;
         else if (absDev <= 20) primary =  60 - 20 * (absDev - 10) / 10;
         else                   primary = Math.max(0, 40 - 40 * (absDev - 20) / 20);
-        const inBand = actual >= band.pess && actual <= band.opt;
-        const penalty = inBand ? 0 : (primary >= 65 ? 5 : 10);
+        // An ABSENT interval is not a failed one. A derived aggregate has a
+        // real mean and no honest band, so the band-position adjustment is
+        // NOT APPLICABLE: no penalty, and equally no bonus. Treating absence
+        // as a zero-width band penalised every month, because in-band means
+        // exact float equality; treating it as in-band would hand derived
+        // aggregates a free pass the fitted leaves do not get.
+        const hasBand = band.opt !== undefined && band.pess !== undefined;
+        const inBand = hasBand ? (actual >= band.pess! && actual <= band.opt!) : true;
+        const penalty = (!hasBand || inBand) ? 0 : (primary >= 65 ? 5 : 10);
         const score = Math.max(0, primary - penalty);
         detailRows.push({ month, actual, mean, dev, inBand, primary, penalty, score });
       }
@@ -2125,7 +2182,10 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     // If we have an exact BaseForecast, use it directly.  Otherwise aggregate all
     // matching sub-cohort forecasts from forecastStore so the chart forecast line
     // reflects the correct summed scale (e.g. "MNC" = sum of all MNC cohorts).
-    type FcBand  = { mean: number; optimistic: number; pessimistic: number };
+    // ARPU bounds are optional here for the same reason they are on ArpuBand:
+    // a derived contributor has no interval, and the aggregate must be able to
+    // say so rather than encode it as a number.
+    type FcBand  = { mean: number; optimistic?: number; pessimistic?: number };
     type FcMonth = { month: string; inflow: FcBand; outflow: FcBand; retention: FcBand; arpu: FcBand };
 
     // _matchFcs is set by the IIFE below; used afterward to build synActualsMap.
@@ -2207,7 +2267,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       // Build per-month sums (flows additive, ARPU revenue-proxy-weighted)
       const acc = new Map<string, {
         inflow: FcBand; outflow: FcBand; retention: FcBand;
-        arpuWm: number; arpuWo: number; arpuWp: number; arpuW: number;
+        arpuWm: number; arpuWo: number; arpuWp: number; arpuW: number; arpuBandMissing: boolean;
       }>();
       for (const bf of matchFcs) {
         for (const m of bf.months) {
@@ -2215,7 +2275,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
             inflow:    { mean: 0, optimistic: 0, pessimistic: 0 },
             outflow:   { mean: 0, optimistic: 0, pessimistic: 0 },
             retention: { mean: 0, optimistic: 0, pessimistic: 0 },
-            arpuWm: 0, arpuWo: 0, arpuWp: 0, arpuW: 0,
+            arpuWm: 0, arpuWo: 0, arpuWp: 0, arpuW: 0, arpuBandMissing: false,
           });
           const e = acc.get(m.month)!;
           e.inflow.mean += m.inflow.mean; e.inflow.optimistic += m.inflow.optimistic; e.inflow.pessimistic += m.inflow.pessimistic;
@@ -2223,7 +2283,10 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           e.retention.mean += m.retention.mean; e.retention.optimistic += m.retention.optimistic; e.retention.pessimistic += m.retention.pessimistic;
           const derivedBase = bfRunningBase.get(bf)?.get(m.month) ?? 0;
           const w = derivedBase + m.inflow.mean;
-          if (w > 0) { e.arpuWm += m.arpu.mean * w; e.arpuWo += m.arpu.optimistic * w; e.arpuWp += m.arpu.pessimistic * w; e.arpuW += w; }
+          // Absence is skipped, never weighted: undefined * w is NaN.
+          if (w > 0) { e.arpuWm += m.arpu.mean * w; e.arpuW += w;
+            if (m.arpu.optimistic === undefined || m.arpu.pessimistic === undefined) e.arpuBandMissing = true;
+            else { e.arpuWo += m.arpu.optimistic * w; e.arpuWp += m.arpu.pessimistic * w; } }
         }
       }
 
@@ -2235,7 +2298,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           inflow:    e.inflow,
           outflow:   e.outflow,
           retention: e.retention,
-          arpu: { mean: e.arpuWm / aw, optimistic: e.arpuWo / aw, pessimistic: e.arpuWp / aw },
+          // Bounds OMITTED when any contributor lacked one — not a partial
+          // numerator over the full denominator, which understates silently.
+          arpu: e.arpuBandMissing
+            ? { mean: e.arpuWm / aw }
+            : { mean: e.arpuWm / aw, optimistic: e.arpuWo / aw, pessimistic: e.arpuWp / aw },
         });
       }
 
@@ -2373,7 +2440,13 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           } else if (selectedKpi === 'retention') {
             baseline = cfm.retention.mean; optimistic = cfm.retention.optimistic; pessimistic = cfm.retention.pessimistic;
           } else if (selectedKpi === 'arpu') {
-            baseline = cfm.arpu.mean; optimistic = cfm.arpu.optimistic; pessimistic = cfm.arpu.pessimistic;
+            // Omitted, not undefined-valued: the revenue precedent at the
+            // MonthlyVarianceRow type says a band that is not a tolerance
+            // should not be drawn, and the same holds for one that does not
+            // exist.
+            baseline = cfm.arpu.mean;
+            if (cfm.arpu.optimistic !== undefined) optimistic = cfm.arpu.optimistic;
+            if (cfm.arpu.pessimistic !== undefined) pessimistic = cfm.arpu.pessimistic;
           } else if (selectedKpi === 'base') {
             baseline = specificFcBaseMap?.get(row.month);
           }
@@ -2482,7 +2555,10 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     const specificForecast = cohortSpecificForecast ?? filterForecast;
 
     // Build specificFcMonthMap (same logic as chartData)
-    type FcBand  = { mean: number; optimistic: number; pessimistic: number };
+    // ARPU bounds are optional here for the same reason they are on ArpuBand:
+    // a derived contributor has no interval, and the aggregate must be able to
+    // say so rather than encode it as a number.
+    type FcBand  = { mean: number; optimistic?: number; pessimistic?: number };
     type FcMonthEx = {
       month: string;
       inflow: FcBand; outflow: FcBand; retention: FcBand; arpu: FcBand;
@@ -2558,7 +2634,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           // Aggregate
           const acc = new Map<string, {
             inflow: FcBand; outflow: FcBand; retention: FcBand;
-            arpuWm: number; arpuWo: number; arpuWp: number; arpuW: number;
+            arpuWm: number; arpuWo: number; arpuWp: number; arpuW: number; arpuBandMissing: boolean;
             inflowArpuWm: number; inflowArpuWo: number; inflowArpuWp: number;
             outflowArpuWm: number; outflowArpuWo: number; outflowArpuWp: number;
             retentionArpuWm: number; retentionArpuWo: number; retentionArpuWp: number;
@@ -2570,7 +2646,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                 inflow:    { mean: 0, optimistic: 0, pessimistic: 0 },
                 outflow:   { mean: 0, optimistic: 0, pessimistic: 0 },
                 retention: { mean: 0, optimistic: 0, pessimistic: 0 },
-                arpuWm: 0, arpuWo: 0, arpuWp: 0, arpuW: 0,
+                arpuWm: 0, arpuWo: 0, arpuWp: 0, arpuW: 0, arpuBandMissing: false,
                 inflowArpuWm: 0, inflowArpuWo: 0, inflowArpuWp: 0,
                 outflowArpuWm: 0, outflowArpuWo: 0, outflowArpuWp: 0,
                 retentionArpuWm: 0, retentionArpuWo: 0, retentionArpuWp: 0,
@@ -2582,11 +2658,14 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               e.retention.mean += m.retention.mean; e.retention.optimistic += m.retention.optimistic; e.retention.pessimistic += m.retention.pessimistic;
               const derivedBase = bfRunningBase.get(bf)?.get(m.month) ?? 0;
               const w = derivedBase + m.inflow.mean;
-              if (w > 0) { e.arpuWm += m.arpu.mean * w; e.arpuWo += m.arpu.optimistic * w; e.arpuWp += m.arpu.pessimistic * w; e.arpuW += w; }
-              const wi = m.inflow.mean; if (wi > 0 && m.inflowArpu) { e.inflowArpuWm += m.inflowArpu.mean * wi; e.inflowArpuWo += m.inflowArpu.optimistic * wi; e.inflowArpuWp += m.inflowArpu.pessimistic * wi; }
-              const wo = m.outflow.mean; if (wo > 0 && m.outflowArpu) { e.outflowArpuWm += m.outflowArpu.mean * wo; e.outflowArpuWo += m.outflowArpu.optimistic * wo; e.outflowArpuWp += m.outflowArpu.pessimistic * wo; }
-              const wr = m.retention.mean; if (wr > 0 && m.retentionArpu) { e.retentionArpuWm += m.retentionArpu.mean * wr; e.retentionArpuWo += m.retentionArpu.optimistic * wr; e.retentionArpuWp += m.retentionArpu.pessimistic * wr; }
-              if (derivedBase > 0 && m.baseArpu) { e.baseArpuWm += m.baseArpu.mean * derivedBase; e.baseArpuWo += m.baseArpu.optimistic * derivedBase; e.baseArpuWp += m.baseArpu.pessimistic * derivedBase; }
+              // Absence is skipped, never weighted: undefined * w is NaN.
+          if (w > 0) { e.arpuWm += m.arpu.mean * w; e.arpuW += w;
+            if (m.arpu.optimistic === undefined || m.arpu.pessimistic === undefined) e.arpuBandMissing = true;
+            else { e.arpuWo += m.arpu.optimistic * w; e.arpuWp += m.arpu.pessimistic * w; } }
+              const wi = m.inflow.mean; if (wi > 0 && m.inflowArpu) { e.inflowArpuWm += m.inflowArpu.mean * wi; if (m.inflowArpu.optimistic !== undefined) e.inflowArpuWo += m.inflowArpu.optimistic * wi; if (m.inflowArpu.pessimistic !== undefined) e.inflowArpuWp += m.inflowArpu.pessimistic * wi; }
+              const wo = m.outflow.mean; if (wo > 0 && m.outflowArpu) { e.outflowArpuWm += m.outflowArpu.mean * wo; if (m.outflowArpu.optimistic !== undefined) e.outflowArpuWo += m.outflowArpu.optimistic * wo; if (m.outflowArpu.pessimistic !== undefined) e.outflowArpuWp += m.outflowArpu.pessimistic * wo; }
+              const wr = m.retention.mean; if (wr > 0 && m.retentionArpu) { e.retentionArpuWm += m.retentionArpu.mean * wr; if (m.retentionArpu.optimistic !== undefined) e.retentionArpuWo += m.retentionArpu.optimistic * wr; if (m.retentionArpu.pessimistic !== undefined) e.retentionArpuWp += m.retentionArpu.pessimistic * wr; }
+              if (derivedBase > 0 && m.baseArpu) { e.baseArpuWm += m.baseArpu.mean * derivedBase; if (m.baseArpu.optimistic !== undefined) e.baseArpuWo += m.baseArpu.optimistic * derivedBase; if (m.baseArpu.pessimistic !== undefined) e.baseArpuWp += m.baseArpu.pessimistic * derivedBase; }
             }
           }
           const synMap = new Map<string, FcMonthEx>();
@@ -2601,7 +2680,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               inflow:    e.inflow,
               outflow:   e.outflow,
               retention: e.retention,
-              arpu: { mean: e.arpuWm / aw, optimistic: e.arpuWo / aw, pessimistic: e.arpuWp / aw },
+              // Bounds OMITTED when any contributor lacked one — not a partial
+          // numerator over the full denominator, which understates silently.
+          arpu: e.arpuBandMissing
+            ? { mean: e.arpuWm / aw }
+            : { mean: e.arpuWm / aw, optimistic: e.arpuWo / aw, pessimistic: e.arpuWp / aw },
               inflowArpu:    { mean: e.inflowArpuWm / wi2, optimistic: e.inflowArpuWo / wi2, pessimistic: e.inflowArpuWp / wi2 },
               outflowArpu:   { mean: e.outflowArpuWm / wo2, optimistic: e.outflowArpuWo / wo2, pessimistic: e.outflowArpuWp / wo2 },
               retentionArpu: { mean: e.retentionArpuWm / wr2, optimistic: e.retentionArpuWo / wr2, pessimistic: e.retentionArpuWp / wr2 },

@@ -218,7 +218,7 @@ export function runForecastJob(input: WorkerInMessage): WorkerOutMessage {
   interface LeafSeries { months: Array<{ t: number; date: Date; value: number; rep: PreAggRow }>; rawCount: number; }
   const leafSeriesCache = new Map<string, LeafSeries>();
   function leafSeriesFor(leafIdx: number, metric: string): LeafSeries {
-    const ck = `${leafIdx} ${metric}`;
+    const ck = `${leafIdx}\u0000${metric}`;
     const hit = leafSeriesCache.get(ck);
     if (hit) return hit;
     const bucket = cohortDataMap.get(leafKeys[leafIdx]) ?? [];
@@ -252,7 +252,7 @@ export function runForecastJob(input: WorkerInMessage): WorkerOutMessage {
   }
   const leafFitCache = new Map<string, LeafFit | null>();
   function leafFitFor(leafIdx: number, metric: string): LeafFit | null {
-    const ck = `${leafIdx} ${metric}`;
+    const ck = `${leafIdx}\u0000${metric}`;
     if (leafFitCache.has(ck)) return leafFitCache.get(ck)!;
     const series = leafSeriesFor(leafIdx, metric);
     if (series.rawCount < 2 || series.months.length === 0) { leafFitCache.set(ck, null); return null; }

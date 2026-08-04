@@ -92,6 +92,32 @@ export interface ForecastBand {
 }
 
 /**
+ * An ARPU band, whose interval may be ABSENT.
+ *
+ * A DERIVED aggregate has a real mean - volume-weighted revenue over volume -
+ * and no honest interval: combining the intervals of independently-fitted leaf
+ * ARPU series does not produce a valid interval for their volume-weighted
+ * blend. Absence says that; a zero-width band does not.
+ *
+ * The distinction is not cosmetic. The band-position penalty
+ * (ForecastVsActualsTab, calcComponentDetail) reads `actual >= pess && actual
+ * <= opt`, so a zero-width band is in-band only when the actual EXACTLY equals
+ * the mean - never, in floating point. Representing 'no interval' as a
+ * zero-width one therefore turns an honest refusal into a systematic 5-10
+ * point penalty on every derived aggregate.
+ *
+ * Follows the recorded revenue precedent: the revenue band is SUPPRESSED
+ * rather than approximated, because the product of two independently-derived
+ * intervals is not a valid interval, and a band users read as a tolerance
+ * should not be drawn if it isn't one.
+ */
+export interface ArpuBand {
+  mean: number;
+  optimistic?: number;
+  pessimistic?: number;
+}
+
+/**
  * Holt-Winters output for a single month within one cohort.
  * Base volume is NOT stored here — it is always derived as:
  *   base(t) = base(t-1) + inflow(t) - outflow(t)
@@ -103,12 +129,12 @@ export interface BaseForecastMonth {
   retention: ForecastBand;
   outflow: ForecastBand;
   /** Revenue per subscriber unit for this month's forecast (blended across all 4 IBRO scenarios) */
-  arpu: ForecastBand;
+  arpu: ArpuBand;
   /** Per-IBRO-scenario ARPU forecast bands — only present on forecasts generated after this schema version */
-  inflowArpu?: ForecastBand;
-  outflowArpu?: ForecastBand;
-  retentionArpu?: ForecastBand;
-  baseArpu?: ForecastBand;
+  inflowArpu?: ArpuBand;
+  outflowArpu?: ArpuBand;
+  retentionArpu?: ArpuBand;
+  baseArpu?: ArpuBand;
 }
 
 /**
