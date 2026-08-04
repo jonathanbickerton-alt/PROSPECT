@@ -2354,6 +2354,47 @@ now grep blind to one file. **The pattern is not that the tools are bad. It is
 that a tool's silence is being read as evidence, and silence is what a broken
 tool produces too.**
 
+### Session B1 MERGED to main at `c806370` — 2026-08-04
+
+The seam, built but **not wired**. `resolveForecast` / `canResolve`, the
+aggregate-to-leaf map in the `populatedCohortKeys` memo, and `deriveAggregate`
+weighting `baseArpu` on the derived running base.
+
+Post-merge on main: typecheck **0**, build clean, traps 3/3, all nine suites
+green - derive 74, provenance 29, skip 20, edge 15, scope 61, mix 17,
+prorata 21, pct 72, cards 36. Three-stage gate passed.
+
+#### Two defects the gate found, and what each one was really about
+
+**The running base was unfloored and unsorted**, so a leaf whose outflow
+exceeded its base carried NEGATIVE weight and produced a negative `baseArpu` -
+a per-subscriber revenue rate below zero. Now `Math.max(0, ...)` and sorted,
+matching `bfBaseMap` exactly.
+
+**But the defect is not the lesson.** The spec case that should have caught it
+was named *"deriveAggregate and the FvA convention agree"* and asserted against
+a reference computed inline **from my own unfloored formula**. It confirmed the
+implementation against itself, reported agreement with a convention it never
+read, and passed while the two disagreed at the first month.
+
+**An agreement test must read the thing it claims to agree with.** A reference
+you write from the same understanding that produced the implementation is not
+an oracle; it is the implementation again, in different syntax. Where the
+other side cannot be imported, say the check is STRUCTURAL and keep separate
+properties that encode the meaning - those survive the other side being
+deleted, which a comparison does not.
+
+**GUARD 2 used a 40-line backward window** and passed a call planted inside
+`canResolve`, which sits ~39 lines after `resolveForecast`. That is the exact
+heuristic GUARD 1s own comment already recorded as rejected - written by me,
+after writing that comment. `enclosingFunctions` is now the single shared
+brace-depth tracker; no guard rolls its own enclosure logic.
+
+Sharing it immediately exposed two gaps in the tracker: it did not recognise
+hook-wrapped declarations, and could not see an arrow whose signature spans
+four lines. **Both were invisible while it served one guard.** A utility used
+once is a utility tested once.
+
 ### Session A MERGED to main at `d1180ad` — 2026-08-04
 
 Branch `session-a-derive-aggregate`, `--no-ff`, no conflicts. Post-merge on
