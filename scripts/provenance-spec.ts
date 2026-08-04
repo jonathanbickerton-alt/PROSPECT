@@ -174,8 +174,13 @@ for (const f of srcFiles) {
     // anywhere in App.tsx passed merely because App.tsx contains the word
     // readProvenance somewhere. App.tsx is where Phase 2's deriveAggregate is
     // planned to live, so it was the file this check was blindest in.
-    const ctx = lines.slice(Math.max(0, i - 20), i).join(String.fromCharCode(10));
-    if (/readProvenance\s*=/.test(ctx)) return;
+    // Window widened 20 -> 120 and deriveAggregate added: Phase 2 Session A
+    // makes it a legitimate producer, and its construction sits 96 lines
+    // below its header. This guard is now the WEAKER of two - the brace-depth
+    // version in spec:derive supersedes it and is the one planted-violation
+    // tested in three locations. Extend that one, not this.
+    const ctx = lines.slice(Math.max(0, i - 120), i).join(String.fromCharCode(10));
+    if (/readProvenance\s*=|function deriveAggregate/.test(ctx)) return;
     constructors.push(f + ':' + (i + 1));
   });
 }

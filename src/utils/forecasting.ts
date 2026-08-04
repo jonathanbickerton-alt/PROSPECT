@@ -1144,28 +1144,175 @@ export interface AggBand { mean: number; optimistic: number; pessimistic: number
  *
  * Bands stay symmetric about the mean, matching buildBands().
  */
+/**
+ * THE quadrature core. One slot, N leaf bands.
+ *
+ * Every aggregate band in this codebase comes through here — the month-keyed
+ * path used by deriveAggregate and the index-aligned path the worker uses.
+ * Two implementations of one combination rule is a shape this codebase has
+ * recorded three times; this exists so there is exactly one.
+ *
+ * ASSUMPTION: leaf forecast errors are INDEPENDENT, so variances add and the
+ * aggregate half-width is sqrt(sum h^2). Not a fact. Genuinely correlated
+ * leaves - one macro driver moving every cohort together - would make the real
+ * interval WIDER than this. Chosen because the alternative, direct summation of
+ * the bounds, is wrong in the opposite and much larger direction: it assumes
+ * every leaf hits its best case in the same month.
+ *
+ * Absent entries are SKIPPED, not treated as zero: a leaf with no band for this
+ * slot is not a leaf forecasting zero, it is a leaf with nothing to say.
+ * Whether that absence matters is a COVERAGE question, answered by the caller.
+ */
+export function combineBandSlot(bands: ReadonlyArray<AggBand | undefined>): AggBand {
+  let mean = 0, varSum = 0;
+  for (const b of bands) {
+    if (!b) continue;
+    mean += b.mean;
+    const halfWidth = b.optimistic - b.mean;   // symmetric by construction
+    varSum += halfWidth * halfWidth;
+  }
+  const halfWidth = Math.sqrt(varSum);
+  return {
+    mean: Number(mean.toFixed(2)),
+    optimistic: Number((mean + halfWidth).toFixed(2)),
+    pessimistic: Number((mean - halfWidth).toFixed(2)),
+  };
+}
+
+/**
+ * Index-aligned adapter over combineBandSlot, for callers whose leaves already
+ * share a horizon by construction.
+ *
+ * The worker builds its own month index before calling this, so position IS
+ * month there. deriveAggregate does NOT have that guarantee and must not use
+ * this - it keys by month label. See the Q4a constraint.
+ */
 export function aggregateForecastBands(leafBands: AggBand[][]): AggBand[] {
   if (leafBands.length === 0) return [];
   const horizon = Math.max(...leafBands.map(b => b.length));
   const out: AggBand[] = [];
-  for (let t = 0; t < horizon; t++) {
-    let mean = 0;
-    let varSum = 0;
-    for (const bands of leafBands) {
-      const b = bands[t];
-      if (!b) continue;
-      mean += b.mean;
-      const halfWidth = b.optimistic - b.mean; // symmetric by construction
-      varSum += halfWidth * halfWidth;
-    }
-    const halfWidth = Math.sqrt(varSum);
-    out.push({
-      mean: Number(mean.toFixed(2)),
-      optimistic: Number((mean + halfWidth).toFixed(2)),
-      pessimistic: Number((mean - halfWidth).toFixed(2)),
-    });
-  }
+  for (let t = 0; t < horizon; t++) out.push(combineBandSlot(leafBands.map(b => b[t])));
   return out;
+}
+
+/**
+ * Derive an aggregate BaseForecast by summing its constituent leaves.
+ *
+ * Bottom-up is settled: leaves are fitted, aggregates are DERIVED. Fitting a
+ * model to a pre-summed series is a recorded defect, not an alternative.
+ *
+ * Nothing calls this yet. Session B wires it to resolveForecast; until then the
+ * phase is provably behaviour-neutral because the function has no callers.
+ *
+ * @param leaves the resolved leaf forecasts in scope for `cohort`
+ * @param cohort the aggregate key being derived
+ * @returns the derived aggregate, or null when NO leaf contributes
+ */
+export function deriveAggregate(
+  leaves: readonly BaseForecast[],
+  cohort: CohortKey,
+): BaseForecast | null {
+  // ── Zero contributing leaves is NOT a zero forecast ──────────────────────
+  // An aggregate whose every leaf failed to fit knows nothing. Returning a
+  // zero-valued forecast would state that it forecasts nothing to happen,
+  // which is a different and much more confident claim.
+  if (leaves.length === 0) return null;
+
+  // ── 1-leaf passthrough: return the STORED OBJECT ─────────────────────────
+  // Not a one-element derivation. Reference identity is the point: it makes
+  // leaf byte-identity hold BY CONSTRUCTION rather than by arithmetic luck,
+  // and it closes the double-rounding hole, since every band here is already
+  // Number(x.toFixed(2)) and rounding a rounded value can move it again.
+  if (leaves.length === 1) return leaves[0];
+
+  // ── The aggregate's OWN last historical month ────────────────────────────
+  // max over the UNION of leaf historical months. Every leaf is then read AT
+  // that month. Reading each leaf at ITS OWN last month is what Q4a rejected:
+  // it adds a June stock to a May stock and nothing in the sum can tell.
+  const monthUnion = new Set<string>();
+  for (const lf of leaves) for (const m of lf.historicalMonths) monthUnion.add(m);
+  const historicalMonths = Array.from(monthUnion).sort();
+  const asOf = historicalMonths.length ? historicalMonths[historicalMonths.length - 1] : null;
+
+  // A leaf that has no reading at `asOf` contributes ZERO and is counted in
+  // coverage. It does not shift the month and it is not silently dropped.
+  let seedBaseVolume = 0, lastHistoricalInflow = 0, lastHistoricalOutflow = 0;
+  let withForecast = 0;
+  for (const lf of leaves) {
+    const present = asOf !== null && lf.historicalMonths.includes(asOf);
+    if (present) {
+      seedBaseVolume        += lf.seedBaseVolume        || 0;
+      lastHistoricalInflow  += lf.lastHistoricalInflow  || 0;
+      lastHistoricalOutflow += lf.lastHistoricalOutflow || 0;
+      withForecast++;
+    }
+  }
+
+  // ── Forecast months, keyed by LABEL ──────────────────────────────────────
+  // Never by array position. A leaf whose horizon starts a month later would
+  // otherwise contribute its month-1 value to the aggregate's month-0.
+  const byMonth = new Map<string, BaseForecastMonth[]>();
+  for (const lf of leaves) {
+    for (const m of lf.months) {
+      const cur = byMonth.get(m.month);
+      if (cur) cur.push(m); else byMonth.set(m.month, [m]);
+    }
+  }
+  const monthKeys = Array.from(byMonth.keys()).sort();
+
+  const arpuOf = (
+    ms: BaseForecastMonth[],
+    pick: (m: BaseForecastMonth) => ForecastBand | undefined,
+    vol: (m: BaseForecastMonth) => number,
+  ): ForecastBand | undefined => {
+    // ARPU is a RATE. Summed revenue over summed volume, computed from THIS
+    // month's own volumes - not a horizon-wide blend, and never a mean of
+    // means, which over-weights small cohorts.
+    const parts = ms.map(m => ({ arpu: pick(m)?.mean ?? 0, volume: vol(m) }));
+    if (!parts.some(x => x.volume > 0)) return undefined;
+    const mean = aggregateArpu(parts);
+    return { mean: Number(mean.toFixed(4)), optimistic: Number(mean.toFixed(4)), pessimistic: Number(mean.toFixed(4)) };
+  };
+
+  const months: BaseForecastMonth[] = monthKeys.map(month => {
+    const ms = byMonth.get(month)!;
+    return {
+      month,
+      inflow:    combineBandSlot(ms.map(m => m.inflow)),
+      outflow:   combineBandSlot(ms.map(m => m.outflow)),
+      retention: combineBandSlot(ms.map(m => m.retention)),
+      arpu:          arpuOf(ms, m => m.arpu,          m => m.inflow.mean + m.outflow.mean + m.retention.mean),
+      inflowArpu:    arpuOf(ms, m => m.inflowArpu,    m => m.inflow.mean),
+      outflowArpu:   arpuOf(ms, m => m.outflowArpu,   m => m.outflow.mean),
+      retentionArpu: arpuOf(ms, m => m.retentionArpu, m => m.retention.mean),
+      baseArpu:      arpuOf(ms, m => m.baseArpu,      m => m.inflow.mean),
+    } as BaseForecastMonth;
+  });
+
+  // ── Provenance: what it is, how many, and what it could not see ──────────
+  const models: Partial<Record<ForecastModel, number>> = {};
+  for (const lf of leaves) {
+    const mdl = lf.provenance.kind === 'derived' ? null : lf.provenance.modelUsed;
+    if (mdl) models[mdl] = (models[mdl] ?? 0) + 1;
+  }
+
+  return {
+    cohort,
+    seedBaseVolume,
+    historicalMonths,
+    months,
+    lastHistoricalInflow,
+    lastHistoricalOutflow,
+    provenance: {
+      kind: 'derived',
+      leafCount: leaves.length,
+      models,
+      // Coverage ANNOTATES. It never gates: a partial aggregate is still
+      // returned, because suppressing it would leave the user with nothing
+      // and no statement of why.
+      coverage: { inScope: leaves.length, withForecast, skipped: [] },
+    },
+  };
 }
 
 /**
