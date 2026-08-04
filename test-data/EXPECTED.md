@@ -2294,6 +2294,54 @@ previously swept in `dist/` build output and loose root `.cjs` scratch files.
 Making it explicit immediately surfaced **3 more errors** in `scripts/` that
 the implicit walk had missed. That is the point.
 
+### Phase 1: authoritative enumeration and the union design — 2026-08-04
+
+Measured on the checked foundation (`npm run typecheck` = 0). **These numbers
+are authoritative in a way no earlier enumeration was.**
+
+| removal test | sites |
+|---|---|
+| `modelUsed` | **27** |
+| `fittedParams` | **5** — `App.tsx:478` (export), `:826` (import), `StandardForecastTab:1255`, `:1293`, `forecasting.ts:1065` (producer) |
+
+The 27 match the recorded list exactly. Together, **32 consumer errors** when
+both fields move into the union. The three grep false positives (`App` 842, 897,
+1098 — spreadsheet columns feeding `cohortGenLog.modelUsed` and
+`BulkRunRecord.model`) correctly do NOT appear. They stay excluded.
+
+#### The union, designed and validated against the producer
+
+```ts
+export type Provenance =
+  | { kind: 'fitted';   modelUsed: ForecastModel; fittedParams?: FittedParamsBundle }
+  | { kind: 'accepted'; modelUsed: ForecastModel; fittedParams?: FittedParamsBundle;
+      replacedModel: ForecastModel; acceptedAt: string }
+  | { kind: 'derived';  leafCount: number;
+      models: Partial<Record<ForecastModel, number>>;
+      coverage: { inScope: number; withForecast: number; skipped: SkippedCohort[] } };
+```
+
+Two decisions worth keeping:
+
+1. **The fields move INTO the union; they do not sit beside a discriminant.**
+   Leaving `modelUsed` at the top level next to a `kind` field would let all 27
+   sites keep compiling while reading a fiction. Moving them is what makes the
+   compiler the enumerator.
+
+2. **`provenanceModel(p): ForecastModel | null` is THE narrowing point, and it
+   returns `null` rather than a default.** A default would reinstate exactly the
+   fiction the union removes — the same shape as the twelve `?? 'Holt Linear'`
+   sites and as the borrow-an-unrelated-cohort pattern. `null` forces each of
+   the 27 to state its derived-arm behaviour rather than inherit one.
+
+`coverage.skipped` reuses `SkippedCohort` from Phase 0 — one vocabulary, as
+settled.
+
+**Nothing is built.** The type change and producer rewrite were applied,
+verified to produce exactly the 32 expected errors and no others, then
+**reverted rather than left half-migrated**. Branch `phase1-provenance` exists
+off `c1ef1a0` with no code changes.
+
 ### Foundation MERGED to main at `c1ef1a0` — 2026-08-04
 
 Branch `foundation-typecheck`, six commits, merged `--no-ff`. Post-merge on
