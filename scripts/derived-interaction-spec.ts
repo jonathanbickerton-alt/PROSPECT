@@ -161,6 +161,58 @@ const runAdj = (bf: BaseForecast, events: MarketEvent[]) => computeAdjustedForec
     !/\.provenance/.test(sh), 'scenarioHelper reads .provenance');
 }
 
+// ── INSTANCE 3: the challenger key resolves through the seam ─────────────
+// AMENDMENT 2 required this and gate stage 2 found it MISSING - not "asserts
+// the shape only", but asserts nothing at all. The code was fixed and left
+// uncovered.
+//
+// The assertion has to go THROUGH resolveForecast, because fixing the key alone
+// changes nothing observable: the challenger's keys are aggregate shapes at the
+// default grouping, so a correct 7-part key still misses the store. Only
+// derivation makes it resolve.
+{
+  // The key the challenger builds at the default grouping: segment only, every
+  // other dimension 'All'. Built with the SHARED builder, as the fixed code does.
+  const challengerKey = makeForecastKey('Corporate', 'All', 'All', 'All', 'All', 'All', 'All');
+
+  check('INSTANCE 3: the key has SEVEN parts, not the old five',
+    challengerKey.split('|').length === 7, String(challengerKey.split('|').length));
+  check('INSTANCE 3: ...and every store key has seven too, so a match is possible',
+    [...store.keys()].every(k => k.split('|').length === 7));
+
+  // The seam, replicated exactly as App builds it: stored hit, else derive from
+  // the leaves the key covers, else null.
+  const covers = (agg: string, leaf: string) => {
+    const a2 = agg.split('|'), l = leaf.split('|');
+    return a2.every((p, i) => p === 'All' || p === l[i]);
+  };
+  const resolve = (key: string) => {
+    const hit = store.get(key);
+    if (hit) return hit;
+    const lv = [...store.entries()].filter(([k]) => k !== key && covers(key, k)).map(([, v]) => v);
+    if (!lv.length) return null;
+    const [sg, pr, p2, ch, c2, t1, t2] = key.split('|');
+    return deriveAggregate(lv, { segment: sg, product: pr, productL2: p2, channel: ch, channelL2: c2, tariffL1: t1, tariffL2: t2, scenario: 'Base Case' } as any);
+  };
+
+  const resolved = resolve(challengerKey);
+  check('INSTANCE 3: the challenger key is NOT in the store — the old lookup would miss',
+    store.get(challengerKey) === undefined);
+  check('INSTANCE 3: it resolves NON-NULL through the seam',
+    resolved !== null);
+  check('INSTANCE 3: ...with DERIVED provenance, which is what makes the fix visible',
+    resolved!.provenance.kind === 'derived', resolved!.provenance.kind);
+  check('INSTANCE 3: the resolved aggregate carries real months',
+    resolved!.months.length > 0, String(resolved!.months.length));
+
+  // And the source-level half: no hand-rolled key survives at that site.
+  const fva = fs.readFileSync('src/components/ForecastVsActualsTab.tsx', 'utf8');
+  check('INSTANCE 3: the challenger site uses makeForecastKey, not a join',
+    /const cohortFcKey = makeForecastKey\(/.test(fva));
+  check('INSTANCE 3: ...and resolves rather than reading the store directly',
+    /cohortFcExact = resolveForecast\(cohortFcKey\)/.test(fva));
+}
+
 console.log(`derived-interaction spec: ${pass} passed, ${fails.length} failed`);
 fails.forEach(f => console.log('  FAIL ' + f));
 process.exit(fails.length ? 1 : 0);

@@ -370,14 +370,19 @@ const mixedAgg = deriveAggregate(mixedLeaves, KEY(MIXED + '|All|All|All|All|All'
 
 // ── TRANSITIONAL CROSS-CHECK — RETIRED 2026-08-04 ────────────────────────
 // It compared deriveAggregate's recursion against ForecastVsActualsTab's
-// bfBaseMap while both existed. B2b retired bfBaseMap - flowBandMaps and the
-// inline seed sums now come from deriveAggregate - so there is one recursion
-// and nothing left to cross-check against.
+// bfBaseMap while both existed.
 //
-// Removed rather than left passing against code that no longer exists. The
-// PROPERTIES above are what survive, which is why they were written as
-// properties: never negative, drained leaf contributes zero, shuffled input
-// equals sorted input. Those still mean something with one implementation.
+// CORRECTION: an earlier version of this comment, and the B2b commit message,
+// said B2b 'retired bfBaseMap'. It did not. B2b retired flowBandMaps and
+// cohortBaseBandMap - the CROSS-LEAF summations. bfBaseMap is a PER-LEAF
+// running base used to weight ARPU, it is unchanged from main, and it is a
+// different thing that happens to share the word 'base'.
+//
+// The cross-check is still removed, but for the honest reason: deriveAggregate
+// now computes its own running base with the same floor and sort, so the two
+// are the same rule in two places rather than one rule and an oracle. The
+// PROPERTIES above are what carry the meaning - never negative, drained leaf
+// contributes zero, shuffled input equals sorted input.
 
 // ── ADAPTER EQUIVALENCE ON RAGGED HORIZONS ───────────────────────────────
 // The previous case exercised one shape: two equal-length arrays. The horizon

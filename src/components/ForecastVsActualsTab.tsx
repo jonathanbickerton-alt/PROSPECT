@@ -2297,9 +2297,12 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
             arpuWm: 0, arpuWo: 0, arpuWp: 0, arpuW: 0, arpuBandMissing: false,
           });
           const e = acc.get(m.month)!;
-          e.inflow.mean += m.inflow.mean; e.inflow.optimistic += m.inflow.optimistic; e.inflow.pessimistic += m.inflow.pessimistic;
-          e.outflow.mean += m.outflow.mean; e.outflow.optimistic += m.outflow.optimistic; e.outflow.pessimistic += m.outflow.pessimistic;
-          e.retention.mean += m.retention.mean; e.retention.optimistic += m.retention.optimistic; e.retention.pessimistic += m.retention.pessimistic;
+          // MEANS only. The BANDS come from deriveAggregate below, in
+          // quadrature - summing the bounds here would put a linear band on the
+          // chart while the accuracy table beside it shows a quadrature one.
+          e.inflow.mean += m.inflow.mean;
+          e.outflow.mean += m.outflow.mean;
+          e.retention.mean += m.retention.mean;
           const derivedBase = bfRunningBase.get(bf)?.get(m.month) ?? 0;
           const w = derivedBase + m.inflow.mean;
           // Absence is skipped, never weighted: undefined * w is NaN.
@@ -2309,14 +2312,29 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
         }
       }
 
+      // ONE derivation for this row's leaves, reused for every month's bands.
+      // matchFcs is already the scoped leaf set, so this is the same input the
+      // accuracy table derives from - and therefore the same numbers.
+      const derivedForChart = matchFcs.length
+        ? deriveAggregate(matchFcs as unknown as import('../types/forecast').BaseForecast[], {
+            segment: 'All', product: 'All', productL2: 'All', channel: 'All',
+            channelL2: 'All', tariffL1: 'All', tariffL2: 'All', scenario: 'Base Case',
+          } as any)
+        : null;
+      const derivedBands = derivedForChart
+        ? new Map(derivedForChart.months.map(m => [m.month, m]))
+        : null;
       const synMap = new Map<string, FcMonth>();
       for (const [month, e] of acc.entries()) {
         const aw = e.arpuW || 1;
+        // Bands from the DERIVED aggregate, means from the accumulator above.
+        // One combination rule for the whole screen.
+        const dm = derivedBands?.get(month);
         synMap.set(month, {
           month,
-          inflow:    e.inflow,
-          outflow:   e.outflow,
-          retention: e.retention,
+          inflow:    dm ? dm.inflow    : e.inflow,
+          outflow:   dm ? dm.outflow   : e.outflow,
+          retention: dm ? dm.retention : e.retention,
           // Bounds OMITTED when any contributor lacked one — not a partial
           // numerator over the full denominator, which understates silently.
           arpu: e.arpuBandMissing
@@ -2672,9 +2690,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                 baseArpuWm: 0, baseArpuWo: 0, baseArpuWp: 0,
               });
               const e = acc.get(m.month)!;
-              e.inflow.mean += m.inflow.mean; e.inflow.optimistic += m.inflow.optimistic; e.inflow.pessimistic += m.inflow.pessimistic;
-              e.outflow.mean += m.outflow.mean; e.outflow.optimistic += m.outflow.optimistic; e.outflow.pessimistic += m.outflow.pessimistic;
-              e.retention.mean += m.retention.mean; e.retention.optimistic += m.retention.optimistic; e.retention.pessimistic += m.retention.pessimistic;
+              // MEANS only - bands come from deriveAggregate below. This is the
+              // second copy of the same summation; the first is in chartData.
+              e.inflow.mean += m.inflow.mean;
+              e.outflow.mean += m.outflow.mean;
+              e.retention.mean += m.retention.mean;
               const derivedBase = bfRunningBase.get(bf)?.get(m.month) ?? 0;
               const w = derivedBase + m.inflow.mean;
               // Absence is skipped, never weighted: undefined * w is NaN.
@@ -2687,6 +2707,16 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               if (derivedBase > 0 && m.baseArpu) { e.baseArpuWm += m.baseArpu.mean * derivedBase; if (m.baseArpu.optimistic !== undefined) e.baseArpuWo += m.baseArpu.optimistic * derivedBase; if (m.baseArpu.pessimistic !== undefined) e.baseArpuWp += m.baseArpu.pessimistic * derivedBase; }
             }
           }
+          // Same derivation as chartData, over the same scoped leaf set.
+          const derivedForMulti = matchFcs.length
+            ? deriveAggregate(matchFcs as unknown as import('../types/forecast').BaseForecast[], {
+                segment: 'All', product: 'All', productL2: 'All', channel: 'All',
+                channelL2: 'All', tariffL1: 'All', tariffL2: 'All', scenario: 'Base Case',
+              } as any)
+            : null;
+          const derivedMultiBands = derivedForMulti
+            ? new Map(derivedForMulti.months.map(m => [m.month, m]))
+            : null;
           const synMap = new Map<string, FcMonthEx>();
           for (const [month, e] of acc.entries()) {
             const aw = e.arpuW || 1;
@@ -2694,11 +2724,12 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
             const wo2 = matchFcs.reduce((s, bf) => s + (bf.months.find(m => m.month === month)?.outflow.mean ?? 0), 0) || 1;
             const wr2 = matchFcs.reduce((s, bf) => s + (bf.months.find(m => m.month === month)?.retention.mean ?? 0), 0) || 1;
             const wb2 = matchFcs.reduce((s, bf) => s + (bfRunningBase.get(bf)?.get(month) ?? 0), 0) || 1;
+            const dmx = derivedMultiBands?.get(month);
             synMap.set(month, {
               month,
-              inflow:    e.inflow,
-              outflow:   e.outflow,
-              retention: e.retention,
+              inflow:    dmx ? dmx.inflow    : e.inflow,
+              outflow:   dmx ? dmx.outflow   : e.outflow,
+              retention: dmx ? dmx.retention : e.retention,
               // Bounds OMITTED when any contributor lacked one — not a partial
           // numerator over the full denominator, which understates silently.
           arpu: e.arpuBandMissing
