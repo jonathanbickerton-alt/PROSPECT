@@ -3385,7 +3385,9 @@ export default function App() {
       segment, product, productL2, channel, channelL2, tariffL1, tariffL2,
       scenario: 'Base Case',
     } as any);
-    return { forecast: derived, reason: derived ? null : 'insufficient-history' };
+    // deriveAggregate only returns null for an EMPTY leaf list, and that case
+    // is handled above - so `derived` is always non-null here. No false arm.
+    return { forecast: derived, reason: null };
   }, [forecastStore, populatedCohorts]);
 
   /**

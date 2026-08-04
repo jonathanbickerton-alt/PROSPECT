@@ -1278,8 +1278,15 @@ export function deriveAggregate(
     let b = lf.seedBaseVolume || 0;
     let prevIn = lf.lastHistoricalInflow || 0;
     let prevOut = lf.lastHistoricalOutflow || 0;
-    for (const m of lf.months) {
-      b = b + prevIn - prevOut;
+    // SORTED, and FLOORED AT ZERO - both matching bfBaseMap exactly.
+    //
+    // Without the sort the recursion depends on stored order. Without the
+    // floor a leaf whose outflow exceeds its base carries a NEGATIVE weight
+    // into the blend, which produced a negative baseArpu - a per-subscriber
+    // revenue rate below zero. A base is a stock of subscribers and cannot
+    // be negative; such a leaf contributes nothing, not anti-weight.
+    for (const m of [...lf.months].sort((x, y) => x.month.localeCompare(y.month))) {
+      b = Math.max(0, b + prevIn - prevOut);
       byM.set(m.month, b);
       prevIn = m.inflow.mean;
       prevOut = m.outflow.mean;

@@ -303,51 +303,100 @@ const mixedAgg = deriveAggregate(mixedLeaves, KEY(MIXED + '|All|All|All|All|All'
     unguarded.length === 0, unguarded.map(l => l.trim()).join(' | '));
 }
 
-// ── baseArpu WEIGHTS ON THE DERIVED RUNNING BASE, not on inflow ──────────
-// Settled 2026-08-04. One convention - ForecastVsActualsTab's bfBaseMap - and
-// deriveAggregate must agree with it on a shared input rather than answer a
-// different question with the same field name.
+// ── baseArpu WEIGHTS ON THE DERIVED RUNNING BASE ─────────────────────────
 //
-// The FvA convention, restated here as the INDEPENDENT reference: base is
-// derived by the IBRO recursion from the leaf's seed and cumulative flows.
+// LAYER 1 - PROPERTIES. These encode what the convention MEANS, and they
+// survive B2's retirement of the ForecastVsActualsTab copy. After B2 there is
+// one recursion and no external oracle, so anything that only compares the two
+// implementations stops being a test at that point.
+//
+// The case these replace asserted "deriveAggregate agrees with the FvA
+// convention" against a reference computed inline from MY OWN unfloored
+// formula. It confirmed the implementation against itself, reported agreement
+// with a convention it never read, and passed while the two disagreed at the
+// first month. Properties cannot do that: they are about the output, not about
+// a restatement of the input.
 {
-  const mk = (seed: number, lastIn: number, lastOut: number,
-              flows: Array<[number, number]>, arpu: number): BaseForecast => ({
-    cohort: KEY('A|B|All|All|All|All|All'),
-    seedBaseVolume: seed,
-    historicalMonths: ['2025-12'],
-    lastHistoricalInflow: lastIn, lastHistoricalOutflow: lastOut,
-    months: flows.map(([i, o], k) => ({
+  const mkLeaf = (seed: number, lastIn: number, lastOut: number,
+                  flows: Array<[number, number]>, arpu: number,
+                  monthsInOrder = true): BaseForecast => {
+    const ms = flows.map(([i, o], k) => ({
       month: `2026-0${k + 1}`,
       inflow:    { mean: i, optimistic: i, pessimistic: i },
       outflow:   { mean: o, optimistic: o, pessimistic: o },
       retention: { mean: 0, optimistic: 0, pessimistic: 0 },
       arpu:     { mean: arpu, optimistic: arpu, pessimistic: arpu },
       baseArpu: { mean: arpu, optimistic: arpu, pessimistic: arpu },
-    })) as any,
-    provenance: { kind: 'fitted', modelUsed: 'Holt Linear' },
-  } as BaseForecast);
+    }));
+    return {
+      cohort: KEY('A|B|All|All|All|All|All'),
+      seedBaseVolume: seed, historicalMonths: ['2025-12'],
+      lastHistoricalInflow: lastIn, lastHistoricalOutflow: lastOut,
+      months: (monthsInOrder ? ms : [...ms].reverse()) as any,
+      provenance: { kind: 'fitted', modelUsed: 'Holt Linear' },
+    } as BaseForecast;
+  };
 
-  // Two leaves with DIFFERENT base stocks but identical inflow, so the two
-  // conventions must disagree - that is what makes the case discriminating.
-  const big   = mk(10000, 100, 50, [[100, 50], [100, 50]], 20);
-  const small = mk(  100, 100, 50, [[100, 50], [100, 50]],  5);
-  const agg = deriveAggregate([big, small], KEY('A|B|All|All|All|All|All'))!;
+  // PROPERTY 1 — a leaf whose outflow exceeds its base contributes ZERO
+  // weight, never negative. A base is a stock of subscribers; anti-weight is
+  // not a thing it can have, and unfloored it produced a NEGATIVE baseArpu.
+  {
+    const drained = mkLeaf(10, 0, 50, [[0, 50], [0, 50]], 999);   // base goes < 0
+    const healthy = mkLeaf(1000, 100, 50, [[100, 50], [100, 50]], 10);
+    const agg = deriveAggregate([drained, healthy], KEY('A|B|All|All|All|All|All'))!;
+    const m1 = agg.months.find(m => m.month === '2026-01')!;
+    check('PROPERTY: baseArpu is never negative',
+      (m1.baseArpu!.mean) >= 0, String(m1.baseArpu!.mean));
+    check('PROPERTY: a drained leaf contributes ZERO weight, so the blend is the healthy leaf',
+      near(m1.baseArpu!.mean, 10, 1e-6), String(m1.baseArpu!.mean));
+    check('PROPERTY: ...and its huge ARPU does NOT leak into the blend',
+      m1.baseArpu!.mean < 999);
+  }
 
-  // Independent reference: running base at 2026-01 is seed + lastIn - lastOut.
-  const bigBase   = 10000 + 100 - 50;   // 10050
-  const smallBase =   100 + 100 - 50;   //   150
-  const expected = (20 * bigBase + 5 * smallBase) / (bigBase + smallBase);
-  const m0 = agg.months.find(m => m.month === '2026-01')!;
-  check('baseArpu weights on the DERIVED RUNNING BASE',
-    near(m0.baseArpu!.mean, Number(expected.toFixed(4)), 1e-3),
-    `${m0.baseArpu!.mean} vs ${expected.toFixed(4)}`);
+  // PROPERTY 2 — month ORDER of the input cannot change the output. The
+  // recursion is over time; reading it in stored order makes the result depend
+  // on how the array happened to be built.
+  {
+    const sorted   = mkLeaf(1000, 100, 50, [[100, 20], [100, 300]], 10, true);
+    const shuffled = mkLeaf(1000, 100, 50, [[100, 20], [100, 300]], 10, false);
+    const other    = mkLeaf(500, 50, 10, [[50, 10], [50, 10]], 30);
+    const a = deriveAggregate([sorted, other],   KEY('A|B|All|All|All|All|All'))!;
+    const b = deriveAggregate([shuffled, other], KEY('A|B|All|All|All|All|All'))!;
+    const pick = (x: typeof a) => x.months.map(m => `${m.month}:${m.baseArpu?.mean}`).join(',');
+    check('PROPERTY: shuffled month input gives output IDENTICAL to sorted input',
+      pick(a) === pick(b), `${pick(a)}  vs  ${pick(b)}`);
+  }
+}
 
-  // The mutation this case exists to kill.
-  const underInflow = (20 * 100 + 5 * 100) / (100 + 100);   // 12.5
-  check('...and NOT on inflow, which would give a different answer',
-    !near(m0.baseArpu!.mean, underInflow, 1e-3),
-    `running-base ${m0.baseArpu!.mean} vs inflow-weighted ${underInflow}`);
+// ── TRANSITIONAL CROSS-CHECK — retire in B2 with the code it reads ───────
+// ForecastVsActualsTab's bfBaseMap is the convention deriveAggregate was told
+// to match. It lives inside a component closure and cannot be imported, so
+// this compares the two recursions STRUCTURALLY on the operations that carry
+// the convention: the zero floor and the chronological sort.
+//
+// Structural, and labelled as such rather than dressed up as behavioural. Its
+// job is narrow - catch the two implementations drifting apart while both
+// exist. RETIRE THIS when B2 retires bfBaseMap; the properties above are what
+// remain, and they are the ones that still mean something with one recursion.
+{
+  const fva = fs.readFileSync('src/components/ForecastVsActualsTab.tsx', 'utf8');
+  const fcs = fs.readFileSync('src/utils/forecasting.ts', 'utf8');
+
+  const bfBase = fva.slice(fva.indexOf('const bfBaseMap'), fva.indexOf('const bfBaseMap') + 900);
+  const derive = fcs.slice(fcs.indexOf('const runningBase'), fcs.indexOf('const runningBase') + 1200);
+
+  check('TRANSITIONAL: bfBaseMap was found', bfBase.length > 100);
+  check('TRANSITIONAL: deriveAggregate running base was found', derive.length > 100);
+
+  check('TRANSITIONAL: bfBaseMap floors the base at zero',
+    /Math\.max\(0,\s*b \+ pIn - pOut\)/.test(bfBase));
+  check('TRANSITIONAL: deriveAggregate floors the base at zero TOO',
+    /Math\.max\(0,\s*b \+ prevIn - prevOut\)/.test(derive));
+
+  check('TRANSITIONAL: bfBaseMap sorts months chronologically',
+    /\.sort\(\(a, b\) => a\.month\.localeCompare\(b\.month\)\)/.test(bfBase));
+  check('TRANSITIONAL: deriveAggregate sorts months chronologically TOO',
+    /\.sort\(\(x, y\) => x\.month\.localeCompare\(y\.month\)\)/.test(derive));
 }
 
 // ── ADAPTER EQUIVALENCE ON RAGGED HORIZONS ───────────────────────────────
@@ -441,6 +490,54 @@ const mixedAgg = deriveAggregate(mixedLeaves, KEY(MIXED + '|All|All|All|All|All'
     spread > 0.5, `${spread.toFixed(4)}pp`);
 }
 
+// ═════════════════════════════════════════════════════════════════════════
+// enclosingFunctions — THE enclosure tracker. One implementation.
+//
+// Answers "which functions contain line N", by tracking a stack of function
+// names against BRACE DEPTH. Every guard that needs enclosure uses this; none
+// rolls its own.
+//
+// That rule exists because four per-guard heuristics were each tried and each
+// watched to fail on this codebase:
+//   file-level exemption  - blind in App.tsx
+//   fixed line window     - a construction 96 lines below its header needs a
+//                           window so wide it swallows neighbours
+//   nearest declaration   - stops at inner value consts, then at inner arrows
+//   backwards name scan   - PASSED a violation planted inside canResolve,
+//                           because canResolve sits ~39 lines after
+//                           resolveForecast and the 40-line window reached it
+//
+// The last of those was GUARD 2's, written AFTER GUARD 1's comment had already
+// recorded the same heuristic as rejected. Proximity cannot express enclosure;
+// a shared tracker is how the lesson stops needing to be relearned per guard.
+function enclosingFunctions(src: string): (lineIdx: number) => string[] {
+  // Recognises: function decls, arrow consts, and arrow consts WRAPPED in a
+  // React hook - `const f = useCallback((x) => {`. The hook wrapper was the
+  // first thing this tracker got wrong once shared: resolveForecast is a
+  // useCallback, so its own body read as top-level and the guard flagged the
+  // one legitimate call site.
+  // A hook-wrapped const is matched WITHOUT requiring the arrow on the same
+  // line: resolveForecast's signature spans four lines, so the `=>` is three
+  // lines below the declaration and a line-based arrow pattern cannot see it.
+  // Opening the paren is enough to mark the function start; the brace-depth
+  // `opened` flag handles the multi-line signature from there.
+  const FN_DECL = /(?:export\s+)?(?:default\s+)?function\s+(\w+)|(?:const|let)\s+(\w+)\s*(?::[^=]*?)?=\s*(?:React\.)?(?:useCallback|useMemo)\s*\(|(?:const|let)\s+(\w+)\s*(?::[^=]*?)?=\s*(?:async\s*)?\([^)]*\)\s*(?::[^=]*?)?=>/;
+  const lines = src.split(String.fromCharCode(10));
+  const owners: string[][] = [];
+  const stack: Array<{ name: string; depth: number; opened: boolean }> = [];
+  let depth = 0;
+  lines.forEach(line => {
+    owners.push(stack.map(f => f.name));
+    const d = FN_DECL.exec(line);
+    if (d) stack.push({ name: d[1] || d[2] || d[3], depth, opened: false });
+    depth += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+    for (const fr of stack) if (depth > fr.depth) fr.opened = true;
+    while (stack.length && stack[stack.length - 1].opened
+           && depth <= stack[stack.length - 1].depth) stack.pop();
+  });
+  return (lineIdx: number) => owners[lineIdx] ?? [];
+}
+
 // ── GUARD 1: deriveAggregate is the ONLY producer of derived provenance ───
 const srcFiles: string[] = [];
 (function walk(dir: string) {
@@ -467,27 +564,15 @@ const srcFiles: string[] = [];
   // by brace depth, so the owner of a line is the function that actually
   // contains it. Every rule above is a guess about layout; this is the
   // structure itself.
-  const FN_DECL = /(?:export\s+)?(?:default\s+)?function\s+(\w+)|(?:const|let)\s+(\w+)\s*(?::[^=]*?)?=\s*(?:async\s*)?\([^)]*\)\s*(?::[^=]*?)?=>/;
   const ALLOWED = new Set(['deriveAggregate', 'readProvenance']);
   const offenders: string[] = [];
   for (const f of srcFiles) {
-    const lines = fs.readFileSync(f, 'utf8').split(String.fromCharCode(10));
-    const stack: Array<{ name: string; depth: number; opened: boolean }> = [];
-    let depth = 0;
-    lines.forEach((line, i) => {
-      const d = FN_DECL.exec(line);
-      const opens = (line.match(/\{/g) || []).length;
-      const closes = (line.match(/\}/g) || []).length;
-      if (/kind:\s*'derived',/.test(line)) {
-        if (!stack.some(fr => ALLOWED.has(fr.name))) {
-          offenders.push(f + ':' + (i + 1) + ' in ' + (stack.length ? stack[stack.length - 1].name : '<top level>'));
-        }
-      }
-      if (d) stack.push({ name: d[1] || d[2], depth, opened: false });
-      depth += opens - closes;
-      for (const fr of stack) if (depth > fr.depth) fr.opened = true;
-      while (stack.length && stack[stack.length - 1].opened
-             && depth <= stack[stack.length - 1].depth) stack.pop();
+    const src = fs.readFileSync(f, 'utf8');
+    const owners = enclosingFunctions(src);
+    src.split(String.fromCharCode(10)).forEach((line, i2) => {
+      if (!/kind:\s*'derived',/.test(line)) return;
+      if (owners(i2).some(n => ALLOWED.has(n))) return;
+      offenders.push(f + ':' + (i2 + 1) + ' in ' + (owners(i2).slice(-1)[0] ?? '<top level>'));
     });
   }
   check('GUARD 1: deriveAggregate is the only producer of a derived provenance',
@@ -501,15 +586,18 @@ const srcFiles: string[] = [];
 // parallel-implementation shape - and the reason every reader was routed
 // through one function rather than each deriving for itself.
 {
+  // Uses the SHARED tracker. Its own 40-line backward window passed a call
+  // planted inside canResolve, which sits ~39 lines after resolveForecast -
+  // the exact heuristic GUARD 1's history had already rejected.
   const callers: string[] = [];
   for (const f of srcFiles) {
-    const ls = fs.readFileSync(f, 'utf8').split(String.fromCharCode(10));
-    ls.forEach((line, i2) => {
+    const src = fs.readFileSync(f, 'utf8');
+    const owners = enclosingFunctions(src);
+    src.split(String.fromCharCode(10)).forEach((line, i2) => {
       if (!/deriveAggregate\s*\(/.test(line)) return;
       if (/export function deriveAggregate/.test(line)) return;
-      const ctx = ls.slice(Math.max(0, i2 - 40), i2).join(String.fromCharCode(10));
-      if (/const resolveForecast/.test(ctx)) return;
-      callers.push(f + ':' + (i2 + 1));
+      if (owners(i2).includes('resolveForecast')) return;
+      callers.push(f + ':' + (i2 + 1) + ' in ' + (owners(i2).slice(-1)[0] ?? '<top level>'));
     });
   }
   check('GUARD 2: deriveAggregate is called ONLY from resolveForecast',
