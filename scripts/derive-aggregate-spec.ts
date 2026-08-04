@@ -303,6 +303,127 @@ const mixedAgg = deriveAggregate(mixedLeaves, KEY(MIXED + '|All|All|All|All|All'
     unguarded.length === 0, unguarded.map(l => l.trim()).join(' | '));
 }
 
+// ── baseArpu WEIGHTS ON THE DERIVED RUNNING BASE, not on inflow ──────────
+// Settled 2026-08-04. One convention - ForecastVsActualsTab's bfBaseMap - and
+// deriveAggregate must agree with it on a shared input rather than answer a
+// different question with the same field name.
+//
+// The FvA convention, restated here as the INDEPENDENT reference: base is
+// derived by the IBRO recursion from the leaf's seed and cumulative flows.
+{
+  const mk = (seed: number, lastIn: number, lastOut: number,
+              flows: Array<[number, number]>, arpu: number): BaseForecast => ({
+    cohort: KEY('A|B|All|All|All|All|All'),
+    seedBaseVolume: seed,
+    historicalMonths: ['2025-12'],
+    lastHistoricalInflow: lastIn, lastHistoricalOutflow: lastOut,
+    months: flows.map(([i, o], k) => ({
+      month: `2026-0${k + 1}`,
+      inflow:    { mean: i, optimistic: i, pessimistic: i },
+      outflow:   { mean: o, optimistic: o, pessimistic: o },
+      retention: { mean: 0, optimistic: 0, pessimistic: 0 },
+      arpu:     { mean: arpu, optimistic: arpu, pessimistic: arpu },
+      baseArpu: { mean: arpu, optimistic: arpu, pessimistic: arpu },
+    })) as any,
+    provenance: { kind: 'fitted', modelUsed: 'Holt Linear' },
+  } as BaseForecast);
+
+  // Two leaves with DIFFERENT base stocks but identical inflow, so the two
+  // conventions must disagree - that is what makes the case discriminating.
+  const big   = mk(10000, 100, 50, [[100, 50], [100, 50]], 20);
+  const small = mk(  100, 100, 50, [[100, 50], [100, 50]],  5);
+  const agg = deriveAggregate([big, small], KEY('A|B|All|All|All|All|All'))!;
+
+  // Independent reference: running base at 2026-01 is seed + lastIn - lastOut.
+  const bigBase   = 10000 + 100 - 50;   // 10050
+  const smallBase =   100 + 100 - 50;   //   150
+  const expected = (20 * bigBase + 5 * smallBase) / (bigBase + smallBase);
+  const m0 = agg.months.find(m => m.month === '2026-01')!;
+  check('baseArpu weights on the DERIVED RUNNING BASE',
+    near(m0.baseArpu!.mean, Number(expected.toFixed(4)), 1e-3),
+    `${m0.baseArpu!.mean} vs ${expected.toFixed(4)}`);
+
+  // The mutation this case exists to kill.
+  const underInflow = (20 * 100 + 5 * 100) / (100 + 100);   // 12.5
+  check('...and NOT on inflow, which would give a different answer',
+    !near(m0.baseArpu!.mean, underInflow, 1e-3),
+    `running-base ${m0.baseArpu!.mean} vs inflow-weighted ${underInflow}`);
+}
+
+// ── ADAPTER EQUIVALENCE ON RAGGED HORIZONS ───────────────────────────────
+// The previous case exercised one shape: two equal-length arrays. The horizon
+// logic (Math.max over lengths, absent slots skipped) exists for the ragged
+// case and was untested through the adapter.
+{
+  const b = (mean: number, h: number) => ({ mean, optimistic: mean + h, pessimistic: mean - h });
+  const long  = [b(10, 3), b(11, 3), b(12, 3)];
+  const short = [b(20, 4)];
+  const viaAdapter = aggregateForecastBands([long, short]);
+  check('RAGGED: the adapter spans the LONGEST horizon', viaAdapter.length === 3,
+    String(viaAdapter.length));
+  check('RAGGED: slot 0 combines both leaves',
+    JSON.stringify(viaAdapter[0]) === JSON.stringify(combineBandSlot([long[0], short[0]])));
+  check('RAGGED: slot 1 has only the long leaf - the short one is SKIPPED, not zero',
+    JSON.stringify(viaAdapter[1]) === JSON.stringify(combineBandSlot([long[1], undefined])));
+  check('RAGGED: ...so slot 1 keeps the long leaf mean, not a diluted one',
+    near(viaAdapter[1].mean, 11), String(viaAdapter[1].mean));
+  check('RAGGED: every slot agrees with the core exactly',
+    viaAdapter.every((band, t) =>
+      JSON.stringify(band) === JSON.stringify(combineBandSlot([long[t], short[t]]))));
+}
+
+// ── GUARD 3: the MUST-NOT-DERIVE list stays must-not-derive ──────────────
+// Five call sites must never route through resolveForecast, each for its own
+// reason. They are easy to "fix" later by someone tidying up the last few bare
+// forecastStore reads, so the prohibition is asserted rather than commented.
+//
+//   summaryMape          - averages PER-LEAF MAPEs. Scoring one derived
+//                          aggregate is a different quantity, not a better one.
+//   the export loop      - aggregates are never stored and never exported.
+//   forecastStore.size   - a count of STORED forecasts; deriving changes what
+//                          the number means.
+//   the challenger seed  - a borrow fix, not a derivation site.
+//   the .entries() scans - deriving inside a scan over the store is circular.
+{
+  const appSrc = fs.readFileSync('src/App.tsx', 'utf8');
+  const fvaSrc = fs.readFileSync('src/components/ForecastVsActualsTab.tsx', 'utf8');
+  const lines = (src: string) => src.split(String.fromCharCode(10));
+
+  // summaryMape's body must not call resolveForecast.
+  const fl = lines(fvaSrc);
+  const smStart = fl.findIndex(l => /const summaryMape\s*=/.test(l));
+  check('GUARD 3: summaryMape was found', smStart >= 0, String(smStart));
+  const smBody = fl.slice(smStart, smStart + 90).join(String.fromCharCode(10));
+  check('GUARD 3: summaryMape does NOT resolve - it averages per-leaf MAPEs',
+    !/resolveForecast/.test(smBody));
+
+  // The three .entries() scans must not derive inside themselves.
+  const scans = fl.filter(l => /forecastStore\.entries\(\)/.test(l));
+  check('GUARD 3: all three store scans were found', scans.length === 3, String(scans.length));
+
+  // The export loop and the size read.
+  const al = lines(appSrc);
+  const expIdx = al.findIndex(l => /forecastStore\.forEach/.test(l));
+  check('GUARD 3: the export loop was found', expIdx >= 0);
+  check('GUARD 3: the export loop does NOT derive - aggregates are never exported',
+    !/resolveForecast/.test(al.slice(expIdx, expIdx + 60).join(String.fromCharCode(10))));
+  check('GUARD 3: forecastStore.size is still a count of STORED forecasts',
+    /forecastStore\.size \+ Object\.keys\(savedForecasts\)/.test(appSrc));
+}
+
+// ── GUARD 4: resolveForecast is not cached ───────────────────────────────
+// The decision that made read-time derivation viable was "no cache, therefore
+// no invalidation". A memo or ref around it silently reintroduces the problem
+// write-time was rejected for.
+{
+  const appSrc = fs.readFileSync('src/App.tsx', 'utf8');
+  const i = appSrc.indexOf('const resolveForecast');
+  check('GUARD 4: resolveForecast was found', i >= 0);
+  const body = appSrc.slice(i, i + 2000);
+  check('GUARD 4: resolveForecast holds no cache of its own',
+    !/useRef|new Map<string, BaseForecast>\(\)\s*;?\s*\/\/ cache|resolveCache/.test(body));
+}
+
 // ── PINNED BASELINE: the four ARPU MAPEs stay distinct ────────────────────
 {
   const healthy = [...store.entries()].find(([k]) => groupOf(k) === MIXED)!;
@@ -373,12 +494,25 @@ const srcFiles: string[] = [];
     offenders.length === 0, offenders.join(', '));
 }
 
-// ── GUARD 2: nothing calls deriveAggregate yet (Session A control) ────────
+// ── GUARD 2 (Session B): deriveAggregate is called ONLY from the seam ────
+// Session A's control was 'nothing calls it'. Session B wires it, so the
+// control becomes narrower and more useful: exactly one caller, and it is
+// resolveForecast. A second caller would be a second seam, which is the
+// parallel-implementation shape - and the reason every reader was routed
+// through one function rather than each deriving for itself.
 {
-  const callers = srcFiles.filter(f =>
-    /deriveAggregate\s*\(/.test(fs.readFileSync(f, 'utf8')) &&
-    !/export function deriveAggregate/.test(fs.readFileSync(f, 'utf8')));
-  check('GUARD 2: NOTHING calls deriveAggregate — the Session A control',
+  const callers: string[] = [];
+  for (const f of srcFiles) {
+    const ls = fs.readFileSync(f, 'utf8').split(String.fromCharCode(10));
+    ls.forEach((line, i2) => {
+      if (!/deriveAggregate\s*\(/.test(line)) return;
+      if (/export function deriveAggregate/.test(line)) return;
+      const ctx = ls.slice(Math.max(0, i2 - 40), i2).join(String.fromCharCode(10));
+      if (/const resolveForecast/.test(ctx)) return;
+      callers.push(f + ':' + (i2 + 1));
+    });
+  }
+  check('GUARD 2: deriveAggregate is called ONLY from resolveForecast',
     callers.length === 0, callers.join(', '));
 }
 

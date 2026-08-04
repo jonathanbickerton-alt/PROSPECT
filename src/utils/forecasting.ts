@@ -1260,6 +1260,37 @@ export function deriveAggregate(
   }
   const monthKeys = Array.from(byMonth.keys()).sort();
 
+  // ── Each leaf's DERIVED RUNNING BASE, per month ──────────────────────────
+  // Base is never forecast directly. It is derived by the IBRO recursion:
+  //
+  //   base[t] = base[t-1] + inflow[t-1] - outflow[t-1]
+  //
+  // seeded by the leaf's seedBaseVolume and its lastHistoricalInflow/Outflow.
+  //
+  // This exists so baseArpu can be weighted by the BASE STOCK rather than by
+  // inflow. Weighting a base-ARPU blend by acquisition volume answers a
+  // different question - it asks what the newly-acquired are worth, not what
+  // the installed base is worth - and it disagreed with the convention
+  // ForecastVsActualsTab already used. One convention, and it is that one.
+  const runningBase = new Map<BaseForecast, Map<string, number>>();
+  for (const lf of leaves) {
+    const byM = new Map<string, number>();
+    let b = lf.seedBaseVolume || 0;
+    let prevIn = lf.lastHistoricalInflow || 0;
+    let prevOut = lf.lastHistoricalOutflow || 0;
+    for (const m of lf.months) {
+      b = b + prevIn - prevOut;
+      byM.set(m.month, b);
+      prevIn = m.inflow.mean;
+      prevOut = m.outflow.mean;
+    }
+    runningBase.set(lf, byM);
+  }
+
+  // month -> the leaf each of that month's entries came from, positionally.
+  const ownerOf = new Map<BaseForecastMonth, BaseForecast>();
+  for (const lf of leaves) for (const m of lf.months) ownerOf.set(m, lf);
+
   const arpuOf = (
     ms: BaseForecastMonth[],
     pick: (m: BaseForecastMonth) => ArpuBand | undefined,
@@ -1297,7 +1328,10 @@ export function deriveAggregate(
       inflowArpu:    arpuOf(ms, m => m.inflowArpu,    m => m.inflow.mean),
       outflowArpu:   arpuOf(ms, m => m.outflowArpu,   m => m.outflow.mean),
       retentionArpu: arpuOf(ms, m => m.retentionArpu, m => m.retention.mean),
-      baseArpu:      arpuOf(ms, m => m.baseArpu,      m => m.inflow.mean),
+      // Weighted by the DERIVED RUNNING BASE, matching ForecastVsActualsTab's
+      // bfBaseMap convention. Previously weighted by inflow, which is a
+      // different question about a different population.
+      baseArpu:      arpuOf(ms, m => m.baseArpu,      m => runningBase.get(ownerOf.get(m)!)?.get(m.month) ?? 0),
     } as BaseForecastMonth;
   });
 

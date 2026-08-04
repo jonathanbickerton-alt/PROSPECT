@@ -3,9 +3,9 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
-import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort, Provenance } from './types/forecast';
+import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort, Provenance, SkipReason } from './types/forecast';
 import { provenanceModel, provenanceParams } from './types/forecast';
 import { ForecastProvider } from './context/ForecastContext';
 import HomeTab from './components/HomeTab';
@@ -3306,9 +3306,18 @@ export default function App() {
   // populated cohort count (not the inflated cross-product, which tariff blows up
   // ~10× because tariff is collinear with product/channel). Data-driven; never
   // keyed off the user's tariff selection.
-  const populatedCohortKeys = useMemo(() => {
+  /**
+   * Populated cohort keys AND the leaves behind each one.
+   *
+   * One memo, one walk of the data, because they are the same walk: expanding a
+   * leaf into its 54 roll-ups is exactly what tells you which leaves a roll-up
+   * has. Building them separately would be two enumerations of one fact, which
+   * is how they drift.
+   */
+  const populatedCohorts = useMemo(() => {
     const set = new Set<string>();
-    if (!data.length || !wiDateCol) return set;
+    const leafMap = new Map<string, string[]>();
+    if (!data.length || !wiDateCol) return { set, leafMap };
     const dm = buildCohortDataMap(data, wiDateCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col);
     for (const dk of dm.keys()) {
       const [seg, p1, p2, c1, c2, t1, t2] = dk.split('|');
@@ -3317,18 +3326,83 @@ export default function App() {
       const chanS: [string, string][] = [['All', 'All'], [c1, 'All'], [c1, c2]];
       const tarS:  [string, string][] = [['All', 'All'], [t1, 'All'], [t1, t2]];
       for (const s of segS) for (const p of prodS) for (const c of chanS) for (const t of tarS) {
-        set.add(makeForecastKey(s, p[0], p[1], c[0], c[1], t[0], t[1]));
+        const rollUp = makeForecastKey(s, p[0], p[1], c[0], c[1], t[0], t[1]);
+        set.add(rollUp);
+        // Same loop, same walk: record WHICH leaves each roll-up is made of.
+        // The set alone answers "does this key have data" and throws leaf
+        // identity away, which is the one thing derivation needs.
+        const mine = leafMap.get(rollUp);
+        if (mine) mine.push(dk); else leafMap.set(rollUp, [dk]);
       }
     }
-    return set;
+    return { set, leafMap };
   }, [data, wiDateCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col]);
 
   // True if a cohort has data. Empty set (no data mapped yet) ⇒ don't filter.
+  const populatedCohortKeys = populatedCohorts.set;
+
   const cohortHasData = useCallback(
     (c: any): boolean => populatedCohortKeys.size === 0
       || populatedCohortKeys.has(makeForecastKey(c.segment, c.product, c.productL2, c.channel, c.channelL2, c.tariffL1, c.tariffL2)),
     [populatedCohortKeys],
   );
+
+  /**
+   * THE seam. Every reader of a forecast by key goes through this.
+   *
+   *   stored               -> the stored fit, verbatim
+   *   miss, aggregate key  -> derived from the leaves in scope
+   *   miss, leaf key       -> null, with the reason available
+   *
+   * NOT cached. Worst case is ~204k float operations, which is sub-frame, and
+   * a cache would reintroduce the invalidation problem that decided read-time
+   * over write-time in the first place. If this ever needs a cache, that is a
+   * measurement to take, not an assumption to act on.
+   */
+  const resolveForecast = useCallback((key: string): {
+    forecast: BaseForecast | null;
+    reason: SkipReason | null;
+  } => {
+    const stored = forecastStore.get(key);
+    if (stored) return { forecast: stored, reason: null };
+
+    const leafKeys = populatedCohorts.leafMap.get(key) ?? [];
+    if (leafKeys.length === 0) {
+      // Not a key this data can produce at all.
+      return { forecast: null, reason: 'never-enumerated' };
+    }
+
+    const leaves = leafKeys
+      .map(k => forecastStore.get(k))
+      .filter((b): b is BaseForecast => !!b);
+    if (leaves.length === 0) {
+      // The key is real and every leaf behind it failed to fit.
+      return { forecast: null, reason: 'insufficient-history' };
+    }
+
+    const [segment, product, productL2, channel, channelL2, tariffL1, tariffL2] = key.split('|');
+    const derived = deriveAggregate(leaves, {
+      segment, product, productL2, channel, channelL2, tariffL1, tariffL2,
+      scenario: 'Base Case',
+    } as any);
+    return { forecast: derived, reason: derived ? null : 'insufficient-history' };
+  }, [forecastStore, populatedCohorts]);
+
+  /**
+   * Can a key produce a forecast at all - stored OR derivable?
+   *
+   * Replaces bare `forecastStore.has(key)` at the indicator sites, which said
+   * "no forecast" for a cohort that derivation can serve, contradicting what
+   * the screen then showed.
+   *
+   * Deliberately does NOT derive: it answers reachability, and deriving to
+   * answer a yes/no question would put real work behind an indicator.
+   */
+  const canResolve = useCallback((key: string): boolean => {
+    if (forecastStore.has(key)) return true;
+    const leafKeys = populatedCohorts.leafMap.get(key) ?? [];
+    return leafKeys.some(k => forecastStore.has(k));
+  }, [forecastStore, populatedCohorts]);
 
   // THE canonical "which cohorts still need a Standard Forecast" list.
   //
