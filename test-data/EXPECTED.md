@@ -2294,6 +2294,40 @@ previously swept in `dist/` build output and loose root `.cjs` scratch files.
 Making it explicit immediately surfaced **3 more errors** in `scripts/` that
 the implicit walk had missed. That is the point.
 
+### Foundation MERGED to main at `c1ef1a0` — 2026-08-04
+
+Branch `foundation-typecheck`, six commits, merged `--no-ff`. Post-merge on
+main: **typecheck 0**, build clean, traps 3/3, all seven spec suites green
+(skip 20, edge 15, scope 61, mix 17, prorata 21, pct 72, cards 36). No
+conflicts.
+
+**`npm run typecheck` is green and meaningful for the first time in the
+project's history.** Every enumeration that depends on the compiler — the
+removal test above all — is authoritative from this commit onward and was not
+before it.
+
+### QUEUE: dead prop plumbing in StandardForecastTab — not Phase 1 scope
+
+Found by qa-tester during the foundation gate, 2026-08-04.
+
+`segmentMode`, `setSegmentMode`, `productMode`, `setProductMode`,
+`channelMode`, `setChannelMode` are declared in `StandardForecastTabProps`
+(`StandardForecastTab.tsx:63-67`) and passed down from `App.tsx`, but **never
+destructured or referenced anywhere in the component body**. Grepped the whole
+file: only the interface declarations match.
+
+Consequence for the foundation branch's own work: **3 of the 7 prop-type
+signatures narrowed to `DimMode` have no call site to violate.** They were
+verified against nothing. That is not a defect in the narrowing — it is a
+limit on what the verification established, and it is recorded so nobody
+later reads those three as exercised.
+
+Pre-existing, unrelated to the type work, and **explicitly out of Phase 1
+scope**. Queued: either wire them up or delete them, but establish which by
+finding out what they were meant to do — a `filter`/`compare` mode toggle that
+reaches the component and is ignored suggests an abandoned feature, and
+deleting it should be a decision rather than a tidy-up.
+
 ### FAILURE MODE: the compiler was absent from ALL component state, since day one
 
 `@types/react` was never installed. React 19 ships no bundled declarations, so
