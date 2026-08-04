@@ -151,6 +151,28 @@ because its absence produced a false pass.
    tests whether the app can obtain that input.** Where a harness constructs a
    precondition, something must separately assert the app produces it.
 
+   **A SPEC GUARD IS VERIFIED BY A PLANTED VIOLATION, OR IT IS NOT VERIFIED.**
+
+   A guard that has never been shown to fire is an assertion, not a check. It
+   passes on a clean tree, which is exactly what a broken guard also does.
+
+   Worked example, Phase 1, 2026-08-04. `spec:provenance` asserted that nothing
+   in `src/` constructs a `derived` provenance — the phase's stated control. It
+   passed. Gate stage 2 planted a `kind: 'derived',` construction in `App.tsx`
+   and the spec **still reported 30/30**: the exemption for `readProvenance` was
+   written file-level, so any file containing that word anywhere was wholly
+   exempt. `App.tsx` is where Phase 2's `deriveAggregate` is planned to live —
+   the guard was blindest in the one file it most needed to watch.
+
+   The fix was region-scoping, but **the finding was the method**: plant the
+   violation the guard exists to catch, in each place it could plausibly appear,
+   and watch it fail. Then restore. One extra minute per guard.
+
+   This is the mutation-testing rule applied to the guard rather than to the
+   implementation. Mutating the code under test proves the assertions bite;
+   mutating **the thing a guard forbids** proves the guard does. They are
+   different checks and passing one says nothing about the other.
+
 2. **Never report a pass for something you could not genuinely exercise.**
    If a check was inconclusive, blocked, or you reasoned it out
    structurally rather than running it, say exactly that. A stated gap is

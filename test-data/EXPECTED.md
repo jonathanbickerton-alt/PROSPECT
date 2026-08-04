@@ -2294,6 +2294,55 @@ previously swept in `dist/` build output and loose root `.cjs` scratch files.
 Making it explicit immediately surfaced **3 more errors** in `scripts/` that
 the implicit walk had missed. That is the point.
 
+### Phase 1 MERGED to main at `631729c` — 2026-08-04
+
+Branch `phase1-provenance`, six commits, `--no-ff`. Post-merge on main:
+typecheck **0**, build clean, traps 3/3, all **eight** suites green — provenance
+30, skip 20, edge 15, scope 61, mix 17, prorata 21, pct 72, cards 36. No
+conflicts.
+
+All three gate stages found real defects: a spliced noun phrase that read "the
+models in this aggregate is performing well", two unmigrated audit-log defaults,
+a stale non-nullable prop type, a file-level blind spot in the spec's own guard,
+and a dead i18n key.
+
+### FAILURE MODE: an exclusion list protects sites from being EDITED, not from what they READ
+
+Third instance of the same lesson, and the sharpest.
+
+`App.tsx:842/897` (later `:853/:913`) were recorded as **false positives** and
+excluded by name from the 27-site enumeration, with a stated reason: they write
+`cohortGenLog.modelUsed` and `BulkRunRecord.model`, **different fields that
+merely share a name** with `BaseForecast.modelUsed`.
+
+**That reasoning was correct, and the conclusion drawn from it was wrong.**
+
+The exclusion answered "should these lines be rewritten by the migration?" —
+no. It did not answer "do these lines still behave correctly afterwards?" They
+read `first.Model_Used`, the **same cell** the sibling `provenance` assignment
+three lines above reads, and defaulted it to `'Holt Linear'`. Export option C
+leaves that cell **empty for a derived row**. So one import pass could label a
+cohort "Holt Linear" in the audit log while the forecast beside it correctly
+said it had no model.
+
+**The compiler could not see it.** These lines assign into a loosely-typed log
+literal and never touch a typed `BaseForecast` field, so removing the field
+could not flag them. Found by gate stage 2 reading the code around them.
+
+#### The general rule
+
+**An exclusion is a claim about EDITING, not about CORRECTNESS.** When a change
+alters what a value MEANS — here, that `Model_Used` may now legitimately be
+empty — every reader of that value is in scope, including the ones correctly
+excluded from the edit list. Re-ask the question for excluded sites in the
+reader's terms: *not "is this my field?" but "does this still hold once my
+field's source can say something new?"*
+
+And the recurring half: **an enumeration method is evidence about what it
+found, never about what it did not.** Three instances now — the compiler
+missing a construction site, the scanner's bucket-8 blind spot, and this. The
+methods differ; the error is identical each time.
+
 ### Phase 1: authoritative enumeration and the union design — 2026-08-04
 
 Measured on the checked foundation (`npm run typecheck` = 0). **These numbers
