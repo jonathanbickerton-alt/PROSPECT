@@ -3539,14 +3539,31 @@ overwritten** — mirroring the pattern the absolute-volume path already uses.
 | 2 | **Value card** | the same treatment |
 | 3 | **Promotion, volume section** | the same treatment |
 
-#### Open question still with Alessandro
+#### SETTLED: the override is a RATE
 
-**Rate-vs-total semantics on % events.** When a user overwrites a calculated
-ARPU on a percentage event, are they stating a **rate** (per-subscriber, to be
-multiplied by the resolved volume) or a **total** (an absolute revenue figure
-that the rate must be derived from)? The two give different answers the moment
-the percentage resolves against a different view, and the field cannot be built
-until it is settled. **Awaiting Alessandro.**
+Alessandro's answer. The overwritten value pins the **per-subscriber ARPU for
+the incremental (or departing) subscribers, as one absolute number**.
+
+What follows from that, and each of these is a build constraint rather than a
+restatement:
+
+- **The percentage volume keeps resolving per view.** The override changes the
+  rate, not the volume, so the per-view resolution model is untouched.
+- **The rate applies at FULL MAGNITUDE to every leg**, per the settled rates
+  rule - never pro-rated. A rate is not a quantity and does not split across
+  the cohorts an event lands on.
+- **Service Revenue becomes a DERIVED per-view display** - rate x resolved
+  volume - and stops being an independent input. Two independently editable
+  boxes for one relationship is how they drift apart.
+- **The box pre-populates from the event's TARGET cohort's trailing 3-month
+  average**, mirroring the absolute card.
+
+**The target cohort, NOT the viewing filter's cohort.** Stated explicitly
+because this is the stale-forecast class of mistake: seeding a field from
+whatever the user happens to be looking at produces a number that is correct on
+screen, moves when the filter moves, and describes a different population than
+the event acts on. The event has a target; the pre-populated rate is the
+target's.
 
 #### SETTLED: constrained mix mode, not input-vs-target
 
@@ -3562,8 +3579,14 @@ combination of the remaining sliders still exists.
   two sliders flexing, the outcome is *exactly determined* by the sum and blend
   equations — there is no choice to make and therefore no recommendation to
   offer.
-- **Touched sliders stay pinned.** A slider the user has moved is a statement,
-  not a free variable, and the rebalance works around it.
+- **Explicit PADLOCK toggles mark held sliders**, and unlocked sliders do the
+  balancing. Alessandro's refinement, and it supersedes the touched-pinning
+  rule that was recorded here first.
+
+  Touched-pinning inferred intent from an interaction: a slider you nudged and
+  regretted stayed pinned, and nothing on screen said so or offered a way back.
+  A padlock is **visible and reversible** - the user states what is held rather
+  than having it deduced from their history.
 - **An unreachable target is flagged BEFORE interaction**, not discovered by
   dragging into a wall.
 - **A collapsed range locks its slider** — when the constraints leave a single
@@ -3584,9 +3607,19 @@ reachable; it does not propose which reachable point to pick.
   freedom and the pinning rule is what makes it deterministic. **Candidate for
   the feature's second half**, on the grounds that the value axis can ship and
   be used while the tariff axis is still being designed.
-- **The flex rule — untouched sliders balance — is PROPOSED, not agreed.** Put
-  to Alessandro, awaiting confirmation. Do not build against it until it comes
-  back.
+- **The flex rule is SETTLED**: explicit padlocks hold, unlocked sliders
+  balance.
+
+  **One detail remains PENDING and only one: whether moving a slider
+  auto-locks it.** That is our addition, not Alessandro's, and it is with him.
+  The do-not-build guard applies to that detail alone - the padlock mechanism
+  itself is agreed and can be designed against.
+
+  It matters because it is touched-pinning returning in a smaller form: if a
+  move auto-locks, intent is again inferred from an interaction, just with a
+  visible padlock to undo it. That may well be right - it is the difference
+  between an inference the user can see and one they cannot - but it is his
+  call, not ours.
 
 #### PREREQUISITE, promoted: the workbook-import promo-field drop
 
