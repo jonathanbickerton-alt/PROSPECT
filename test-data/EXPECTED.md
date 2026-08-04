@@ -1401,6 +1401,12 @@ assumption, not an identity.
 `aggregateArpu(parts: {arpu, volume}[])` — volume-weighted, correct by
 construction, returns 0 on zero volume. No issues.
 
+**CORRECTED 2026-08-04: `aggregateForecastBands` is NOT dead.** It was recorded
+as having zero call sites. It has **one live caller** —
+`forecasting.worker.ts:342`, in the Standard-Forecast bottom-up loop. See the
+instrument finding below for why the grep missed it. `aggregateArpu` IS
+genuinely uncalled; that half of the record stands.
+
 #### `aggregateForecastBands` already embodies the Q4a failure mode
 
 It indexes leaves by **array position** `t`, takes `horizon = max(lengths)`,
@@ -2293,6 +2299,129 @@ previously swept in `dist/` build output and loose root `.cjs` scratch files.
 
 Making it explicit immediately surfaced **3 more errors** in `scripts/` that
 the implicit walk had missed. That is the point.
+
+### INSTRUMENT FAILURE: a NUL byte made grep skip the worker, silently
+
+`src/workers/forecasting.worker.ts` contained two literal NUL bytes, used
+deliberately as a cache-key separator:
+
+```js
+const ck = `${leafIdx}\u0000${metric}`;   // was a raw 0x00 byte in the source
+```
+
+**grep treats a file containing NUL as binary and reports "Binary file matches"
+instead of the matching lines — or, with `-l`/`-c` in a pipeline, contributes
+nothing at all.** So every grep-based search in this project's history silently
+excluded the worker.
+
+That is how `aggregateForecastBands` came to be recorded as having zero call
+sites while a live call sat at `forecasting.worker.ts:342`. The claim was not
+carelessly made; the instrument lied and did not say so.
+
+**Fixed 2026-08-04** by replacing the raw bytes with `\u0000` escapes. The
+runtime string is byte-identical — only the source encoding changed. Verified:
+typecheck 0, build clean, traps 3/3, all eight suites unchanged, and grep now
+returns content from the file.
+
+#### Every recorded grep-negative involving the worker, re-run
+
+| term | worker hits | recorded finding |
+|---|---|---|
+| `aggregateForecastBands` | **3** | **WAS WRONG** — corrected above |
+| `aggregateArpu` | 0 | stands — genuinely uncalled |
+| `scaledBandFlow` | 0 | stands — single call site in FvA |
+| `resolveForecast` / `deriveAggregate` / `loadForecastForFilter` | 0 | stand — none exist yet |
+| `kind: 'derived'` | 0 | stands — aggregate-free control holds |
+| `?? 'Holt Linear'` | 0 | stands |
+| `modelUsed` / `fittedParams` / `provenanceModel` | 0 | stand — and the 27-site enumeration was compiler-driven, not grep |
+
+**One wrong, the rest sound.**
+
+#### STANDING RULE: a text-search negative must name the files its instrument actually covered
+
+"No matches in `src/`" is a claim about what the tool read, not about what is
+there. Tools skip things — binary detection, `.gitignore` awareness, `include`
+globs, symlinks, size caps — and mostly they skip quietly.
+
+**State the coverage with the negative.** "No matches across N files including
+`X`" is falsifiable; "no matches" is not. Where a negative is load-bearing,
+confirm the file you most expect to contain the thing was actually read — a
+positive control on the instrument.
+
+This is the third instrument to be caught mid-conclusion: the compiler blinded
+by a missing `@types` package, the i18n scanner blind to object literals, and
+now grep blind to one file. **The pattern is not that the tools are bad. It is
+that a tool's silence is being read as evidence, and silence is what a broken
+tool produces too.**
+
+### APPROVED: Phase 2 design — 2026-08-04
+
+Approved by the user with amendments. **The build sessions execute this design
+mechanically, as Phase 1 executed the union.**
+
+#### `deriveAggregate(leaves, cohort): BaseForecast | null`
+
+- **Month-KEY aligned** means; quadrature bands (`sqrt(sum h^2)`), independence
+  assumption documented at the site.
+- ARPU as **summed revenue over summed volume, per month**, via `aggregateArpu`
+  — which is wired in rather than reimplemented. Deleting a correct
+  implementation and writing the same thing inline is how parallel
+  implementations start.
+- **Seed fields** at the **aggregate's own last historical month** =
+  `max(month)` over the union of leaf `historicalMonths`. Each leaf read AT that
+  month; a leaf with no reading there contributes **0** and is counted in
+  coverage. Correct-by-construction for ragged leaves, at the cost of
+  understating an early-ending leaf — which coverage states.
+- **1-leaf passthrough returns the STORED OBJECT** (reference identity), not a
+  one-element derivation. This is what makes leaf byte-identity hold by
+  construction and closes the double-rounding hole.
+- **Zero contributing leaves returns `null`**, never a zero-valued forecast.
+- **Coverage annotates, never gates.**
+
+#### AMENDMENT 1 — ONE quadrature core
+
+The month-keyed function carries the arithmetic; the worker's index-aligned
+caller becomes a **thin adapter over it**, with worker output byte-identical as
+the control. Two implementations of one combination rule is the shape this
+codebase has recorded three times.
+
+**Fallback only if the adapter proves genuinely invasive:** an agreement spec
+driving both on shared input, plus cross-referencing comments at each site.
+
+#### AMENDMENT 2 — Session boundaries
+
+Instance 3's fix **and** the `flowBandMaps` reconciliation move to **Session B**.
+Instance 3's spec must assert *through* `resolveForecast` — a corrected 7-part
+key still misses until derivation resolves it, so asserting the key's shape
+alone would pass while the defect persists. **Session C is pure deletions.**
+
+#### Session B may split, at the builder's discretion
+
+Pre-authorized to become two gated sub-branches if budget demands. **Inviolable:
+no session ends with typecheck red or suites failing.**
+
+#### Sessions
+
+| | content | control |
+|---|---|---|
+| **A** | `deriveAggregate`, quadrature core + worker adapter, `aggregateArpu` wired, 7 spec cases, pinned baselines, both guards planted-violation tested | no behaviour change anywhere — provable because nothing calls it; worker output byte-identical |
+| **B** | `resolveForecast`, aggregate→leaf map, 12 must-route callers, `.has()` → resolvable, interaction survey, instance 3, `flowBandMaps` reconciliation | leaf byte-identity + A's pinned baselines; browser verification REQUIRED |
+| **C** | `scaledBandFlow` + `computeAvgShare` deleted, instance 2 fixed | SOHO · RED S navigation-order trap, unscored-row trap |
+
+#### Must NOT derive
+
+`summaryMape` (`FvA:2869`, `:2884` — averages per-leaf MAPEs, a different
+quantity), the export loop (`App.tsx:456` — aggregates are never stored or
+exported), `forecastStore.size` (`App.tsx:701`), the challenger seed
+(`App.tsx:2792` — a borrow fix, not a derivation site), and the three
+`.entries()` scans (`FvA:677`, `:2176`, `:2529` — deriving inside a scan over
+the store is circular).
+
+#### Caching: NONE
+
+Derive per call. Worst case ~204k float ops, sub-frame. The hot-path candidates
+are the `.entries()` scans, which are on the must-not-derive list. **No cache
+means no invalidation**, which is the entire reason read-time won.
 
 ### Phase 1 MERGED to main at `631729c` — 2026-08-04
 
