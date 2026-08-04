@@ -368,36 +368,16 @@ const mixedAgg = deriveAggregate(mixedLeaves, KEY(MIXED + '|All|All|All|All|All'
   }
 }
 
-// ── TRANSITIONAL CROSS-CHECK — retire in B2 with the code it reads ───────
-// ForecastVsActualsTab's bfBaseMap is the convention deriveAggregate was told
-// to match. It lives inside a component closure and cannot be imported, so
-// this compares the two recursions STRUCTURALLY on the operations that carry
-// the convention: the zero floor and the chronological sort.
+// ── TRANSITIONAL CROSS-CHECK — RETIRED 2026-08-04 ────────────────────────
+// It compared deriveAggregate's recursion against ForecastVsActualsTab's
+// bfBaseMap while both existed. B2b retired bfBaseMap - flowBandMaps and the
+// inline seed sums now come from deriveAggregate - so there is one recursion
+// and nothing left to cross-check against.
 //
-// Structural, and labelled as such rather than dressed up as behavioural. Its
-// job is narrow - catch the two implementations drifting apart while both
-// exist. RETIRE THIS when B2 retires bfBaseMap; the properties above are what
-// remain, and they are the ones that still mean something with one recursion.
-{
-  const fva = fs.readFileSync('src/components/ForecastVsActualsTab.tsx', 'utf8');
-  const fcs = fs.readFileSync('src/utils/forecasting.ts', 'utf8');
-
-  const bfBase = fva.slice(fva.indexOf('const bfBaseMap'), fva.indexOf('const bfBaseMap') + 900);
-  const derive = fcs.slice(fcs.indexOf('const runningBase'), fcs.indexOf('const runningBase') + 1200);
-
-  check('TRANSITIONAL: bfBaseMap was found', bfBase.length > 100);
-  check('TRANSITIONAL: deriveAggregate running base was found', derive.length > 100);
-
-  check('TRANSITIONAL: bfBaseMap floors the base at zero',
-    /Math\.max\(0,\s*b \+ pIn - pOut\)/.test(bfBase));
-  check('TRANSITIONAL: deriveAggregate floors the base at zero TOO',
-    /Math\.max\(0,\s*b \+ prevIn - prevOut\)/.test(derive));
-
-  check('TRANSITIONAL: bfBaseMap sorts months chronologically',
-    /\.sort\(\(a, b\) => a\.month\.localeCompare\(b\.month\)\)/.test(bfBase));
-  check('TRANSITIONAL: deriveAggregate sorts months chronologically TOO',
-    /\.sort\(\(x, y\) => x\.month\.localeCompare\(y\.month\)\)/.test(derive));
-}
+// Removed rather than left passing against code that no longer exists. The
+// PROPERTIES above are what survive, which is why they were written as
+// properties: never negative, drained leaf contributes zero, shuffled input
+// equals sorted input. Those still mean something with one implementation.
 
 // ── ADAPTER EQUIVALENCE ON RAGGED HORIZONS ───────────────────────────────
 // The previous case exercised one shape: two equal-length arrays. The horizon
@@ -480,12 +460,68 @@ const mixedAgg = deriveAggregate(mixedLeaves, KEY(MIXED + '|All|All|All|All|All'
 // no invalidation". A memo or ref around it silently reintroduces the problem
 // write-time was rejected for.
 {
+  // Shared tracker, not a 2000-character slice. The slice was the last
+  // proximity heuristic left in any guard: it read forward a fixed distance
+  // from the declaration, so it covered whatever happened to follow
+  // resolveForecast rather than resolveForecast itself.
   const appSrc = fs.readFileSync('src/App.tsx', 'utf8');
-  const i = appSrc.indexOf('const resolveForecast');
-  check('GUARD 4: resolveForecast was found', i >= 0);
-  const body = appSrc.slice(i, i + 2000);
+  const owners = enclosingFunctions(appSrc);
+  const lines = appSrc.split(String.fromCharCode(10));
+  const inResolve = lines.filter((_, i) => owners(i).includes('resolveForecast'));
+  check('GUARD 4: resolveForecast was found', inResolve.length > 0, String(inResolve.length));
+  const offenders = inResolve.filter(l => /useRef|resolveCache|cacheRef/.test(l));
   check('GUARD 4: resolveForecast holds no cache of its own',
-    !/useRef|new Map<string, BaseForecast>\(\)\s*;?\s*\/\/ cache|resolveCache/.test(body));
+    offenders.length === 0, offenders.map(l => l.trim()).join(' | '));
+}
+
+// ── PINNED BASELINE: the NEW aggregate bands, post-quadrature ────────────
+//
+// Measured 2026-08-04 on the edge fixture under THIS SPEC'S OWN fit - 36
+// months with 6 held back, the same store every other case here uses. A first
+// measurement pinned figures from a full 42-month fit and they disagreed:
+// different month0, different means. Pin what the harness actually produces,
+// not what a neighbouring run did.
+// AFTER flowBandMaps retired into
+// deriveAggregate. Bands narrow ~38-40% versus the linear summation they
+// replace, because summing the bounds assumed every leaf hit its optimistic
+// edge in the same month.
+//
+// ACCURACY SCORES MOVE AS A RESULT, and that is the fix working, not a
+// regression: actuals that were scoring as inside an over-wide cone now
+// correctly score as outside it. The gate compares against THESE values.
+{
+  const grp = 'Corporate|Fixed Connectivity';
+  const leaves = enumerated.filter(k => k.split('|').slice(0, 2).join('|') === grp)
+    .map(k => store.get(k)).filter((b): b is BaseForecast => !!b);
+  const agg = deriveAggregate(leaves, KEY(grp + '|All|All|All|All|All'))!;
+  const m0 = agg.months[0];
+  const hw = (b: { mean: number; optimistic: number }) => Number((b.optimistic - b.mean).toFixed(4));
+
+  check('PINNED: the aggregate has its 3 leaves', leaves.length === 3, String(leaves.length));
+  check('PINNED: first forecast month is 2026-01', m0.month === '2026-01', m0.month);
+  check('PINNED: inflow mean 432.24',    near(m0.inflow.mean, 432.24, 0.005), String(m0.inflow.mean));
+  check('PINNED: inflow half-width 5.23', near(hw(m0.inflow), 5.23, 0.005), String(hw(m0.inflow)));
+  check('PINNED: outflow mean 389.3',    near(m0.outflow.mean, 389.3, 0.005), String(m0.outflow.mean));
+  check('PINNED: outflow half-width 2.28', near(hw(m0.outflow), 2.28, 0.005), String(hw(m0.outflow)));
+  check('PINNED: retention mean 299.4', near(m0.retention.mean, 299.4, 0.005), String(m0.retention.mean));
+  check('PINNED: retention half-width 4.34', near(hw(m0.retention), 4.34, 0.005), String(hw(m0.retention)));
+  check('PINNED: seeds — 3794 / 430 / 389',
+    near(agg.seedBaseVolume, 3794, 0.5) && near(agg.lastHistoricalInflow, 430, 0.5)
+      && near(agg.lastHistoricalOutflow, 389, 0.5),
+    `${agg.seedBaseVolume}/${agg.lastHistoricalInflow}/${agg.lastHistoricalOutflow}`);
+
+  // The narrowing itself, asserted as a RANGE rather than a point: the exact
+  // figure depends on how correlated the leaves happen to be, but a quadrature
+  // band must be materially narrower than a linear one or the change did
+  // nothing.
+  let linMean = 0, linOpt = 0;
+  for (const lf of leaves) {
+    const m = lf.months.find(x => x.month === m0.month);
+    if (m) { linMean += m.inflow.mean; linOpt += m.inflow.optimistic; }
+  }
+  const narrowing = 1 - hw(m0.inflow) / (linOpt - linMean);
+  check('PINNED: quadrature narrows the inflow band 30-50% vs linear summation',
+    narrowing > 0.30 && narrowing < 0.50, `${(narrowing * 100).toFixed(1)}%`);
 }
 
 // ── PINNED BASELINE: the four ARPU MAPEs stay distinct ────────────────────
@@ -618,11 +654,23 @@ const srcFiles: string[] = [];
     src.split(String.fromCharCode(10)).forEach((line, i2) => {
       if (!/deriveAggregate\s*\(/.test(line)) return;
       if (/export function deriveAggregate/.test(line)) return;
-      if (owners(i2).includes('resolveForecast')) return;
+      // TWO named callers, and only two:
+      //   resolveForecast    - derives BY KEY, for any reader asking for a
+      //                        cohort's forecast
+      //   buildCohortAccuracy - derives from an explicit LEAF SET already
+      //                        scoped for a row. This is where flowBandMaps
+      //                        and the seven inline seed sums retired to; it
+      //                        has the leaves, not a key.
+      //
+      // The guard's purpose is unchanged: no ad-hoc leaf summation reappears.
+      // Two named callers still satisfies that. A THIRD would mean a third
+      // place deciding how leaves combine, which is the shape this exists to
+      // stop.
+      if (owners(i2).some(n => n === 'resolveForecast' || n === 'buildCohortAccuracy')) return;
       callers.push(f + ':' + (i2 + 1) + ' in ' + (owners(i2).slice(-1)[0] ?? '<top level>'));
     });
   }
-  check('GUARD 2: deriveAggregate is called ONLY from resolveForecast',
+  check('GUARD 2: deriveAggregate is called ONLY from its two named callers',
     callers.length === 0, callers.join(', '));
 }
 

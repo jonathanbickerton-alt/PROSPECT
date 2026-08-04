@@ -19,7 +19,7 @@ import type { CohortDims } from './CohortDimCheckboxes';
 import { rowInScope, cohortInScope, dimsFromGrouping, ALL_DIMS, L1_ONLY } from '../utils/cohortScope';
 // The ONE key builder. This file previously hand-rolled a 5-part key here,
 // which is the instance-3 defect.
-import { makeForecastKey } from '../utils/forecasting';
+import { makeForecastKey, deriveAggregate } from '../utils/forecasting';
 
 // ---------------------------------------------------------------------------
 // Props — all IBRO column mappings come from App; forecast data from context
@@ -952,59 +952,71 @@ function buildCohortAccuracy(
 
     // ── Flow forecast band maps — summed across all matching sub-cohorts ──────
     // Volume metrics (inflow / outflow / retention) are count-additive.
+    // ── ONE derivation, from the seam's own function ─────────────────────────
+    //
+    // flowBandMaps used to sum leaf bands LINEARLY - `iO += m.inflow.optimistic`
+    // - which assumes every leaf hits its optimistic edge in the same month and
+    // produces an interval the forecasting engine's own comment calls
+    // "implausible... absurdly wide". Recorded as a defect against the settled
+    // statistically-combined-bands decision, not as a style divergence.
+    //
+    // cohortBaseBandMap re-summed the three seed fields inline, one of seven
+    // such copies in this file.
+    //
+    // Both now come from deriveAggregate: quadrature bands, month-KEY alignment,
+    // seeds read at the aggregate's own as-of month with a zero floor. One
+    // implementation of leaf-to-aggregate summation, not three.
+    //
+    // ACCURACY SCORES MOVE because of this, and that is the fix working: bands
+    // narrow under quadrature, so actuals that were scoring as inside an
+    // over-wide cone now correctly score as outside it. The new values are the
+    // baseline, pinned in scripts/derive-aggregate-spec.ts.
+    const derivedForRow = matchingBfs.length
+      ? deriveAggregate(matchingBfs as unknown as import('../types/forecast').BaseForecast[], {
+          segment: d.seg,
+          product: dims.product ? d.prod : 'All',
+          productL2: dims.productL2 ? d.prodL2 : 'All',
+          channel: dims.channelL1 ? d.chan : 'All',
+          channelL2: dims.channelL2 ? d.chanL2 : 'All',
+          tariffL1: dims.tariffL1 ? d.tariffL1 : 'All',
+          tariffL2: dims.tariffL2 ? d.tariffL2 : 'All',
+          scenario: 'Base Case',
+        } as any)
+      : null;
+
     const flowBandMaps = (() => {
-      if (!matchingBfs.length) return null;
+      if (!derivedForRow) return null;
       type BandMap = Map<string, { mean: number; opt: number; pess: number }>;
-      const inf: BandMap = new Map();
-      const out: BandMap = new Map();
-      const ret: BandMap = new Map();
-      const monthSet = new Set<string>();
-      for (const bf of matchingBfs) for (const m of bf.months) monthSet.add(m.month);
-      for (const month of monthSet) {
-        let iM=0, iO=0, iP=0, oM=0, oO=0, oP=0, rM=0, rO=0, rP=0;
-        for (const bf of matchingBfs) {
-          const m = bf.months.find(mm => mm.month === month);
-          if (!m) continue;
-          iM += m.inflow.mean;    iO += m.inflow.optimistic;    iP += m.inflow.pessimistic;
-          oM += m.outflow.mean;   oO += m.outflow.optimistic;   oP += m.outflow.pessimistic;
-          rM += m.retention.mean; rO += m.retention.optimistic; rP += m.retention.pessimistic;
-        }
-        inf.set(month, { mean: iM, opt: iO, pess: iP });
-        out.set(month, { mean: oM, opt: oO, pess: oP });
-        ret.set(month, { mean: rM, opt: rO, pess: rP });
+      const inf: BandMap = new Map(), out: BandMap = new Map(), ret: BandMap = new Map();
+      for (const m of derivedForRow.months) {
+        inf.set(m.month, { mean: m.inflow.mean,    opt: m.inflow.optimistic,    pess: m.inflow.pessimistic });
+        out.set(m.month, { mean: m.outflow.mean,   opt: m.outflow.optimistic,   pess: m.outflow.pessimistic });
+        ret.set(m.month, { mean: m.retention.mean, opt: m.retention.optimistic, pess: m.retention.pessimistic });
       }
       return { inflow: inf, outflow: out, retention: ret };
     })();
 
-    // ── Base band — derived running stock using summed seeds + flows ──────────
+    // ── Base band — the IBRO recursion over the DERIVED flows ────────────────
+    // Same recursion as before, but seeded and fed from the derived aggregate
+    // rather than from a second inline summation of the same leaves.
     const cohortBaseBandMap = (() => {
-      if (!matchingBfs.length) return null;
-      const seedBase = matchingBfs.reduce((s, bf) => s + (bf.seedBaseVolume || 0), 0);
-      const lastIn   = matchingBfs.reduce((s, bf) => s + bf.lastHistoricalInflow,  0);
-      const lastOut  = matchingBfs.reduce((s, bf) => s + bf.lastHistoricalOutflow, 0);
-      const monthSet = new Set<string>();
-      for (const bf of matchingBfs) for (const m of bf.months) monthSet.add(m.month);
-      const monthList = [...monthSet].sort();
-      let meanB = seedBase, optB = seedBase, pessB = seedBase;
-      let pMeanIn=lastIn,  pMeanOut=lastOut;
-      let pOptIn =lastIn,  pOptOut =lastOut;
-      let pPessIn=lastIn,  pPessOut=lastOut;
+      if (!derivedForRow) return null;
+      let meanB = derivedForRow.seedBaseVolume;
+      let optB  = derivedForRow.seedBaseVolume;
+      let pessB = derivedForRow.seedBaseVolume;
+      let pMeanIn = derivedForRow.lastHistoricalInflow, pMeanOut = derivedForRow.lastHistoricalOutflow;
+      let pOptIn  = derivedForRow.lastHistoricalInflow, pOptOut  = derivedForRow.lastHistoricalOutflow;
+      let pPessIn = derivedForRow.lastHistoricalInflow, pPessOut = derivedForRow.lastHistoricalOutflow;
       const map = new Map<string, { mean: number; opt: number; pess: number }>();
-      for (const month of monthList) {
-        let iM=0, iO=0, iP=0, oM=0, oO=0, oP=0;
-        for (const bf of matchingBfs) {
-          const m = bf.months.find(mm => mm.month === month);
-          if (!m) continue;
-          iM += m.inflow.mean;    iO += m.inflow.optimistic;    iP += m.inflow.pessimistic;
-          oM += m.outflow.mean;   oO += m.outflow.optimistic;   oP += m.outflow.pessimistic;
-        }
+      for (const m of derivedForRow.months) {
         meanB = Math.max(0, meanB + pMeanIn - pMeanOut);
         optB  = Math.max(0, optB  + pOptIn  - pOptOut);
         pessB = Math.max(0, pessB + pPessIn - pPessOut);
-        map.set(month, { mean: meanB, opt: optB, pess: pessB });
-        pMeanIn=iM; pMeanOut=oM;
-        pOptIn=iO;  pOptOut=oP;   // opt: high inflow, low outflow
-        pPessIn=iP; pPessOut=oO;  // pess: low inflow, high outflow
+        map.set(m.month, { mean: meanB, opt: optB, pess: pessB });
+        pMeanIn = m.inflow.mean;        pMeanOut = m.outflow.mean;
+        // opt: high inflow, low outflow. pess: the reverse.
+        pOptIn  = m.inflow.optimistic;  pOptOut  = m.outflow.pessimistic;
+        pPessIn = m.inflow.pessimistic; pPessOut = m.outflow.optimistic;
       }
       return map;
     })();
