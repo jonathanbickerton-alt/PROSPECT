@@ -1203,7 +1203,9 @@ export default function App() {
   // Each manual run prepends a new entry (newest first), capped at 10.
   // Uses an array — NOT a keyed record — so regenerating the same cohort
   // with a different model adds a new row rather than overwriting the old one.
-  const [cohortGenLog, setCohortGenLog] = useState<Array<{ cohortId: string; timestamp: string; modelUsed: ForecastModel }>>([]);
+  // modelUsed is NULLABLE: a derived aggregate has no model, and a log that
+  // records one would assert something false about its own history.
+  const [cohortGenLog, setCohortGenLog] = useState<Array<{ cohortId: string; timestamp: string; modelUsed: ForecastModel | null }>>([]);
 
   // Append-only log of AutoML model switch events (written by acceptChallengerModel
   // and acceptAllChallengerModels); included in the session export.
@@ -2701,7 +2703,7 @@ export default function App() {
     // Append to the model acceptance audit log (used by session export)
     setModelAcceptanceLog(prev => [...prev, {
       cohortKey: `${segKey}|${prodKey}|${chanKey}`,
-      previousModel: provenanceModel(baseForecast.provenance) ?? 'Holt Linear',
+      previousModel: provenanceModel(baseForecast.provenance) ?? '',
       acceptedModel: model,
       switchoverMonth: switchoverMonth ?? null,
       timestamp: nowIso,
@@ -2820,11 +2822,11 @@ export default function App() {
     setForecastUpdatedAt(format(new Date(), 'dd MMM yyyy, HH:mm'));
     const nowIso = new Date().toISOString();
     const cohortId = `${finalBf.cohort.segment}|${finalBf.cohort.product}|${finalBf.cohort.channel}|Standard Forecast|${finalBf.cohort.scenario}`;
-    setCohortGenLog(prev => [{ cohortId, timestamp: nowIso, modelUsed: provenanceModel(finalBf.provenance) ?? 'Holt Linear' }, ...prev].slice(0, 10));
+    setCohortGenLog(prev => [{ cohortId, timestamp: nowIso, modelUsed: provenanceModel(finalBf.provenance) }, ...prev].slice(0, 10));
     setModelAcceptanceLog(prev => [...prev, {
       cohortKey: `${finalBf.cohort.segment}|${finalBf.cohort.product}|${finalBf.cohort.channel}`,
-      previousModel: baseForecast ? (provenanceModel(baseForecast.provenance) ?? 'Holt Linear') : 'Holt Linear',
-      acceptedModel: provenanceModel(finalBf.provenance) ?? 'Holt Linear',
+      previousModel: baseForecast ? (provenanceModel(baseForecast.provenance) ?? '') : '',
+      acceptedModel: provenanceModel(finalBf.provenance) ?? '',
       switchoverMonth: switchoverMonth ?? null,
       timestamp: nowIso,
     }]);
@@ -2950,7 +2952,7 @@ export default function App() {
           ...prev,
           ...groups.map(({ key, model }) => ({
             cohortKey: key,
-            previousModel: provenanceModel(baseForecast.provenance) ?? 'Holt Linear',
+            previousModel: provenanceModel(baseForecast.provenance) ?? '',
             acceptedModel: model,
             switchoverMonth: switchoverMonth ?? null,
             timestamp: acceptTs,

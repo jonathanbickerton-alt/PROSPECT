@@ -19,7 +19,8 @@
     "spec:pct": "tsx scripts/percentage-events-spec.ts",
     "spec:cards": "tsx scripts/cards-spec.ts",
     "spec:skip": "tsx scripts/skip-reporting-spec.ts",
-    "spec:edge": "tsx scripts/edge-fixture-spec.ts"
+    "spec:edge": "tsx scripts/edge-fixture-spec.ts",
+    "spec:provenance": "tsx scripts/provenance-spec.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",
