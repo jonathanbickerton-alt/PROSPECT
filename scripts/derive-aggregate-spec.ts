@@ -659,24 +659,29 @@ const srcFiles: string[] = [];
     src.split(String.fromCharCode(10)).forEach((line, i2) => {
       if (!/deriveAggregate\s*\(/.test(line)) return;
       if (/export function deriveAggregate/.test(line)) return;
-      // TWO named callers, and only two:
-      //   resolveForecast    - derives BY KEY, for any reader asking for a
-      //                        cohort's forecast
-      //   buildCohortAccuracy - derives from an explicit LEAF SET already
-      //                        scoped for a row. This is where flowBandMaps
-      //                        and the seven inline seed sums retired to; it
-      //                        has the leaves, not a key.
+      // Callers are NOT counted. That was the wrong property and this guard
+      // caught its own rule being wrong: it said 'a THIRD caller would mean a
+      // third place deciding how leaves combine', then chartData and
+      // multiChartData became the third and fourth - both LEGITIMATE, because
+      // calling deriveAggregate is the opposite of deciding for yourself.
       //
-      // The guard's purpose is unchanged: no ad-hoc leaf summation reappears.
-      // Two named callers still satisfies that. A THIRD would mean a third
-      // place deciding how leaves combine, which is the shape this exists to
-      // stop.
-      if (owners(i2).some(n => n === 'resolveForecast' || n === 'buildCohortAccuracy')) return;
+      // The real property is below: no hand-rolled cross-leaf band summation
+      // anywhere. Counting call sites measured popularity, not correctness.
+      return;
       callers.push(f + ':' + (i2 + 1) + ' in ' + (owners(i2).slice(-1)[0] ?? '<top level>'));
     });
   }
-  check('GUARD 2: deriveAggregate is called ONLY from its two named callers',
-    callers.length === 0, callers.join(', '));
+  // THE property: nowhere sums leaf BOUNDS by hand. Summing optimistic or
+  // pessimistic across leaves is the linear-band defect; means may be summed
+  // freely, since means do add.
+  const handRolled: string[] = [];
+  for (const f of srcFiles) {
+    fs.readFileSync(f, 'utf8').split(String.fromCharCode(10)).forEach((line, i3) => {
+      if (/\.(optimistic|pessimistic)\s*\+=/.test(line)) handRolled.push(f + ':' + (i3 + 1));
+    });
+  }
+  check('GUARD 2: no hand-rolled cross-leaf BAND summation anywhere',
+    handRolled.length === 0, handRolled.join(', '));
 }
 
 console.log(`derive-aggregate spec: ${pass} passed, ${fails.length} failed`);
