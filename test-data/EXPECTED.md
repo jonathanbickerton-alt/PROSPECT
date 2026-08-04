@@ -3518,6 +3518,99 @@ its distribution is. This is accepted and expected.
 
 ---
 
+## BACKLOG — requested, design pass required before build
+
+Requests recorded here are **not scheduled and not designed**. Each needs a
+design pass of its own before any branch is cut. Recorded so the request, its
+open questions and its prerequisites survive in one place rather than in a
+conversation.
+
+### Editable calculated fields on % events — Alessandro Russo, 2026-08-04
+
+**Sequenced after Phase 2.** Design pass required before build.
+
+Three requests, one pattern: where a percentage event today *calculates* a
+figure and shows it read-only, show it in an **editable box that can be
+overwritten** — mirroring the pattern the absolute-volume path already uses.
+
+| # | surface | what becomes overwritable |
+|---|---|---|
+| 1 | **Volume card, % mode** | calculated Service Revenue / ARPU |
+| 2 | **Value card** | the same treatment |
+| 3 | **Promotion, volume section** | the same treatment |
+
+#### Open question still with Alessandro
+
+**Rate-vs-total semantics on % events.** When a user overwrites a calculated
+ARPU on a percentage event, are they stating a **rate** (per-subscriber, to be
+multiplied by the resolved volume) or a **total** (an absolute revenue figure
+that the rate must be derived from)? The two give different answers the moment
+the percentage resolves against a different view, and the field cannot be built
+until it is settled. **Awaiting Alessandro.**
+
+#### SETTLED: constrained mix mode, not input-vs-target
+
+The second question — whether an override on the Promotion card acts as an
+*input* to the mix or as a *target* it must hit — is resolved, and not by
+choosing between them.
+
+**A typed target ARPU constrains the mix sliders to achievable ranges.** The
+range for each slider is computed as the limits within which a valid
+combination of the remaining sliders still exists.
+
+- **Moving one slider rebalances the untouched ones deterministically.** With
+  two sliders flexing, the outcome is *exactly determined* by the sum and blend
+  equations — there is no choice to make and therefore no recommendation to
+  offer.
+- **Touched sliders stay pinned.** A slider the user has moved is a statement,
+  not a free variable, and the rebalance works around it.
+- **An unreachable target is flagged BEFORE interaction**, not discovered by
+  dragging into a wall.
+- **A collapsed range locks its slider** — when the constraints leave a single
+  value, the control says so rather than offering movement that cannot happen.
+- **Blank target = today's free behaviour**, plus a live blend display so the
+  user can see where they are without being steered.
+
+**Goal-seek-as-recommendation is OUT OF SCOPE.** The system constrains what is
+reachable; it does not propose which reachable point to pick.
+
+#### Design-pass notes, carried forward
+
+- **The three-band value axis is always exactly determined.** With three bands
+  and one pinned, the remaining two are fixed by the sum and blend equations.
+  There is no ambiguity to design around, which makes it the easier half.
+- **The multi-slider tariff axis is where the pinning rule carries its weight**,
+  because more than two free variables means the rebalance has genuine
+  freedom and the pinning rule is what makes it deterministic. **Candidate for
+  the feature's second half**, on the grounds that the value axis can ship and
+  be used while the tariff axis is still being designed.
+- **The flex rule — untouched sliders balance — is PROPOSED, not agreed.** Put
+  to Alessandro, awaiting confirmation. Do not build against it until it comes
+  back.
+
+#### PREREQUISITE, promoted: the workbook-import promo-field drop
+
+Promoted from a known gap to a **blocking prerequisite** for this work.
+
+Override fields must **round-trip from day one**. A field a user can overwrite
+and that silently fails to survive an import is worse than no field at all: the
+user has stated something the tool then discards without saying so, which is
+the working-practice principle inverted. Fix the promo-field drop first.
+
+#### And the recorded boundary this work runs into
+
+`buildPromoEvents` resolves its volume **eagerly at creation**, while
+percentages resolve **per view at application time**. That mismatch is the
+recorded reason percentage events were declined on the Promotion card — see
+*"Percentage on the Promotion card — declined, and the reason is the resolution
+model, not the interaction count"*.
+
+Request 3 puts an editable calculated field on exactly that boundary. **It is
+not a repeat of the declined request** — an overwritable box is not the same as
+a percentage that resolves per view — but any design pass must say explicitly
+which side of the eager/per-view line the override lands on, and what happens
+when the two disagree.
+
 ## 16b. Known coverage gaps — cannot be measured on the current fixtures
 
 These are not passing checks. They are checks that **cannot be run** with the
