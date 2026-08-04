@@ -1070,6 +1070,7 @@ function buildCohortAccuracy(
       const map = new Map<string, { mean: number; opt?: number; pess?: number }>();
       for (const month of monthSet) {
         let totalW=0, wMean=0, wOpt=0, wPess=0;
+        let anyScenBandMissing = false;
         for (const bf of matchingBfs) {
           const m = bf.months.find(mm => mm.month === month);
           if (!m) continue;
@@ -1077,9 +1078,15 @@ function buildCohortAccuracy(
           if (!band) continue;
           const w = volGetter(m);
           if (w <= 0) continue;
-          totalW += w; wMean += band.mean * w; wOpt += band.optimistic * w; wPess += band.pessimistic * w;
+          totalW += w; wMean += band.mean * w;
+          if (band.optimistic === undefined || band.pessimistic === undefined) anyScenBandMissing = true;
+          else { wOpt += band.optimistic * w; wPess += band.pessimistic * w; }
         }
-        if (totalW > 0) map.set(month, { mean: wMean/totalW, opt: wOpt/totalW, pess: wPess/totalW });
+        // Same rule as arpuBandMap and baseArpuBandMap: if ANY contributor had
+        // no interval, the weighted result has none.
+        if (totalW > 0) map.set(month, anyScenBandMissing
+          ? { mean: wMean/totalW }
+          : { mean: wMean/totalW, opt: wOpt/totalW, pess: wPess/totalW });
       }
       return map;
     };
@@ -2175,7 +2182,10 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     // If we have an exact BaseForecast, use it directly.  Otherwise aggregate all
     // matching sub-cohort forecasts from forecastStore so the chart forecast line
     // reflects the correct summed scale (e.g. "MNC" = sum of all MNC cohorts).
-    type FcBand  = { mean: number; optimistic: number; pessimistic: number };
+    // ARPU bounds are optional here for the same reason they are on ArpuBand:
+    // a derived contributor has no interval, and the aggregate must be able to
+    // say so rather than encode it as a number.
+    type FcBand  = { mean: number; optimistic?: number; pessimistic?: number };
     type FcMonth = { month: string; inflow: FcBand; outflow: FcBand; retention: FcBand; arpu: FcBand };
 
     // _matchFcs is set by the IIFE below; used afterward to build synActualsMap.
@@ -2257,7 +2267,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       // Build per-month sums (flows additive, ARPU revenue-proxy-weighted)
       const acc = new Map<string, {
         inflow: FcBand; outflow: FcBand; retention: FcBand;
-        arpuWm: number; arpuWo: number; arpuWp: number; arpuW: number;
+        arpuWm: number; arpuWo: number; arpuWp: number; arpuW: number; arpuBandMissing: boolean;
       }>();
       for (const bf of matchFcs) {
         for (const m of bf.months) {
@@ -2265,7 +2275,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
             inflow:    { mean: 0, optimistic: 0, pessimistic: 0 },
             outflow:   { mean: 0, optimistic: 0, pessimistic: 0 },
             retention: { mean: 0, optimistic: 0, pessimistic: 0 },
-            arpuWm: 0, arpuWo: 0, arpuWp: 0, arpuW: 0,
+            arpuWm: 0, arpuWo: 0, arpuWp: 0, arpuW: 0, arpuBandMissing: false,
           });
           const e = acc.get(m.month)!;
           e.inflow.mean += m.inflow.mean; e.inflow.optimistic += m.inflow.optimistic; e.inflow.pessimistic += m.inflow.pessimistic;
@@ -2275,8 +2285,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           const w = derivedBase + m.inflow.mean;
           // Absence is skipped, never weighted: undefined * w is NaN.
           if (w > 0) { e.arpuWm += m.arpu.mean * w; e.arpuW += w;
-            if (m.arpu.optimistic !== undefined) e.arpuWo += m.arpu.optimistic * w;
-            if (m.arpu.pessimistic !== undefined) e.arpuWp += m.arpu.pessimistic * w; }
+            if (m.arpu.optimistic === undefined || m.arpu.pessimistic === undefined) e.arpuBandMissing = true;
+            else { e.arpuWo += m.arpu.optimistic * w; e.arpuWp += m.arpu.pessimistic * w; } }
         }
       }
 
@@ -2288,7 +2298,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           inflow:    e.inflow,
           outflow:   e.outflow,
           retention: e.retention,
-          arpu: { mean: e.arpuWm / aw, optimistic: e.arpuWo / aw, pessimistic: e.arpuWp / aw },
+          // Bounds OMITTED when any contributor lacked one — not a partial
+          // numerator over the full denominator, which understates silently.
+          arpu: e.arpuBandMissing
+            ? { mean: e.arpuWm / aw }
+            : { mean: e.arpuWm / aw, optimistic: e.arpuWo / aw, pessimistic: e.arpuWp / aw },
         });
       }
 
@@ -2541,7 +2555,10 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     const specificForecast = cohortSpecificForecast ?? filterForecast;
 
     // Build specificFcMonthMap (same logic as chartData)
-    type FcBand  = { mean: number; optimistic: number; pessimistic: number };
+    // ARPU bounds are optional here for the same reason they are on ArpuBand:
+    // a derived contributor has no interval, and the aggregate must be able to
+    // say so rather than encode it as a number.
+    type FcBand  = { mean: number; optimistic?: number; pessimistic?: number };
     type FcMonthEx = {
       month: string;
       inflow: FcBand; outflow: FcBand; retention: FcBand; arpu: FcBand;
@@ -2617,7 +2634,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           // Aggregate
           const acc = new Map<string, {
             inflow: FcBand; outflow: FcBand; retention: FcBand;
-            arpuWm: number; arpuWo: number; arpuWp: number; arpuW: number;
+            arpuWm: number; arpuWo: number; arpuWp: number; arpuW: number; arpuBandMissing: boolean;
             inflowArpuWm: number; inflowArpuWo: number; inflowArpuWp: number;
             outflowArpuWm: number; outflowArpuWo: number; outflowArpuWp: number;
             retentionArpuWm: number; retentionArpuWo: number; retentionArpuWp: number;
@@ -2629,7 +2646,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                 inflow:    { mean: 0, optimistic: 0, pessimistic: 0 },
                 outflow:   { mean: 0, optimistic: 0, pessimistic: 0 },
                 retention: { mean: 0, optimistic: 0, pessimistic: 0 },
-                arpuWm: 0, arpuWo: 0, arpuWp: 0, arpuW: 0,
+                arpuWm: 0, arpuWo: 0, arpuWp: 0, arpuW: 0, arpuBandMissing: false,
                 inflowArpuWm: 0, inflowArpuWo: 0, inflowArpuWp: 0,
                 outflowArpuWm: 0, outflowArpuWo: 0, outflowArpuWp: 0,
                 retentionArpuWm: 0, retentionArpuWo: 0, retentionArpuWp: 0,
@@ -2643,8 +2660,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               const w = derivedBase + m.inflow.mean;
               // Absence is skipped, never weighted: undefined * w is NaN.
           if (w > 0) { e.arpuWm += m.arpu.mean * w; e.arpuW += w;
-            if (m.arpu.optimistic !== undefined) e.arpuWo += m.arpu.optimistic * w;
-            if (m.arpu.pessimistic !== undefined) e.arpuWp += m.arpu.pessimistic * w; }
+            if (m.arpu.optimistic === undefined || m.arpu.pessimistic === undefined) e.arpuBandMissing = true;
+            else { e.arpuWo += m.arpu.optimistic * w; e.arpuWp += m.arpu.pessimistic * w; } }
               const wi = m.inflow.mean; if (wi > 0 && m.inflowArpu) { e.inflowArpuWm += m.inflowArpu.mean * wi; if (m.inflowArpu.optimistic !== undefined) e.inflowArpuWo += m.inflowArpu.optimistic * wi; if (m.inflowArpu.pessimistic !== undefined) e.inflowArpuWp += m.inflowArpu.pessimistic * wi; }
               const wo = m.outflow.mean; if (wo > 0 && m.outflowArpu) { e.outflowArpuWm += m.outflowArpu.mean * wo; if (m.outflowArpu.optimistic !== undefined) e.outflowArpuWo += m.outflowArpu.optimistic * wo; if (m.outflowArpu.pessimistic !== undefined) e.outflowArpuWp += m.outflowArpu.pessimistic * wo; }
               const wr = m.retention.mean; if (wr > 0 && m.retentionArpu) { e.retentionArpuWm += m.retentionArpu.mean * wr; if (m.retentionArpu.optimistic !== undefined) e.retentionArpuWo += m.retentionArpu.optimistic * wr; if (m.retentionArpu.pessimistic !== undefined) e.retentionArpuWp += m.retentionArpu.pessimistic * wr; }
@@ -2663,7 +2680,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               inflow:    e.inflow,
               outflow:   e.outflow,
               retention: e.retention,
-              arpu: { mean: e.arpuWm / aw, optimistic: e.arpuWo / aw, pessimistic: e.arpuWp / aw },
+              // Bounds OMITTED when any contributor lacked one — not a partial
+          // numerator over the full denominator, which understates silently.
+          arpu: e.arpuBandMissing
+            ? { mean: e.arpuWm / aw }
+            : { mean: e.arpuWm / aw, optimistic: e.arpuWo / aw, pessimistic: e.arpuWp / aw },
               inflowArpu:    { mean: e.inflowArpuWm / wi2, optimistic: e.inflowArpuWo / wi2, pessimistic: e.inflowArpuWp / wi2 },
               outflowArpu:   { mean: e.outflowArpuWm / wo2, optimistic: e.outflowArpuWo / wo2, pessimistic: e.outflowArpuWp / wo2 },
               retentionArpu: { mean: e.retentionArpuWm / wr2, optimistic: e.retentionArpuWo / wr2, pessimistic: e.retentionArpuWp / wr2 },

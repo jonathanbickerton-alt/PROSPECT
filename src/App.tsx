@@ -494,7 +494,7 @@ export default function App() {
           Inflow_Mean:      bm.inflow.mean,      Inflow_Optimistic:      bm.inflow.optimistic,      Inflow_Pessimistic:      bm.inflow.pessimistic,
           Outflow_Mean:     bm.outflow.mean,     Outflow_Optimistic:     bm.outflow.optimistic,     Outflow_Pessimistic:     bm.outflow.pessimistic,
           Retention_Mean:   bm.retention.mean,   Retention_Optimistic:   bm.retention.optimistic,   Retention_Pessimistic:   bm.retention.pessimistic,
-          ARPU_Mean:        bm.arpu.mean,        ARPU_Optimistic:        bm.arpu.optimistic,        ARPU_Pessimistic:        bm.arpu.pessimistic,
+          ARPU_Mean:        bm.arpu.mean,        ARPU_Optimistic:        bm.arpu.optimistic ?? '',        ARPU_Pessimistic:        bm.arpu.pessimistic ?? '',
           InflowARPU_Mean:     bm.inflowArpu?.mean     ?? '', InflowARPU_Optimistic:     bm.inflowArpu?.optimistic     ?? '', InflowARPU_Pessimistic:     bm.inflowArpu?.pessimistic     ?? '',
           OutflowARPU_Mean:    bm.outflowArpu?.mean    ?? '', OutflowARPU_Optimistic:    bm.outflowArpu?.optimistic    ?? '', OutflowARPU_Pessimistic:    bm.outflowArpu?.pessimistic    ?? '',
           RetentionARPU_Mean:  bm.retentionArpu?.mean  ?? '', RetentionARPU_Optimistic:  bm.retentionArpu?.optimistic  ?? '', RetentionARPU_Pessimistic:  bm.retentionArpu?.pessimistic  ?? '',

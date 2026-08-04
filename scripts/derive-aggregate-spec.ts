@@ -274,6 +274,35 @@ const mixedAgg = deriveAggregate(mixedLeaves, KEY(MIXED + '|All|All|All|All|All'
     guarded.map(l => l.trim()).join('  |  '));
 }
 
+// ── SOURCE: every weighted ARPU roll-up OMITS bounds on absence ──────────
+// Gate stage 2 found two sites that guarded the NUMERATOR but not the
+// DENOMINATOR - a subset's contributions divided by the whole population's
+// weight, which is not NaN and not omission but a silently understated band.
+// The file's own comment calls that "a fabrication wearing the shape of an
+// average"; these assertions exist because I wrote exactly that in two places
+// while the comment warning against it was three functions up.
+//
+// Asserted on the SOURCE because the roll-ups live inside a component closure.
+{
+  const src = fs.readFileSync('src/components/ForecastVsActualsTab.tsx', 'utf8');
+  const lines = src.split(String.fromCharCode(10));
+
+  // Every ARPU band map / synMap emission must be conditional on a missing flag.
+  const emissions = lines.filter(l => /map\.set\(month, \{ mean: wMean\/totalW/.test(l));
+  check('SOURCE: no ARPU roll-up emits bounds unconditionally',
+    emissions.length === 0, emissions.map(l => l.trim()).join(' | '));
+
+  const synArpu = lines.filter(l => /arpu: \{ mean: e\.arpuWm \/ aw/.test(l));
+  check('SOURCE: no synMap emits an ARPU band unconditionally',
+    synArpu.length === 0, synArpu.map(l => l.trim()).join(' | '));
+
+  // And every accumulation must guard both bounds together.
+  const unguarded = lines.filter(l =>
+    /(wOpt|arpuWo|ArpuWo) \+= /.test(l) && !/undefined/.test(l) && !/else \{/.test(l));
+  check('SOURCE: no ARPU bound is accumulated without an absence guard',
+    unguarded.length === 0, unguarded.map(l => l.trim()).join(' | '));
+}
+
 // ── PINNED BASELINE: the four ARPU MAPEs stay distinct ────────────────────
 {
   const healthy = [...store.entries()].find(([k]) => groupOf(k) === MIXED)!;
