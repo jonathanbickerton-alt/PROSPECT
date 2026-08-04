@@ -92,7 +92,7 @@ interface StandardForecastTabProps {
   COLORS: string[];
   onOpenManageBulk: () => void;
   /** Ordered history of manual generations — newest first, max 10 entries, one entry per run (not per cohort) */
-  cohortGenLog: Array<{ cohortId: string; timestamp: string; modelUsed: ForecastModel }>;
+  cohortGenLog: Array<{ cohortId: string; timestamp: string; modelUsed: ForecastModel | null }>;
   onSelectCohort: (cohortId: string) => void;
   /** Bottom-up: cohortId -> short-leaf diagnostics for derived aggregates. */
   shortLeafWarnings?: Record<string, { shortLeaves: number; totalLeaves: number; share: number }>;

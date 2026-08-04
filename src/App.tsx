@@ -850,7 +850,12 @@ export default function App() {
                   restoredLog.push({
                     cohortId:  `${first.Segment}|${first.Product}|${first.Channel}|Standard Forecast|${first.Scenario ?? 'Base Case'}`,
                     timestamp: new Date(String(first.Generated_At)).toISOString(),
-                    modelUsed: (first.Model_Used ?? 'Holt Linear') as ForecastModel,
+                    // Reads the SAME cell as the sibling provenance assignment above, so it
+                    // must reach the same conclusion. Model_Used is EMPTY for a
+                    // derived row; defaulting it here would label a derived
+                    // aggregate 'Holt Linear' in the audit log while the forecast
+                    // beside it correctly says it has no model.
+                    modelUsed: provenanceModel(readProvenance(first)),
                   });
                 } catch {}
               }
@@ -910,7 +915,7 @@ export default function App() {
               setStep3Filter(cohortToFilter(restoredBf.cohort));
               if (first.Generated_At) {
                 try {
-                  setCohortGenLog([{ cohortId: `${first.Segment}|${first.Product}|${first.Channel}|Standard Forecast|${first.Scenario ?? 'Base Case'}`, timestamp: new Date(String(first.Generated_At)).toISOString(), modelUsed: (first.Model_Used ?? 'Holt Linear') as ForecastModel }]);
+                  setCohortGenLog([{ cohortId: `${first.Segment}|${first.Product}|${first.Channel}|Standard Forecast|${first.Scenario ?? 'Base Case'}`, timestamp: new Date(String(first.Generated_At)).toISOString(), modelUsed: provenanceModel(readProvenance(first)) }]);
                 } catch {}
               }
             }

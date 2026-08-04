@@ -156,10 +156,30 @@ const srcFiles: string[] = [];
 // blind to a future constructor added there.
 // App.tsx's readProvenance is excluded deliberately: it rebuilds a provenance
 // from an IMPORTED row, which is data, not derivation.
-const constructors = srcFiles.filter(f => {
-  const src = fs.readFileSync(f, 'utf8');
-  return /kind:\s*'derived',/.test(src) && !/readProvenance/.test(src);
-});
+// The readProvenance exemption is per-LINE-REGION, not per-file. It was
+// file-level and gate stage 2 proved that unsound: a `kind: 'derived',`
+// planted anywhere in App.tsx passed, because App.tsx contains the word
+// readProvenance somewhere. App.tsx is where Phase 2's deriveAggregate is
+// planned to live, so that was the file the check was blindest in.
+const constructors: string[] = [];
+for (const f of srcFiles) {
+  const lines = fs.readFileSync(f, 'utf8').split(String.fromCharCode(10))
+    .map(l => l.replace(/\s+$/, ''));
+  lines.forEach((line, i) => {
+    if (!/kind:\s*'derived',/.test(line)) return;
+    // Allowed ONLY inside readProvenance, which rebuilds provenance from an
+    // IMPORTED row - data, not derivation. Judged from the nearest preceding
+    // 20 lines rather than from the whole file: the exemption was file-level
+    // and gate stage 2 proved that unsound, because a construction planted
+    // anywhere in App.tsx passed merely because App.tsx contains the word
+    // readProvenance somewhere. App.tsx is where Phase 2's deriveAggregate is
+    // planned to live, so it was the file this check was blindest in.
+    const ctx = lines.slice(Math.max(0, i - 20), i).join(String.fromCharCode(10));
+    if (/readProvenance\s*=/.test(ctx)) return;
+    constructors.push(f + ':' + (i + 1));
+  });
+}
+
 check('PROVABLY AGGREGATE-FREE: nothing in src/ constructs a derived provenance',
   constructors.length === 0, constructors.join(', '));
 
