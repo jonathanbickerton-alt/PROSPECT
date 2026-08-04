@@ -3,9 +3,10 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
-import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort } from './types/forecast';
+import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort, Provenance } from './types/forecast';
+import { provenanceModel, provenanceParams } from './types/forecast';
 import { ForecastProvider } from './context/ForecastContext';
 import HomeTab from './components/HomeTab';
 import { StandardForecastTab } from './components/StandardForecastTab';
@@ -469,13 +470,15 @@ export default function App() {
         Tariff_L1:   bf.cohort.tariffL1 ?? 'All',
         Tariff_L2:   bf.cohort.tariffL2 ?? 'All',
         Scenario:    bf.cohort.scenario,
-        Model_Used:  bf.modelUsed ?? 'Holt Linear',
+        Model_Used:  provenanceModel(bf.provenance) ?? '',
+        Provenance:  bf.provenance.kind,
+        Leaf_Count:  bf.provenance.kind === 'derived' ? bf.provenance.leafCount : '',
         Seed_Base_Volume:      bf.seedBaseVolume,
         Historical_Months:     [...new Set(bf.historicalMonths)].join(', '),
         Last_Historical_Inflow:  bf.lastHistoricalInflow,
         Last_Historical_Outflow: bf.lastHistoricalOutflow,
         Seasonal_Fallback: bf.seasonalFallback ? 'Yes' : 'No',
-        Fitted_Params_JSON: bf.fittedParams ? JSON.stringify(bf.fittedParams) : '',
+        Fitted_Params_JSON: provenanceParams(bf.provenance) ? JSON.stringify(provenanceParams(bf.provenance)) : '',
         Pre_Horizon_Uncertainty_Pct:     bf.preHorizonUncertaintyUsed     ?? preHorizonUncertainty,
         Post_Horizon_Expansion_Rate_Pct: bf.postHorizonExpansionRateUsed  ?? postHorizonExpansionRate,
         Confidence_Horizon_Months:       bf.confidenceHorizonUsed         ?? confidenceHorizon,
@@ -805,7 +808,12 @@ export default function App() {
                 historicalMonths:      [],
                 lastHistoricalInflow:  Number(first.Last_Historical_Inflow  ?? 0),
                 lastHistoricalOutflow: Number(first.Last_Historical_Outflow ?? 0),
-                modelUsed:     (first.Model_Used ?? 'Holt Linear') as ForecastModel,
+                // Provenance discriminant. A file with no Provenance column
+                // predates option C, and everything in one was fitted - so the
+                // default is a fact about old files, not a guess. Model_Used is
+                // EMPTY for a derived row, and must NOT be defaulted to a model
+                // name here: that would recreate the fiction on the way back in.
+                provenance: readProvenance(first),
                 seasonalFallback: first.Seasonal_Fallback === 'Yes',
                 months: rows.map(r => {
                   const bm: any = {
@@ -823,7 +831,10 @@ export default function App() {
                 }),
               };
               if (first.Fitted_Params_JSON) {
-                try { bf.fittedParams = JSON.parse(String(first.Fitted_Params_JSON)); } catch {}
+                try {
+                  const fp = JSON.parse(String(first.Fitted_Params_JSON));
+                  if (bf.provenance.kind !== 'derived') bf.provenance.fittedParams = fp;
+                } catch {}
               }
               // Rebuild the store key from the restored dims so old 5-part saves
               // (no Tariff columns) are normalised to the current 7-part format.
@@ -877,7 +888,12 @@ export default function App() {
                 historicalMonths:      [],
                 lastHistoricalInflow:  Number(first.Last_Historical_Inflow ?? 0),
                 lastHistoricalOutflow: Number(first.Last_Historical_Outflow ?? 0),
-                modelUsed: (first.Model_Used ?? 'Holt Linear') as ForecastModel,
+                // Provenance discriminant. A file with no Provenance column
+                // predates option C, and everything in one was fitted - so the
+                // default is a fact about old files, not a guess. Model_Used is
+                // EMPTY for a derived row, and must NOT be defaulted to a model
+                // name here: that would recreate the fiction on the way back in.
+                provenance: readProvenance(first),
                 months: typedRows.map(r => ({
                   month:     String(r.Month),
                   inflow:    { mean: Number(r.Inflow_Mean     ?? 0), optimistic: Number(r.Inflow_Optimistic     ?? 0), pessimistic: Number(r.Inflow_Pessimistic     ?? 0) },
@@ -1054,7 +1070,12 @@ export default function App() {
               historicalMonths:      [],
               lastHistoricalInflow:  Number(first.Last_Historical_Inflow ?? 0),
               lastHistoricalOutflow: Number(first.Last_Historical_Outflow ?? 0),
-              modelUsed: (first.Model_Used ?? 'Holt Linear') as ForecastModel,
+              // Provenance discriminant. A file with no Provenance column
+              // predates option C, and everything in one was fitted - so the
+              // default is a fact about old files, not a guess. Model_Used is
+              // EMPTY for a derived row, and must NOT be defaulted to a model
+              // name here: that would recreate the fiction on the way back in.
+              provenance: readProvenance(first),
               months: typedRows.map(r => ({
                 month:     String(r.Month),
                 inflow:    { mean: Number(r.Inflow_Mean     ?? 0), optimistic: Number(r.Inflow_Optimistic     ?? 0), pessimistic: Number(r.Inflow_Pessimistic     ?? 0) },
@@ -1402,6 +1423,35 @@ export default function App() {
    * tariff column) defaults to 'All', preserving backward compatibility.
    * 'All' is used for any dimension that is unfiltered.
    */
+  /**
+   * Rebuild a Provenance from an exported row (option C).
+   *
+   * `Provenance` empty or absent => the file predates the column, and every
+   * forecast in such a file was fitted. `Model_Used` empty on a derived row is
+   * deliberate and must stay empty: defaulting it to a model name here is the
+   * exact silent relabelling this phase removes.
+   */
+  const readProvenance = (row: Record<string, any>): Provenance => {
+    const kind = String(row.Provenance ?? '').trim() || 'fitted';
+    if (kind === 'derived') {
+      return {
+        kind: 'derived',
+        leafCount: Number(row.Leaf_Count ?? 0),
+        models: {},
+        coverage: { inScope: 0, withForecast: 0, skipped: [] },
+      };
+    }
+    const modelUsed = (String(row.Model_Used ?? '').trim() || 'Holt Linear') as ForecastModel;
+    if (kind === 'accepted') {
+      return {
+        kind: 'accepted', modelUsed,
+        replacedModel: (String(row.Replaced_Model ?? '').trim() || modelUsed) as ForecastModel,
+        acceptedAt: String(row.Accepted_At ?? ''),
+      };
+    }
+    return { kind: 'fitted', modelUsed };
+  };
+
   const makeForecastKey = (
     seg: string,
     prodL1: string,
@@ -2420,7 +2470,7 @@ export default function App() {
         getOneOffFlagsForCohort(stdCohortObj2),
       );
       if (bf) {
-        console.log('[generateStandardForecast] modelUsed written to ForecastContext:', bf.modelUsed);
+        console.log('[generateStandardForecast] provenance written to ForecastContext:', bf.provenance.kind, provenanceModel(bf.provenance));
         const fKey = makeForecastKey(bf.cohort.segment, bf.cohort.product, bf.cohort.productL2, bf.cohort.channel, bf.cohort.channelL2, bf.cohort.tariffL1, bf.cohort.tariffL2);
         setForecastStore(prev => new Map(prev).set(fKey, bf));
         setBaseForecast(bf);
@@ -2626,6 +2676,17 @@ export default function App() {
       }
     }
 
+    // The store used to keep NO marker distinguishing an adopted challenger
+    // from a bulk-generated forecast, and modelAcceptanceLog's 3-part cohortKey
+    // was too coarse to name which 7-part cohorts were affected. The accepted
+    // arm records it where it can actually be read back.
+    bf.provenance = {
+      kind: 'accepted',
+      modelUsed: model,
+      fittedParams: provenanceParams(bf.provenance) ?? undefined,
+      replacedModel: provenanceModel(baseForecast.provenance) ?? model,
+      acceptedAt: new Date().toISOString(),
+    };
     const fKeyChallenger = makeForecastKey(bf.cohort.segment, bf.cohort.product, bf.cohort.productL2, bf.cohort.channel, bf.cohort.channelL2, bf.cohort.tariffL1, bf.cohort.tariffL2);
     setForecastStore(prev => new Map(prev).set(fKeyChallenger, bf));
     setBaseForecast(bf);
@@ -2640,7 +2701,7 @@ export default function App() {
     // Append to the model acceptance audit log (used by session export)
     setModelAcceptanceLog(prev => [...prev, {
       cohortKey: `${segKey}|${prodKey}|${chanKey}`,
-      previousModel: baseForecast.modelUsed ?? 'Holt Linear',
+      previousModel: provenanceModel(baseForecast.provenance) ?? 'Holt Linear',
       acceptedModel: model,
       switchoverMonth: switchoverMonth ?? null,
       timestamp: nowIso,
@@ -2759,11 +2820,11 @@ export default function App() {
     setForecastUpdatedAt(format(new Date(), 'dd MMM yyyy, HH:mm'));
     const nowIso = new Date().toISOString();
     const cohortId = `${finalBf.cohort.segment}|${finalBf.cohort.product}|${finalBf.cohort.channel}|Standard Forecast|${finalBf.cohort.scenario}`;
-    setCohortGenLog(prev => [{ cohortId, timestamp: nowIso, modelUsed: finalBf.modelUsed }, ...prev].slice(0, 10));
+    setCohortGenLog(prev => [{ cohortId, timestamp: nowIso, modelUsed: provenanceModel(finalBf.provenance) ?? 'Holt Linear' }, ...prev].slice(0, 10));
     setModelAcceptanceLog(prev => [...prev, {
       cohortKey: `${finalBf.cohort.segment}|${finalBf.cohort.product}|${finalBf.cohort.channel}`,
-      previousModel: baseForecast?.modelUsed ?? 'Holt Linear',
-      acceptedModel: finalBf.modelUsed,
+      previousModel: baseForecast ? (provenanceModel(baseForecast.provenance) ?? 'Holt Linear') : 'Holt Linear',
+      acceptedModel: provenanceModel(finalBf.provenance) ?? 'Holt Linear',
       switchoverMonth: switchoverMonth ?? null,
       timestamp: nowIso,
     }]);
@@ -2889,7 +2950,7 @@ export default function App() {
           ...prev,
           ...groups.map(({ key, model }) => ({
             cohortKey: key,
-            previousModel: baseForecast.modelUsed ?? 'Holt Linear',
+            previousModel: provenanceModel(baseForecast.provenance) ?? 'Holt Linear',
             acceptedModel: model,
             switchoverMonth: switchoverMonth ?? null,
             timestamp: acceptTs,

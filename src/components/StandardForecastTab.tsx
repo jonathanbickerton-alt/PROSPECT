@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useForecast } from '../context/ForecastContext';
 import { Settings, Filter, Info, Download, LayersIcon, Database, CheckCircle2, AlertCircle, SlidersHorizontal, X, ChevronDown } from 'lucide-react';
 import type { ForecastModel, ActiveView, DimMode } from '../types/forecast';
+import { provenanceModel, provenanceParams } from '../types/forecast';
 import { analyzeAndRecommendModel, analyzeAndRecommendConfidence, applyOneOffFlagsToSeries, substituteOneOffValue } from '../utils/forecasting';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Line, Brush } from 'recharts';
 import { format, parse, isValid } from 'date-fns';
@@ -461,8 +462,9 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
 
   // Legend label for the forecast mean line — includes the model name once a
   // forecast has been generated, so the chart self-documents which model was used.
-  const meanBaseLabel = baseForecast?.modelUsed
-    ? `Mean (Base) — ${baseForecast.modelUsed}`
+  const sftModel = baseForecast ? provenanceModel(baseForecast.provenance) : null;
+  const meanBaseLabel = sftModel
+    ? `Mean (Base) — ${sftModel}`
     : 'Mean (Base)';
   console.log('[StandardForecastTab] meanBaseLabel at render:', meanBaseLabel);
 
@@ -1252,7 +1254,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
             )}
 
             {/* Fitted Model Parameters — technical diagnostic, hidden by default (Phase 3 P8) */}
-            {baseForecast?.fittedParams && (
+            {baseForecast && provenanceParams(baseForecast.provenance) && (
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200">
                 <button
                   type="button"
@@ -1276,39 +1278,39 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                         <th className="text-left pb-2 pr-6 text-slate-500 font-semibold uppercase tracking-wide">{t('baseline_series')}</th>
                         <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">{t('baseline_level')}</th>
                         <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">{t('baseline_trend')}</th>
-                        {baseForecast.modelUsed === 'Damped Trend' && (
+                        {sftModel === 'Damped Trend' && (
                           <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">{t('baseline_damping')}</th>
                         )}
-                        {baseForecast.modelUsed === 'Holt-Winters' && (
+                        {sftModel === 'Holt-Winters' && (
                           <th className="text-center pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">{t('baseline_seasonal')}</th>
                         )}
                         <th className="text-right pb-2 px-4 text-slate-500 font-semibold uppercase tracking-wide">{t('baseline_in_sample_mse')}</th>
                         <th className="text-right pb-2 pl-4 text-slate-500 font-semibold uppercase tracking-wide">
-                          {baseForecast.modelUsed === 'Holt-Winters' ? t('baseline_relative') : t('baseline_residual_sd')}
+                          {sftModel === 'Holt-Winters' ? t('baseline_relative') : t('baseline_residual_sd')}
                         </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {(['inflow', 'outflow', 'retention', 'arpu'] as const).map(series => {
-                        const p = baseForecast.fittedParams![series];
+                        const p = provenanceParams(baseForecast.provenance)![series];
                         return (
                           <tr key={series}>
                             <td className="py-2 pr-6 font-medium text-slate-700 capitalize">{series}</td>
                             <td className="py-2 px-4 text-center font-mono text-slate-800">{p.alpha.toFixed(2)}</td>
                             <td className="py-2 px-4 text-center font-mono text-slate-800">
-                              {baseForecast.modelUsed === 'Simple Exponential Smoothing' ? '—' : p.beta.toFixed(2)}
+                              {sftModel === 'Simple Exponential Smoothing' ? '—' : p.beta.toFixed(2)}
                             </td>
-                            {baseForecast.modelUsed === 'Damped Trend' && (
+                            {sftModel === 'Damped Trend' && (
                               <td className="py-2 px-4 text-center font-mono text-slate-800">{(p.phi ?? 0.85).toFixed(2)}</td>
                             )}
-                            {baseForecast.modelUsed === 'Holt-Winters' && (
+                            {sftModel === 'Holt-Winters' && (
                               <td className="py-2 px-4 text-center font-mono text-slate-800">{(p.gamma ?? 0.1).toFixed(2)}</td>
                             )}
                             <td className="py-2 px-4 text-right font-mono text-slate-500">
                               {p.mse > 0 ? p.mse.toLocaleString(t('baseline_en_us'), { maximumFractionDigits: 0 }) : '—'}
                             </td>
                             <td className="py-2 pl-4 text-right font-mono text-slate-500">
-                              {baseForecast.modelUsed === 'Holt-Winters'
+                              {sftModel === 'Holt-Winters'
                                 ? (p.sigma > 0 ? `${(p.sigma * 100).toFixed(1)}%` : '—')
                                 : (p.sigma > 0 ? p.sigma.toLocaleString(t('baseline_en_us'), { maximumFractionDigits: 1 }) : '—')
                               }

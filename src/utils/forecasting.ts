@@ -1061,8 +1061,10 @@ export function calculateBaseForecast(
     months,
     lastHistoricalInflow: sorted[sorted.length - 1].inflow,
     lastHistoricalOutflow: sorted[sorted.length - 1].outflow,
-    modelUsed: model,
-    fittedParams: {
+    provenance: {
+      kind: 'fitted',
+      modelUsed: model,
+      fittedParams: {
       inflow:    inflowResult.params,
       outflow:   outflowResult.params,
       retention: retentionResult.params,
@@ -1071,6 +1073,7 @@ export function calculateBaseForecast(
       outflowArpu:   outflowArpuResult?.params,
       retentionArpu: retentionArpuResult?.params,
       baseArpu:      baseArpuResult?.params,
+    },
     },
     ...(anySeasonalFallback ? { seasonalFallback: true } : {}),
     ...(missingMonths.length > 0 ? { missingMonths } : {}),

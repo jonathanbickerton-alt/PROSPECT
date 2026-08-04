@@ -144,6 +144,60 @@ export interface SkippedCohort {
   reason: SkipReason;
 }
 
+/** Per-series smoothing parameters chosen by grid search at fit time. */
+export interface FittedParamsBundle {
+  inflow: FittedParams;
+  outflow: FittedParams;
+  retention: FittedParams;
+  arpu: FittedParams;
+  inflowArpu?: FittedParams;
+  outflowArpu?: FittedParams;
+  retentionArpu?: FittedParams;
+  baseArpu?: FittedParams;
+}
+
+/**
+ * How a BaseForecast came to exist.
+ *
+ *   fitted   — a model was fitted to this cohort's own history.
+ *   accepted — a fitted forecast adopted from the AutoML challenger, carrying
+ *              what it replaced and when. Recorded because the store previously
+ *              kept NO marker distinguishing an accepted forecast from a
+ *              bulk-generated one, and modelAcceptanceLog's 3-part cohortKey was
+ *              too coarse to name which 7-part cohorts were affected. Cheap to
+ *              record now, impossible retroactively.
+ *   derived   — summed from constituent leaves. Has NO single model and NO
+ *              fitted parameters, and says so by not carrying the fields.
+ *
+ * `models` on the derived arm is a histogram of the leaves' models, so the UI
+ * can describe the mix instead of naming one.
+ */
+export type Provenance =
+  | { kind: 'fitted';   modelUsed: ForecastModel; fittedParams?: FittedParamsBundle }
+  | { kind: 'accepted'; modelUsed: ForecastModel; fittedParams?: FittedParamsBundle;
+      replacedModel: ForecastModel; acceptedAt: string }
+  | { kind: 'derived';  leafCount: number;
+      models: Partial<Record<ForecastModel, number>>;
+      coverage: { inScope: number; withForecast: number; skipped: SkippedCohort[] } };
+
+/**
+ * The model behind a forecast, or null when there is not one.
+ *
+ * THE narrowing point. Every consumer that used to read `bf.modelUsed` calls
+ * this and must handle `null` — which is exactly the derived case, and exactly
+ * the case that used to be answered with a borrowed model name. Returning
+ * `null` rather than a default is the whole design: a default would reinstate
+ * the fiction the union exists to remove.
+ */
+export function provenanceModel(p: Provenance): ForecastModel | null {
+  return p.kind === 'derived' ? null : p.modelUsed;
+}
+
+/** Fitted parameters, or null for a derived aggregate (which has none). */
+export function provenanceParams(p: Provenance): FittedParamsBundle | null {
+  return p.kind === 'derived' ? null : (p.fittedParams ?? null);
+}
+
 /**
  * The full Holt-Winters forecast for a single cohort across all forecast months.
  * Historical months that seeded the model are stored separately for reference.
@@ -176,23 +230,23 @@ export interface BaseForecast {
   lastHistoricalInflow: number;
   /** Actual outflow for the final historical month — counterpart to lastHistoricalInflow */
   lastHistoricalOutflow: number;
-  /** The model used to generate this baseline forecast */
-  modelUsed: ForecastModel;
+  /**
+   * How this forecast came to exist. Replaces the former top-level
+   * `modelUsed` and `fittedParams`, which a DERIVED aggregate cannot
+   * honestly supply: it has no single model and no single set of fitted
+   * parameters. Reading either off an aggregate produced a number that
+   * looked like a fact about the aggregate and was a fact about one leaf.
+   *
+   * Moving them INTO the union is the point. Leaving them at the top level
+   * alongside a discriminant would let every existing site keep compiling
+   * while silently reading a fiction.
+   */
+  provenance: Provenance;
   /**
    * Per-series smoothing parameters chosen by grid search at fit time.
    * Optional so that forecasts produced before this field was introduced
    * (e.g. imported from older save files) remain valid.
-   */
-  fittedParams?: {
-    inflow: FittedParams;
-    outflow: FittedParams;
-    retention: FittedParams;
-    arpu: FittedParams;
-    inflowArpu?: FittedParams;
-    outflowArpu?: FittedParams;
-    retentionArpu?: FittedParams;
-    baseArpu?: FittedParams;
-  };
+   */
   /**
    * True when Holt-Winters was requested but at least one series had fewer
    * than 24 historical data points (two full seasonal cycles).  The affected

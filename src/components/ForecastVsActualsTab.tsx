@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { RemoveActualsModal } from './RemoveActualsModal';
 import type { ForecastModel, BaseForecast, ActiveView } from '../types/forecast';
+import { provenanceModel } from '../types/forecast';
 import {
   ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Tooltip,
   Legend, Line, ReferenceLine, Brush, Bar, Cell,
@@ -2972,7 +2973,13 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           challengerDims.channelL2 ? c.chanL2  : 'All',
         ].join('|');
         const cohortFcExact = forecastStore.get(cohortFcKey) ?? null;
-        const chosenModel = (cohortFcExact ?? baseForecast).modelUsed ?? 'Holt Linear';
+        // A derived aggregate has no model, so there is nothing to run a
+        // challenger against: the row is skipped. Defaulting to a model name
+        // here would be the borrow-an-unrelated-cohort pattern in a third
+        // place - see EXPECTED.md, "PATTERN: borrow an unrelated cohort's
+        // number rather than decline".
+        const chosenModel = provenanceModel((cohortFcExact ?? baseForecast).provenance);
+        if (!chosenModel) return null;
 
         // Issue 9: when no exact forecast exists, scale baseForecast to cohort scale
         // using the cohort's average inflow share over matched actuals months.
@@ -3136,7 +3143,10 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     setPreviousForecast(baseForecast);
     onAcceptPreviewForecast(preview, switchoverMonth);
     setAcceptedCohortKeys(prev => new Set([...prev, selectedChallengerGroup.key]));
-    if (switchoverMonth) setModelSwitchPoint({ month: switchoverMonth, modelName: preview.modelUsed });
+    // preview always comes from a real fit; a derived preview is impossible.
+    // Rendered as empty rather than defaulted, so an impossible case would
+    // show a gap instead of a plausible-looking model name.
+    if (switchoverMonth) setModelSwitchPoint({ month: switchoverMonth, modelName: provenanceModel(preview.provenance) ?? '' });
     // Discard the preview now it's been accepted
     setChallengerPreviews(prev => { const m = new Map(prev); m.delete(selectedChallengerGroup.key); return m; });
   }, [selectedChallengerGroup, baseForecast, challengerPreviews, actualsAggrMap, onAcceptPreviewForecast]);
@@ -4171,7 +4181,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                       ? <CheckCircle2 className="text-emerald-600" size={16} />
                                       : <AlertTriangle className="text-amber-500" size={16} />}
                                     <h4 className={`font-semibold text-sm ${challengerBetter ? 'text-emerald-900' : 'text-amber-900'}`}>
-                                      Real {preview.modelUsed} forecast computed
+                                      Real {provenanceModel(preview.provenance) ?? ''} forecast computed
                                     </h4>
                                   </div>
                                   <p className={`text-xs leading-relaxed ${challengerBetter ? 'text-emerald-700' : 'text-amber-700'}`}>
@@ -4179,7 +4189,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                     {t('actuals_current')}{selectedChallengerGroup.chosenModel}{t('actuals_mape')}{' '}
                                     <strong className="text-rose-600">{currentPct.toFixed(1)}%</strong>
                                     {' · '}
-                                    {preview.modelUsed} {t('actuals_mape')}{' '}
+                                    {provenanceModel(preview.provenance) ?? ''} {t('actuals_mape')}{' '}
                                     <strong className={challengerBetter ? 'text-emerald-700' : 'text-amber-700'}>{challengerPct.toFixed(1)}%</strong>
                                     {challengerBetter
                                       ? t('actuals_challenger_performs_better_on_historical_data')
@@ -4197,7 +4207,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                     onClick={handleAcceptPreview}
                                     className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors"
                                   >
-                                    Accept {preview.modelUsed}
+                                    Accept {provenanceModel(preview.provenance) ?? ''}
                                   </button>
                                 </div>
                               </div>
@@ -4213,7 +4223,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                               </span>
                               <span className="flex items-center gap-1.5">
                                 <span className="inline-block w-3 h-3 rounded-full bg-indigo-500" />
-                                {preview.modelUsed} (real challenger)
+                                {provenanceModel(preview.provenance) ?? ''} (real challenger)
                               </span>
                             </div>
 
@@ -4366,7 +4376,9 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               <p className="text-sm text-slate-500 max-w-md">
                 
                 {t('actuals_no_cohorts_scored_below_85_on_the_accuracy_in')}{' '}
-                {baseForecast?.modelUsed ?? 'Holt Linear'} {t('actuals_is_performing_well_for_all_segments_at_the_cu')}
+                {baseForecast ? (provenanceModel(baseForecast.provenance)
+                  ?? t('actuals_the_models_in_this_aggregate')) : ''}{' '}
+                {t('actuals_is_performing_well_for_all_segments_at_the_cu')}
               </p>
             </div>
             {/* Diagnostic note */}
