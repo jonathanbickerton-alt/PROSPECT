@@ -385,8 +385,10 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
         date: m.month,
         Historical: null,
         'Mean (Base)': m.arpu.mean,
+        // Absent bounds stay absent. Math.max(0, undefined) is NaN, which
+        // Recharts renders as a broken series rather than as no series.
         Optimistic: m.arpu.optimistic,
-        Pessimistic: Math.max(0, m.arpu.pessimistic),
+        Pessimistic: m.arpu.pessimistic === undefined ? undefined : Math.max(0, m.arpu.pessimistic),
       });
     }
     return rows.sort((a, b) => (a.date as string).localeCompare(b.date as string));

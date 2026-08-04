@@ -1,5 +1,5 @@
 import { addMonths, format, isValid } from 'date-fns';
-import type { BaseForecast, BaseForecastMonth, CohortKey, ForecastBand, ForecastModel, FittedParams, SkipReason } from '../types/forecast';
+import type { BaseForecast, BaseForecastMonth, CohortKey, ForecastBand, ForecastModel, FittedParams, SkipReason, ArpuBand } from '../types/forecast';
 
 export interface MarketEvent {
   id: string;
@@ -1262,16 +1262,28 @@ export function deriveAggregate(
 
   const arpuOf = (
     ms: BaseForecastMonth[],
-    pick: (m: BaseForecastMonth) => ForecastBand | undefined,
+    pick: (m: BaseForecastMonth) => ArpuBand | undefined,
     vol: (m: BaseForecastMonth) => number,
-  ): ForecastBand | undefined => {
+  ): ArpuBand | undefined => {
     // ARPU is a RATE. Summed revenue over summed volume, computed from THIS
     // month's own volumes - not a horizon-wide blend, and never a mean of
     // means, which over-weights small cohorts.
     const parts = ms.map(m => ({ arpu: pick(m)?.mean ?? 0, volume: vol(m) }));
     if (!parts.some(x => x.volume > 0)) return undefined;
     const mean = aggregateArpu(parts);
-    return { mean: Number(mean.toFixed(4)), optimistic: Number(mean.toFixed(4)), pessimistic: Number(mean.toFixed(4)) };
+    // MEAN ONLY. No optimistic, no pessimistic.
+    //
+    // The mean is real. The interval is not available: combining the intervals
+    // of independently-fitted leaf ARPU series does not produce a valid
+    // interval for their volume-weighted blend.
+    //
+    // Returning opt = pess = mean was the first attempt and it was WRONG in a
+    // specific way - the band-position penalty reads `actual >= pess && actual
+    // <= opt`, so a zero-width band is in-band only on exact float equality,
+    // and every derived aggregate took a systematic 5-10 point scoring penalty
+    // for the privilege of being honest. Absence is a different claim from a
+    // very narrow interval, and the consumers now distinguish them.
+    return { mean: Number(mean.toFixed(4)) };
   };
 
   const months: BaseForecastMonth[] = monthKeys.map(month => {

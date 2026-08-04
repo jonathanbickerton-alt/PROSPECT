@@ -185,8 +185,14 @@ for (const f of srcFiles) {
   });
 }
 
-check('PROVABLY AGGREGATE-FREE: nothing in src/ constructs a derived provenance',
-  constructors.length === 0, constructors.join(', '));
+// RETIRED - superseded by GUARD 1 in scripts/derive-aggregate-spec.ts.
+// Phase 2 Session A makes deriveAggregate a legitimate producer, so the
+// blanket 'nothing constructs derived' assertion is now false by design. The
+// narrower property - deriveAggregate is the ONLY producer - is guarded
+// there, by brace depth rather than proximity, and planted-violation tested
+// in three locations. Not kept as a weaker duplicate: two guards for one
+// property drift, and the weaker one is the one someone reads.
+void constructors;
 
 // -- NO MODEL DEFAULT AT A CONSUMER -----------------------------------------
 // The second required mutation: reinstating `?? 'Holt Linear'` on a

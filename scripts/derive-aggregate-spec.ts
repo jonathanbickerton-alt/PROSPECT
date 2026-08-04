@@ -192,6 +192,88 @@ const mixedAgg = deriveAggregate(mixedLeaves, KEY(MIXED + '|All|All|All|All|All'
     /aggregateArpu\(/.test(body.slice(0, body.indexOf('\nexport function', 10))));
 }
 
+// ── ARPU INTERVALS ARE ABSENT ON DERIVED MONTHS ──────────────────────────
+// The mean is real - volume-weighted revenue over volume. The interval is not
+// available, and absence says so where a zero-width band did not: the
+// band-position penalty reads `actual >= pess && actual <= opt`, so opt = pess
+// = mean is in-band only on exact float equality and penalised every month.
+{
+  const dm2 = mixedAgg!.months[0];
+  check('DERIVED: the ARPU mean is present and real',
+    typeof dm2.arpu.mean === 'number' && dm2.arpu.mean > 0, String(dm2.arpu.mean));
+  check('DERIVED: no ARPU optimistic bound', dm2.arpu.optimistic === undefined,
+    String(dm2.arpu.optimistic));
+  check('DERIVED: no ARPU pessimistic bound', dm2.arpu.pessimistic === undefined,
+    String(dm2.arpu.pessimistic));
+  check('DERIVED: ...and specifically NOT a zero-width band at the mean',
+    !(dm2.arpu.optimistic === dm2.arpu.mean && dm2.arpu.pessimistic === dm2.arpu.mean));
+  const scen = [dm2.inflowArpu, dm2.outflowArpu, dm2.retentionArpu, dm2.baseArpu].filter(Boolean);
+  check('DERIVED: the four per-scenario ARPU bands are also interval-less',
+    scen.every(b => b!.optimistic === undefined && b!.pessimistic === undefined),
+    JSON.stringify(scen));
+  check('DERIVED: ...while still carrying their means',
+    scen.every(b => typeof b!.mean === 'number'));
+}
+
+// ── FITTED LEAVES KEEP THEIR INTERVALS ───────────────────────────────────
+// The control. Nothing about a fitted leaf changed.
+{
+  const leaf = [...store.values()][0];
+  const lm = leaf.months[0];
+  check('FITTED: a leaf still carries an ARPU optimistic bound',
+    typeof lm.arpu.optimistic === 'number', String(lm.arpu.optimistic));
+  check('FITTED: ...and a pessimistic bound',
+    typeof lm.arpu.pessimistic === 'number', String(lm.arpu.pessimistic));
+  check('FITTED: the leaf interval has real WIDTH, not zero',
+    (lm.arpu.optimistic as number) > lm.arpu.mean, 
+    `${lm.arpu.optimistic} vs ${lm.arpu.mean}`);
+}
+
+// ── THE SCORER TREATS ABSENCE AS NOT-APPLICABLE ──────────────────────────
+// Replicates the band-position rule at ForecastVsActualsTab calcComponentDetail.
+// Absence must yield NO adjustment - neither a penalty nor a free pass.
+{
+  const bandPenalty = (actual: number, band: { mean: number; opt?: number; pess?: number }, primary: number) => {
+    const hasBand = band.opt !== undefined && band.pess !== undefined;
+    const inBand = hasBand ? (actual >= band.pess! && actual <= band.opt!) : true;
+    return (!hasBand || inBand) ? 0 : (primary >= 65 ? 5 : 10);
+  };
+  check('SCORER: an absent interval yields NO band-position penalty',
+    bandPenalty(12.7, { mean: 12.0 }, 70) === 0);
+  check('SCORER: ...even for a badly-deviating actual',
+    bandPenalty(99, { mean: 12.0 }, 20) === 0);
+  check('SCORER: a real interval still penalises an out-of-band actual',
+    bandPenalty(20, { mean: 12, opt: 14, pess: 10 }, 70) === 5);
+  check('SCORER: ...and still penalises harder below 65',
+    bandPenalty(20, { mean: 12, opt: 14, pess: 10 }, 40) === 10);
+  check('SCORER: a real interval gives no penalty in-band',
+    bandPenalty(13, { mean: 12, opt: 14, pess: 10 }, 70) === 0);
+  // The mutation this case exists to kill: treating absence as zero-width.
+  const asZeroWidth = (actual: number, band: { mean: number }, primary: number) => {
+    const opt = band.mean, pess = band.mean;
+    return (actual >= pess && actual <= opt) ? 0 : (primary >= 65 ? 5 : 10);
+  };
+  check('SCORER: zero-width WOULD penalise - which is why absence is not that',
+    asZeroWidth(12.7, { mean: 12.0 }, 70) === 5);
+}
+
+// ── SOURCE ASSERTION: the real scorer guards on absence ──────────────────
+// The case above replicates the band-position rule because the scorer lives
+// inside a component closure and is not exported - so mutating the real source
+// would not kill it. Standard 6 says measure, do not reimplement; where the
+// unit genuinely cannot be driven, assert on the SOURCE rather than let a
+// replicated rule stand in for the real one unwatched.
+{
+  const src = fs.readFileSync('src/components/ForecastVsActualsTab.tsx', 'utf8');
+  const guarded = src.split(String.fromCharCode(10))
+    .filter(l => /const penalty = .*primary >= 65 \? 5 : 10/.test(l));
+  check('GUARD: every band-position site was found', guarded.length === 3,
+    String(guarded.length));
+  check('SOURCE: every band-position penalty guards on an ABSENT interval',
+    guarded.every(l => /!hasBand \|\|/.test(l) || /^\s*const penalty = primary/.test(l)),
+    guarded.map(l => l.trim()).join('  |  '));
+}
+
 // ── PINNED BASELINE: the four ARPU MAPEs stay distinct ────────────────────
 {
   const healthy = [...store.entries()].find(([k]) => groupOf(k) === MIXED)!;
