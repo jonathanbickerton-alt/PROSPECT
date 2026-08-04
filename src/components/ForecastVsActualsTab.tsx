@@ -4376,9 +4376,15 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               <p className="text-sm text-slate-500 max-w-md">
                 
                 {t('actuals_no_cohorts_scored_below_85_on_the_accuracy_in')}{' '}
-                {baseForecast ? (provenanceModel(baseForecast.provenance)
-                  ?? t('actuals_the_models_in_this_aggregate')) : ''}{' '}
-                {t('actuals_is_performing_well_for_all_segments_at_the_cu')}
+                {/* A derived aggregate has no single model, so it gets its OWN
+                    SENTENCE rather than a plural noun phrase spliced into a
+                    singular one - which read "the models in this aggregate is
+                    performing well". Substituting a subject into a sentence
+                    built for a different subject is a translation bug waiting
+                    to happen in every locale, not just English. */}
+                {baseForecast && provenanceModel(baseForecast.provenance)
+                  ? <>{provenanceModel(baseForecast.provenance)}{' '}{t('actuals_is_performing_well_for_all_segments_at_the_cu')}</>
+                  : t('actuals_all_models_in_this_aggregate_are_performing_well')}
               </p>
             </div>
             {/* Diagnostic note */}
