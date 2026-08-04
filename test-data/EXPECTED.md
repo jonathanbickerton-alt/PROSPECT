@@ -2354,6 +2354,28 @@ now grep blind to one file. **The pattern is not that the tools are bad. It is
 that a tool's silence is being read as evidence, and silence is what a broken
 tool produces too.**
 
+### Session A MERGED to main at `d1180ad` — 2026-08-04
+
+Branch `session-a-derive-aggregate`, `--no-ff`, no conflicts. Post-merge on
+main: typecheck **0**, build clean, traps 3/3, and all **nine** spec suites
+green - derive 51, provenance 29, skip 20, edge 15, scope 61, mix 17,
+prorata 21, pct 72, cards 36.
+
+(Nine, not twelve. The suite count is recorded here because it keeps being
+miscounted: nine `spec:*` scripts, plus `traps`, plus `typecheck` and
+`build` - which are checks, not suites.)
+
+**Session A control held**: nothing calls `deriveAggregate`, verified by
+planted violation rather than by grep alone. Worker output byte-identical.
+Fitted leaf ARPU bands unchanged, with real width.
+
+**Diff note:** `forecasting.worker.ts` shows 572 insertions / 572 deletions.
+That is a one-time line-ending normalisation, not a rewrite. Every other
+source file in the repo is stored LF; the worker was the exception ONLY
+because its NUL bytes made git treat it as binary and store it verbatim.
+Removing the NULs made it text, so it normalised like its siblings. Content
+verified byte-identical after normalisation.
+
 ### APPROVED: Phase 2 design — 2026-08-04
 
 Approved by the user with amendments. **The build sessions execute this design
