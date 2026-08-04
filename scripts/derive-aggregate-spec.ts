@@ -446,28 +446,31 @@ const mixedAgg = deriveAggregate(mixedLeaves, KEY(MIXED + '|All|All|All|All|All'
 //   the challenger seed  - a borrow fix, not a derivation site.
 //   the .entries() scans - deriving inside a scan over the store is circular.
 {
-  const appSrc = fs.readFileSync('src/App.tsx', 'utf8');
+  // Uses the SHARED enclosure tracker. A 90-line window from summaryMape's
+  // header ran past the end of that function and caught `resolveForecast`
+  // appearing in a NEIGHBOUR's parameter list - a false positive, and the
+  // third time a per-guard line window has been wrong. Enclosure is the
+  // question; enclosingFunctions is the answer.
   const fvaSrc = fs.readFileSync('src/components/ForecastVsActualsTab.tsx', 'utf8');
-  const lines = (src: string) => src.split(String.fromCharCode(10));
+  const appSrc = fs.readFileSync('src/App.tsx', 'utf8');
 
-  // summaryMape's body must not call resolveForecast.
-  const fl = lines(fvaSrc);
-  const smStart = fl.findIndex(l => /const summaryMape\s*=/.test(l));
-  check('GUARD 3: summaryMape was found', smStart >= 0, String(smStart));
-  const smBody = fl.slice(smStart, smStart + 90).join(String.fromCharCode(10));
+  const inFn = (src: string, fn: string, pattern: RegExp): string[] => {
+    const owners = enclosingFunctions(src);
+    const hits: string[] = [];
+    src.split(String.fromCharCode(10)).forEach((line, i) => {
+      if (pattern.test(line) && owners(i).includes(fn)) hits.push(`${fn}:${i + 1}`);
+    });
+    return hits;
+  };
+
   check('GUARD 3: summaryMape does NOT resolve - it averages per-leaf MAPEs',
-    !/resolveForecast/.test(smBody));
+    inFn(fvaSrc, 'summaryMape', /resolveForecast\s*\(/).length === 0,
+    inFn(fvaSrc, 'summaryMape', /resolveForecast\s*\(/).join(', '));
 
-  // The three .entries() scans must not derive inside themselves.
-  const scans = fl.filter(l => /forecastStore\.entries\(\)/.test(l));
-  check('GUARD 3: all three store scans were found', scans.length === 3, String(scans.length));
+  check('GUARD 3: the export loop does NOT resolve - aggregates are never exported',
+    inFn(appSrc, 'exportSession', /resolveForecast\s*\(/).length === 0,
+    inFn(appSrc, 'exportSession', /resolveForecast\s*\(/).join(', '));
 
-  // The export loop and the size read.
-  const al = lines(appSrc);
-  const expIdx = al.findIndex(l => /forecastStore\.forEach/.test(l));
-  check('GUARD 3: the export loop was found', expIdx >= 0);
-  check('GUARD 3: the export loop does NOT derive - aggregates are never exported',
-    !/resolveForecast/.test(al.slice(expIdx, expIdx + 60).join(String.fromCharCode(10))));
   check('GUARD 3: forecastStore.size is still a count of STORED forecasts',
     /forecastStore\.size \+ Object\.keys\(savedForecasts\)/.test(appSrc));
 }

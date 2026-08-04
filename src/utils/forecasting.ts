@@ -1839,6 +1839,28 @@ export function applyEventsToMonth(
  * @param wiChannelCol   Column name for channel L1 ('' → 'All').
  * @param wiChannelL2Col Column name for channel L2 ('' → 'All').
  */
+/**
+ * THE 7-part cohort key. One format, one function.
+ *
+ * It lived as a local closure in App.tsx, so anything outside App that needed a
+ * store key hand-rolled its own - and the AutoML challenger hand-rolled a
+ * FIVE-part one, omitting tariff, which could never match a 7-part key and so
+ * silently never matched anything. That defect is what this export exists to
+ * prevent recurring: a key format that only one file can call is a key format
+ * every other file will reinvent.
+ */
+export function makeForecastKey(
+  seg: string,
+  prodL1: string,
+  prodL2: string | null | undefined,
+  chanL1: string,
+  chanL2: string | null | undefined,
+  tariffL1?: string | null | undefined,
+  tariffL2?: string | null | undefined,
+): string {
+  return `${seg}|${prodL1}|${prodL2 || 'All'}|${chanL1}|${chanL2 || 'All'}|${tariffL1 || 'All'}|${tariffL2 || 'All'}`;
+}
+
 export function buildCohortDataMap(
   data: any[],
   wiDateCol: string,

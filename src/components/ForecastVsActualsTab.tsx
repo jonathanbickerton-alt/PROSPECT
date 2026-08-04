@@ -17,6 +17,9 @@ import { CohortDimCheckboxes } from './CohortDimCheckboxes';
 import type { ViewFilter } from './ViewFilterBar';
 import type { CohortDims } from './CohortDimCheckboxes';
 import { rowInScope, cohortInScope, dimsFromGrouping, ALL_DIMS, L1_ONLY } from '../utils/cohortScope';
+// The ONE key builder. This file previously hand-rolled a 5-part key here,
+// which is the instance-3 defect.
+import { makeForecastKey } from '../utils/forecasting';
 
 // ---------------------------------------------------------------------------
 // Props — all IBRO column mappings come from App; forecast data from context
@@ -584,6 +587,9 @@ function buildCohortAccuracy(
   baseForecast: import('../types/forecast').BaseForecast,
   dims: CohortDims,
   forecastStore: Map<string, import('../types/forecast').BaseForecast>,
+  // The seam, passed in: this is a module-level function, so it cannot reach
+  // the context the component reads it from.
+  resolveForecast: (key: string) => { forecast: import('../types/forecast').BaseForecast | null; reason: import('../types/forecast').SkipReason | null },
   adjustedMeanMap?: AdjustedMeanMap,
 ): CohortAccuracyRow[] {
   const merged = new Map<string, Map<string, CohortMonthEntry>>();
@@ -665,7 +671,8 @@ function buildCohortAccuracy(
       dims.tariffL1  ? d.tariffL1 : 'All',
       dims.tariffL2  ? d.tariffL2 : 'All',
     ].join('|');
-    const cohortSrcEarly = forecastStore.get(cohortFcLookupKeyEarly) ?? null;
+    // Seam, not store: an aggregate key has no stored entry and never will.
+    const cohortSrcEarly = resolveForecast(cohortFcLookupKeyEarly).forecast;
     type BFEarly = import('../types/forecast').BaseForecast;
     const matchingBfs: BFEarly[] = (() => {
       if (cohortSrcEarly) return [cohortSrcEarly];
@@ -1543,7 +1550,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   activeFilter, onCohortFilterChange,
 }) => {
   const { t } = useTranslation();
-  const { baseForecast, adjustedForecast, forecastStore } = useForecast();
+  const { baseForecast, adjustedForecast, forecastStore, resolveForecast } = useForecast();
   const [useAdjustedScoring, setUseAdjustedScoring] = useState(false);
 
   const [showRemoveModal, setShowRemoveModal] = useState(false);
@@ -2034,7 +2041,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   // denominator.  Cohorts outside the forecast scope produce null metrics and are
   // filtered out by the validity check inside buildCohortAccuracy.
   const cohortAccuracy = useMemo(
-    () => baseForecast ? buildCohortAccuracy(cohortActualsMap, broadAggrSnapshotMap, baseForecast, cohortDims, forecastStore, adjustedMeanMap) : [],
+    () => baseForecast ? buildCohortAccuracy(cohortActualsMap, broadAggrSnapshotMap, baseForecast, cohortDims, forecastStore, resolveForecast, adjustedMeanMap) : [],
     [baseForecast, cohortActualsMap, broadAggrSnapshotMap, cohortDims, forecastStore, adjustedMeanMap],
   );
 
@@ -2072,7 +2079,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           cohortDims.tariffL2  ? selectedCohortRow.tariffL2 : 'All',
         ].join('|')
       : null;
-    const cohortSpecificForecast = cohortForecastKey ? (forecastStore.get(cohortForecastKey) ?? null) : null;
+    const cohortSpecificForecast = cohortForecastKey ? resolveForecast(cohortForecastKey).forecast : null;
 
     // When no cohort row is selected but activeFilter is set, look up a matching
     // forecast from forecastStore. This ensures the chart forecast line is scoped
@@ -2088,7 +2095,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       const chanL2  = activeFilter.channel.l2 || 'All';
       const tarL1   = activeFilter.tariff?.l1 || 'All';
       const tarL2   = activeFilter.tariff?.l2 || 'All';
-      return forecastStore.get(`${seg}|${prod}|${prodL2}|${chan}|${chanL2}|${tarL1}|${tarL2}`) ?? null;
+      return resolveForecast(`${seg}|${prod}|${prodL2}|${chan}|${chanL2}|${tarL1}|${tarL2}`).forecast;
     })();
 
     // Effective specific forecast: cohort selection takes priority over filter lookup.
@@ -2540,7 +2547,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           cohortDims.tariffL2  ? selectedCohortRow.tariffL2 : 'All',
         ].join('|')
       : null;
-    const cohortSpecificForecast = cohortForecastKey ? (forecastStore.get(cohortForecastKey) ?? null) : null;
+    const cohortSpecificForecast = cohortForecastKey ? resolveForecast(cohortForecastKey).forecast : null;
     const filterForecast = (() => {
       if (selectedCohortRow || !activeFilter) return null;
       const seg    = activeFilter.segment && activeFilter.segment !== 'All' ? activeFilter.segment : 'All';
@@ -2550,7 +2557,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       const chanL2  = activeFilter.channel.l2 || 'All';
       const tarL1   = activeFilter.tariff?.l1 || 'All';
       const tarL2   = activeFilter.tariff?.l2 || 'All';
-      return forecastStore.get(`${seg}|${prod}|${prodL2}|${chan}|${chanL2}|${tarL1}|${tarL2}`) ?? null;
+      return resolveForecast(`${seg}|${prod}|${prodL2}|${chan}|${chanL2}|${tarL1}|${tarL2}`).forecast;
     })();
     const specificForecast = cohortSpecificForecast ?? filterForecast;
 
@@ -3015,7 +3022,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
 
   // AutoML Challenger tab — driven by challengerDims (independent of cohortDims)
   const challengerCohortAccuracy = useMemo(
-    () => baseForecast ? buildCohortAccuracy(cohortActualsMap, broadAggrSnapshotMap, baseForecast, challengerDims, forecastStore) : [],
+    () => baseForecast ? buildCohortAccuracy(cohortActualsMap, broadAggrSnapshotMap, baseForecast, challengerDims, forecastStore, resolveForecast) : [],
     [baseForecast, cohortActualsMap, broadAggrSnapshotMap, challengerDims, forecastStore],
   );
 
@@ -3048,14 +3055,28 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
         if (!monthMap || !monthMap.size) return null;
 
         // Look up the cohort-specific forecast from forecastStore.
-        const cohortFcKey = [
+        // INSTANCE 3, fixed. This built a FIVE-part key by hand -
+        // seg|prod|prodL2|chan|chanL2, omitting tariff entirely - and queried a
+        // store whose keys makeForecastKey always writes with SEVEN parts. Four
+        // pipes against six: it could never match, so cohortFcExact was always
+        // null and the share-scaling branch below ran unconditionally, for
+        // leaves as well as aggregates. Pre-tariff code never updated when the
+        // tariff dimension landed.
+        //
+        // Fixing the key alone changes nothing visible: the sampled keys are
+        // AGGREGATE shapes at the default grouping, so a correct 7-part key
+        // still misses until derivation resolves it. That is why this goes
+        // through resolveForecast and not forecastStore.get.
+        const cohortFcKey = makeForecastKey(
           c.seg,
           challengerDims.product   ? c.prod   : 'All',
           challengerDims.productL2 ? c.prodL2 : 'All',
           challengerDims.channelL1 ? c.chan    : 'All',
           challengerDims.channelL2 ? c.chanL2  : 'All',
-        ].join('|');
-        const cohortFcExact = forecastStore.get(cohortFcKey) ?? null;
+          challengerDims.tariffL1  ? c.tariffL1 : 'All',
+          challengerDims.tariffL2  ? c.tariffL2 : 'All',
+        );
+        const cohortFcExact = resolveForecast(cohortFcKey).forecast;
         // A derived aggregate has no model, so there is nothing to run a
         // challenger against: the row is skipped. Defaulting to a model name
         // here would be the borrow-an-unrelated-cohort pattern in a third
