@@ -422,6 +422,18 @@ const mixedAgg = deriveAggregate(mixedLeaves, KEY(MIXED + '|All|All|All|All|All'
 }
 
 // ── GUARD 3: the MUST-NOT-DERIVE list stays must-not-derive ──────────────
+//
+// COVERAGE, stated accurately: only TWO of the five sites carry a real
+// prohibition here - summaryMape and the export loop. Those are the two a
+// planted violation makes fail. The other three (forecastStore.size, the
+// challenger seed, the .entries() scans) are EXISTENCE checks: they confirm
+// the sites are still where the design says, and would catch one being
+// deleted or renamed, but they do not detect a resolveForecast call added
+// inside them.
+//
+// Written out because the previous wording implied five prohibitions and a
+// reader would have taken the coverage on trust. A guard that overstates what
+// it checks is the same failure as a summary that overstates what it read.
 // Five call sites must never route through resolveForecast, each for its own
 // reason. They are easy to "fix" later by someone tidying up the last few bare
 // forecastStore reads, so the prohibition is asserted rather than commented.
@@ -510,6 +522,13 @@ const mixedAgg = deriveAggregate(mixedLeaves, KEY(MIXED + '|All|All|All|All|All'
 // The last of those was GUARD 2's, written AFTER GUARD 1's comment had already
 // recorded the same heuristic as rejected. Proximity cannot express enclosure;
 // a shared tracker is how the lesson stops needing to be relearned per guard.
+// KNOWN LIMITATION: a function whose declaration AND body sit on ONE line is
+// not attributed to itself - the line's owner snapshot is taken before that
+// line's own frame is pushed. The failure direction is FALSE POSITIVE (a
+// legitimate call inside such a function would be flagged), never a missed
+// violation, and no current declaration is single-line. Noted rather than
+// fixed: changing the push order to correct it risks the multi-line handling
+// that three separate probes just established works.
 function enclosingFunctions(src: string): (lineIdx: number) => string[] {
   // Recognises: function decls, arrow consts, and arrow consts WRAPPED in a
   // React hook - `const f = useCallback((x) => {`. The hook wrapper was the
