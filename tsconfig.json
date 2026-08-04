@@ -22,5 +22,18 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  // Typecheck coverage is EXPLICIT. Without an "include", tsc walks the whole
+  // directory and checks whatever happens to be on that machine — build output
+  // in dist/, loose .cjs scratch files, and (while it was gitignored) server.ts
+  // on the author's machine but not in a fresh clone. That makes `npm run
+  // typecheck` give different answers to different people, which is worse than
+  // checking less. List the roots; add to them deliberately.
+  "include": ["src", "scripts", "server.ts", "vite.config.ts"],
+
+  // _archive/ is dead code, kept for reference only. It is NOT held to gate
+  // standard: it does not ship, nothing imports it, and holding abandoned
+  // subsystems to the same typecheck as live code buys nothing while making
+  // a green baseline impossible. Excluded deliberately, 2026-08-04.
+  "exclude": ["_archive"]
 }

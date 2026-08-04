@@ -1,4 +1,5 @@
 import React from 'react';
+import type { ActiveView } from '../types/forecast';
 import { Upload, FileSpreadsheet, Info, ArrowRight, FilePlus, FolderOpen, CheckCircle2, X, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -11,7 +12,7 @@ interface HomeTabProps {
   handleImportSaveFile: (e: React.ChangeEvent<HTMLInputElement>) => void;
   importSaveResult: { success: boolean; timestamp?: string; error?: string } | null;
   onDismissImportResult: () => void;
-  setActiveView: (view: 'home' | 'standard' | 'whatif' | 'overall' | 'vsactuals') => void;
+  setActiveView: (view: ActiveView) => void;
 }
 
 export default function HomeTab({ data, isLoading, error, handleFileUpload, handleImportActualsFile, handleImportSaveFile, importSaveResult, onDismissImportResult, setActiveView }: HomeTabProps) {

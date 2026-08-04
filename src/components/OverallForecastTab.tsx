@@ -6,6 +6,10 @@ interface Cohort {
   id: string;
   segment: string;
   product: string;
+  /** Present on every cohort App builds; the interface simply omitted it, so
+   *  the channel dropdown, filter and table cell all worked at runtime while
+   *  three reads were type errors nothing could see. Type-only fix. */
+  channel: string;
   forecastType: string;
   scenario: string;
   hasForecast: boolean;

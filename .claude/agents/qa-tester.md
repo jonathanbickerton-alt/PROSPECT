@@ -83,6 +83,20 @@ because its absence produced a false pass.
    enumerated the construction sites" was then repeated in a commit message as
    though it were established.
 
+   **REVISED 2026-08-04 — the cause was found and it was not TypeScript.**
+   `@types/react` had never been installed, so `React.FC` and `useState` were
+   `any` and every prop and piece of state with them. The sixth site is checked
+   with the types installed. **A removal test IS authoritative — WHEN the
+   typecheck baseline is clean.** Run `npm run typecheck` first: if it is not
+   green, a removal test tells you nothing, because you cannot distinguish a
+   site that is fine from a site that is unchecked.
+
+   Keep the fabricated-property probe (`obj.zzzNoSuchProp`) as cheap spot
+   insurance on any binding a conclusion rests on — one line, instant answer.
+   And note the direction: **remove a required field to test a construction
+   site; adding a spurious one tests literal freshness instead** and will tell
+   you the site is unchecked when it is not.
+
    **When an approach depends on the compiler enumerating call sites, verify the
    enumeration: remove the field again and confirm the error count matches the
    number of sites you believe exist.** One removal, one count. Do not infer

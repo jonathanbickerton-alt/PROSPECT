@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useForecast } from '../context/ForecastContext';
 import { Settings, Filter, Info, Download, LayersIcon, Database, CheckCircle2, AlertCircle, SlidersHorizontal, X, ChevronDown } from 'lucide-react';
-import type { ForecastModel } from '../types/forecast';
+import type { ForecastModel, ActiveView, DimMode } from '../types/forecast';
 import { analyzeAndRecommendModel, analyzeAndRecommendConfidence, applyOneOffFlagsToSeries, substituteOneOffValue } from '../utils/forecasting';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Line, Brush } from 'recharts';
 import { format, parse, isValid } from 'date-fns';
@@ -61,11 +61,11 @@ interface StandardForecastTabProps {
   tariffL2Value?: string;
   setTariffL2Value?: (val: string) => void;
   segmentMode: string;
-  setSegmentMode: (val: string) => void;
+  setSegmentMode: (val: DimMode) => void;
   productMode: string;
-  setProductMode: (val: string) => void;
+  setProductMode: (val: DimMode) => void;
   channelMode: string;
-  setChannelMode: (val: string) => void;
+  setChannelMode: (val: DimMode) => void;
   stdScenario: string;
   setStdScenario: (val: string) => void;
   selectedForecastModel: ForecastModel;
@@ -87,7 +87,7 @@ interface StandardForecastTabProps {
   stdChartData: any[];
   formatNumber: (val: any) => string;
   downloadExcel: (data: any[], filename: string) => void;
-  setActiveView: (view: string) => void;
+  setActiveView: (view: ActiveView) => void;
   COLORS: string[];
   onOpenManageBulk: () => void;
   /** Ordered history of manual generations — newest first, max 10 entries, one entry per run (not per cohort) */
@@ -817,7 +817,13 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                         <span className="font-bold text-violet-700">{confidenceRecommendation.profile}</span>
                       </div>
                       
-                      <p className="text-[11px] leading-relaxed text-slate-600">{t(confidenceRecommendation.reason, confidenceRecommendation.reasonParams)}</p>
+                      {/* `reasonParams` was never produced by analyzeAndRecommendConfidence -
+    ConfidenceRecommendation has no such field - so this always passed
+    undefined. Deleted rather than added to the type: no current reason
+    key interpolates, and if one ever gains a {{placeholder}} it will
+    render literally and be seen, which is the failure we want. Adding
+    the field would have made a silent omission permanent. */}
+                      <p className="text-[11px] leading-relaxed text-slate-600">{t(confidenceRecommendation.reason)}</p>
 
                       {/* Display suggested settings values */}
                       <div className="bg-white/80 p-2 rounded-lg border border-violet-100 text-[10px] text-slate-700 space-y-1">

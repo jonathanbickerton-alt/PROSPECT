@@ -2147,6 +2147,369 @@ decides which months survive. Saying it earlier, twice, and less precisely
 violates the rule that **no check fires on a property it cannot state
 accurately**.
 
+### Phase 1 enumeration: the removal test is ALSO incomplete — 2026-08-04
+
+Run before building Phase 1, as the plan requires. The result changes the plan.
+
+**Removal test.** Deleted `modelUsed` from `BaseForecast` and counted:
+**18 errors, 18 distinct sites.**
+
+```
+App.tsx                 808, 880, 1057, 2423, 2762, 2766
+ForecastVsActualsTab    2960, 4354
+StandardForecastTab     464, 465, 1273, 1276, 1281, 1293, 1295, 1298, 1305
+forecasting.ts          1064   (the construction site)
+```
+
+**Reconciliation against the recorded 12 `?? 'Holt Linear'` grep sites.** The two
+lists are NOT nested. They overlap in six.
+
+- **Both (6):** App 808, 880, 1057, 2765/2766; FvA 2960, 4354.
+- **Grep only, and THREE OF THEM ARE FALSE POSITIVES (6):** App 842, 897, 1098
+  read `first.Model_Used` / `r.Model` — spreadsheet columns feeding
+  `cohortGenLog.modelUsed` and `BulkRunRecord.model`, **different fields that
+  merely share a name**. App 472, 2643, 2892 are genuine `BaseForecast` reads
+  that the compiler did not catch — see below.
+- **Removal test only (12):** App 2423, 2762; all nine StandardForecastTab
+  sites; forecasting.ts 1064. The grep missed every one, because none uses
+  `?? 'Holt Linear'`.
+
+So the grep list was **both incomplete and contaminated** — it missed 12 real
+sites and included 3 that have nothing to do with `BaseForecast`.
+
+#### And the removal test misses sites too — PROVEN, not inferred
+
+App.tsx:472 is `bf.modelUsed ?? 'Holt Linear'` inside
+`forecastStore.forEach((bf, storeKey) => …)`, where `forecastStore` is
+`Map<string, BaseForecast>`. It did not error.
+
+Probe: replaced it with **`bf.zzzNoSuchProp`** — a property name that exists
+nowhere in the codebase — and ran `tsc`. **Zero errors.** That site is not
+type-checked at all. Restored immediately.
+
+**Why it is unchecked is UNEXPLAINED.** No index signature on `BaseForecast`, no
+duplicate declaration, and the sibling sites in the same file do check. I could
+not establish the cause and am not guessing at one.
+
+#### The rule this supersedes
+
+`qa-tester.md` says: when an approach depends on the compiler enumerating call
+sites, verify the enumeration by removing the field and counting. **That is
+necessary and NOT sufficient.** A removal test proves the sites it finds are
+real; it cannot prove there are no others, because a site in an unchecked
+position produces no error for a fabricated property either.
+
+**The working list for Phase 1 is the UNION of removal test, grep, and manual
+review — 24 sites**, and the three unchecked ones (App 472, 2643, 2892) must be
+edited by hand because nothing will flag them if they are missed.
+
+The general form, and it is the third time this shape has appeared: **an
+enumeration method is evidence about what it found, never about what it did not
+find.** The compiler-enumeration lesson, the scanner's bucket-8 blind spot, and
+this are one lesson.
+
+### Phase 0 gate FULLY CLOSED — visual check passed 2026-08-04
+
+The last open item from the Phase 0 merge was that the amber panel and its named
+skip list were **unreachable on both fixtures and had never been rendered**. The
+edge fixture closed it.
+
+User-run visual check on
+`VBU_IBRO_EdgeCases_ShortHistory_PerScenarioARPU_Jan2023_Jun2026.xlsx`:
+amber panel present, both leaves named with their reasons, counts reconciling —
+**7588 + 144 = 7732**, which is the predicted 7736 minus the 4 scenario rows of
+one earlier single generation.
+
+The prediction was made before the run and matched. **Phase 0 is closed.**
+
+### The completion modal states one fact in two vocabularies — Phase 3 work
+
+Two lines, unlinked, on the same screen:
+
+> 2 leaves have no forecast — too few months to fit a model
+> 144 skipped — insufficient data points
+
+**Which counter feeds which, confirmed by reading rather than assumed:**
+
+- The **2** is `skipped`, from the TYPED loop's `else` arm — leaf grain.
+- The **144** is `failed`, incremented in the **STANDARD-cohort loop** at
+  `forecasting.worker.ts:292` and `:317`. `:317` is the bottom-up arm: *"No
+  constituent leaf could be fitted: 0 raw rows anywhere => empty, otherwise
+  genuinely insufficient data."* Cohort grain — roll-up keys x 4 scenarios.
+
+So they are **the same defect counted at two grains**: the short leaves
+themselves, and the Standard-Forecast cohorts whose every constituent leaf was
+one of them. 144 = 36 roll-up keys x 4 scenarios, all descending from the
+all-short aggregate.
+
+Neither line says the other exists, and the two phrasings ("too few months to
+fit a model" / "insufficient data points") describe one condition in two
+wordings. A user cannot tell whether 144 includes the 2, is caused by the 2, or
+is unrelated.
+
+**Unification belongs to Phase 3's completion-message work**, where the message
+becomes a coverage summary rather than a success count. One vocabulary, and the
+relationship between the grains stated rather than left to be inferred.
+
+### CORRECTED working list: 21 sites, not 24 — 2026-08-04
+
+The earlier union of 24 was wrong. Three of the grep hits are **false positives
+that must NOT be edited**, named here so nobody rediscovers and "fixes" them:
+
+| site | what it actually reads | why it is not ours |
+|---|---|---|
+| `App.tsx:842` | `first.Model_Used` | a **spreadsheet column**, written into `cohortGenLog.modelUsed` |
+| `App.tsx:897` | `first.Model_Used` | same column, same destination |
+| `App.tsx:1098` | `r.Model` | a spreadsheet column, written into `BulkRunRecord.model` |
+
+`cohortGenLog.modelUsed` and `BulkRunRecord.model` are **different fields that
+share a name with `BaseForecast.modelUsed`**. They are unaffected by the
+provenance union and must keep working exactly as they do.
+
+**21 real sites: 18 found by the removal test, plus App 472, 2643 and 2892 which
+the compiler does not see.**
+
+### Deployment exclusions live in the Dockerfile — gitignore is not a boundary
+
+`server.ts` was untracked to stop it shipping. That put a **deployment**
+boundary in a **version-control** tool, where it did not belong and did not
+work as protection.
+
+**Verified before changing anything:** the Dockerfile builds in stage 1 and
+stage 2 copies **only `/app/dist`** into `nginx:1.27-alpine`. Nothing else in
+the repository can reach the production image, whatever is tracked. The
+exclusion was already enforced in the right place; the gitignore entry added
+nothing but a cost.
+
+**The cost was real.** While untracked, `server.ts` existed on the author's
+machine and not in a clone, so `tsc` — which had no `include` and walked the
+directory — checked a different set of files per machine. A typecheck that
+answers differently to different people is worse than one that checks less.
+
+`server.ts` is now tracked, carries the constraint as a header comment, and
+tsconfig has an **explicit `include`**: `src`, `scripts`, `server.ts`,
+`vite.config.ts`. Coverage is now a decision rather than a side effect — it
+previously swept in `dist/` build output and loose root `.cjs` scratch files.
+
+Making it explicit immediately surfaced **3 more errors** in `scripts/` that
+the implicit walk had missed. That is the point.
+
+### FAILURE MODE: the compiler was absent from ALL component state, since day one
+
+`@types/react` was never installed. React 19 ships no bundled declarations, so
+`useState` was `any`, `React.FC` was `any`, and **every piece of component state
+and every destructured prop in the codebase was `any`**. Vite does not
+typecheck, so every build passed throughout.
+
+**Duration: the life of the project.** This was never a regression. There was
+never a point at which these types worked.
+
+#### The signature was in generated output, unread
+
+Under `noImplicitAny`: **TS7026 x 7,270** — *"JSX element implicitly has type
+'any' because no interface 'JSX.IntrinsicElements' exists"* — and **TS7016 x
+107** — *"could not find declaration file"*. Both name the cause almost
+literally. Both had been generated, in this session, before the cause was found.
+
+I summarised that output as "every TS7xxx is TS7006" **without counting by
+code** — I counted by FILE and asserted a distribution by CODE. The summary was
+wrong and it pointed away from the answer.
+
+**This is the no-figure-for-a-population-you-have-not-opened rule, applied to
+error lists.** An error list is a population. Summarising it by the wrong axis
+is the same failure as quoting a number for rows nobody has read: the summary
+sounds like a measurement and is a guess. **Count by the axis you are about to
+make a claim about.**
+
+#### CORRECTED AT THE LEAD: the "compiler silently allowed a sixth site"
+#### limitation WAS this mechanism
+
+The recorded case: `MarketEvent.sequence` was made required so the compiler
+would enumerate the construction sites; it reported five and silently allowed a
+sixth, the spread branch of `handleAddMarketEvent`, which shipped rows with no
+slot.
+
+**Tested 2026-08-04 with `@types/react` installed.** Omitting `sequence` from
+that literal now errors:
+
+```
+src/components/WhatIfTab.tsx(1688,11): error TS2322:
+  Property 'sequence' is missing in type '{ ... }' but required in type 'MarketEvent'.
+```
+
+**The site is checked. It always would have been.** `setMarketEvents` is a prop
+typed `(e: MarketEvent[]) => void`, but the component is `React.FC<Props>` — and
+`React.FC` was `any`, so every destructured prop was `any`, so the argument was
+unchecked. Same root, one level further out.
+
+So the limitation was never a TypeScript weakness. It was this missing package,
+and it is fixed.
+
+**A methodological note on how it was nearly mis-tested.** My first probe added
+an *excess* property to that literal and saw no error — and excess-property
+checks do not fire on non-fresh values, so the probe was measuring literal
+freshness, not whether the site was checked. It would have produced the wrong
+conclusion. **Removing a required field, not adding a spurious one, is the test
+for "is this construction site checked".**
+
+### MECHANISM FOUND: `@types/react` was never installed — 2026-08-04
+
+**The entry below is superseded as to cause. The probes in it remain accurate;
+the conclusion "unexplained" is now answered.**
+
+#### The mechanism
+
+**React 19 ships no bundled type declarations, and `@types/react` /
+`@types/react-dom` were not in `package.json`.** So `import { useState } from
+'react'` resolved to nothing, `useState` was `any`, and **every `useState`-rooted
+binding in the codebase was `any`** — `forecastStore`, `baseForecast`, and every
+other piece of component state.
+
+Property access on an `any` root compiles clean, including fabricated names.
+That is the whole of it.
+
+It explains every observation, including the ones that looked contradictory:
+
+- `forecastStore.zzzNoSuchMethod()` compiled — the binding, not the access.
+- An explicit cast restored checking — the type system was never broken.
+- Reordering the declaration changed nothing — **order was never the mechanism**,
+  and the forward-reference hypothesis was wrong.
+- Some `BaseForecast` reads DID error — those come from typed sources
+  (`calculateBaseForecast`'s return, annotated literals, typed props), not from
+  `useState`.
+- Under `noImplicitAny`: **TS7026 x 7,270** ("no interface
+  `JSX.IntrinsicElements` exists") and **TS7016 x 107** ("could not find
+  declaration file"). Both are React-types-missing signatures, and both were
+  sitting in the output the whole time.
+
+**A 14-line reproduction inside the real tsconfig reproduces it** — a typed
+`useState<Map<string, Thing>>` and a bogus method call, zero errors. It is not
+scale, and it is not `App()`.
+
+#### Correction to my own earlier claim
+
+I reported that under `noImplicitAny` "every TS7xxx is TS7006". **That was
+wrong.** The actual breakdown is TS7026 7,270 / TS7006 1,094 / TS7031 412 /
+TS7016 107 / TS7053 20 / TS7018 18 / TS7011 4. I had counted by FILE and
+asserted a distribution by CODE. The corrected figures are what point at the
+cause — the claim I made would have hidden it.
+
+#### The fix, and it is the whole fix
+
+`npm i -D @types/react@^19 @types/react-dom@^19`. Three packages.
+
+**Verified by the same probes at all three formerly-blind sites:**
+
+```
+src/App.tsx:472   error TS2339: Property 'zzzSite472' does not exist on type 'BaseForecast'.
+src/App.tsx:2643  error TS2339: Property 'zzzSite2643' does not exist on type 'BaseForecast'.
+src/App.tsx:2892  error TS2339: Property 'zzzSite2892' does not exist on type 'BaseForecast'.
+```
+
+#### AUTHORITATIVE ENUMERATION: 27 sites, superseding 21
+
+The removal test re-run with types resolving. `_archive/` excluded as dead code.
+
+```
+src/App.tsx                     472, 808, 880, 1057, 2423, 2643, 2762, 2765, 2766, 2892
+src/components/ForecastVsActualsTab.tsx   2960, 3124, 4159, 4167, 4185, 4201, 4354
+src/components/StandardForecastTab.tsx    464, 465, 1273, 1276, 1281, 1293, 1295, 1298, 1305
+src/utils/forecasting.ts        1064   (the construction site)
+```
+
+**The 21-site list is superseded.** Six sites it never contained are now visible
+— `ForecastVsActualsTab` 3124, 4159, 4167, 4185, 4201 (the challenger preview
+UI) plus `App:2765`. **The derived-arm table must be rebuilt from these 27.**
+
+The three grep false positives (`App` 842, 897, 1098) remain excluded: they read
+spreadsheet columns into `cohortGenLog.modelUsed` and `BulkRunRecord.model`, and
+correctly produce no error here.
+
+#### The fix reveals 28 latent errors — NOT fixed, NOT in scope
+
+`npm run lint` now fails. The errors were always real; nothing could see them.
+
+| area | count |
+|---|---|
+| `_archive/` (dead code) | 13 |
+| `src/` (live) | 12 |
+| `scripts/cards-spec.ts` | 3 |
+
+Among the live ones, two are already-recorded open items surfacing as type
+errors for the first time: `Property 'arpuScore' does not exist on type
+'CohortAccuracyRow'` (`ForecastVsActualsTab:4540`) and `Property 'channel' does
+not exist on type 'Cohort'` (`OverallForecastTab` x3). Also
+`ConfidenceRecommendation.reasonParams` and six `Dispatch<SetStateAction<...>>`
+prop mismatches.
+
+**`npm run build` still succeeds and every spec suite still passes** — Vite does
+not typecheck. So this is a lint-gate failure, not a broken app.
+
+**Deciding what to do with the 28 is the user's call and is queued, not done.**
+Nothing was edited to make them go away.
+
+### App.tsx:472 is `any`-rooted — HYPOTHESIS FAILED, Phase 1 BLOCKED — 2026-08-04
+
+Bounded investigation into why `bf.zzzNoSuchProp` compiles clean at
+`App.tsx:472`. **The stated hypothesis was disproven. The build did not start.**
+
+#### What IS established, by probe
+
+1. **`forecastStore` itself is `any` at that scope.**
+   `forecastStore.zzzNoSuchMethod()` inserted at `:455` -> **0 errors**. Not the
+   property access; the binding.
+2. **The type system is not broken.** Casting at the same site —
+   `(bf as BaseForecast).zzzNoSuchProp` -> **1 error, immediately**. Checking
+   works the moment the root is typed.
+3. **So the unchecked surface is PER-BINDING, not per-region.** That half of the
+   hypothesis holds.
+4. **`:2643` and `:2892` are the same shape.** `baseForecast.zzzProbeA` and
+   `.zzzProbeB` -> **0 errors**. All three compiler-blind sites are any-rooted.
+
+#### What DISPROVES the stated mechanism
+
+`noImplicitAny` was turned on temporarily and measured, then reverted:
+**8,925 errors — and ZERO of TS7005 / TS7034 / TS7043**, the implicit-any
+*variable* codes. Every TS7xxx is TS7006, an implicit-any **parameter**, almost
+all React/JSX callbacks.
+
+`forecastStore` is not an untyped local or parameter. It is
+`useState<Map<string, BaseForecast>>` at `:1210`, with an explicit type
+argument, and there is exactly one such binding in the file (searched; `App()`
+at `:116` is the only component containing both it and `exportSession` at
+`:419`).
+
+**So an explicitly-typed `useState` binding is `any` at a forward reference from
+earlier in the same function body, and I cannot say why.** The remaining
+candidate is circular inference through the `App()` body, which I have NOT
+demonstrated and am not asserting.
+
+#### Why this blocks Phase 1 rather than merely annoying it
+
+`exportSession` is where **export option C lands**. `Model_Used` (`:472`) and
+`Fitted_Params_JSON` (`:478`) are both written inside the
+`forecastStore.forEach` block, which this investigation has just shown is
+**entirely unchecked** — every `BaseForecast` field read in the export sheet
+included.
+
+Phase 1's export work would therefore be written into a region where the
+compiler validates nothing: a wrong field name, a missing arm of the provenance
+union, a stale property — all compile clean. That is not a hazard to manage with
+care; it is the specific tool the phase depends on being absent exactly where
+the phase does its work.
+
+**Per the standing instruction — do not build on an unexplained type hole — the
+build did not start.**
+
+#### Blast radius is larger than three sites
+
+Three sites were found because three were looked for. The correct statement is
+that **an unknown number of `BaseForecast` reads across the file are
+unchecked**, and the only reliable detector found so far is inserting a
+fabricated property name one binding at a time. Do not treat 21 as a complete
+enumeration; treat it as the largest list produced by methods now known to be
+individually incomplete.
+
 ### The V-shaped dip on Outflow is correct — measured 2026-08-04
 
 A linked Retention event makes Outflow (Adjusted) dip for one month and return,

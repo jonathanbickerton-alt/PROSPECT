@@ -148,6 +148,17 @@ export interface SkippedCohort {
  * The full Holt-Winters forecast for a single cohort across all forecast months.
  * Historical months that seeded the model are stored separately for reference.
  */
+/**
+ * The app's top-level views, and the per-dimension filter/compare toggle.
+ *
+ * Declared here rather than inline in App so the child prop types can name the
+ * same union. They were previously `(v: string) => void` in five components,
+ * which a `Dispatch<SetStateAction<union>>` is not assignable to — invisible
+ * while React.FC was `any`, and six errors the moment @types/react landed.
+ */
+export type ActiveView = 'home' | 'standard' | 'whatif' | 'overall' | 'vsactuals' | 'compare';
+export type DimMode = 'filter' | 'compare';
+
 export interface BaseForecast {
   cohort: CohortKey;
   /** The last known actual base volume — used as the seed for derived base stock */
