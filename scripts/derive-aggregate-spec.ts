@@ -303,6 +303,188 @@ const mixedAgg = deriveAggregate(mixedLeaves, KEY(MIXED + '|All|All|All|All|All'
     unguarded.length === 0, unguarded.map(l => l.trim()).join(' | '));
 }
 
+// ── baseArpu WEIGHTS ON THE DERIVED RUNNING BASE ─────────────────────────
+//
+// LAYER 1 - PROPERTIES. These encode what the convention MEANS, and they
+// survive B2's retirement of the ForecastVsActualsTab copy. After B2 there is
+// one recursion and no external oracle, so anything that only compares the two
+// implementations stops being a test at that point.
+//
+// The case these replace asserted "deriveAggregate agrees with the FvA
+// convention" against a reference computed inline from MY OWN unfloored
+// formula. It confirmed the implementation against itself, reported agreement
+// with a convention it never read, and passed while the two disagreed at the
+// first month. Properties cannot do that: they are about the output, not about
+// a restatement of the input.
+{
+  const mkLeaf = (seed: number, lastIn: number, lastOut: number,
+                  flows: Array<[number, number]>, arpu: number,
+                  monthsInOrder = true): BaseForecast => {
+    const ms = flows.map(([i, o], k) => ({
+      month: `2026-0${k + 1}`,
+      inflow:    { mean: i, optimistic: i, pessimistic: i },
+      outflow:   { mean: o, optimistic: o, pessimistic: o },
+      retention: { mean: 0, optimistic: 0, pessimistic: 0 },
+      arpu:     { mean: arpu, optimistic: arpu, pessimistic: arpu },
+      baseArpu: { mean: arpu, optimistic: arpu, pessimistic: arpu },
+    }));
+    return {
+      cohort: KEY('A|B|All|All|All|All|All'),
+      seedBaseVolume: seed, historicalMonths: ['2025-12'],
+      lastHistoricalInflow: lastIn, lastHistoricalOutflow: lastOut,
+      months: (monthsInOrder ? ms : [...ms].reverse()) as any,
+      provenance: { kind: 'fitted', modelUsed: 'Holt Linear' },
+    } as BaseForecast;
+  };
+
+  // PROPERTY 1 — a leaf whose outflow exceeds its base contributes ZERO
+  // weight, never negative. A base is a stock of subscribers; anti-weight is
+  // not a thing it can have, and unfloored it produced a NEGATIVE baseArpu.
+  {
+    const drained = mkLeaf(10, 0, 50, [[0, 50], [0, 50]], 999);   // base goes < 0
+    const healthy = mkLeaf(1000, 100, 50, [[100, 50], [100, 50]], 10);
+    const agg = deriveAggregate([drained, healthy], KEY('A|B|All|All|All|All|All'))!;
+    const m1 = agg.months.find(m => m.month === '2026-01')!;
+    check('PROPERTY: baseArpu is never negative',
+      (m1.baseArpu!.mean) >= 0, String(m1.baseArpu!.mean));
+    check('PROPERTY: a drained leaf contributes ZERO weight, so the blend is the healthy leaf',
+      near(m1.baseArpu!.mean, 10, 1e-6), String(m1.baseArpu!.mean));
+    check('PROPERTY: ...and its huge ARPU does NOT leak into the blend',
+      m1.baseArpu!.mean < 999);
+  }
+
+  // PROPERTY 2 — month ORDER of the input cannot change the output. The
+  // recursion is over time; reading it in stored order makes the result depend
+  // on how the array happened to be built.
+  {
+    const sorted   = mkLeaf(1000, 100, 50, [[100, 20], [100, 300]], 10, true);
+    const shuffled = mkLeaf(1000, 100, 50, [[100, 20], [100, 300]], 10, false);
+    const other    = mkLeaf(500, 50, 10, [[50, 10], [50, 10]], 30);
+    const a = deriveAggregate([sorted, other],   KEY('A|B|All|All|All|All|All'))!;
+    const b = deriveAggregate([shuffled, other], KEY('A|B|All|All|All|All|All'))!;
+    const pick = (x: typeof a) => x.months.map(m => `${m.month}:${m.baseArpu?.mean}`).join(',');
+    check('PROPERTY: shuffled month input gives output IDENTICAL to sorted input',
+      pick(a) === pick(b), `${pick(a)}  vs  ${pick(b)}`);
+  }
+}
+
+// ── TRANSITIONAL CROSS-CHECK — retire in B2 with the code it reads ───────
+// ForecastVsActualsTab's bfBaseMap is the convention deriveAggregate was told
+// to match. It lives inside a component closure and cannot be imported, so
+// this compares the two recursions STRUCTURALLY on the operations that carry
+// the convention: the zero floor and the chronological sort.
+//
+// Structural, and labelled as such rather than dressed up as behavioural. Its
+// job is narrow - catch the two implementations drifting apart while both
+// exist. RETIRE THIS when B2 retires bfBaseMap; the properties above are what
+// remain, and they are the ones that still mean something with one recursion.
+{
+  const fva = fs.readFileSync('src/components/ForecastVsActualsTab.tsx', 'utf8');
+  const fcs = fs.readFileSync('src/utils/forecasting.ts', 'utf8');
+
+  const bfBase = fva.slice(fva.indexOf('const bfBaseMap'), fva.indexOf('const bfBaseMap') + 900);
+  const derive = fcs.slice(fcs.indexOf('const runningBase'), fcs.indexOf('const runningBase') + 1200);
+
+  check('TRANSITIONAL: bfBaseMap was found', bfBase.length > 100);
+  check('TRANSITIONAL: deriveAggregate running base was found', derive.length > 100);
+
+  check('TRANSITIONAL: bfBaseMap floors the base at zero',
+    /Math\.max\(0,\s*b \+ pIn - pOut\)/.test(bfBase));
+  check('TRANSITIONAL: deriveAggregate floors the base at zero TOO',
+    /Math\.max\(0,\s*b \+ prevIn - prevOut\)/.test(derive));
+
+  check('TRANSITIONAL: bfBaseMap sorts months chronologically',
+    /\.sort\(\(a, b\) => a\.month\.localeCompare\(b\.month\)\)/.test(bfBase));
+  check('TRANSITIONAL: deriveAggregate sorts months chronologically TOO',
+    /\.sort\(\(x, y\) => x\.month\.localeCompare\(y\.month\)\)/.test(derive));
+}
+
+// ── ADAPTER EQUIVALENCE ON RAGGED HORIZONS ───────────────────────────────
+// The previous case exercised one shape: two equal-length arrays. The horizon
+// logic (Math.max over lengths, absent slots skipped) exists for the ragged
+// case and was untested through the adapter.
+{
+  const b = (mean: number, h: number) => ({ mean, optimistic: mean + h, pessimistic: mean - h });
+  const long  = [b(10, 3), b(11, 3), b(12, 3)];
+  const short = [b(20, 4)];
+  const viaAdapter = aggregateForecastBands([long, short]);
+  check('RAGGED: the adapter spans the LONGEST horizon', viaAdapter.length === 3,
+    String(viaAdapter.length));
+  check('RAGGED: slot 0 combines both leaves',
+    JSON.stringify(viaAdapter[0]) === JSON.stringify(combineBandSlot([long[0], short[0]])));
+  check('RAGGED: slot 1 has only the long leaf - the short one is SKIPPED, not zero',
+    JSON.stringify(viaAdapter[1]) === JSON.stringify(combineBandSlot([long[1], undefined])));
+  check('RAGGED: ...so slot 1 keeps the long leaf mean, not a diluted one',
+    near(viaAdapter[1].mean, 11), String(viaAdapter[1].mean));
+  check('RAGGED: every slot agrees with the core exactly',
+    viaAdapter.every((band, t) =>
+      JSON.stringify(band) === JSON.stringify(combineBandSlot([long[t], short[t]]))));
+}
+
+// ── GUARD 3: the MUST-NOT-DERIVE list stays must-not-derive ──────────────
+//
+// COVERAGE, stated accurately: only TWO of the five sites carry a real
+// prohibition here - summaryMape and the export loop. Those are the two a
+// planted violation makes fail. The other three (forecastStore.size, the
+// challenger seed, the .entries() scans) are EXISTENCE checks: they confirm
+// the sites are still where the design says, and would catch one being
+// deleted or renamed, but they do not detect a resolveForecast call added
+// inside them.
+//
+// Written out because the previous wording implied five prohibitions and a
+// reader would have taken the coverage on trust. A guard that overstates what
+// it checks is the same failure as a summary that overstates what it read.
+// Five call sites must never route through resolveForecast, each for its own
+// reason. They are easy to "fix" later by someone tidying up the last few bare
+// forecastStore reads, so the prohibition is asserted rather than commented.
+//
+//   summaryMape          - averages PER-LEAF MAPEs. Scoring one derived
+//                          aggregate is a different quantity, not a better one.
+//   the export loop      - aggregates are never stored and never exported.
+//   forecastStore.size   - a count of STORED forecasts; deriving changes what
+//                          the number means.
+//   the challenger seed  - a borrow fix, not a derivation site.
+//   the .entries() scans - deriving inside a scan over the store is circular.
+{
+  const appSrc = fs.readFileSync('src/App.tsx', 'utf8');
+  const fvaSrc = fs.readFileSync('src/components/ForecastVsActualsTab.tsx', 'utf8');
+  const lines = (src: string) => src.split(String.fromCharCode(10));
+
+  // summaryMape's body must not call resolveForecast.
+  const fl = lines(fvaSrc);
+  const smStart = fl.findIndex(l => /const summaryMape\s*=/.test(l));
+  check('GUARD 3: summaryMape was found', smStart >= 0, String(smStart));
+  const smBody = fl.slice(smStart, smStart + 90).join(String.fromCharCode(10));
+  check('GUARD 3: summaryMape does NOT resolve - it averages per-leaf MAPEs',
+    !/resolveForecast/.test(smBody));
+
+  // The three .entries() scans must not derive inside themselves.
+  const scans = fl.filter(l => /forecastStore\.entries\(\)/.test(l));
+  check('GUARD 3: all three store scans were found', scans.length === 3, String(scans.length));
+
+  // The export loop and the size read.
+  const al = lines(appSrc);
+  const expIdx = al.findIndex(l => /forecastStore\.forEach/.test(l));
+  check('GUARD 3: the export loop was found', expIdx >= 0);
+  check('GUARD 3: the export loop does NOT derive - aggregates are never exported',
+    !/resolveForecast/.test(al.slice(expIdx, expIdx + 60).join(String.fromCharCode(10))));
+  check('GUARD 3: forecastStore.size is still a count of STORED forecasts',
+    /forecastStore\.size \+ Object\.keys\(savedForecasts\)/.test(appSrc));
+}
+
+// ── GUARD 4: resolveForecast is not cached ───────────────────────────────
+// The decision that made read-time derivation viable was "no cache, therefore
+// no invalidation". A memo or ref around it silently reintroduces the problem
+// write-time was rejected for.
+{
+  const appSrc = fs.readFileSync('src/App.tsx', 'utf8');
+  const i = appSrc.indexOf('const resolveForecast');
+  check('GUARD 4: resolveForecast was found', i >= 0);
+  const body = appSrc.slice(i, i + 2000);
+  check('GUARD 4: resolveForecast holds no cache of its own',
+    !/useRef|new Map<string, BaseForecast>\(\)\s*;?\s*\/\/ cache|resolveCache/.test(body));
+}
+
 // ── PINNED BASELINE: the four ARPU MAPEs stay distinct ────────────────────
 {
   const healthy = [...store.entries()].find(([k]) => groupOf(k) === MIXED)!;
@@ -318,6 +500,61 @@ const mixedAgg = deriveAggregate(mixedLeaves, KEY(MIXED + '|All|All|All|All|All'
   check('PINNED: the four ARPU MAPEs are DISTINCT', new Set(four.map(x => x.toFixed(6))).size === 4);
   check('PINNED: spread is MATERIAL (> 0.5pp), not rounding noise',
     spread > 0.5, `${spread.toFixed(4)}pp`);
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// enclosingFunctions — THE enclosure tracker. One implementation.
+//
+// Answers "which functions contain line N", by tracking a stack of function
+// names against BRACE DEPTH. Every guard that needs enclosure uses this; none
+// rolls its own.
+//
+// That rule exists because four per-guard heuristics were each tried and each
+// watched to fail on this codebase:
+//   file-level exemption  - blind in App.tsx
+//   fixed line window     - a construction 96 lines below its header needs a
+//                           window so wide it swallows neighbours
+//   nearest declaration   - stops at inner value consts, then at inner arrows
+//   backwards name scan   - PASSED a violation planted inside canResolve,
+//                           because canResolve sits ~39 lines after
+//                           resolveForecast and the 40-line window reached it
+//
+// The last of those was GUARD 2's, written AFTER GUARD 1's comment had already
+// recorded the same heuristic as rejected. Proximity cannot express enclosure;
+// a shared tracker is how the lesson stops needing to be relearned per guard.
+// KNOWN LIMITATION: a function whose declaration AND body sit on ONE line is
+// not attributed to itself - the line's owner snapshot is taken before that
+// line's own frame is pushed. The failure direction is FALSE POSITIVE (a
+// legitimate call inside such a function would be flagged), never a missed
+// violation, and no current declaration is single-line. Noted rather than
+// fixed: changing the push order to correct it risks the multi-line handling
+// that three separate probes just established works.
+function enclosingFunctions(src: string): (lineIdx: number) => string[] {
+  // Recognises: function decls, arrow consts, and arrow consts WRAPPED in a
+  // React hook - `const f = useCallback((x) => {`. The hook wrapper was the
+  // first thing this tracker got wrong once shared: resolveForecast is a
+  // useCallback, so its own body read as top-level and the guard flagged the
+  // one legitimate call site.
+  // A hook-wrapped const is matched WITHOUT requiring the arrow on the same
+  // line: resolveForecast's signature spans four lines, so the `=>` is three
+  // lines below the declaration and a line-based arrow pattern cannot see it.
+  // Opening the paren is enough to mark the function start; the brace-depth
+  // `opened` flag handles the multi-line signature from there.
+  const FN_DECL = /(?:export\s+)?(?:default\s+)?function\s+(\w+)|(?:const|let)\s+(\w+)\s*(?::[^=]*?)?=\s*(?:React\.)?(?:useCallback|useMemo)\s*\(|(?:const|let)\s+(\w+)\s*(?::[^=]*?)?=\s*(?:async\s*)?\([^)]*\)\s*(?::[^=]*?)?=>/;
+  const lines = src.split(String.fromCharCode(10));
+  const owners: string[][] = [];
+  const stack: Array<{ name: string; depth: number; opened: boolean }> = [];
+  let depth = 0;
+  lines.forEach(line => {
+    owners.push(stack.map(f => f.name));
+    const d = FN_DECL.exec(line);
+    if (d) stack.push({ name: d[1] || d[2] || d[3], depth, opened: false });
+    depth += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
+    for (const fr of stack) if (depth > fr.depth) fr.opened = true;
+    while (stack.length && stack[stack.length - 1].opened
+           && depth <= stack[stack.length - 1].depth) stack.pop();
+  });
+  return (lineIdx: number) => owners[lineIdx] ?? [];
 }
 
 // ── GUARD 1: deriveAggregate is the ONLY producer of derived provenance ───
@@ -346,39 +583,43 @@ const srcFiles: string[] = [];
   // by brace depth, so the owner of a line is the function that actually
   // contains it. Every rule above is a guess about layout; this is the
   // structure itself.
-  const FN_DECL = /(?:export\s+)?(?:default\s+)?function\s+(\w+)|(?:const|let)\s+(\w+)\s*(?::[^=]*?)?=\s*(?:async\s*)?\([^)]*\)\s*(?::[^=]*?)?=>/;
   const ALLOWED = new Set(['deriveAggregate', 'readProvenance']);
   const offenders: string[] = [];
   for (const f of srcFiles) {
-    const lines = fs.readFileSync(f, 'utf8').split(String.fromCharCode(10));
-    const stack: Array<{ name: string; depth: number; opened: boolean }> = [];
-    let depth = 0;
-    lines.forEach((line, i) => {
-      const d = FN_DECL.exec(line);
-      const opens = (line.match(/\{/g) || []).length;
-      const closes = (line.match(/\}/g) || []).length;
-      if (/kind:\s*'derived',/.test(line)) {
-        if (!stack.some(fr => ALLOWED.has(fr.name))) {
-          offenders.push(f + ':' + (i + 1) + ' in ' + (stack.length ? stack[stack.length - 1].name : '<top level>'));
-        }
-      }
-      if (d) stack.push({ name: d[1] || d[2], depth, opened: false });
-      depth += opens - closes;
-      for (const fr of stack) if (depth > fr.depth) fr.opened = true;
-      while (stack.length && stack[stack.length - 1].opened
-             && depth <= stack[stack.length - 1].depth) stack.pop();
+    const src = fs.readFileSync(f, 'utf8');
+    const owners = enclosingFunctions(src);
+    src.split(String.fromCharCode(10)).forEach((line, i2) => {
+      if (!/kind:\s*'derived',/.test(line)) return;
+      if (owners(i2).some(n => ALLOWED.has(n))) return;
+      offenders.push(f + ':' + (i2 + 1) + ' in ' + (owners(i2).slice(-1)[0] ?? '<top level>'));
     });
   }
   check('GUARD 1: deriveAggregate is the only producer of a derived provenance',
     offenders.length === 0, offenders.join(', '));
 }
 
-// ── GUARD 2: nothing calls deriveAggregate yet (Session A control) ────────
+// ── GUARD 2 (Session B): deriveAggregate is called ONLY from the seam ────
+// Session A's control was 'nothing calls it'. Session B wires it, so the
+// control becomes narrower and more useful: exactly one caller, and it is
+// resolveForecast. A second caller would be a second seam, which is the
+// parallel-implementation shape - and the reason every reader was routed
+// through one function rather than each deriving for itself.
 {
-  const callers = srcFiles.filter(f =>
-    /deriveAggregate\s*\(/.test(fs.readFileSync(f, 'utf8')) &&
-    !/export function deriveAggregate/.test(fs.readFileSync(f, 'utf8')));
-  check('GUARD 2: NOTHING calls deriveAggregate — the Session A control',
+  // Uses the SHARED tracker. Its own 40-line backward window passed a call
+  // planted inside canResolve, which sits ~39 lines after resolveForecast -
+  // the exact heuristic GUARD 1's history had already rejected.
+  const callers: string[] = [];
+  for (const f of srcFiles) {
+    const src = fs.readFileSync(f, 'utf8');
+    const owners = enclosingFunctions(src);
+    src.split(String.fromCharCode(10)).forEach((line, i2) => {
+      if (!/deriveAggregate\s*\(/.test(line)) return;
+      if (/export function deriveAggregate/.test(line)) return;
+      if (owners(i2).includes('resolveForecast')) return;
+      callers.push(f + ':' + (i2 + 1) + ' in ' + (owners(i2).slice(-1)[0] ?? '<top level>'));
+    });
+  }
+  check('GUARD 2: deriveAggregate is called ONLY from resolveForecast',
     callers.length === 0, callers.join(', '));
 }
 
