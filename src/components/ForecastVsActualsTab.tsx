@@ -4247,6 +4247,10 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                       <option value="Holt Linear">Holt Linear</option>
                       <option value="Damped Trend">Damped Trend</option>
                       <option value="Holt-Winters">Holt-Winters</option>
+                      {/* The bucket was wired in state and predicate but had no option,
+                          so it was unreachable - a capability the commit message claimed
+                          and the UI did not offer. */}
+                      <option value="__derived__">{t('actuals_aggregates_no_model')}</option>
                     </select>
                   </div>
 
@@ -4297,9 +4301,16 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                               >
                                 <Info size={10} className="shrink-0" />{t('actuals_best_model_applied_still_outside_threshold')}{' '}<span className="absolute bottom-full left-0 mb-1.5 hidden group-hover:block w-72 bg-white border border-slate-200 rounded-xl shadow-lg text-xs text-slate-600 p-2.5 z-50 pointer-events-none font-normal normal-case">{t('actuals_the_most_appropriate_model_has_been_selected')}</span>
                               </span>
+                            ) : g.derivedMix ? (
+                              /* A derived row shows WHAT IT IS, never a "best model"
+                                 recommendation. This line was gated only on isAccepted,
+                                 which a derived row can never be - so every derived row
+                                 permanently recommended a model it can never adopt. */
+                              <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+                                {t('actuals_aggregate_of_leaves')}
+                              </p>
                             ) : (
                               <p className="text-[10px] text-indigo-600 font-medium mt-0.5">
-                                
                                 {t('actuals_best')}{g.bestModel.name}
                               </p>
                             )}
@@ -4470,10 +4481,16 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                     <p className={`text-xs leading-relaxed ${bannerAmber ? 'text-amber-700' : 'text-slate-500'}`}>
                                       {bannerAmber
                                         ? <>{t('actuals_model_applied_from')}{modelSwitchPoint?.month ?? 'this period'}{t('actuals_error_still_above_threshold')}</>
-                                        : alreadyBest
+                                        : selectedChallengerGroup.derivedMix
+                                          /* REPLACES the copy, does not sit beside it.
+                                             The default text says "Run Forecast to
+                                             compare" next to a panel where that button is
+                                             deliberately withheld - telling the user to
+                                             press something that is not there. */
+                                          ? t('actuals_models_live_on_leaf_cohorts')
+                                          : alreadyBest
                                           ? t('actuals_your_chosen_model_is_already_the_best_perform')
                                           : <>
-                                              
                                               {t('actuals_the_chart_below_shows_estimated_trajectories')}{' '}
                                               <strong>{t('actuals_run_forecast')}</strong> {t('actuals_to_compute_the_real')}{' '}
                                               {selectedChallengerGroup.bestModel.name} {t('actuals_output_for_this_cohort_and_compare_it_directl')}
@@ -4481,15 +4498,12 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                       }
                                     </p>
                                   </div>
-                                  {/* A DERIVED aggregate gets no run buttons, and is told
-                                      why. Fitting a challenger to aggregate data is
+                                  {/* A DERIVED aggregate gets no run buttons. The reason
+                                      is in the banner above, which REPLACES the
+                                      run-this-forecast copy rather than sitting next to
+                                      it. Fitting a challenger to aggregate data is
                                       fit-on-aggregate, and ACCEPTING one would write a
                                       fitted aggregate into the store - undoing bottom-up. */}
-                                  {selectedChallengerGroup.derivedMix && (
-                                    <p className="text-xs text-slate-500 italic shrink-0 max-w-xs">
-                                      {t('actuals_models_live_on_leaf_cohorts')}
-                                    </p>
-                                  )}
                                   {/* Run buttons — one per challenger model */}
                                   {!selectedChallengerGroup.derivedMix && !alreadyAccepted && !alreadyBest && (
                                     <div className="flex flex-col gap-1.5 shrink-0">

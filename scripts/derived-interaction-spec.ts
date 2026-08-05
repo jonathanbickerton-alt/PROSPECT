@@ -309,9 +309,32 @@ const runAdj = (bf: BaseForecast, events: MarketEvent[]) => computeAdjustedForec
                                    fva.indexOf('const filteredChallengerGroups'));
   check('B3 SOURCE GUARD: challengerGroups was found', challengerBody.length > 200,
     String(challengerBody.length));
+  // Pinning ONE spelling (`if (!chosenModel) return null`) guards the sentence,
+  // not the defect: `chosenModel === ''`, `if (derivedMix)`, a braced body, or a
+  // test on provenanceModel() directly all reinstate it and all read as green.
+  // So the rule is structural - NO early return null in this closure may be
+  // predicated on the absence of a model, however that absence is spelled.
+  const ABSENCE = /chosenModel|derivedMix|provenanceModel|incumbentSrc/;
+  const droppers: string[] = [];
+  for (const m of challengerBody.matchAll(/return\s+null/g)) {
+    // The nearest `if (` opening before this return, within one statement's reach.
+    const before = challengerBody.slice(Math.max(0, m.index! - 200), m.index!);
+    const lastIf = before.lastIndexOf('if (');
+    if (lastIf === -1) continue;
+    const cond = before.slice(lastIf);
+    // Only a guard whose body IS this return - no intervening statement.
+    if (/;\s*\S[\s\S]*$/.test(cond.replace(/^if \([\s\S]*?\)\s*\{?\s*/, ''))) continue;
+    if (ABSENCE.test(cond)) droppers.push(cond.trim().replace(/\s+/g, ' ').slice(0, 90));
+  }
   check('B3 SOURCE GUARD: no row is dropped for having no incumbent model',
-    !/if\s*\(!chosenModel\)\s*return null/.test(challengerBody),
-    'the if (!chosenModel) return null guard is back');
+    droppers.length === 0,
+    'a row is dropped on model-absence: ' + droppers.join(' | '));
+  // The mix must be CARRIED, not merely not-dropped: a row that survives with
+  // derivedMix hardcoded null passes the check above and still shows a model
+  // name it does not have.
+  check('B3 SOURCE GUARD: the derived mix is built from provenance, not stubbed',
+    /derivedMix\s*=\s*[\s\S]{0,80}kind === 'derived'/.test(challengerBody),
+    'derivedMix is not derived from the provenance discriminant');
 
   check('B3 SOURCE: the suppression reason is on screen, keyed',
     /actuals_models_live_on_leaf_cohorts/.test(fva));
