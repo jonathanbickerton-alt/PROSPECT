@@ -23,7 +23,8 @@
     "spec:provenance": "tsx scripts/provenance-spec.ts",
     "spec:derive": "tsx scripts/derive-aggregate-spec.ts",
     "spec:interaction": "tsx scripts/derived-interaction-spec.ts",
-    "guard-traps": "tsx scripts/guard-traps.ts"
+    "guard-traps": "tsx scripts/guard-traps.ts",
+    "spec:nullrender": "tsx scripts/null-render-spec.tsx"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

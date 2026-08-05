@@ -2369,6 +2369,142 @@ on that fixture ARPU can only come from revenue/volume. I did not isolate which
 quantity 11.5 is - that needs the manual generation path driven headlessly, and
 I did not do it.
 
+## A5 blanked the app — NOT REPRODUCED, and the premise is fixture-dependent
+
+**2026-08-05. Investigated, not fixed. Do not merge on this entry.**
+
+Jon's A5 selection blanked the app. Treated as introduced-by-branch as
+instructed. What was established:
+
+**The null contract holds, and the null SURFACE now has a spec.** A new
+`npm run spec:nullrender` mounts the real Step 2 components — `WhatIfTab` AND
+`ViewFilterBar`, the sibling that renders from the same filter change — under a
+null resolution, with the real edge-fixture rows. Result: the designed empty
+state (`WhatIfTab.tsx:2284`) renders, nothing throws. 8 cases, all passing.
+
+That spec is the surface-not-store rule applied to specs themselves.
+`deriveAggregate` returning null was proven at the store and re-proven at every
+gate; that the SCREEN survives being handed that null had never been tested
+once. It is now.
+
+**A harness artefact was nearly reported as the defect.** The first run threw
+`Cannot read properties of undefined (reading 'segment')` at
+`WhatIfTab.tsx:1295` — which is a dependency array reading `newYieldEvent`, a
+required PROP the harness had not supplied. A missing prop throws in a place
+that looks exactly like an app bug. **Every required prop must be supplied
+before a mount proves anything**, and the first version also passed `data: []`,
+which makes most paths trivially safe and would have certified a screen nobody
+has.
+
+### The premise depends on which file is loaded, and Jon's was not confirmed
+
+Measured on both candidate fixtures for
+`Large Enterprise|Fixed Connectivity|All|All|All|All|All`:
+
+| fixture | leaves enumerated | fitted | resolves to |
+|---|---|---|---|
+| `EdgeCases_ShortHistory` | 1 | 0 | **null**, `insufficient-history` |
+| `ProductL2_Full_Jun2026` | 27 | 27 | **DERIVED**, 12 months |
+
+Jon's Part B screenshots prove `ProductL2_Full` was loaded at least for that
+part. **On that fixture the A5 filter is not a null case at all** — it is a
+derived aggregate, the object whose `ArpuBand` bounds are deliberately absent,
+which is the shape a band-reading chart is most likely to trip over.
+
+So the derived case was specced too: mounted with a real 27-leaf derived
+aggregate off `ProductL2_Full`, and confirmed absent ARPU bounds. It also
+renders without throwing.
+
+### Status: not reproduced
+
+Neither the null case nor the derived case blanks the Step 2 surface under the
+harness. **No fix has been made, because there is nothing yet shown to fix, and
+inventing one would be a change with no failing case behind it.** Jon's console
+stack is the fastest path from here.
+
+**Declared limitation.** In the derived case Recharts logged
+`width(-1) and height(-1)`, so the chart bailed before painting. "No throw" is
+therefore weaker evidence for the CHART path than for the rest of the screen —
+band-drawing code may not have executed. `scripts/regression-traps.tsx` solves
+exactly this with a sized `ResizeObserver`; the same treatment is wanted here
+before the chart path can be called clear.
+
+---
+
+## The Market Events chart draws no confidence bands at all
+
+**A4, answered 2026-08-05. The third surface-not-store violation.**
+
+Direct measurement: `src/components/WhatIfTab.tsx` contains **zero** matches for
+`<Area`, `Optimistic`, `Pessimistic` or `stackId`. Step 2 renders **no
+confidence band for any series** — not ARPU, not volume. Jon's screenshots
+showing no cone were showing correct behaviour.
+
+**So the A4 check was pointed at a coneless surface.** Asking for the presence
+and absence of an ARPU cone on Step 2 could only ever produce "absent" twice.
+
+### Where ARPU bands ARE user-visible
+
+| surface | bands | follows the view filter? |
+|---|---|---|
+| Step 1 `StandardForecastTab` | yes (`arpuChartData`, Optimistic/Pessimistic) | **no** — renders `forecastData`, written only by manual generation |
+| Step 2 `WhatIfTab` | **none at all** | n/a |
+| Step 3 `ForecastVsActualsTab` | yes | yes — but requires ACTUALS |
+
+Step 1 has the cone but is not a per-filter viewer (recorded above under the
+Step 1 finding), so the aggregate-versus-leaf contrast cannot be driven there.
+Step 3 follows the filter and has the bands, but needs actuals — and the edge
+fixture has no companion actuals file.
+
+**Therefore the edge fixture cannot exercise the A4 contrast on any surface.**
+A4 moves to the headless spec it already has — `deriveAggregate` returning
+absent ARPU bounds on a derived aggregate, pinned in the derive spec — plus a
+future walk item **gated on the backlogged edge-fixture actuals companion**.
+It is not a walk check today.
+
+---
+
+## Every walk now ends step zero with a screenshot handshake
+
+**Protocol change, 2026-08-05, after fixture identity invalidated a walk for
+the second consecutive time.**
+
+The four-part step zero (reload, named file, row count, mapping assertion) was
+in place and Part B still ran on the wrong file. Reading an anchor is not the
+same as confirming it.
+
+**Step zero now ENDS with the walker pasting screenshots of the row-count
+screen and the mapping step, and waiting for confirmation, before any check
+runs.** No check is graded without that handshake.
+
+### What distinguishes the two fixtures on screen
+
+They are identical on rows (90,720), months (42) and cohorts (540). The only
+on-screen difference is tariff:
+
+- `TariffHierarchy…` — the mapping step's **Tariff L1** and **Tariff L2**
+  selectors resolve to the columns `tariff_tier_l1` and `tariff_tier_l2`, and
+  the challenger tab's dimension toggles for Tariff L1/L2 are **enabled**.
+- `ProductL2_Full…` — those columns **do not exist in the file**, so the
+  selectors have nothing to resolve and the challenger toggles render disabled
+  with the grey label **"(not mapped)"** (`CohortDimCheckboxes.tsx`, key
+  `cohortdims_not_mapped`).
+
+"(not mapped)" beside Tariff is therefore a positive identification of
+`ProductL2_Full`, not a bug.
+
+### And this is the DQ line justifying itself
+
+The app gives a user **no persistent indication of which file is loaded**. Once
+past the import screen there is nothing on screen naming the file, so two
+fixtures that differ only in one dimension are indistinguishable during a
+session — which is exactly how this recurred.
+
+That is the "How your data was read" line's case, made twice by accident rather
+than argument: it is not only about data quality, it is about knowing which
+data you are looking at. Recorded against the DQ import phase alongside items
+A–F.
+
 ## WORKING PRACTICE: data issues are told to the user, not handled silently
 
 **Standing principle, set by the user 2026-08-04.**
