@@ -1633,7 +1633,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   // Challenger list filter state — independent of the dimension selectors above.
   const [challengerSearch,      setChallengerSearch]      = useState('');
   const [challengerStatus,      setChallengerStatus]      = useState<'all' | 'action_required' | 'best_applied'>('all');
-  const [challengerModelFilter, setChallengerModelFilter] = useState<'All' | ForecastModel>('All');
+  // '__derived__' is its OWN bucket, not a model. A derived aggregate has no
+  // incumbent, so it cannot be a member of any model's set - filtering by
+  // 'Holt Linear' must not return it, and neither must filtering by anything
+  // else except this.
+  const [challengerModelFilter, setChallengerModelFilter] = useState<'All' | '__derived__' | ForecastModel>('All');
   // When true, shows all cohorts regardless of score threshold (user override).
   const [challengerShowAll, setChallengerShowAll] = useState(false);
   // Real challenger forecasts keyed by cohortKey. Set when user clicks "Run Forecast".
@@ -3072,9 +3076,40 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   // ---------------------------------------------------------------------------
   // 7. Challenger model evaluation (cohorts with MAPE > 5%)
   // ---------------------------------------------------------------------------
+  /**
+   * What to show where an incumbent model name would go.
+   *
+   * A derived aggregate has no incumbent, so it shows what it IS: how many
+   * leaves, fitted with which models. That is the honest answer to "what model
+   * is this cohort using" - several, on cohorts one level down.
+   */
+  const incumbentLabel = (g: { chosenModel: string; derivedMix: { leafCount: number; models: Record<string, number | undefined> } | null }): string => {
+    if (!g.derivedMix) return g.chosenModel;
+    const parts = Object.entries(g.derivedMix.models)
+      .filter(([, n]) => (n ?? 0) > 0)
+      .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
+      .map(([m, n]) => `${m} x${n}`);
+    return parts.length
+      ? `${g.derivedMix.leafCount} leaves — ${parts.join(', ')}`
+      : `${g.derivedMix.leafCount} leaves`;
+  };
+
   type ChallengerGroup = {
     key: string; seg: string; prod: string; avgMape: number;
+    /** The incumbent model, or '' for a DERIVED aggregate, which has none. */
     chosenModel: string;
+    /**
+     * Set when this row is a derived aggregate. Its presence means: the
+     * accuracy score is real and worth showing, but the model COMPARISON is
+     * not, because there is no incumbent model to beat.
+     *
+     * Fitting a challenger to aggregate data is fit-on-aggregate - dead under
+     * the settled bottom-up decision - and ACCEPTING such a challenger would
+     * write a fitted aggregate into the store, undoing the derivation this
+     * phase exists to establish. So the comparison is suppressed at the source,
+     * not merely hidden.
+     */
+    derivedMix: { leafCount: number; models: Partial<Record<import('../types/forecast').ForecastModel, number>> } | null;
     /** Exact cohort dimensions — used by runChallengerForecast to filter data */
     cohort: import('../types/forecast').CohortKey;
     models: { name: string; error: number; color: string; strokeDasharray: string }[];
@@ -3125,8 +3160,14 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
         // here would be the borrow-an-unrelated-cohort pattern in a third
         // place - see EXPECTED.md, "PATTERN: borrow an unrelated cohort's
         // number rather than decline".
-        const chosenModel = provenanceModel((cohortFcExact ?? baseForecast).provenance);
-        if (!chosenModel) return null;
+        // The row STAYS. Its accuracy score is a real measurement of a real
+        // forecast; only the model comparison is meaningless for an aggregate.
+        // Dropping the row threw away the measurement to avoid the comparison.
+        const incumbentSrc = (cohortFcExact ?? baseForecast).provenance;
+        const chosenModel = provenanceModel(incumbentSrc) ?? '';
+        const derivedMix = incumbentSrc.kind === 'derived'
+          ? { leafCount: incumbentSrc.leafCount, models: incumbentSrc.models }
+          : null;
 
         // Issue 9: when no exact forecast exists, scale baseForecast to cohort scale
         // using the cohort's average inflow share over matched actuals months.
@@ -3193,7 +3234,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           channelL2: challengerDims.channelL2 ? c.chanL2 : 'All',
           scenario: baseForecast.cohort.scenario,
         };
-        return { key: c.cohortKey, seg: c.seg, prod: c.prod, avgMape: c.avgMape ?? 0, chosenModel, cohort, models, bestModel: models[0], chartData: cData };
+        return { key: c.cohortKey, seg: c.seg, prod: c.prod, avgMape: c.avgMape ?? 0, chosenModel, derivedMix, cohort, models, bestModel: models[0], chartData: cData };
       })
       .filter(Boolean) as ChallengerGroup[];
   }, [baseForecast, challengerCohortAccuracy, challengerDims, forecastStore, challengerShowAll]);
@@ -3214,7 +3255,10 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       if (challengerStatus === 'action_required'  &&  acceptedCohortKeys.has(g.key)) return false;
       if (challengerStatus === 'best_applied'      && !acceptedCohortKeys.has(g.key)) return false;
       // Model filter — match against the cohort's currently chosen model
-      if (challengerModelFilter !== 'All' && g.chosenModel !== challengerModelFilter) return false;
+      // A derived row belongs to NO model, so it is never a member of a
+      // model's bucket - it has its own.
+      if (challengerModelFilter === '__derived__') return !!g.derivedMix;
+      if (challengerModelFilter !== 'All' && (g.derivedMix || g.chosenModel !== challengerModelFilter)) return false;
       return true;
     });
   }, [challengerGroups, challengerSearch, challengerStatus, challengerModelFilter, acceptedCohortKeys]);
@@ -3239,7 +3283,10 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
 
   // Challenger groups eligible for bulk acceptance: not yet accepted and best model ≠ chosen model.
   const acceptAllCandidates = useMemo(
-    () => challengerGroups.filter(g => !acceptedCohortKeys.has(g.key) && g.bestModel.name !== g.chosenModel),
+    // Derived rows are NEVER acceptance candidates. Accepting a challenger
+    // writes a fitted forecast to the store - for an aggregate that is
+    // fit-on-aggregate, the defect bottom-up replaced.
+    () => challengerGroups.filter(g => !acceptedCohortKeys.has(g.key) && !g.derivedMix && g.bestModel.name !== g.chosenModel),
     [challengerGroups, acceptedCohortKeys],
   );
 
@@ -4308,7 +4355,12 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                         let currentErr = 0, challengerErr = 0, totalAct = 0;
                         selectedChallengerGroup.chartData.forEach((pt, i) => {
                           if (pt.Actual === undefined) return;
-                          const curFc = pt[selectedChallengerGroup.chosenModel as keyof typeof pt] as number | undefined;
+                          // NEVER index with '' - a derived row has no incumbent
+                          // series, so there is no current-vs-challenger error to
+                          // compute and the comparison below is suppressed anyway.
+                          const curFc = selectedChallengerGroup.chosenModel
+                            ? (pt[selectedChallengerGroup.chosenModel as keyof typeof pt] as number | undefined)
+                            : undefined;
                           const chalFc = preview.months[i]?.inflow.mean;
                           if (curFc) { currentErr += Math.abs(pt.Actual - curFc); totalAct += pt.Actual; }
                           if (chalFc !== undefined) challengerErr += Math.abs(pt.Actual - chalFc);
@@ -4333,7 +4385,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                   </div>
                                   <p className={`text-xs leading-relaxed ${challengerBetter ? 'text-emerald-700' : 'text-amber-700'}`}>
                                     
-                                    {t('actuals_current')}{selectedChallengerGroup.chosenModel}{t('actuals_mape')}{' '}
+                                    {t('actuals_current')}{incumbentLabel(selectedChallengerGroup)}{t('actuals_mape')}{' '}
                                     <strong className="text-rose-600">{currentPct.toFixed(1)}%</strong>
                                     {' · '}
                                     {provenanceModel(preview.provenance) ?? ''} {t('actuals_mape')}{' '}
@@ -4366,7 +4418,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                 <span className="inline-block w-3 h-3 rounded-full bg-slate-800" />{t('actuals_actual')}</span>
                               <span className="flex items-center gap-1.5">
                                 <span className="inline-block w-3 h-3 rounded-full bg-slate-400" />
-                                {selectedChallengerGroup.chosenModel} (current)
+                                {incumbentLabel(selectedChallengerGroup)} (current)
                               </span>
                               <span className="flex items-center gap-1.5">
                                 <span className="inline-block w-3 h-3 rounded-full bg-indigo-500" />
@@ -4386,7 +4438,9 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                     formatter={(v: any, n: string) => [v != null ? formatNumber(v) : '—', n]}
                                   />
                                   <Line type="monotone" dataKey="Actual" stroke="#0f172a" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls={false} />
-                                  <Line type="monotone" dataKey={selectedChallengerGroup.chosenModel} stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
+                                  {selectedChallengerGroup.chosenModel && (
+                                    <Line type="monotone" dataKey={selectedChallengerGroup.chosenModel} stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
+                                  )}
                                   <Line type="monotone" dataKey="Challenger (Real)" stroke="#6366f1" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
                                   <Brush dataKey="month" height={24} stroke="#e2e8f0" tickFormatter={() => ''} />
                                 </ComposedChart>
@@ -4427,8 +4481,17 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                       }
                                     </p>
                                   </div>
+                                  {/* A DERIVED aggregate gets no run buttons, and is told
+                                      why. Fitting a challenger to aggregate data is
+                                      fit-on-aggregate, and ACCEPTING one would write a
+                                      fitted aggregate into the store - undoing bottom-up. */}
+                                  {selectedChallengerGroup.derivedMix && (
+                                    <p className="text-xs text-slate-500 italic shrink-0 max-w-xs">
+                                      {t('actuals_models_live_on_leaf_cohorts')}
+                                    </p>
+                                  )}
                                   {/* Run buttons — one per challenger model */}
-                                  {!alreadyAccepted && !alreadyBest && (
+                                  {!selectedChallengerGroup.derivedMix && !alreadyAccepted && !alreadyBest && (
                                     <div className="flex flex-col gap-1.5 shrink-0">
                                       {selectedChallengerGroup.models
                                         .filter(m => m.name !== selectedChallengerGroup.chosenModel)
@@ -4598,9 +4661,14 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                       <p className="font-semibold text-slate-800">{modalDimParts.join(' · ')}</p>
                     </div>
                     <div className="flex items-center gap-2 text-slate-500 shrink-0">
-                      <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium">{g.chosenModel}</span>
-                      <ArrowRight size={12} className="text-slate-400" />
-                      <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-semibold">{g.bestModel.name}</span>
+                      <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium">{incumbentLabel(g)}</span>
+                      {/* No arrow, no challenger, for a derived aggregate: there is
+                          no incumbent to replace, and accepting one would write a
+                          FITTED aggregate to the store. */}
+                      {!g.derivedMix && (<>
+                        <ArrowRight size={12} className="text-slate-400" />
+                        <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-semibold">{g.bestModel.name}</span>
+                      </>)}
                     </div>
                   </div>
                   );

@@ -1057,6 +1057,66 @@ the reason for `applyEventsToMonth`, `cohortScope`, `resolvedEventVolume` and
 `eventProRataShare`. Hand-generated aggregates get regenerated under derivation
 and their values will move; that is expected, not a question to resolve.
 
+### RESOLVED — and the four options I offered all failed on the premise
+
+I asked which model to show as the incumbent for a derived aggregate. **The
+question was wrong.**
+
+A challenger is only meaningful if it can be ACCEPTED. Accepting one writes a
+fitted forecast into the store - and for an aggregate that is
+**fit-on-aggregate**, the defect bottom-up replaced and the thing this entire
+phase exists to remove. So the comparison is dead at the root, not merely
+awkward to label. Every option I listed argued about the label.
+
+**What is still real is the accuracy SCORE.** It measures a real forecast
+against real actuals and does not depend on any model being nameable. Dropping
+the row threw the measurement away to avoid the comparison.
+
+#### Implemented
+
+- Derived rows **remain**, with their real accuracy scores.
+- Where the incumbent model name sat: **the mix** - leaf count plus model
+  histogram, from `provenance`. The honest answer to "what model is this
+  cohort using" is *several, on cohorts one level down*.
+- The better-model comparison is **suppressed at source** for derived rows,
+  with the reason on screen: models live on individual leaf cohorts.
+- Derived rows are **never acceptance candidates** - that is the line that
+  keeps a fitted aggregate out of the store.
+- The chart series key is **never empty into `pt[chosenModel]`**; the
+  incumbent trajectory line is simply not drawn.
+- The model filter treats derived as **its own bucket**, never a member of
+  any model's set.
+
+#### The spec, and the trap it fell into first
+
+The row-survival cases replicate the survival rule rather than driving the
+component's. Reinstating `if (!chosenModel) return null` left **all of them
+passing** - measure-don't-reimplement, inside the spec written to close that
+exact defect. A source-level guard now asserts the drop is absent, and it is
+the assertion that kills the mutation.
+
+Three mutations shown killing: reinstating the row-drop, letting derived rows
+become acceptance candidates, and removing the on-screen reason.
+
+### BACKLOG: the leaf-grain challenger view — the feature's correct future
+
+Sequenced **behind Alessandro's card work**. Design pass required.
+
+Today the challenger operates at whatever grain the dimension toggles produce,
+which is always an aggregate - so after this fix it shows scores and mixes and
+never a comparison. That is honest but it is not the feature.
+
+**The correct shape:** run incumbent, comparison and acceptance **per leaf**,
+over the aggregate-to-leaf map the seam already builds, and **roll the results
+up for display**. A leaf has one fitted model, so all three operations are
+well-defined there; the aggregate row becomes a summary of its leaves'
+outcomes rather than a thing with a model of its own.
+
+**Consistent with instance 2's Session C fix** - `runChallengerForecast`
+declining to run when the cohort has no forecast of its own, rather than
+seeding from a stranger. Both say the same thing: a challenger belongs where a
+fit belongs.
+
 ### DEFECT introduced by B2: the AutoML Challenger tab is empty at EVERY grouping
 
 Found by Jon in the browser (check B3, "Review All Cohorts Anyway" appeared

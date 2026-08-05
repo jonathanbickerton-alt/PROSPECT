@@ -20,6 +20,7 @@ import { deriveAggregate, buildCohortDataMap, makeForecastKey } from '../src/uti
 import { runForecastJob } from '../src/workers/forecasting.worker';
 import { computeAdjustedForecast } from '../src/components/WhatIfTab';
 import type { BaseForecast, CohortKey } from '../src/types/forecast';
+import { provenanceModel } from '../src/types/forecast';
 import type { MarketEvent } from '../src/utils/forecasting';
 
 let pass = 0; const fails: string[] = [];
@@ -211,6 +212,109 @@ const runAdj = (bf: BaseForecast, events: MarketEvent[]) => computeAdjustedForec
     /const cohortFcKey = makeForecastKey\(/.test(fva));
   check('INSTANCE 3: ...and resolves rather than reading the store directly',
     /cohortFcExact = resolveForecast\(cohortFcKey\)/.test(fva));
+}
+
+// ── B3: the challenger list is NOT empty at any grouping ─────────────────
+// This inverts the reproduction that found the defect. B2a dropped every row
+// whose incumbent model was null, and since every key the challenger builds is
+// an aggregate, that was every row at every grouping - the feature vanished
+// while its button still looked live.
+//
+// The premise was wrong, not just the handling: fitting a challenger to
+// aggregate data is fit-on-aggregate, and ACCEPTING one would write a fitted
+// aggregate into the store, undoing bottom-up. So derived rows stay with their
+// real accuracy scores and the COMPARISON is suppressed - not the row.
+{
+  const covers = (agg: string, leaf: string) => {
+    const a2 = agg.split('|'), l = leaf.split('|');
+    return a2.every((p, i) => p === 'All' || p === l[i]);
+  };
+  const resolveKey = (key: string) => {
+    const hit = store.get(key);
+    if (hit) return hit;
+    const lv = [...store.entries()].filter(([k]) => k !== key && covers(key, k)).map(([, v]) => v);
+    if (!lv.length) return null;
+    const [sg, pr, p2, ch, c2, t1, t2] = key.split('|');
+    return deriveAggregate(lv, { segment: sg, product: pr, productL2: p2, channel: ch, channelL2: c2, tariffL1: t1, tariffL2: t2, scenario: 'Base Case' } as any);
+  };
+  // The row-survival rule as the component applies it: a row survives when it
+  // resolves to SOMETHING. Model presence decides the comparison, not the row.
+  const rowSurvives = (key: string) => resolveKey(key) !== null;
+
+  const segments = [...new Set(enumerated.map(k => k.split('|')[0]))].sort();
+
+  // Default grouping: segment only.
+  const defaultKeys = segments.map(sg => makeForecastKey(sg, 'All', 'All', 'All', 'All', 'All', 'All'));
+  const defaultKept = defaultKeys.filter(rowSurvives).length;
+  check('B3: rows survive at the DEFAULT grouping',
+    defaultKept === defaultKeys.length && defaultKept > 0,
+    `${defaultKept}/${defaultKeys.length}`);
+
+  // Product + channel grouping.
+  const pcKeys = [...new Set(enumerated.map(k => {
+    const p = k.split('|'); return makeForecastKey(p[0], p[1], 'All', p[3], 'All', 'All', 'All');
+  }))];
+  const pcMissing = pcKeys.filter(k => !rowSurvives(k));
+  const pcKept = pcKeys.length - pcMissing.length;
+  check('B3: rows survive at the product+channel grouping too', pcKept > 0,
+    `${pcKept}/${pcKeys.length}`);
+  // The ONE key that legitimately has no row is the all-short aggregate:
+  // every leaf under it failed to fit, so there is nothing to derive and
+  // nothing to score. A row there would be the zero-forecast the spec
+  // forbids. Named rather than tolerated - if the missing set ever grows,
+  // this fails.
+  check('B3: ...and the ONLY key with no row is the all-short aggregate',
+    pcMissing.length === 1 && pcMissing[0].startsWith('Large Enterprise|Fixed Connectivity'),
+    pcMissing.join(', '));
+
+  // THE REGRESSION CASE: the old rule dropped every row at every grouping.
+  const oldRuleKept = defaultKeys.filter(k => {
+    const fc = resolveKey(k);
+    return fc !== null && provenanceModel(fc.provenance) !== null;
+  }).length;
+  check('B3 REGRESSION CASE: the OLD model-presence rule would drop every row',
+    oldRuleKept === 0, `${oldRuleKept} would have survived`);
+
+  // Derived rows carry the mix and NO comparison.
+  const aggFc = resolveKey(defaultKeys[0])!;
+  check('B3: a default-grouping row IS derived', aggFc.provenance.kind === 'derived');
+  check('B3: ...so it has no incumbent model', provenanceModel(aggFc.provenance) === null);
+  check('B3: ...and carries a leaf count for the mix label',
+    (aggFc.provenance as any).leafCount > 0, String((aggFc.provenance as any).leafCount));
+  check('B3: ...and a model histogram, not a single model',
+    Object.keys((aggFc.provenance as any).models).length > 0);
+
+  // CONTROL: a fitted leaf keeps its incumbent, so its comparison still runs.
+  const leafKey = [...store.keys()][0];
+  const leafFc = resolveKey(leafKey)!;
+  check('B3 CONTROL: a fitted leaf row survives too', leafFc !== null);
+  check('B3 CONTROL: ...and KEEPS its incumbent model, so the comparison runs',
+    provenanceModel(leafFc.provenance) !== null, String(provenanceModel(leafFc.provenance)));
+
+  // Source: derived rows are never acceptance candidates, and never index the
+  // trajectory map with an empty key.
+  const fva = fs.readFileSync('src/components/ForecastVsActualsTab.tsx', 'utf8');
+  check('B3 SOURCE: derived rows are excluded from acceptance candidates',
+    /!g\.derivedMix && g\.bestModel\.name !== g\.chosenModel/.test(fva));
+  check('B3 SOURCE: the trajectory map is never indexed with an empty key',
+    /selectedChallengerGroup\.chosenModel$[\s\S]{0,120}?\? \(pt\[/m.test(fva)
+      || /chosenModel[\s\S]{0,80}\?\s*\(pt\[/.test(fva));
+  // THE assertion that catches the original defect. The row-survival checks
+  // above replicate the rule rather than driving the component's, so
+  // reinstating `if (!chosenModel) return null` left them all passing - the
+  // measure-don't-reimplement trap, in the spec written to close that defect.
+  // The component's guard lives in a closure that cannot be driven, so the
+  // check is on the source.
+  const challengerBody = fva.slice(fva.indexOf('const challengerGroups'),
+                                   fva.indexOf('const filteredChallengerGroups'));
+  check('B3 SOURCE GUARD: challengerGroups was found', challengerBody.length > 200,
+    String(challengerBody.length));
+  check('B3 SOURCE GUARD: no row is dropped for having no incumbent model',
+    !/if\s*\(!chosenModel\)\s*return null/.test(challengerBody),
+    'the if (!chosenModel) return null guard is back');
+
+  check('B3 SOURCE: the suppression reason is on screen, keyed',
+    /actuals_models_live_on_leaf_cohorts/.test(fva));
 }
 
 console.log(`derived-interaction spec: ${pass} passed, ${fails.length} failed`);

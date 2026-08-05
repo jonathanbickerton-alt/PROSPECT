@@ -663,5 +663,6 @@
   "whatif_ibro_type": "IBRO-Typ",
   "whatif_applies_to": "Gilt für",
   "whatif_revenue_arpu_not_applicable_to_percentage": "Revenue and ARPU do not apply to a percentage event — the table shows a dash.",
-  "actuals_all_models_in_this_aggregate_are_performing_well": "All models in this aggregate are performing well for all segments at the current dimension grouping."
+  "actuals_all_models_in_this_aggregate_are_performing_well": "All models in this aggregate are performing well for all segments at the current dimension grouping.",
+  "actuals_models_live_on_leaf_cohorts": "No model comparison for an aggregate — models live on the individual leaf cohorts it is summed from. Group by more dimensions to reach them."
 }
