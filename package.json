@@ -22,7 +22,8 @@
     "spec:edge": "tsx scripts/edge-fixture-spec.ts",
     "spec:provenance": "tsx scripts/provenance-spec.ts",
     "spec:derive": "tsx scripts/derive-aggregate-spec.ts",
-    "spec:interaction": "tsx scripts/derived-interaction-spec.ts"
+    "spec:interaction": "tsx scripts/derived-interaction-spec.ts",
+    "guard-traps": "tsx scripts/guard-traps.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",
