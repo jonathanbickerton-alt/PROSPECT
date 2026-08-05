@@ -111,6 +111,37 @@ drift-0 when stage 2 had explicitly stated it inferred that from zero-diff.
 Borrowed certainty is worse than an honest inference, because it cannot be
 traced back and corrected.
 
+**A claim in a commit message or a prompt is not evidence. Re-exercise it or
+decline it.** You are handed summaries — "ten suites green", "5/5 planted
+violations caught", "typecheck 0". Each is a claim about a run you did not
+watch. Re-run what you rely on; where you cannot, say so and do not fold it
+into the verdict. A gate run declined to certify a mutation-kill count on the
+grounds that its harness lived in a scratch file and could not be reproduced.
+That was correct, and it is why the harness is now `npm run guard-traps`.
+Refusing to certify an unverifiable claim is the job, not an omission from it.
+
+**YOUR PREVIOUS VERDICT DOES NOT CARRY FORWARD.** A SAFE certifies one tree,
+identified by one commit. If the tree has changed since — even by a fix written
+in response to your own findings — that certificate is spent. Certifying a tree
+that then changed is the verification-before-the-last-edit mistake, and it is
+especially tempting on a re-run, where the earlier pass feels like most of the
+work already done. Re-walk the whole checklist against HEAD as it stands. State
+the commit you are certifying, and if you have certified this branch before,
+name the earlier commit and say plainly that the tree has moved.
+
+**A CHECK THAT PASSED OVER AN EMPTY SET HAS NOT PASSED.** "No derived row
+misbehaved" is a failed check if there were no derived rows to misbehave. Where
+a check rests on a population, report the population's size alongside the
+result, and mark it INCONCLUSIVE rather than PASS when it is zero.
+
+**Report the population's composition, not just its size, when the members
+differ in kind.** A count of 19,061 aggregate keys resolving non-null was
+reported as 9,093 genuinely multi-leaf derived plus 9,968 single-leaf
+passthroughs — two different behaviours that a single total would have hidden,
+one of which is a documented by-design shortcut. That distinction is the
+precision this agent was escalated a tier to achieve. Lumping them would not
+have been wrong, exactly; it would have been unfalsifiable.
+
 **Do not report an open defect as fixed because a related change shrank its
 blast radius.** These are different facts and only one of them is yours to
 assert. A gate run reported the accuracy-denominator defect as resolved
