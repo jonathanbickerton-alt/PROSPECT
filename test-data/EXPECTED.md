@@ -2160,6 +2160,215 @@ Routine agent runs still use the trimmed file. This one is for the branches the
 trimmed file cannot reach. Both are needed; a fixture that only contains edge
 cases stops being representative of anything.
 
+## WORKING PRACTICE: every browser walk opens with the same anchor
+
+**Standing rule, set by the user 2026-08-05, after a walk was invalidated by
+fixture identity.**
+
+Jon's B3 mini-walk produced no usable verdicts. The session was on the FULL
+fixture (540 cohorts on the challenger tab, six-figure Base at Large Enterprise
+- Fixed Connectivity) with **tariff unmapped**, and A4 was run on Step 1. Every
+observation was real; none of them answered the question asked, because the
+configuration they were taken in was not the configuration the checklist
+assumed.
+
+**The walk I issued omitted the row-count-first anchor that every prior walk
+opened with, and the exact failure that anchor prevents is the one that
+occurred.** That is not bad luck. The anchor is cheap, and it was dropped
+because the checks felt self-evidently well-specified.
+
+### Every walk begins with, in this order
+
+1. **The reload ritual** - hard refresh, so no state survives from a previous
+   session.
+2. **The named file**, in full, including the part of the name that
+   distinguishes it from its near-twins.
+3. **The expected row count**, verified on screen before anything else.
+4. **A mapping-step assertion** - which dimensions must show as mapped. Not
+   "check the mapping looks right": name them.
+
+A walk that does not start with all four is not a walk; it is a set of
+observations about an unknown configuration.
+
+### And the rule the B3-recheck broke
+
+**A checklist expected value must be measured on the SURFACE the user will look
+at, not on the store behind it.**
+
+The B3-recheck was specced on the edge fixture, with expected values (5 rows;
+34/4/14/6/14 leaves) measured by driving `deriveAggregate` over the edge store.
+Those numbers are correct **about the store**. But `challengerGroups`
+(ForecastVsActualsTab.tsx:3130-3133) gates twice on actuals -
+`c.overallScore !== null`, then `if (!monthMap || !monthMap.size) return null` -
+so **the challenger tab renders no row with zero months compared**, and no
+actuals file exists for the edge fixture.
+
+**The B3-recheck as issued was unrunnable.** Jon could not have produced those
+five rows by any sequence of clicks. Measuring the store proved the derivation
+was right and said nothing about whether the screen would render.
+
+---
+
+## Same fixture name, different file: 540 cohorts is not a fingerprint
+
+**Q1, measured 2026-08-05. Classification: USER PATH, not introduced by the
+branch.**
+
+The same nominal "full fixture" had tariff mapped in Jon's previous walk (he
+filtered Tariff RED S in B4) and unmapped in this one. Measured across every
+fixture in `test-data/`:
+
+| fixture | rows | months | cohorts | tariff columns |
+|---|---|---|---|---|
+| `ProductL2_Full_Jan2023_Jun2026` | 90,720 | 42 | 540 | **ABSENT** |
+| `TariffHierarchy_Jan2023_Jun2026` | 90,720 | 42 | 540 | present |
+| `ProductL2_Full_Jan2023_Dec2025` | 77,760 | 36 | 540 | **ABSENT** |
+| `TariffHierarchy_Jan2023_Dec2025` | 77,760 | 36 | 540 | present |
+| `EdgeCases_ShortHistory_Jan2023_Jun2026` | 12,112 | 42 | 74 | present |
+| `Trimmed_TariffHierarchy_Jan2023_Jun2026` | 12,432 | 42 | 74 | present |
+
+**The two 90,720-row fixtures are indistinguishable on every count a walk
+checks** - same rows, same months, same 540 cohorts - and differ only in
+whether the tariff columns exist. Nothing on screen after load separates them
+except the very mapping state that looked like the bug.
+
+So "(not mapped)" was **correct behaviour reporting a real property of the
+file**, not a defect. `ProductL2_Full` has no tariff columns; the app said so.
+
+**Why it cannot be the branch.** The only writers of `wiTariffL1Col` /
+`wiTariffL2Col` are the auto-map effect (App.tsx:1389-1390) - there is no
+manual control for them anywhere. The branch's `src/App.tsx` diff is a pure
+relocation (133 insertions, 132 deletions, moving memos above their consumers),
+touches no mapping state, and `CohortDimCheckboxes.tsx` - which renders
+"(not mapped)" - is not in the diff at all.
+
+**Noted in passing, not the cause here.** Column detection reads ROW ZERO only:
+`const cols = Object.keys(jsonData[0])` (App.tsx:1794), and `sheet_to_json`
+omits keys for blank cells, so a dimension blank in the first data row is
+unmapped for the whole session. Measured: all six fixtures hide
+`Applied_Flow_Rate_%` from row 0 this way. Tariff is blank in **0** rows of
+every fixture, so this did not cause Jon's session - but the mechanism is real
+and a file with a blank first row would trip it silently.
+
+---
+
+## An unmapped dimension multiplies every derived aggregate
+
+**Q2, measured 2026-08-05 on the edge fixture. This is a real defect.**
+
+When a dimension is unmapped, `buildCohortDataMap` writes `'All'` into those
+key slots - the same `'All'` the seam reads as "aggregated over". Every leaf key
+then carries `All` in the unmapped slots (measured: 72 of 72).
+
+**That alone is harmless.** `resolveForecast` is store-first (App.tsx:1551) and
+never infers aggregate-ness from the key, and `provenance` is carried on the
+`BaseForecast` object rather than derived from key shape. Measured on a
+tariff-unmapped store:
+
+```
+resolve("SOHO|Mobile Voice|Low Value|Direct|Field / Regional Sales|All|All")
+   -> STORE HIT, provenance.kind=fitted, model=Holt Linear
+resolve("SOHO|All|All|All|All|All|All")
+   -> DERIVED,  provenance.kind=derived
+```
+
+Identical tariff slots; correctly distinguished. **A fitted leaf under an
+All-bearing key is NOT distinguishable by key shape, and IS distinguishable by
+provenance** - which is exactly why provenance is on the object.
+
+**What is wrong is `populatedCohorts.leafMap` (App.tsx:1512-1521).** The
+roll-up walk enumerates three variants per dimension -
+`[['All','All'], [t1,'All'], [t1,t2]]`. When the dimension is unmapped all
+three collapse to the same key, and `mine.push(dk)` runs three times for one
+leaf. `resolveForecast` then hands `deriveAggregate` the same leaf repeatedly.
+
+Measured, edge fixture, `SOHO|All|All|All|All|All|All`:
+
+| configuration | roll-ups with duplicate leaves | leafMap entries | month[0] inflow.mean | leafCount |
+|---|---|---|---|---|
+| all mapped | 0 of 1934 | 14 (14 distinct) | 4,970.08 | 14 |
+| tariff L1+L2 unmapped | **421 of 421** | 42 (14 distinct) | **14,910.24** | **42** |
+| tariff L2 only unmapped | 667 | - | 4,970.08 | 14 |
+| Product L2 unmapped | 634 | - | - | - |
+
+**Exactly 3x overstated**, and `provenance.leafCount` reports 42 leaves where
+there are 14 - so the challenger tab's mix label lies too. The general rule: an
+unmapped LEVEL collapses its roll-up variants and doubles the leaves of every
+roll-up at or below it; when BOTH levels of a dimension are unmapped all three
+variants collapse, the factor is 3, and it reaches the top-level aggregates.
+
+This is consistent with the six-figure Base Jon saw at Large Enterprise -
+Fixed Connectivity.
+
+### Classification: the code is pre-existing, the REACHABILITY is this branch's
+
+`leafMap` arrived in `9ac25f6` "Session B1: the seam, built but not yet wired",
+already merged to main. But B1 meant *not yet wired* literally: in main,
+`resolveForecast` is defined at App.tsx:3362 and **referenced nowhere else** -
+0 call sites in App, 0 in ForecastVsActualsTab. `leafMap` is built and never
+read, so the duplication is unreachable.
+
+On this branch there are 4 call sites in App and 11 references in the tab.
+
+So this does **not** qualify as "pre-existing and the diff neither fixes nor
+worsens it". The defective lines are older; the diff is what makes them live.
+Under the classification rule that makes it **introduced by this branch in
+effect** - a widening blast radius, the mirror image of the shrinking-radius
+case the rule already warns about.
+
+**Not fixed** - the user reserved that decision. Two things to note for whoever
+takes it: deduplicating `leafMap` is a one-line change (`[...new Set(v)]` at
+the read, or a `Set` at the write), and it is invisible on any fully-mapped
+fixture, which is why every gate to date passed.
+
+### Retroactive grade of Jon's B3 observations
+
+On a tariff-unmapped full fixture at full grouping, measured over the unmapped
+edge store: **fitted=72, derived=0, null=0**. Every challenger key is a real
+fitted leaf, so every row has an incumbent model and a recommendation, and the
+`Aggregates (no model)` bucket is empty.
+
+**Jon's observations - 540 fitted rows, recommendations present, empty
+Aggregates bucket - are the CORRECT rendering for that configuration. PASS.**
+They are not evidence about the B3 fix, which is about derived rows, and a
+tariff-unmapped run produces none at that grouping.
+
+---
+
+## Step 1's ARPU chart draws two different quantities
+
+**Q3, measured 2026-08-05. Display-coherence finding on the fit-on-aggregate
+path. Recorded for Phase 3, which removes that path. Not fixed.**
+
+Jon saw historical ARPU ~16.5 against a flat forecast ~11.5 at Corporate -
+Fixed Connectivity. The two series are built by different rules:
+
+**Historical** (`StandardForecastTab.tsx:348-380`) is
+`Sum(Monthly_Revenue_GBP) / Sum(Subscriber_Volume)` over rows matching
+**segment, product and channel only** - no Product L2, no Channel L2, no
+tariff, and **no filter on the scenario/metric column at all**, so Base,
+Inflow, Outflow and Retention rows are summed together. Measured for
+Corporate - Fixed Connectivity: **16.28** on `TariffHierarchy`, **14.84** on
+`ProductL2_Full`. The scenario blend is NOT the cause of the gap - all four
+scenarios sit within 0.2 of each other.
+
+**Forecast** (`m.arpu.mean`) is the fitted *blended* ARPU
+(`forecasting.ts:990-1016`), and carries a boundary correction that pins
+forecast month 0 to the last value **of the series it was fitted from**.
+
+So the chart anchors its two lines to two different constructions, and the
+boundary correction - which exists to guarantee continuity - guarantees it
+against the series that is not drawn. A step at the boundary is the expected
+symptom whenever the constructions differ, not an anomaly.
+
+**Unresolved, and flagged rather than resolved:** Jon's ~16.5 is close to
+`TariffHierarchy`'s 16.28 and not to `ProductL2_Full`'s 14.84, which sits in
+tension with the tariff-unmapped observation pointing at `ProductL2_Full`.
+Also measured: `Avg_Unit_Price_GBP` is **0.00 throughout `ProductL2_Full`**, so
+on that fixture ARPU can only come from revenue/volume. I did not isolate which
+quantity 11.5 is - that needs the manual generation path driven headlessly, and
+I did not do it.
+
 ## WORKING PRACTICE: data issues are told to the user, not handled silently
 
 **Standing principle, set by the user 2026-08-04.**
@@ -3695,6 +3904,22 @@ its distribution is. This is accepted and expected.
 ---
 
 ## BACKLOG — requested, design pass required before build
+
+### The edge fixture needs a companion actuals file
+
+**Recorded 2026-08-05, not built.**
+
+`VBU_IBRO_EdgeCases_ShortHistory_PerScenarioARPU_Jan2023_Jun2026.xlsx` is the
+fixture built to exercise short history and per-scenario ARPU divergence - and
+no actuals file exists for it. Because the challenger tab and the accuracy
+table both require a non-empty `monthMap`, **no scoring check can be run on the
+one fixture built to make scoring interesting.** Every scoring check therefore
+falls back to the full fixture, where the edge cases are absent.
+
+Wanted: an actuals file from the same builder, covering the months after the
+edge fixture's forecast start, so scoring checks become runnable on the fixture
+that can actually exercise them.
+
 
 Requests recorded here are **not scheduled and not designed**. Each needs a
 design pass of its own before any branch is cut. Recorded so the request, its
