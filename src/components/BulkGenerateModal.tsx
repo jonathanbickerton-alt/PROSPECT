@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CheckCircle2, Zap, X, AlertTriangle, Loader2 } from 'lucide-react';
 import type { ForecastModel, SkipReason, SkippedCohort } from '../types/forecast';
+import { SKIP_REASON_KEY } from '../types/forecast';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -368,15 +369,6 @@ function BulkGeneratingPanel({ progress }: { progress?: { current: number; total
   );
 }
 
-/**
- * Internal skip codes -> i18n keys. The codes are never rendered directly, and
- * this is the ONLY place they become words, so a new code cannot ship as a
- * hardcoded English string by accident.
- */
-const SKIP_REASON_KEY: Record<SkipReason, string> = {
-  'never-enumerated':     'skip_reason_never_enumerated',
-  'insufficient-history': 'skip_reason_insufficient_history',
-};
 
 function BulkCompletePanel({
   generated,

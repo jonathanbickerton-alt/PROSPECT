@@ -159,6 +159,21 @@ export interface BaseForecastMonth {
 export type SkipReason = 'never-enumerated' | 'insufficient-history';
 
 /**
+ * Internal skip codes -> i18n keys. The codes are never rendered directly, and
+ * this is the ONLY place they become words, so a new code cannot ship as a
+ * hardcoded English string by accident.
+ *
+ * Lives here rather than in a component because it now has two consumers -
+ * BulkGenerateModal's skip panel and Step 2's no-forecast-for-this-selection
+ * state. A second copy would be the two-vocabularies-for-one-concept pattern
+ * this file's own comment warns about three instances of.
+ */
+export const SKIP_REASON_KEY: Record<SkipReason, string> = {
+  'never-enumerated':     'skip_reason_never_enumerated',
+  'insufficient-history': 'skip_reason_insufficient_history',
+};
+
+/**
  * A cohort that was asked for and produced no forecast.
  *
  * NAMED, not counted. A count tells a user how many cohorts are missing from an
@@ -272,7 +287,7 @@ export interface BaseForecast {
    * Per-series smoothing parameters chosen by grid search at fit time.
    * Optional so that forecasts produced before this field was introduced
    * (e.g. imported from older save files) remain valid.
-   */
+   */
   /**
    * True when Holt-Winters was requested but at least one series had fewer
    * than 24 historical data points (two full seasonal cycles).  The affected

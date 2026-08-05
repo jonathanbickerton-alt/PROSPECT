@@ -87,6 +87,13 @@ const TRAPS: Trap[] = [
     // that, and the miss was the trap's fault, not the spec's.
     mutate: s => s.replace('  // Main layout',
       '  const __trap7 = useMemo(() => 1, []);' + nl + '  void __trap7;' + nl + nl + '  // Main layout') },
+  // Trap 8 collapses the two meanings of null back into one, which is the
+  // state the app shipped in: a user with thousands of generated forecasts
+  // told none existed, and sent to the fit-on-aggregate path Phase 3 removes.
+  // The branches are only worth having if their collapse is detectable.
+  { id: '8 the two null meanings collapsed into one', why: 'a generated session is told nothing was generated',
+    file: WHATIF, spec: NULLSPEC,
+    mutate: s => s.replace('    if (!nothingGenerated) {', '    if (false) {') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

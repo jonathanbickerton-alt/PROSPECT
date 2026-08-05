@@ -7,7 +7,8 @@ import {
 } from 'recharts';
 import { format, parse, isValid, addMonths, differenceInCalendarMonths } from 'date-fns';
 import { useForecast } from '../context/ForecastContext';
-import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent, ActiveView } from '../types/forecast';
+import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent, ActiveView, SkipReason } from '../types/forecast';
+import { SKIP_REASON_KEY } from '../types/forecast';
 import { EventChangeConfirmModal } from './EventChangeConfirmModal';
 import type { MarketEvent } from '../utils/forecasting';
 import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta } from '../utils/forecasting';
@@ -21,6 +22,15 @@ import { MultiSelectDropdown } from './MultiSelectDropdown';
 // ---------------------------------------------------------------------------
 
 interface WhatIfTabProps {
+  /**
+   * Why the CURRENT selection has no forecast, or null when it has one.
+   *
+   * Computed by App at render from the live filter, next to the identical
+   * computation that drives the filter bar's "No forecast for this selection"
+   * copy - so the two can never disagree. Recomputed, never remembered: a
+   * remembered reason is the stale-forecast class of mistake in a new place.
+   */
+  noForecastReason?: SkipReason | null;
   /** Raw data rows — used to populate segment/product/channel options in the event form */
   data: any[];
   /** Column that holds each row's date — required to derive trailing-average
@@ -1149,6 +1159,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   removeMarketEvent,
   updateMarketEvent,
   yieldEvents,
+  noForecastReason = null,
   newYieldEvent,
   setNewYieldEvent,
   addYieldEvent,
@@ -1167,7 +1178,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   setActiveView,
 }) => {
   const { t } = useTranslation();
-  const { baseForecast, setAdjustedForecast } = useForecast();
+  const { baseForecast, setAdjustedForecast, forecastStore, hasBaseline } = useForecast();
 
   // KPI selection is PER TAB. One shared set produced two wrong behaviours in
   // turn: re-defaulting on every tab change silently discarded a hand-picked
@@ -2314,6 +2325,45 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // -------------------------------------------------------------------------
 
   if (!baseForecast) {
+    /**
+     * A null baseForecast has TWO meanings, and they need different screens.
+     *
+     * Before the seam it had one: nothing had been generated yet, so "No
+     * Baseline Forecast Yet - go to Step 1" was always true. The seam gave null
+     * a second meaning - a generation exists, but THIS selection resolves to
+     * nothing - and the screen went on speaking the first. A user with 7,588
+     * bulk forecasts was told none existed, and sent to Step 1, which is the
+     * fit-on-aggregate path Phase 3 removes. The message was not just unhelpful,
+     * it pointed at the thing being deleted.
+     *
+     * So: cause, not history. Nothing generated -> the original state. Something
+     * generated but not THIS -> the reason, and no Step 1 redirect, because
+     * Step 1 cannot fix a cohort that has too little history.
+     */
+    // hasBaseline is `baseForecast !== null || hasLegacyBaseline`, and inside
+    // this branch baseForecast IS null - so here it reduces exactly to the
+    // legacy-session flag, which is the question being asked.
+    const nothingGenerated = forecastStore.size === 0 && !hasBaseline;
+
+    if (!nothingGenerated) {
+      return (
+        <div className="flex-1 overflow-y-auto p-8 flex items-center justify-center">
+          <div className="max-w-md text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto">
+              <Activity size={28} className="text-slate-400" />
+            </div>
+            <h2 className="text-xl font-semibold text-slate-900">{t('whatif_no_forecast_for_selection')}</h2>
+            <p className="text-sm text-slate-500">
+              {noForecastReason
+                ? t(SKIP_REASON_KEY[noForecastReason])
+                : t('whatif_no_forecast_for_selection_generic')}
+            </p>
+            <p className="text-xs text-slate-400">{t('whatif_choose_another_selection')}</p>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex-1 overflow-y-auto p-8 flex items-center justify-center">
         <div className="max-w-md text-center space-y-4">

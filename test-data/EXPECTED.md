@@ -2369,6 +2369,89 @@ on that fixture ARPU can only come from revenue/volume. I did not isolate which
 quantity 11.5 is - that needs the manual generation path driven headlessly, and
 I did not do it.
 
+## Null had two meanings and the screen only spoke one
+
+**2026-08-05, after the A5 crash fix. Found by the reviewer's re-walk: the
+crash was gone, and the message that replaced it was false.**
+
+Selecting the null cohort rendered **"No Baseline Forecast Yet / Go to Step 1"**
+in a session holding a bulk run of **7,588 forecasts**. Two things wrong with
+that, and the second is worse:
+
+1. It is untrue. Forecasts existed.
+2. It directs the user to Step 1 — the manual, fit-on-aggregate path that
+   Phase 3 exists to remove. The message did not merely fail to help; it
+   pointed at the thing being deleted.
+
+The filter bar said **"No forecast for this selection"** at the same moment, so
+the null WAS detected. An older outer gate simply captured it first.
+
+### Root cause is semantic, not a missing guard
+
+Before the seam, a null `baseForecast` had exactly one meaning: nothing had been
+generated yet. That gate's message was therefore always true, and the Step 1
+redirect was always the right action.
+
+The seam gave null a **second** meaning — a generation exists, but THIS
+selection resolves to nothing — and the screen went on speaking the first.
+
+**This is the third defect on this branch whose cause is a widened meaning
+rather than a broken line.** `'All'` came to mean both "aggregated over" and
+"dimension unmapped"; a null resolution came to mean both "never generated" and
+"not for this selection". A value that gains a second meaning silently breaks
+every reader that was written when it had one — and those readers do not fail
+loudly, they keep answering the old question.
+
+### The fix: distinguish the two where the empty state is chosen
+
+`WhatIfTab` now asks `forecastStore.size === 0 && !hasBaseline`:
+
+- **Nothing generated at all** — the original "No Baseline Forecast Yet" state,
+  Go to Step 1 retained. Still correct, still reachable.
+- **A generation exists, this selection does not** — the reason state: cause,
+  not history, rendered through the shared `SkipReason` enum and its existing
+  i18n keys, and **with no Step 1 redirect**, because Step 1 cannot give a
+  cohort more months of history.
+
+`SKIP_REASON_KEY` moved from a module-local const in `BulkGenerateModal.tsx` to
+`src/types/forecast.ts` and is now imported by both consumers. Its own docstring
+says it is "the ONLY place they become words"; a second copy would have been the
+two-vocabularies-for-one-concept pattern this file already records three
+instances of.
+
+The reason is recomputed at render by App, on the line above `<WhatIfTab>`, from
+the same `resolveForecast(filterToKey(step2Filter))` call that drives the filter
+bar's `hasForecast`. The two cannot disagree, and nothing is remembered — a
+remembered reason would be the stale-forecast mistake in a new place.
+
+### Specced at the surface, transitions included
+
+`spec:nullrender` is now 30 cases. The new ones cover: empty store and no legacy
+-> never-generated state with Step 1 retained; populated store -> reason state
+with no Step 1; both reason codes reaching the screen; a legacy-only session
+counting as generated; and the forecast -> null TRANSITION landing on the reason
+state specifically.
+
+**The transition assertion previously accepted "an empty state".** That is
+exactly why the wrong message shipped past a green spec. It now names which
+state it expects. An assertion loose enough to pass on either branch cannot
+distinguish them, which is the whole job.
+
+Trap 8 collapses the two branches back into one and is confirmed killing the
+spec.
+
+### Still open, reported not fixed: the filter bar offers the same redirect
+
+`ViewFilterBar.tsx:118-121` renders a **"Generate in Step 1"** button
+unconditionally whenever `hasForecast` is false — including the
+selection-resolves-null case. It is the same misdirection as the one just
+removed, in the sibling component, on the same screen at the same moment.
+
+Not changed here: the fix was scoped to the empty state. Flagged because the
+panel no longer sends the user to Step 1 while the bar three inches above it
+still does, and a half-applied correction reads as an inconsistency rather than
+as a decision.
+
 ## A5 blanked the app — FOUND AND FIXED (hook order on the transition)
 
 **Resolved 2026-08-05 by Jon's console stack: "Rendered fewer hooks than

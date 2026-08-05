@@ -95,20 +95,23 @@ async function main() {
   };
 
   /** Mount the Step 2 path with a given baseForecast and report what happened. */
-  async function mount(bf: any) {
+  async function mount(bf: any, opts: { store?: Map<string, any>; legacy?: boolean; reason?: any } = {}) {
     const c = document.createElement('div');
     host.replaceChildren(); host.appendChild(c);
     const r = createRoot(c);
     let threw: Error | null = null;
+    const store = opts.store ?? new Map();
+    const legacy = opts.legacy ?? true;
+    const reason = 'reason' in opts ? opts.reason : (bf ? null : 'insufficient-history');
     try {
       await (act as any)(async () => {
         r.render(React.createElement(ForecastProvider as any, {
           baseForecast: bf, setBaseForecast: noop,
           adjustedForecast: null, setAdjustedForecast: noop,
-          forecastStore: new Map(), setForecastStore: noop, hasLegacyBaseline: true,
-          resolveForecast: () => ({ forecast: bf, reason: bf ? null : 'insufficient-history' }),
+          forecastStore: store, setForecastStore: noop, hasLegacyBaseline: legacy,
+          resolveForecast: () => ({ forecast: bf, reason }),
           canResolve: () => !!bf,
-        }, React.createElement(WhatIfTab as any, props)));
+        }, React.createElement(WhatIfTab as any, { ...props, noForecastReason: reason })));
       });
     } catch (e: any) { threw = e; origErr('STACK>>>', e && e.stack); }
     return { threw, text: c.textContent ?? '', kids: c.childElementCount, svgs: c.querySelectorAll('svg').length };
@@ -152,11 +155,13 @@ async function main() {
     `children=${container.childElementCount} textLen=${text.length}`);
   // The designed empty state, WhatIfTab.tsx:2284. Keyed strings, so match on
   // the rendered English rather than the key.
-  // i18n is not initialised in this harness, so t() returns the KEY. Match
-  // either, or the assertion fails for a reason that has nothing to do with
-  // null handling.
+  // i18n is not initialised in this harness, so t() returns the KEY.
+  // This mount uses the default legacy: true - a session that HAS generated -
+  // so the correct destination is the reason state, not the never-generated
+  // one. Naming which state it expects is the point: an assertion that accepts
+  // "any empty state" is what let the wrong message ship.
   check('Step 2 shows the designed empty state, not a blank screen',
-    /baseline forecast/i.test(text) || /whatif_no_baseline_forecast_yet/.test(text),
+    /whatif_no_forecast_for_selection/.test(text) && !/whatif_no_baseline_forecast_yet/.test(text),
     text.slice(0, 200).replace(/\s+/g, ' '));
   const real = thrown.filter(t => !/not wrapped in act|Warning: /i.test(t));
   check('Step 2 logged no render error',
@@ -216,6 +221,50 @@ async function main() {
       c2.svgs > 0, `svg elements=${c2.svgs}`);
   }
 
+  // ── THE TWO MEANINGS OF NULL ─────────────────────────────────────────────
+  // Before the seam, a null baseForecast meant only "nothing generated yet", so
+  // "No Baseline Forecast Yet - go to Step 1" was always true. The seam gave
+  // null a second meaning - a generation exists, this SELECTION resolves to
+  // nothing - and the screen kept speaking the first. A reviewer with 7,588 bulk
+  // forecasts was told none existed and sent to Step 1, the fit-on-aggregate
+  // path Phase 3 removes.
+  {
+    const NEVER = /whatif_no_baseline_forecast_yet/;
+    const REASON = /whatif_no_forecast_for_selection/;
+    const STEP1 = /common_go_to_step_1/;
+
+    // (a) Nothing generated at all -> the original never-generated state.
+    const virgin = await mount(null, { store: new Map(), legacy: false, reason: null });
+    check('NEVER-GENERATED: empty store and no legacy shows the Step 1 state',
+      NEVER.test(virgin.text) && !REASON.test(virgin.text),
+      virgin.text.slice(0, 120).replace(/\s+/g, ' '));
+    check('NEVER-GENERATED: keeps the Go to Step 1 action', STEP1.test(virgin.text));
+
+    // (b) A generation exists but THIS selection resolves null -> the reason.
+    const populated = new Map<string, any>([['x', {} as any]]);
+    const sel = await mount(null, { store: populated, legacy: false, reason: 'insufficient-history' });
+    check('SELECTION-NULL: a non-empty store shows the reason state, not Step 1',
+      REASON.test(sel.text) && !NEVER.test(sel.text),
+      sel.text.slice(0, 160).replace(/\s+/g, ' '));
+    check('SELECTION-NULL: states the CAUSE, through the shared reason enum',
+      /skip_reason_insufficient_history/.test(sel.text),
+      sel.text.slice(0, 160).replace(/\s+/g, ' '));
+    check('SELECTION-NULL: offers NO Step 1 redirect - Step 1 cannot fix short history',
+      !STEP1.test(sel.text), sel.text.slice(0, 160).replace(/\s+/g, ' '));
+
+    // The other reason code must reach the screen too, or the enum is decorative.
+    const sel2 = await mount(null, { store: populated, legacy: false, reason: 'never-enumerated' });
+    check('SELECTION-NULL: the never-enumerated code renders its own copy',
+      /skip_reason_never_enumerated/.test(sel2.text),
+      sel2.text.slice(0, 160).replace(/\s+/g, ' '));
+
+    // A legacy session with an empty store still counts as generated.
+    const legacyOnly = await mount(null, { store: new Map(), legacy: true, reason: 'insufficient-history' });
+    check('SELECTION-NULL: a legacy baseline counts as generated',
+      REASON.test(legacyOnly.text) && !NEVER.test(legacyOnly.text),
+      legacyOnly.text.slice(0, 120).replace(/\s+/g, ' '));
+  }
+
   // ── THE TRANSITION. Mounting with X does not cover transitioning to X. ──
   // In React that distinction is where hook-order violations live: a first
   // render with null skips a hook consistently, so nothing is wrong; a render
@@ -258,10 +307,15 @@ async function main() {
     const r = createRoot(c);
     const paint = (bf: any) => React.createElement(ForecastProvider as any, {
       baseForecast: bf, setBaseForecast: noop, adjustedForecast: null, setAdjustedForecast: noop,
-      forecastStore: storeE, setForecastStore: noop, hasLegacyBaseline: true,
+      // storeE is the REAL fitted store, and hasLegacyBaseline is false: the
+      // "has anything been generated" answer must come from the store, exactly
+      // as it does for a user who bulk-generated and never used Step 1.
+      forecastStore: storeE, setForecastStore: noop, hasLegacyBaseline: false,
       resolveForecast: () => ({ forecast: bf, reason: bf ? null : 'insufficient-history' }),
       canResolve: () => !!bf,
-    }, React.createElement(WhatIfTab as any, props));
+    }, React.createElement(WhatIfTab as any, {
+      ...props, noForecastReason: bf ? null : 'insufficient-history',
+    }));
 
     let tErr: Error | null = null;
     try {
@@ -273,9 +327,16 @@ async function main() {
     const tTxt = c.textContent ?? '';
     check('TRANSITION forecast -> null does not throw', !tErr,
       tErr ? String(tErr.message).slice(0, 160) : '');
+    // The store is POPULATED here - a forecast was just displayed from it - so
+    // the correct destination is the reason state. Asserting merely "an empty
+    // state" would have passed while the screen told the user nothing had ever
+    // been generated, which is the defect this transition exists to catch.
     check('TRANSITION forecast -> null shows the empty state, not a blank page',
-      /whatif_no_baseline_forecast_yet|baseline forecast/i.test(tTxt),
+      /whatif_no_forecast_for_selection|whatif_no_baseline_forecast_yet/.test(tTxt),
       tTxt.slice(0, 140).replace(/\s+/g, ' '));
+    check('TRANSITION forecast -> null shows the REASON state, not never-generated',
+      /whatif_no_forecast_for_selection/.test(tTxt) && !/whatif_no_baseline_forecast_yet/.test(tTxt),
+      tTxt.slice(0, 160).replace(/\s+/g, ' '));
 
     // And back again: null -> forecast must restore the working screen.
     let bErr: Error | null = null;

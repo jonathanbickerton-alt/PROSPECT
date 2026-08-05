@@ -4046,9 +4046,15 @@ export default function App() {
           />
         )}
 
-        {/* MARKET EVENTS VIEW (Step 2) */}
+        {/* MARKET EVENTS VIEW (Step 2)
+
+            noForecastReason is recomputed at render from the live filter, by the
+            same call that drives ViewFilterBar's hasForecast above, so the panel
+            and the filter bar can never disagree about whether this selection
+            resolves. Recomputed, never remembered. */}
         {activeView === 'whatif' && (
           <WhatIfTab
+            noForecastReason={resolveForecast(filterToKey(step2Filter)).reason}
             data={data}
             wiDateCol={wiDateCol}
             wiSegmentCol={wiSegmentCol}

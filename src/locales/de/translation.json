@@ -672,5 +672,8 @@
   "errorboundary_reload": "Reload PROSPECT",
   "errorboundary_dev_body": "The app stopped rendering. Full detail below — this panel is shown in development only.",
   "errorboundary_component_stack": "Component stack",
-  "errorboundary_dev_title": "Render error"
+  "errorboundary_dev_title": "Render error",
+  "whatif_no_forecast_for_selection": "No forecast for this selection",
+  "whatif_no_forecast_for_selection_generic": "This selection has no forecast.",
+  "whatif_choose_another_selection": "Choose another selection, or widen the filter to a level that has one."
 }
