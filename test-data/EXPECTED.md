@@ -2506,6 +2506,36 @@ The unknown was dissolved by the design rather than answered — worth noticing 
 a move: when a decision hinges on an unmeasured rate, changing the mechanism so
 the rate is irrelevant beats measuring it.
 
+#### F — column detection samples row zero only. QUEUED HERE 2026-08-05.
+
+**Real mechanism, measured; queued to this phase rather than fixed where it was
+found, because mapping robustness lives here.**
+
+`App.tsx` builds the column list as `Object.keys(jsonData[0])` — the keys of the
+FIRST DATA ROW. `sheet_to_json` omits keys for blank cells, so **a column that
+happens to be blank in row 0 does not exist as far as the app is concerned**,
+for the whole session. Auto-mapping then cannot match it, the dimension reads
+"(not mapped)", and every leaf key silently carries `'All'` in that slot.
+
+Measured across all six fixtures in `test-data/`: every one of them hides
+`Applied_Flow_Rate_%` this way — 19 columns in the union of all rows, 18 in row
+zero. The tariff columns are blank in 0 rows of every fixture, so this did not
+cause the 2026-08-05 walk's unmapped tariff (that was fixture identity — see
+"Same fixture name, different file"). The mechanism is real and unfired here,
+not hypothetical.
+
+**Wanted:** detection unions keys across a SAMPLE of rows rather than trusting
+one. And this phase is exactly where the result gets reported — the
+"How your data was read" line already names the extra columns it combined, so
+it is the natural place to say which columns were found and which dimensions
+they mapped to. A dimension the file contains but the app did not map is a data
+issue the user must be told about, not one to work around silently.
+
+Note the interaction with the unmapped-dimension defect fixed on
+`session-b2-wire-seam`: silently unmapping a dimension used to inflate every
+derived aggregate above it by 3x. That amplifier is gone, so this is now a
+correctness-of-reporting problem rather than a correctness-of-numbers one.
+
 #### E — dropped
 
 Short-history leaves are already named at generation time with their exact

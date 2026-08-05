@@ -1861,6 +1861,60 @@ export function makeForecastKey(
   return `${seg}|${prodL1}|${prodL2 || 'All'}|${chanL1}|${chanL2 || 'All'}|${tariffL1 || 'All'}|${tariffL2 || 'All'}`;
 }
 
+/**
+ * Every roll-up key each leaf contributes to, and which leaves each roll-up is
+ * made of.
+ *
+ * Lifted out of App's `populatedCohorts` memo so it can be driven by a spec.
+ * That is not incidental tidying: the bug this function exists in its current
+ * form to fix could only be specced by transcribing the loop into the spec,
+ * which would have pinned the COPY and stayed green while App drifted. Code
+ * that can only be tested by reimplementing it is untested.
+ *
+ * THE DEFECT, fixed here. The walk enumerates three variants per dimension -
+ * ['All','All'], [l1,'All'], [l1,l2]. When a dimension is UNMAPPED both its
+ * levels are already 'All', so all three variants collapse to the same key and
+ * the leaf was pushed three times. `resolveForecast` then handed
+ * `deriveAggregate` the same leaf repeatedly: measured on the edge fixture with
+ * tariff unmapped, SOHO's segment aggregate summed to 14,910.24 against an
+ * honest 4,970.08 - exactly 3x - and reported leafCount 42 for 14 real leaves,
+ * so the challenger tab's mix label lied too.
+ *
+ * An unmapped dimension is a legitimate file shape, not a misuse: the
+ * ProductL2_Full fixtures carry no tariff columns at all.
+ *
+ * The distinct-key set is what makes it right, rather than a de-duplicating
+ * pass afterwards. The invariant is structural - one leaf contributes to a
+ * roll-up at most once - instead of a cleanup step a later edit can drop.
+ */
+export function buildRollUpIndex(leafKeys: Iterable<string>): {
+  set: Set<string>;
+  leafMap: Map<string, string[]>;
+} {
+  const set = new Set<string>();
+  const leafMap = new Map<string, string[]>();
+  for (const dk of leafKeys) {
+    const [seg, p1, p2, c1, c2, t1, t2] = dk.split('|');
+    const segS: string[] = ['All', seg];
+    const prodS: [string, string][] = [['All', 'All'], [p1, 'All'], [p1, p2]];
+    const chanS: [string, string][] = [['All', 'All'], [c1, 'All'], [c1, c2]];
+    const tarS:  [string, string][] = [['All', 'All'], [t1, 'All'], [t1, t2]];
+
+    // Distinct roll-ups for THIS leaf, before any of them is recorded.
+    const rollUps = new Set<string>();
+    for (const s of segS) for (const p of prodS) for (const c of chanS) for (const t of tarS) {
+      rollUps.add(makeForecastKey(s, p[0], p[1], c[0], c[1], t[0], t[1]));
+    }
+
+    for (const rollUp of rollUps) {
+      set.add(rollUp);
+      const mine = leafMap.get(rollUp);
+      if (mine) mine.push(dk); else leafMap.set(rollUp, [dk]);
+    }
+  }
+  return { set, leafMap };
+}
+
 export function buildCohortDataMap(
   data: any[],
   wiDateCol: string,

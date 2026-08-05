@@ -32,9 +32,14 @@ import * as fs from 'fs';
 import { spawnSync } from 'child_process';
 
 const FILE = 'src/components/ForecastVsActualsTab.tsx';
+const ENGINE = 'src/utils/forecasting.ts';
 const SPEC = 'scripts/derived-interaction-spec.ts';
 
-const orig = fs.readFileSync(FILE, 'utf8');
+/** Every file any trap mutates, snapshotted before anything is planted. */
+const TARGETS = [FILE, ENGINE];
+const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
+
+const orig = originals.get(FILE)!;
 const nl = orig.includes('\r\n') ? '\r\n' : '\n';
 
 /** The line the row body builds its mix on — every trap plants relative to it. */
@@ -43,7 +48,7 @@ const MIX_BLOCK = ANCHOR + nl +
   "          ? { leafCount: incumbentSrc.leafCount, models: incumbentSrc.models }" + nl +
   "          : null;";
 
-type Trap = { id: string; why: string; mutate: (s: string) => string };
+type Trap = { id: string; why: string; file?: string; mutate: (s: string) => string };
 
 const TRAPS: Trap[] = [
   { id: '1 original spelling', why: 'the sentence the old guard pinned',
@@ -56,6 +61,17 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(ANCHOR, "        if (incumbentSrc.kind === 'derived') return null;" + nl + ANCHOR) },
   { id: '5 mix stubbed to null', why: 'row survives but renders a model it does not have',
     mutate: s => s.replace(MIX_BLOCK, '        const derivedMix = null;') },
+  // Trap 6 mutates the ENGINE, not the tab: it restores the roll-up
+  // duplication by collecting each leaf's roll-up variants in an array instead
+  // of a Set. With a dimension unmapped the three variants collapse to one key,
+  // so the leaf lands in the same roll-up three times and every derived
+  // aggregate above it is 3x overstated.
+  { id: '6 roll-up duplication restored', why: 'unmapped dimension inflates every aggregate 3x',
+    file: ENGINE,
+    mutate: s => s
+      .replace('    const rollUps = new Set<string>();', '    const rollUps: string[] = [];')
+      .replace('      rollUps.add(makeForecastKey(s, p[0], p[1], c[0], c[1], t[0], t[1]));',
+               '      rollUps.push(makeForecastKey(s, p[0], p[1], c[0], c[1], t[0], t[1]));') },
 ];
 
 const specFails = (): boolean =>
@@ -74,22 +90,25 @@ try {
   }
 
   for (const t of TRAPS) {
-    const mutated = t.mutate(orig);
-    if (mutated === orig) {
+    const target = t.file ?? FILE;
+    const base = originals.get(target)!;
+    const mutated = t.mutate(base);
+    if (mutated === base) {
       // The anchor moved. Silently planting nothing would report a clean catch
       // for a trap that never ran.
       results.push({ id: t.id, state: 'INCONCLUSIVE', detail: 'anchor did not match — nothing was planted' });
       continue;
     }
-    fs.writeFileSync(FILE, mutated);
+    fs.writeFileSync(target, mutated);
     results.push(specFails()
       ? { id: t.id, state: 'CAUGHT', detail: t.why }
       : { id: t.id, state: 'MISSED', detail: 'planted and the spec stayed GREEN — ' + t.why });
+    fs.writeFileSync(target, base);   // one trap at a time, never compounded
   }
 } finally {
   // Unconditional. This harness mutates tracked source; dying mid-run without
   // restoring leaves a corrupted tree that looks like a hand edit.
-  fs.writeFileSync(FILE, orig);
+  for (const [f, s] of originals) fs.writeFileSync(f, s);
 }
 
 console.log('\nGUARD TRAPS\n' + '='.repeat(72));

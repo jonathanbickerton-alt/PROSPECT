@@ -150,6 +150,27 @@ denominator branch was parked and no denominator fix was present in the diff
 at all. When an EXPECTED.md entry records something as OPEN, report whether
 this branch changed its status, not whether the situation feels better.
 
+**And the mirror of that rule: a diff that makes pre-existing code newly
+REACHABLE owns that code's defects.** Widening the blast radius counts as
+introduced-in-effect, exactly as shrinking reachability downgrades severity.
+The two are the same principle read in opposite directions, and only one of
+them is comfortable.
+
+Worked example, 2026-08-05. `populatedCohorts.leafMap` recorded a leaf once per
+roll-up variant; with a dimension unmapped the variants collapse to one key and
+the leaf was recorded three times, so every derived aggregate above it came out
+3x. Those lines shipped in Session B1 and were merged to main — on the face of
+it, pre-existing. But B1's own commit said "built but not yet wired" and meant
+it: in main `resolveForecast` had **zero call sites**, so `leafMap` was
+populated and never read, and the defect could not fire. The branch under
+review added 4 call sites in App and 11 in the tab.
+
+Filing that as "pre-existing, diff neither fixes nor worsens it" would have
+been defensible by the letter and wrong: the diff is the entire reason a user
+can reach it. **Ask not only "did the diff write these lines" but "could this
+have fired before the diff".** If the answer to the second is no, it belongs to
+the diff.
+
 **CLASSIFY EVERY FINDING BEFORE YOU WRITE THE VERDICT LINE.** Every finding is
 exactly one of:
 

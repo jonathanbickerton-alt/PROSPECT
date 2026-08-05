@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort, Provenance, SkipReason } from './types/forecast';
 import { provenanceModel, provenanceParams } from './types/forecast';
@@ -1500,27 +1500,12 @@ export default function App() {
    * is how they drift.
    */
   const populatedCohorts = useMemo(() => {
-    const set = new Set<string>();
-    const leafMap = new Map<string, string[]>();
-    if (!data.length || !wiDateCol) return { set, leafMap };
+    if (!data.length || !wiDateCol) return { set: new Set<string>(), leafMap: new Map<string, string[]>() };
     const dm = buildCohortDataMap(data, wiDateCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col);
-    for (const dk of dm.keys()) {
-      const [seg, p1, p2, c1, c2, t1, t2] = dk.split('|');
-      const segS: string[] = ['All', seg];
-      const prodS: [string, string][] = [['All', 'All'], [p1, 'All'], [p1, p2]];
-      const chanS: [string, string][] = [['All', 'All'], [c1, 'All'], [c1, c2]];
-      const tarS:  [string, string][] = [['All', 'All'], [t1, 'All'], [t1, t2]];
-      for (const s of segS) for (const p of prodS) for (const c of chanS) for (const t of tarS) {
-        const rollUp = makeForecastKey(s, p[0], p[1], c[0], c[1], t[0], t[1]);
-        set.add(rollUp);
-        // Same loop, same walk: record WHICH leaves each roll-up is made of.
-        // The set alone answers "does this key have data" and throws leaf
-        // identity away, which is the one thing derivation needs.
-        const mine = leafMap.get(rollUp);
-        if (mine) mine.push(dk); else leafMap.set(rollUp, [dk]);
-      }
-    }
-    return { set, leafMap };
+    // The walk itself lives in forecasting.ts so a spec can drive it. It used
+    // to be inline here, where the only way to test it was to transcribe it -
+    // and a transcribed copy pins itself, not this.
+    return buildRollUpIndex(dm.keys());
   }, [data, wiDateCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col]);
 
   // True if a cohort has data. Empty set (no data mapped yet) ⇒ don't filter.

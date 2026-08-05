@@ -16,7 +16,7 @@
  */
 import * as fs from 'fs';
 import * as XLSX from 'xlsx';
-import { deriveAggregate, buildCohortDataMap, makeForecastKey } from '../src/utils/forecasting';
+import { deriveAggregate, buildCohortDataMap, buildRollUpIndex, makeForecastKey } from '../src/utils/forecasting';
 import { runForecastJob } from '../src/workers/forecasting.worker';
 import { computeAdjustedForecast } from '../src/components/WhatIfTab';
 import type { BaseForecast, CohortKey } from '../src/types/forecast';
@@ -338,6 +338,77 @@ const runAdj = (bf: BaseForecast, events: MarketEvent[]) => computeAdjustedForec
 
   check('B3 SOURCE: the suppression reason is on screen, keyed',
     /actuals_models_live_on_leaf_cohorts/.test(fva));
+}
+
+// ── UNMAPPED DIMENSION: the roll-up index must not duplicate a leaf ─────────
+// An unmapped dimension is a legitimate file shape, not a misuse: the
+// ProductL2_Full fixtures carry no tariff columns at all, and they are
+// indistinguishable from the TariffHierarchy ones on every count a walk checks
+// (90,720 rows, 42 months, 540 cohorts) - which is how a walk reached this
+// state by accident.
+//
+// With tariff unmapped both its levels are already 'All', so the three roll-up
+// variants - ['All','All'], [t1,'All'], [t1,t2] - collapse to ONE key. The walk
+// used to record the leaf once per variant, and resolveForecast then handed
+// deriveAggregate the same leaf three times.
+{
+  const dmU = buildCohortDataMap(rows, C.date, C.seg, C.prod, C.prodL2, C.chan, C.chanL2, '', '');
+  const leavesU = [...dmU.keys()].sort();
+  const idxU = buildRollUpIndex(leavesU);
+  const idxM = buildRollUpIndex(enumerated);      // control: the fully-mapped walk
+
+  const dupes = (ix: { leafMap: Map<string, string[]> }) =>
+    [...ix.leafMap.values()].filter(v => new Set(v).size !== v.length).length;
+
+  check('UNMAPPED: the premise holds - every leaf key carries All in both tariff slots',
+    leavesU.length > 0 && leavesU.every(k => k.split('|').slice(5).join('|') === 'All|All'),
+    `${leavesU.length} leaves`);
+  check('UNMAPPED: no roll-up lists any leaf more than once',
+    dupes(idxU) === 0, `${dupes(idxU)} roll-ups carry duplicates`);
+  check('CONTROL: the fully-mapped walk is unchanged and also duplicate-free',
+    dupes(idxM) === 0, `${dupes(idxM)} roll-ups carry duplicates`);
+
+  // A store keyed the way an unmapped run keys it.
+  const jobU = runForecastJob({
+    workerId: 0,
+    config: {
+      wiDateCol: C.date, wiMetricCol: C.metric, wiValueCol: C.value,
+      wiSegmentCol: C.seg, wiProductCol: C.prod, wiProductL2Col: C.prodL2,
+      wiChannelCol: C.chan, wiChannelL2Col: C.chanL2, wiTariffL1Col: '', wiTariffL2Col: '',
+      wiInflowVal: 'Inflow', wiOutflowVal: 'Outflow', wiBaseVal: 'Base', wiRetentionVal: 'Retention',
+      wiArpuCol: C.arpu, wiRevenueCol: C.rev,
+      genLength: 12, runPreUnc: 1.28, runPostExp: 0.02, runConfHor: 3,
+      runModel: 'Holt Linear', autoModel: false, autoConfidence: false, oneOffMonths: {},
+    },
+    rows: rows as any, standardCohorts: [],
+    ibroCohorts: leavesU.map(k => {
+      const [seg, prod, prodL2, chan, chanL2, tariffL1, tariffL2] = k.split('|');
+      return { fKey: k, seg, prod, prodL2, chan, chanL2, tariffL1, tariffL2 };
+    }),
+  } as any);
+  const storeU = new Map<string, BaseForecast>(jobU.newTypedForecasts);
+
+  // The values below are the MEASURED consequence of the bug, pinned so the
+  // regression is a number and not an adjective.
+  const segKey = makeForecastKey('SOHO', 'All', 'All', 'All', 'All', 'All', 'All');
+  const rollUpLeaves = idxU.leafMap.get(segKey) ?? [];
+  check('UNMAPPED: SOHO rolls up 14 leaves, not the 42 entries the duplication gave',
+    rollUpLeaves.length === 14, `${rollUpLeaves.length} entries`);
+
+  const bfs = rollUpLeaves.map(k => storeU.get(k)).filter((b): b is BaseForecast => !!b);
+  const derived = deriveAggregate(bfs, {
+    segment: 'SOHO', product: 'All', productL2: 'All', channel: 'All',
+    channelL2: 'All', tariffL1: 'All', tariffL2: 'All', scenario: 'Base Case',
+  } as unknown as CohortKey);
+  check('UNMAPPED: SOHO derives at all', !!derived);
+  if (derived) {
+    const p: any = derived.provenance;
+    check('UNMAPPED: provenance.leafCount is 14, not 42 - the mix label told the truth',
+      p.kind === 'derived' && p.leafCount === 14, `leafCount=${p.leafCount}`);
+    check('UNMAPPED: month[0] inflow.mean is 4970.08, not the 14910.24 (3x) the duplication produced',
+      near(derived.months[0].inflow.mean, 4970.08, 0.01),
+      derived.months[0].inflow.mean.toFixed(2));
+  }
 }
 
 console.log(`derived-interaction spec: ${pass} passed, ${fails.length} failed`);
