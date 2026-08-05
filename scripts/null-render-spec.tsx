@@ -84,6 +84,9 @@ async function main() {
     pricingEvents: [], newPricingEvent: {}, setNewPricingEvent: noop,
     addPricingEvent: noop, removePricingEvent: noop, updatePricingEvent: noop,
     clearAllPricingEvents: noop,
+    // Passed by App and previously omitted here. A hook can branch on these,
+    // so a harness without them exercises a different component.
+    selectedTariffs: [], setSelectedTariffs: noop, cohortAvgArpu: 0,
     formatNumber: (x: any) => String(x), setActiveView: noop, downloadExcel: noop,
     activeFilter: {
       segment: 'Large Enterprise', product: { l1: 'Fixed Connectivity', l2: null },
@@ -108,7 +111,7 @@ async function main() {
         }, React.createElement(WhatIfTab as any, props)));
       });
     } catch (e: any) { threw = e; origErr('STACK>>>', e && e.stack); }
-    return { threw, text: c.textContent ?? '', kids: c.childElementCount };
+    return { threw, text: c.textContent ?? '', kids: c.childElementCount, svgs: c.querySelectorAll('svg').length };
   }
 
   let renderThrew: Error | null = null;
@@ -207,6 +210,122 @@ async function main() {
       !c2.threw, c2.threw ? String(c2.threw.message).slice(0, 200) : '');
     check('Step 2 produced DOM for the derived case',
       c2.kids > 0 || c2.text.length > 0, `children=${c2.kids} textLen=${c2.text.length}`);
+    // ANTI-VACUITY. Recharts bails at width -1 and paints nothing, so "no
+    // throw" would certify a chart path that never ran. Count what painted.
+    check('CASE 2 actually painted a chart - otherwise the chart path is untested',
+      c2.svgs > 0, `svg elements=${c2.svgs}`);
+  }
+
+  // ── THE TRANSITION. Mounting with X does not cover transitioning to X. ──
+  // In React that distinction is where hook-order violations live: a first
+  // render with null skips a hook consistently, so nothing is wrong; a render
+  // that skips a hook the PREVIOUS render ran throws "Rendered fewer hooks
+  // than expected". The mount cases above passed while the real app blanked.
+  {
+    const { buildCohortDataMap, buildRollUpIndex, deriveAggregate, makeForecastKey } =
+      await import('../src/utils/forecasting');
+    const { runForecastJob } = await import('../src/workers/forecasting.worker');
+    const dmE = buildCohortDataMap(rows, 'Month', 'Customer_Segment', 'Product_L1',
+      'Product_L2_Value_Tier', 'Channel_Level_1', 'Channel_Level_2', 'tariff_tier_l1', 'tariff_tier_l2');
+    const leavesE = [...dmE.keys()];
+    const jobE = runForecastJob({ workerId: 0, config: {
+        wiDateCol: 'Month', wiMetricCol: 'IBRO_Scenario_Type', wiValueCol: 'Subscriber_Volume',
+        wiSegmentCol: 'Customer_Segment', wiProductCol: 'Product_L1', wiProductL2Col: 'Product_L2_Value_Tier',
+        wiChannelCol: 'Channel_Level_1', wiChannelL2Col: 'Channel_Level_2',
+        wiTariffL1Col: 'tariff_tier_l1', wiTariffL2Col: 'tariff_tier_l2',
+        wiInflowVal: 'Inflow', wiOutflowVal: 'Outflow', wiBaseVal: 'Base', wiRetentionVal: 'Retention',
+        wiArpuCol: 'Avg_Unit_Price_GBP', wiRevenueCol: 'Monthly_Revenue_GBP',
+        genLength: 12, runPreUnc: 1.28, runPostExp: 0.02, runConfHor: 3,
+        runModel: 'Holt Linear', autoModel: false, autoConfidence: false, oneOffMonths: {} },
+      rows: rows as any, standardCohorts: [],
+      ibroCohorts: leavesE.map(k => { const [seg, prod, prodL2, chan, chanL2, tariffL1, tariffL2] = k.split('|');
+        return { fKey: k, seg, prod, prodL2, chan, chanL2, tariffL1, tariffL2 }; }),
+    } as any);
+    const storeE = new Map<string, any>(jobE.newTypedForecasts);
+    const { leafMap: lmE } = buildRollUpIndex(leavesE);
+    // A cohort that DOES resolve - Jon's starting point before he switches.
+    const okKey = makeForecastKey('SOHO', 'All', 'All', 'All', 'All', 'All', 'All');
+    const okBfs = (lmE.get(okKey) ?? []).map(k => storeE.get(k)).filter(Boolean);
+    const loaded = deriveAggregate(okBfs as any, { segment: 'SOHO', product: 'All', productL2: 'All',
+      channel: 'All', channelL2: 'All', tariffL1: 'All', tariffL2: 'All', scenario: 'Base Case' } as any);
+    check('TRANSITION premise: the starting cohort really resolves', !!loaded,
+      `leaves=${okBfs.length}`);
+
+    // ONE root, re-rendered. Two separate mounts would not share hook state
+    // and could never reproduce this.
+    const c = document.createElement('div');
+    host.replaceChildren(); host.appendChild(c);
+    const r = createRoot(c);
+    const paint = (bf: any) => React.createElement(ForecastProvider as any, {
+      baseForecast: bf, setBaseForecast: noop, adjustedForecast: null, setAdjustedForecast: noop,
+      forecastStore: storeE, setForecastStore: noop, hasLegacyBaseline: true,
+      resolveForecast: () => ({ forecast: bf, reason: bf ? null : 'insufficient-history' }),
+      canResolve: () => !!bf,
+    }, React.createElement(WhatIfTab as any, props));
+
+    let tErr: Error | null = null;
+    try {
+      await (act as any)(async () => { r.render(paint(loaded)); });
+      // THE STEP THAT CRASHED: Jon switching to LE - Fixed Connectivity,
+      // whose resolution is correctly null.
+      await (act as any)(async () => { r.render(paint(null)); });
+    } catch (e: any) { tErr = e; origErr('TRANSITION STACK>>>', e && e.stack); }
+    const tTxt = c.textContent ?? '';
+    check('TRANSITION forecast -> null does not throw', !tErr,
+      tErr ? String(tErr.message).slice(0, 160) : '');
+    check('TRANSITION forecast -> null shows the empty state, not a blank page',
+      /whatif_no_baseline_forecast_yet|baseline forecast/i.test(tTxt),
+      tTxt.slice(0, 140).replace(/\s+/g, ' '));
+
+    // And back again: null -> forecast must restore the working screen.
+    let bErr: Error | null = null;
+    try { await (act as any)(async () => { r.render(paint(loaded)); }); }
+    catch (e: any) { bErr = e; origErr('REVERSE STACK>>>', e && e.stack); }
+    check('TRANSITION null -> forecast does not throw', !bErr,
+      bErr ? String(bErr.message).slice(0, 160) : '');
+    check('TRANSITION null -> forecast restores the working screen',
+      !/whatif_no_baseline_forecast_yet/.test(c.textContent ?? ''),
+      (c.textContent ?? '').slice(0, 120).replace(/\s+/g, ' '));
+  }
+
+  // ── The boundary: a throw must become a REPORT, never a blank page ───────
+  {
+    const { ErrorBoundary } = await import('../src/components/ErrorBoundary');
+    const Boom = () => { throw new Error('planted render failure'); };
+    /** Mount a throwing child under the boundary at a chosen verbosity. */
+    async function boundary(dev: boolean) {
+      const c = document.createElement('div');
+      host.replaceChildren(); host.appendChild(c);
+      const r = createRoot(c);
+      let escaped: Error | null = null;
+      try {
+        await (act as any)(async () => {
+          r.render(React.createElement(ErrorBoundary as any, { dev }, React.createElement(Boom)));
+        });
+      } catch (e: any) { escaped = e; }
+      return { escaped, t: c.textContent ?? '', kids: c.childElementCount };
+    }
+    const d = await boundary(true);
+    const { escaped, kids } = d; const t = d.t;
+    void kids;
+    check('BOUNDARY: a child throw does not escape to the root', !escaped,
+      escaped ? String(escaped.message) : '');
+    check('BOUNDARY: the page is not blank after a throw',
+      d.kids > 0 && t.length > 0, `children=${d.kids} textLen=${t.length}`);
+    check('BOUNDARY: the planted message reaches the screen in dev',
+      /planted render failure/.test(t), t.slice(0, 140).replace(/\s+/g, ' '));
+    check('BOUNDARY: a reload action is offered',
+      /reload/i.test(t), t.slice(0, 140).replace(/\s+/g, ' '));
+    check('BOUNDARY dev: the stack reaches the screen, not just the message',
+      /at Boom|ErrorBoundary\.tsx|null-render-spec/.test(t), 'no stack text found');
+
+    // PROD is the branch a UAT tester sees, and it must NOT leak the stack.
+    const pr = await boundary(false);
+    check('BOUNDARY prod: not blank', pr.kids > 0 && pr.t.length > 0, `kids=${pr.kids}`);
+    check('BOUNDARY prod: a plain apology, no planted message',
+      !/planted render failure/.test(pr.t) && /went wrong/i.test(pr.t),
+      pr.t.slice(0, 120).replace(/\s+/g, ' '));
+    check('BOUNDARY prod: still offers reload', /reload/i.test(pr.t));
   }
 
   console.log(`null-render spec: ${pass} passed, ${fails.length} failed`);

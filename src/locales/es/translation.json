@@ -666,5 +666,11 @@
   "actuals_all_models_in_this_aggregate_are_performing_well": "All models in this aggregate are performing well for all segments at the current dimension grouping.",
   "actuals_models_live_on_leaf_cohorts": "No model comparison for an aggregate — models live on the individual leaf cohorts it is summed from. Group by more dimensions to reach them.",
   "actuals_aggregate_of_leaves": "Aggregate — no single model",
-  "actuals_aggregates_no_model": "Aggregates (no model)"
+  "actuals_aggregates_no_model": "Aggregates (no model)",
+  "errorboundary_prod_title": "Something went wrong",
+  "errorboundary_prod_body": "PROSPECT hit an unexpected problem and could not finish drawing this screen. Your uploaded data has not been changed. Reloading usually clears it; if it happens again, please report what you were doing.",
+  "errorboundary_reload": "Reload PROSPECT",
+  "errorboundary_dev_body": "The app stopped rendering. Full detail below — this panel is shown in development only.",
+  "errorboundary_component_stack": "Component stack",
+  "errorboundary_dev_title": "Render error"
 }

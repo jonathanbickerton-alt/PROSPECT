@@ -2278,6 +2278,38 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const selectOnlyKpi = (kpi: KpiName) => setSelectedKpis([kpi]);
 
   // -------------------------------------------------------------------------
+  // Unique dimension values for view filter dropdowns
+  //
+  // ABOVE the no-baseline early return, and that is load-bearing. These three
+  // memos used to sit BELOW it. With a forecast loaded the guard is false and
+  // all three run; the moment the resolution goes null the guard fires, they
+  // do not, and React throws "Rendered fewer hooks than expected".
+  //
+  // It never fired on a fresh mount - a first render with null skips them
+  // consistently, so hook order is stable. It fired only on the TRANSITION
+  // forecast -> null, which is why a mount-with-null spec passed while the app
+  // blanked. spec:nullrender now drives the transition in both directions.
+  //
+  // NO HOOK MAY LIVE BELOW A CONDITIONAL RETURN. The empty state below is safe
+  // only because every hook in this component runs before it.
+  // -------------------------------------------------------------------------
+
+
+  const segmentOptions = useMemo(
+    () => Array.from(new Set(data.map(r => String(r[wiSegmentCol])).filter(v => v && v !== 'undefined'))).sort(),
+    [data, wiSegmentCol],
+  );
+  // L1 product/channel options for the market event form (events target L1; L2 is supplementary)
+  const productL1Options = useMemo(
+    () => Array.from(new Set(data.map(r => String(r[wiProductCol])).filter(v => v && v !== 'undefined'))).sort(),
+    [data, wiProductCol],
+  );
+  const channelL1Options = useMemo(
+    () => Array.from(new Set(data.map(r => String(r[wiChannelCol])).filter(v => v && v !== 'undefined'))).sort(),
+    [data, wiChannelCol],
+  );
+
+  // -------------------------------------------------------------------------
   // No-baseline empty state
   // -------------------------------------------------------------------------
 
@@ -2301,23 +2333,6 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     );
   }
 
-  // -------------------------------------------------------------------------
-  // Unique dimension values for view filter dropdowns
-  // -------------------------------------------------------------------------
-
-  const segmentOptions = useMemo(
-    () => Array.from(new Set(data.map(r => String(r[wiSegmentCol])).filter(v => v && v !== 'undefined'))).sort(),
-    [data, wiSegmentCol],
-  );
-  // L1 product/channel options for the market event form (events target L1; L2 is supplementary)
-  const productL1Options = useMemo(
-    () => Array.from(new Set(data.map(r => String(r[wiProductCol])).filter(v => v && v !== 'undefined'))).sort(),
-    [data, wiProductCol],
-  );
-  const channelL1Options = useMemo(
-    () => Array.from(new Set(data.map(r => String(r[wiChannelCol])).filter(v => v && v !== 'undefined'))).sort(),
-    [data, wiChannelCol],
-  );
 
   // -------------------------------------------------------------------------
   // Main layout

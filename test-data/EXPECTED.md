@@ -2369,7 +2369,94 @@ on that fixture ARPU can only come from revenue/volume. I did not isolate which
 quantity 11.5 is - that needs the manual generation path driven headlessly, and
 I did not do it.
 
-## A5 blanked the app — NOT REPRODUCED, and the premise is fixture-dependent
+## A5 blanked the app — FOUND AND FIXED (hook order on the transition)
+
+**Resolved 2026-08-05 by Jon's console stack: "Rendered fewer hooks than
+expected. This may be caused by an accidental early return statement" in
+`<WhatIfTab>`. The investigation below it was aimed at the wrong thing and is
+kept because the reasoning it corrected is the lesson.**
+
+### The mechanism
+
+`WhatIfTab` had three `useMemo` calls — `segmentOptions`, `productL1Options`,
+`channelL1Options` — sitting BELOW the `if (!baseForecast) return <empty/>`
+guard.
+
+- With a forecast loaded the guard is false, so all three run.
+- The moment the resolution goes null the guard fires and returns before them.
+- React compares hook counts between renders, sees fewer than last time, and
+  throws. The tree unmounts: a blank white page.
+
+**It never fired on a fresh mount.** A first render with null skips those hooks
+consistently, so hook order is stable and nothing is wrong. It fired only on
+the TRANSITION forecast -> null — which is exactly Jon's click path: load a
+cohort, then switch to Large Enterprise - Fixed Connectivity.
+
+### Why the first spec passed while the app crashed
+
+`spec:nullrender` mounted the screen WITH null and asserted the empty state.
+That is a different question from transitioning TO null, and it is the question
+that cannot fail.
+
+**A mount-with-X spec does not cover transition-to-X.** In React, transitions
+are where hook-order violations live, because the violation is defined
+relative to the PREVIOUS render — a mount has no previous render to differ
+from. Every state a screen can REACH mid-session needs its transition driven,
+not just its mount.
+
+This sits directly beside the surface-not-store rule and is the same error one
+level in: proving the producer says nothing about the consumer, and proving the
+consumer's steady state says nothing about its transitions.
+
+### The fix is structural, not a guard
+
+The three memos moved ABOVE the guard. They depend only on props (`data`,
+`wiSegmentCol`, `wiProductCol`, `wiChannelCol`) and never on `baseForecast`, so
+they run unconditionally at no cost. **No hook may live below a conditional
+return.** Adding a null check inside each memo would have been the guard-shaped
+non-fix: the hooks would still be skipped by the early return.
+
+`spec:nullrender` now drives the transition in BOTH directions — forecast ->
+null must show the empty state without throwing, and null -> forecast must
+restore the working screen. Trap 7 in `npm run guard-traps` replants a hook
+below the guard and is confirmed killing it.
+
+**Trap 7 was wrong first.** Its initial version inserted the hook ABOVE the
+guard — the safe position — and reported MISSED. A trap that plants the wrong
+shape indicts the spec for the trap's own error. The miss was investigated
+rather than accepted, which is the only reason it is a real trap now.
+
+### Classification: introduced-in-effect. SECOND instance of that rule.
+
+The three hooks sit below the guard in main too — measured, 3 of them. So the
+defective SHAPE predates this branch. But it could not fire there:
+
+- main contains `setBaseForecast(null)` **zero times**.
+- The filter and tab-restore paths read
+  `if (bf !== undefined) setBaseForecast(bf);` — retain-on-miss, no else. A
+  miss silently kept the previous cohort's forecast.
+
+So in main `baseForecast` can never become null after the first load, the
+forecast -> null transition never happens, and the violation is unreachable.
+B2a replaced retain-on-miss with `setBaseForecast(resolveForecast(...).forecast)`
+— 2 sites that can pass null — which is what made mid-session null possible.
+
+**The lines are older; this branch is what makes them reachable.** Same
+classification as the roll-up duplication, and the second time this rule has
+decided a finding on this branch. Both were fixed here rather than filed as
+pre-existing.
+
+Worth noting what retain-on-miss was hiding: it was recorded as a display
+defect (the screen changed its label and kept its numbers). It was also
+load-bearing, in that it suppressed this crash by never producing the state
+that triggers it. **Removing a defect can expose the ones it was masking**, and
+that is not an argument for keeping it.
+
+---
+
+## Superseded investigation, kept for the reasoning it corrected
+
+
 
 **2026-08-05. Investigated, not fixed. Do not merge on this entry.**
 

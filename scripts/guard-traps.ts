@@ -33,10 +33,12 @@ import { spawnSync } from 'child_process';
 
 const FILE = 'src/components/ForecastVsActualsTab.tsx';
 const ENGINE = 'src/utils/forecasting.ts';
+const WHATIF = 'src/components/WhatIfTab.tsx';
 const SPEC = 'scripts/derived-interaction-spec.ts';
+const NULLSPEC = 'scripts/null-render-spec.tsx';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
-const TARGETS = [FILE, ENGINE];
+const TARGETS = [FILE, ENGINE, WHATIF];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -48,7 +50,7 @@ const MIX_BLOCK = ANCHOR + nl +
   "          ? { leafCount: incumbentSrc.leafCount, models: incumbentSrc.models }" + nl +
   "          : null;";
 
-type Trap = { id: string; why: string; file?: string; mutate: (s: string) => string };
+type Trap = { id: string; why: string; file?: string; spec?: string; mutate: (s: string) => string };
 
 const TRAPS: Trap[] = [
   { id: '1 original spelling', why: 'the sentence the old guard pinned',
@@ -72,17 +74,30 @@ const TRAPS: Trap[] = [
       .replace('    const rollUps = new Set<string>();', '    const rollUps: string[] = [];')
       .replace('      rollUps.add(makeForecastKey(s, p[0], p[1], c[0], c[1], t[0], t[1]));',
                '      rollUps.push(makeForecastKey(s, p[0], p[1], c[0], c[1], t[0], t[1]));') },
+  // Trap 7 puts a hook back BELOW the conditional return - the shape that
+  // blanked the app. It cannot be caught by a mount-with-null spec: a first
+  // render with null skips the hook consistently. Only the TRANSITION
+  // forecast -> null renders fewer hooks than the render before it, so this
+  // trap is what proves the transition cases are doing real work.
+  { id: '7 hook below the conditional return', why: 'React throws on the forecast -> null transition',
+    file: WHATIF, spec: NULLSPEC,
+    // BELOW the guard, which is the unsafe position. Planting it above would
+    // reproduce the SAFE shape and the trap would report MISSED for the one
+    // reason that means nothing — the first version of this trap did exactly
+    // that, and the miss was the trap's fault, not the spec's.
+    mutate: s => s.replace('  // Main layout',
+      '  const __trap7 = useMemo(() => 1, []);' + nl + '  void __trap7;' + nl + nl + '  // Main layout') },
 ];
 
-const specFails = (): boolean =>
-  spawnSync('npx', ['tsx', SPEC], { encoding: 'utf8', shell: process.platform === 'win32' }).status !== 0;
+const specFails = (spec: string = SPEC): boolean =>
+  spawnSync('npx', ['tsx', spec], { encoding: 'utf8', shell: process.platform === 'win32' }).status !== 0;
 
 const results: { id: string; state: string; detail: string }[] = [];
 
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails()) {
+  if (specFails() || specFails(NULLSPEC)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');
@@ -100,7 +115,7 @@ try {
       continue;
     }
     fs.writeFileSync(target, mutated);
-    results.push(specFails()
+    results.push(specFails(t.spec)
       ? { id: t.id, state: 'CAUGHT', detail: t.why }
       : { id: t.id, state: 'MISSED', detail: 'planted and the spec stayed GREEN — ' + t.why });
     fs.writeFileSync(target, base);   // one trap at a time, never compounded
