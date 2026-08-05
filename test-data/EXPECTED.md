@@ -1057,6 +1057,73 @@ the reason for `applyEventsToMonth`, `cohortScope`, `resolvedEventVolume` and
 `eventProRataShare`. Hand-generated aggregates get regenerated under derivation
 and their values will move; that is expected, not a question to resolve.
 
+### DEFECT introduced by B2: the AutoML Challenger tab is empty at EVERY grouping
+
+Found by Jon in the browser (check B3, "Review All Cohorts Anyway" appeared
+unresponsive). **Introduced by this branch. Merge held.**
+
+#### Cause — two of my own changes interacting
+
+B2a fixed instance 3 so the challenger key resolves, and B2a also added:
+
+```js
+const chosenModel = provenanceModel((cohortFcExact ?? baseForecast).provenance);
+if (!chosenModel) return null;   // a derived aggregate has no model
+```
+
+Before the branch the key was 5-part and could never match, so `cohortFcExact`
+was always null and `chosenModel` fell back to the loaded cohort's model - a
+real string. Rows survived. Now the key resolves to a DERIVED aggregate,
+`provenanceModel` returns null, and every row is dropped.
+
+**Measured, not inferred.** Full Dec2025 fixture, 540 leaf forecasts:
+
+```
+default grouping (segment only):   5 of 5   rows dropped
+product + channelL1 groupings on: 40 of 40  rows dropped
+```
+
+**The tab is empty at every grouping, not just the default**, because the
+challenger's dimension toggles never produce a fully-specified 7-part key -
+so every key it builds is an aggregate, and every aggregate is derived.
+
+#### Why this is NOT a mechanical fix
+
+`chosenModel` is load-bearing, not a label: it is the chart series key
+(`pt[chosenModel]`), the incumbent in the better-model comparison
+(`bestModel.name !== chosenModel`), and the model filter value.
+
+A derived aggregate genuinely has no incumbent model - you would change the
+LEAVES' models, not the aggregate's. So "which model is this cohort using"
+has no answer, and every way of supplying one is a product decision:
+
+| option | cost |
+|---|---|
+| exclude derived rows and SAY so | the feature becomes unreachable, since no grouping yields a leaf key |
+| use the dominant model from the mix | approximately true, and misleading in exactly the way the provenance union exists to prevent |
+| show the mix, compare trajectories without a single incumbent | real work; changes the panel |
+| revert to the old fallback | the borrow-an-unrelated-cohort pattern, already rejected three times |
+
+**Reported, not fixed.** Picking among these is the user's call.
+
+### Step 1's chart does not follow the filter bar — pre-existing, queued
+
+Established while resolving Jon's A5. `StandardForecastTab` renders
+`forecastData`, a `useState` written only by `generateStandardForecast` (the
+manual path). It is **not** driven by `baseForecast` and therefore not by the
+seam, and no filter change clears it.
+
+So Step 1 can display a forecast for a cohort `resolveForecast` returns null
+for - not because two stores disagree, but because Step 1 is the manual
+GENERATION panel and never claimed to be a per-filter viewer.
+
+**Not introduced by this branch**: the branch does not touch `forecastData`
+(the single diff hit on that name is a context line). Queued as a coherence
+wrinkle worth deciding on, not a B2 defect.
+
+**Consequence for the browser checklist:** any check about a cohort resolving
+to nothing belongs on Step 2 or Step 3, never Step 1. My A5 path was wrong.
+
 ### RESOLVED 2026-08-04 on `session-b2-wire-seam` — aggregates now derive
 
 **The entry below described the open defect. It is fixed, pending merge.**
