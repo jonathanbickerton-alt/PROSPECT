@@ -107,6 +107,17 @@ const TRAPS: Trap[] = [
     file: FVA_TAB, spec: UNSCORED,
     mutate: s => s.replace('      } else if (baseForecast && !selectedCohortRow &&',
                            '      } else if (baseForecast &&') },
+  // Trap 10 removes the OTHER half of the same guard: the scope check. Without
+  // it an aggregate is drawn against filter-scoped actuals, which is the
+  // +99.9%-variance defect the comment beside the guard records. A gate removed
+  // this half and every spec stayed green - the guard was correct and
+  // unverified, which is the state this trap exists to make impossible.
+  { id: '10 the Case B scope guard removed', why: 'aggregate drawn against filter-scoped actuals',
+    file: FVA_TAB, spec: UNSCORED,
+    mutate: s => s.replace(
+      '      } else if (baseForecast && !selectedCohortRow &&' + nl +
+      '                 (!activeFilter || cohortMatchesFilter(baseForecast.cohort, activeFilter))) {',
+      '      } else if (baseForecast && !selectedCohortRow) {') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

@@ -2757,8 +2757,10 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       //   cohortMatchesFilter(...)    — an aggregate must not be drawn against
       //                                 filter-scoped actuals; that produced
       //                                 nonsense variances around +99.9%.
-      //                                 NOT covered by any spec: a gate removed
-      //                                 this half and everything stayed green.
+      //                                 Covered by guard-traps trap 10 and the
+      //                                 Case B pair in spec:unscored, added
+      //                                 after a gate removed this half and
+      //                                 every spec stayed green.
       } else if (baseForecast && !selectedCohortRow &&
                  (!activeFilter || cohortMatchesFilter(baseForecast.cohort, activeFilter))) {
         // Fall back to baseForecast — only when its cohort scope matches the

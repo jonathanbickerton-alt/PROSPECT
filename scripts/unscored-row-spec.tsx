@@ -283,6 +283,95 @@ async function main() {
       'the two panels disagree about whether this cohort has a forecast');
   }
 
+  // ── CASE B's SECOND HALF: the scope guard ────────────────────────────────
+  //
+  // The retained Case B branch has two conditions and they do different jobs:
+  //
+  //   !selectedCohortRow        — a SELECTED cohort with no forecast gets
+  //                               nothing. Covered by guard-traps trap 9.
+  //   cohortMatchesFilter(...)  — an aggregate must NOT be drawn against
+  //                               filter-scoped actuals. Removing it produced
+  //                               nonsense variances around +99.9%.
+  //
+  // A gate removed the second half and every spec stayed green, so the guard
+  // was correct and unverified. Both halves now have a scenario, and this pair
+  // uses the same one-selector-one-geometry discipline as the series pair
+  // above: the matching case is the positive control, so the mismatching case's
+  // absence is evidence rather than a selector that missed.
+  {
+    async function mountScoped(bf: any, filter: any) {
+      const c = document.createElement('div');
+      host.replaceChildren(); host.appendChild(c);
+      const r = createRoot(c);
+      await (act as any)(async () => {
+        r.render(React.createElement(ForecastProvider as any, {
+          baseForecast: bf, setBaseForecast: noop, adjustedForecast: null, setAdjustedForecast: noop,
+          forecastStore: store, setForecastStore: noop, hasLegacyBaseline: true,
+          resolveForecast, canResolve: () => true,
+          updatedAt: Date.now(), bulkRuns: [], setBulkRuns: noop,
+        }, React.createElement(Tab as any, { ...props, activeFilter: filter })));
+      });
+      await (act as any)(async () => {});
+      const geom2 = (el: Element) => {
+        const p = el.querySelector('path.recharts-curve');
+        const d = p?.getAttribute('d') || '';
+        return d.length > 0 && /[ML]\s*-?\d/.test(d);
+      };
+      const fc2 = [...c.querySelectorAll('g.recharts-line.series-forecast')];
+      const ac2 = [...c.querySelectorAll('g.recharts-line.series-actual')];
+      return {
+        forecastFound: fc2.length, forecastDrawn: fc2.filter(geom2).length,
+        actualFound: ac2.length, actualDrawn: ac2.filter(geom2).length,
+      };
+    }
+
+    // The filter must resolve to NOTHING, or the fallback never runs and the
+    // guard is never consulted - a first attempt filtered to another product,
+    // which simply resolved its own forecast and drew it correctly. The omitted
+    // cohorts give a scope with actuals and no resolvable forecast.
+    const missKey = omitted[0];
+    const [mSeg, mProd, mProdL2, mChan, mChanL2, mT1, mT2] = missKey.split('|');
+    const asFilter = (k: string) => {
+      const [sg, p1, p2, c1, c2, t1, t2] = k.split('|');
+      return { segment: sg, product: { l1: p1, l2: p2 },
+        channel: { l1: c1, l2: c2 }, tariff: { l1: t1, l2: t2 } };
+    };
+    check('CASE B PREMISE: the filter scope really resolves to nothing',
+      resolveForecast(missKey).forecast === null, missKey);
+    void mProd; void mProdL2; void mChan; void mChanL2; void mT1; void mT2;
+
+    // baseForecast is scoped to a DIFFERENT leaf - the one the guard must refuse
+    // to draw against this filter's actuals.
+    const elsewhereKey = [...store.keys()].find(k => k.split('|')[1] !== mProd) ?? [...store.keys()][0];
+    const leafBf = store.get(elsewhereKey);
+    check('CASE B PREMISE: a forecast scoped elsewhere exists to be misdrawn',
+      !!leafBf && elsewhereKey !== missKey, elsewhereKey);
+
+    const mismatched = asFilter(missKey);
+    // The control: the SAME unresolvable-filter shape, but with baseForecast
+    // scoped to match it, so Case B is entitled to draw.
+    const matched = asFilter(elsewhereKey);
+    void mSeg;
+
+    // POSITIVE CONTROL FIRST. If the aggregate is not drawn even when the scopes
+    // MATCH, the negative case below proves nothing - it would just mean this
+    // configuration never draws a forecast at all.
+    const okCase = await mountScoped(leafBf, matched);
+    check('CASE B CONTROL: the selector matches in this configuration',
+      okCase.forecastFound > 0, `${okCase.forecastFound} forecast series found`);
+    check('CASE B CONTROL: a forecast whose scope MATCHES the filter IS drawn',
+      okCase.forecastDrawn > 0,
+      `${okCase.forecastDrawn} of ${okCase.forecastFound} drawn — if 0, the negative case below is vacuous`);
+
+    const badCase = await mountScoped(leafBf, mismatched);
+    check('CASE B: a forecast scoped OUTSIDE the filter is NOT drawn against its actuals',
+      badCase.forecastDrawn === 0,
+      `${badCase.forecastDrawn} of ${badCase.forecastFound} drawn — the +99.9% case is back`);
+    check('CASE B: the selector still matches in the mismatched case',
+      badCase.forecastFound > 0,
+      'no forecast series found at all — absence here would be a selector miss, not a guard');
+  }
+
   console.log(`unscored-row spec: ${pass} passed, ${fails.length} failed`);
   fails.forEach(f => console.log('  FAIL ' + f));
   process.exit(fails.length ? 1 : 0);
