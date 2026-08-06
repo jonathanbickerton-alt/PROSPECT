@@ -2209,6 +2209,78 @@ was right and said nothing about whether the screen would render.
 
 ---
 
+## SESSION B MERGED — `eb036c6`
+
+**Merged to main 2026-08-05, `--no-ff`, after Jon's walk PASSED at `00a4116`.**
+
+The branch tip merged was `35a2984`, one commit past the certified tree; it
+carries only an EXPECTED.md heading correction and the session report — no code,
+no scripts, no locales. Stated rather than glossed, because "certified X, merged
+Y" is the shape of the verification-before-the-last-edit mistake even when the
+delta is documentation. Full verification re-run ON MAIN after the merge:
+typecheck 0, build clean, ten suites 392, nullrender 35, challenger 12, traps
+3/3, guard-traps 8/8, i18n parity clean.
+
+### What Jon's final walk established
+
+**Part 1 — both looks passed.** The reason panel states the cause with no Step 1
+redirect; the filter bar's corner link does the same. The two-meanings-of-null
+split holds on the screen, not only in the spec.
+
+**The mix renders on all five rows**, and it is internally consistent: every
+histogram sums to its own row's 108, and the five rows sum to 540 — the whole
+fitted store. The count is not decorative; it reconciles.
+
+**Cross-grouping consistency — the check that proves the mix is real.** The
+segment-grouped Holt Linear counts (71 + 75 + 78 + 78 + 72) total **374**, which
+equals the leaf-grain Holt Linear bucket exactly. The same population counted
+two different ways through two different code paths agrees. That is a much
+stronger statement than any single screen being plausible.
+
+**The Aggregates bucket: 5 of 5 at segment grouping**, and exclusivity proven at
+deep grouping — the bucket contains every derived row and only derived rows.
+
+**The deep-grouping screens are CORRECT BY DESIGN, not a defect.** They show
+fitted rows with model recommendations rather than mixes, and that is right:
+540 groups from 540 leaves proves there is exactly one tariff per 5-part
+combination on this fixture, so every deep-grouped key is a single-leaf
+passthrough — a fitted forecast, per the settled rule that a one-leaf
+"aggregate" returns the stored object by reference rather than deriving.
+
+### FIXTURE DEGENERACY — what this fixture cannot show
+
+One tariff per 5-part combination means **multi-leaf derived rows below segment
+level are undemonstrable on this file**. Every sub-segment grouping collapses to
+single-leaf passthroughs. Derived behaviour is only observable at segment grain
+and above here.
+
+Two consequences:
+
+1. Any future check wanting a multi-leaf derived row *below* segment level needs
+   a fixture with genuine tariff variation within a 5-part combo. It does not
+   exist yet.
+2. **It further undermines the old `ProductL2_Full` identification.** Tariff adds
+   no grain on the TariffHierarchy fixture, so cohort counts are identical with
+   tariff mapped or unmapped — which is why 540 could never discriminate between
+   the two files. The identification rested on "(not mapped)", already retracted
+   below; this removes the last indirect support for it.
+
+### Queued
+
+- **Tariff wiring into the challenger tab** — `ForecastVsActualsTab.tsx:4181`
+  passes neither tariff column to `CohortDimCheckboxes`, and the fallback
+  `cohort` literal at `:3229` omits both tariff fields. This is a
+  **prerequisite** for the backlogged leaf-grain challenger redesign: that
+  redesign cannot group at leaf grain on a tariff-bearing file while the tab
+  cannot see tariff at all.
+- **Relabel "(not mapped)" → "(not available in this view)"** on the challenger
+  tab, into the Phase 3 copy batch. The current label states a property of the
+  FILE when it is a property of the VIEW, which is what made it a false fixture
+  diagnostic. Relabelling is the cheap half; the wiring above is the real fix,
+  and the relabel should not be taken as closing it.
+
+---
+
 ## RETRACTED: "(not mapped)" is not a fixture tell
 
 **Correction at the lead, 2026-08-05. The entry below used the "(not mapped)"
