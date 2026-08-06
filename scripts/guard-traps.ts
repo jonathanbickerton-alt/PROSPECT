@@ -32,10 +32,12 @@ import * as fs from 'fs';
 import { spawnSync } from 'child_process';
 
 const FILE = 'src/components/ForecastVsActualsTab.tsx';
+const FVA_TAB = FILE;
 const ENGINE = 'src/utils/forecasting.ts';
 const WHATIF = 'src/components/WhatIfTab.tsx';
 const SPEC = 'scripts/derived-interaction-spec.ts';
 const NULLSPEC = 'scripts/null-render-spec.tsx';
+const UNSCORED = 'scripts/unscored-row-spec.tsx';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const TARGETS = [FILE, ENGINE, WHATIF];
@@ -94,6 +96,12 @@ const TRAPS: Trap[] = [
   { id: '8 the two null meanings collapsed into one', why: 'a generated session is told nothing was generated',
     file: WHATIF, spec: NULLSPEC,
     mutate: s => s.replace('    if (!nothingGenerated) {', '    if (false) {') },
+  // TRAP 9 WITHDRAWN. It replanted the table/chart disagreement and
+  // unscored-row-spec stayed green, which is how the vacuous assertion there
+  // was found. The trap was right and the spec was wrong; with the assertion
+  // withdrawn as a declared gap there is nothing left for the trap to kill, and
+  // a trap that cannot fail for the right reason is the thing this file exists
+  // to prevent. Restore it together with a real series-level assertion.
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -104,7 +112,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');
