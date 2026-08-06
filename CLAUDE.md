@@ -100,13 +100,21 @@ state. A decision taken out of my hands is none of those things.
 
 ## Reporting conventions
 
-Every session report is **also** written to `reports/<yyyy-mm-dd>-<topic>.md` and
-committed. A report that exists only in a chat transcript is not retrievable by
-anyone who was not in the session, and is lost at compaction.
+Every session report is **also** written to
+`reports/<yyyy-mm-dd-HHMM>-<topic>.md` and committed. A report that exists only
+in a chat transcript is not retrievable by anyone who was not in the session,
+and is lost at compaction.
+
+`HHMM` is 24-hour local time at generation. It is in the filename so reports
+sort chronologically by name alone — filesystem timestamps do not survive
+copying, archiving, or a fresh clone, and several reports a day is normal.
 
 Each report **begins** with a block titled **FOR ADVISOR**, **maximum 25 lines**,
 containing only:
 
+- `Generated: <yyyy-mm-dd HH:MM>` as the first line, so the moment survives
+  copying and renaming — a filename is not evidence of when something was
+  written;
 - the commit hash the session certifies, or `none`;
 - findings, **one line each**;
 - decisions needed from Jon or the advisor, **one line each**;
