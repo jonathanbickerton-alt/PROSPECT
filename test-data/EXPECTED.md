@@ -2209,6 +2209,129 @@ was right and said nothing about whether the screen would render.
 
 ---
 
+## SESSION C — the deletions, and a THIRD fallback they exposed
+
+**2026-08-06, branch `session-c-deletions`, certified `a5d69ec`. Gate: stage 1
+PASS, stage 2 FAIL then fixed, stage 3 SAFE.**
+
+Four fallbacks deleted, all one family — a number produced where the honest
+answer was nothing.
+
+### The trigger set, measured BEFORE deleting
+
+Cohorts with actuals but no resolvable forecast: the exact population whose rows
+change from a fabricated number to a blank.
+
+| configuration | orphans |
+|---|---|
+| trimmed fixture, same file | **0** of 74 |
+| full Dec2025 forecast + Jun2026 actuals | **0** of 540 |
+| edge fixture, same file | **2** of 74 |
+
+The two are the edge fixture's deliberate short-history leaves — the pair the
+amber skip panel already names. All three counts are pinned in
+`npm run spec:deletions`, so a fixture edit that grows the set is noticed.
+
+### What was deleted
+
+1. **`scaledBandFlow`** — scored a cohort's flows against the LOADED cohort's
+   bands scaled by an average share.
+2. **`computeAvgShare`** and **`derivedBaseBands`**. The third was not on the
+   list and could not be left: `computeAvgShare` had TWO consumers, and
+   `derivedBaseBands` is the same mechanism applied to the Base KPI. Deleting
+   one forced the other, extending the change to Base on the same trigger set.
+3. **The instance-2 seed.** It read the cohort's own stored seed, then the
+   LOADED cohort's, then `0`. It now declines. The trailing `?? 0` was not a
+   neutral default either — it seeds a real cohort at zero standing base and
+   calls the result a forecast.
+4. **The always-true `!g.derivedMix` guard** in the Accept-All modal. A dead
+   guard is worse than none: it asserts a derived row can reach that modal when
+   the list's own filter guarantees it cannot. One authority, not two.
+
+### A VACUOUS CHECK, caught by the gate and worth the lesson
+
+Stage 2 replanted the dead guard and `spec:deletions` stayed green. The check
+anchored with `indexOf('acceptAllCandidates.map')`, which matches an unrelated
+`.map` about 77,000 characters earlier, then tested only the first 1,500
+characters after it. It never looked at the modal.
+
+**A slice offset is not a location, and a fixed window is a guess about
+distance.** Now anchored with `lastIndexOf`, no truncation, plus an assertion
+that the slice really is the modal block. Verified the way the original should
+have been — plant the defect, watch it go red, restore.
+
+The same shape appeared twice more in one gate: stage 2 confirmed the 540-orphan
+figure by hand and flagged it as unguarded, and it is now pinned. **A number
+confirmed once and left where nothing re-checks it is the same defect as a check
+that looks in the wrong place.**
+
+---
+
+## A THIRD share-scaled fallback survives, in `chartData` — OPEN
+
+**Found by stage 3, 2026-08-06. Pre-existing and NOT introduced by Session C —
+but Session C changed what it looks like on screen.**
+
+`ForecastVsActualsTab.tsx`'s `chartData` memo carries its own share-scaling
+fallback — `cohortShareMap` / `baseShareForChart` / `arpuScaleRatio` — the same
+borrow-the-loaded-cohort-and-scale pattern deleted from the accuracy table. It
+fires when `specificFcMonthMap` is null and a row is selected, and the row click
+handler has no `noForecast` guard, so a row with no forecast is selectable.
+
+**The consequence, and it IS a visible change.** Before Session C, a
+trigger-population row fabricated in BOTH panels — wrong, but consistent. Now the
+accuracy table says UNSCORED while the chart still draws a fabricated
+share-scaled line for the same selection. **The two panels disagree in kind, not
+just in value.**
+
+On the fixtures in use that is 2 rows on the edge fixture and 0 elsewhere, so it
+is narrow — but it is the first place this codebase shows an honest blank and a
+fabricated number for the same cohort at the same moment, and the honest half is
+the one that looks broken.
+
+The comment at `chartData` claiming "the chart and the accuracy tooltip cannot
+disagree" is now false. `buildCohortAccuracy`'s `aggrMap` parameter is also dead
+weight post-deletion.
+
+**Wanted:** the same treatment — a dependency-mapper pass over `chartData`'s
+three fallback closures, then measure, then delete. Not attempted here; it is a
+second deletion of equal size and was not on the docket.
+
+### Status of the accuracy-denominator entry
+
+Stage 3's judgement, recorded as it made it: **resolved for the table path this
+branch touched, NOT resolved for the chart path it did not.** The specific
+mechanism the entry describes is gone from `buildCohortAccuracy`; a structurally
+identical one still lives in `chartData`. Marking the entry closed would be the
+shrunk-blast-radius-reported-as-fixed error.
+
+---
+
+## SESSION C — tasks 2 and 3 NOT DONE, carried forward
+
+**Stated plainly rather than quietly rolled over.**
+
+Task 2 was the scored-leaf-grain DOM spec via a 5-part store arrangement,
+closing `spec:challenger`'s declared gap; task 3 was the one-shot re-test of
+stage 2's irreproducible fitted-row route, which depends on task 2. Neither was
+completed. What was established before stopping:
+
+- **`buildCohortAccuracy` is module-private** (`ForecastVsActualsTab.tsx:584`,
+  plain `function`, no `export`). It cannot be driven headlessly, so the clean
+  route to a scored leaf-grain row is to export it or to drive the tab.
+- A previous stage-3 report claimed it was "module-level and imported directly
+  by the spec". **That was wrong**, and it is worth recording as a correction:
+  the claim was plausible, unchallenged, and shaped two sessions' assumptions
+  about what could be tested.
+- The blocking path is the unscored early return at `~:767-779`, reached when a
+  cohort has no resolvable forecast at the grouping in question. Adding
+  product-grain fits to the store made the KEY resolve and still produced no
+  scored row, so the gap is in the accuracy rows, not the store.
+
+Carried to the next session with the deletions' follow-up above.
+
+---
+
 ## SESSION B MERGED — `eb036c6`
 
 **Merged to main 2026-08-05, `--no-ff`, after Jon's walk PASSED at `00a4116`.**

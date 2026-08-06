@@ -660,8 +660,7 @@ function buildCohortAccuracy(
   return Array.from(merged.entries()).map(([activeKey, monthMap]) => {
     const d = firstDims.get(activeKey)!;
 
-    // ── Collect matching sub-cohort forecasts — needed by computeAvgShare below ──
-    // Must be computed before computeAvgShare is called (closure reads matchingBfs).
+    // ── Collect matching sub-cohort forecasts ────────────────────────────
     const cohortFcLookupKeyEarly = [
       d.seg,
       dims.product   ? d.prod   : 'All',
@@ -743,8 +742,8 @@ function buildCohortAccuracy(
     // an exact key, and not a partial match on its segment either. There is no
     // forecast to compare the actuals against.
     //
-    // Everything below this point would otherwise route the row to
-    // scaledBandFlow / computeAvgShare, which scale the LOADED cohort's bands
+    // Everything below this point USED to route the row to scaledBandFlow /
+    // computeAvgShare (both now deleted), which scaled the LOADED cohort's bands
     // by a ratio of two unrelated cohorts' totals. That produced a number
     // — never a blank — and the number moved with whoever's filter was active:
     // SOHO · RED S read 60/75/61/74 with a tariff filter set and 0/0/0/0 with
@@ -865,75 +864,32 @@ function buildCohortAccuracy(
       : baseForecast.months.map(m => m.month);
     const forecastMonths: string[] = allFcMonths.filter(m => effectiveActualMap.has(m));
 
-    // ── Per-cohort average share (flow metrics) ──────────────────────────
-    // Fixed share = mean(cohortActual_t / totalActual_t) over all matched months.
-    // Using a fixed share rather than the current-month actual breaks the
-    // cancellation that caused every cohort to score identically (~81).
-    const computeAvgShare = (kpi: 'inflow' | 'outflow' | 'retention'): number | null => {
-      const shares: number[] = [];
-      for (const [month, entry] of monthMap.entries()) {
-        const snap = aggrMap.get(month);
-        if (!snap || snap[kpi] === 0) continue;
-        const cohortVal = entry[kpi];
-        if (cohortVal === 0) continue;
-        shares.push(cohortVal / snap[kpi]);
-      }
-      if (!shares.length) return null;
-      return shares.reduce((s, v) => s + v, 0) / shares.length;
-    };
-
-    const avgShareInflow    = computeAvgShare('inflow');
-    const avgShareOutflow   = computeAvgShare('outflow');
-    const avgShareRetention = computeAvgShare('retention');
-
-    // ── Flow band helper ─────────────────────────────────────────────────
-    const scaledBandFlow = (bm: typeof baseForecast.months[0], kpi: 'inflow' | 'outflow' | 'retention') => {
-      const share =
-        kpi === 'inflow'     ? avgShareInflow
-        : kpi === 'outflow'  ? avgShareOutflow
-        : avgShareRetention;
-      if (share === null) return null;
-      return {
-        mean: bm[kpi].mean * share,
-        opt:  bm[kpi].optimistic  * share,
-        pess: bm[kpi].pessimistic * share,
-      };
-    };
+    // ── DELETED: computeAvgShare / scaledBandFlow / derivedBaseBands ─────
+    //
+    // These three were one mechanism: when a cohort had ACTUALS but no
+    // resolvable forecast, they scaled the LOADED cohort's bands by that
+    // cohort's average share of the aggregate and scored the row against the
+    // result. That is the borrow-an-unrelated-cohort pattern - a number
+    // presented as this cohort's forecast that was never fitted to it.
+    //
+    // A row with no forecast now renders UNSCORED, which is the standing
+    // convention (regression trap C) and the same answer the skip panel gives.
+    //
+    // MEASURED before deleting, so the blast radius is a number and not a
+    // hope. Cohorts with actuals but no resolvable forecast:
+    //   trimmed fixture, same file            0 of 74
+    //   full Dec2025 forecast + Jun2026 actuals   0 of 540
+    //   edge fixture, same file               2 of 74
+    // The two on the edge fixture are its deliberate short-history leaves -
+    // the pair already named on screen by the amber skip panel. So on every
+    // routine configuration nothing changes, and on the edge fixture exactly
+    // two rows stop showing a fabricated number and start showing a blank.
 
     // ── Base: derive running stock for both forecast and actuals ─────────
     // Forecast base confidence bands propagate inflow/outflow bands through
     // the running stock formula: opt uses max inflow + min outflow per month.
     // ARPU is a rate metric — compared directly to aggregate forecast bands,
     // no volume-share scaling applied.
-    const derivedBaseBands = (() => {
-      const shareIn  = avgShareInflow;
-      const shareOut = avgShareOutflow ?? avgShareInflow;
-      if (shareIn === null) return null;
-      let meanB = baseForecast.seedBaseVolume * shareIn;
-      let optB  = baseForecast.seedBaseVolume * shareIn;
-      let pessB = baseForecast.seedBaseVolume * shareIn;
-      let pMeanIn = baseForecast.lastHistoricalInflow  * shareIn;
-      let pMeanOut = baseForecast.lastHistoricalOutflow * shareOut;
-      let pOptIn   = baseForecast.lastHistoricalInflow  * shareIn;
-      let pOptOut  = baseForecast.lastHistoricalOutflow * shareOut;
-      let pPessIn  = baseForecast.lastHistoricalInflow  * shareIn;
-      let pPessOut = baseForecast.lastHistoricalOutflow * shareOut;
-      const map = new Map<string, { mean: number; opt: number; pess: number }>();
-      for (const bm of baseForecast.months) {
-        meanB = Math.max(0, meanB + pMeanIn - pMeanOut);
-        optB  = Math.max(0, optB  + pOptIn  - pOptOut);
-        pessB = Math.max(0, pessB + pPessIn - pPessOut);
-        map.set(bm.month, { mean: meanB, opt: optB, pess: pessB });
-        pMeanIn  = bm.inflow.mean        * shareIn;
-        pMeanOut = bm.outflow.mean       * shareOut;
-        pOptIn   = bm.inflow.optimistic  * shareIn;
-        pOptOut  = bm.outflow.pessimistic * shareOut; // opt: high inflow, low outflow
-        pPessIn  = bm.inflow.pessimistic * shareIn;
-        pPessOut = bm.outflow.optimistic  * shareOut; // pess: low inflow, high outflow
-      }
-      return map;
-    })();
-
     // Actual cohort base: read directly from effectiveActualMap — never derived.
     // Uses effectiveActualMap so base actuals match the forecast coverage scope.
     const actualCohortBaseMap = (() => {
@@ -945,7 +901,7 @@ function buildCohortAccuracy(
       return map;
     })();
 
-    // matchingBfs already computed above (before computeAvgShare) as cohortFcLookupKeyEarly.
+    // matchingBfs already computed above as cohortFcLookupKeyEarly.
     // Alias for backward compatibility with code below that uses cohortFcLookupKey / cohortSrc.
     const cohortFcLookupKey = cohortFcLookupKeyEarly;
     const cohortSrc = cohortSrcEarly;
@@ -1330,9 +1286,10 @@ function buildCohortAccuracy(
 
       if (kpi === 'base') {
         const actual = actualCohortBaseMap?.get(month);
-        // Prefer cohortBaseBandMap (derived from cohort-specific forecast) over
-        // derivedBaseBands (share-scaled aggregate, wrong scale for L2 cohorts).
-        const band = cohortBaseBandMap?.get(month) ?? derivedBaseBands?.get(month);
+        // The cohort's OWN base band, or nothing. The share-scaled fallback
+        // that used to sit here was the wrong scale for L2 cohorts by its own
+        // admission, and wrong in kind for all of them.
+        const band = cohortBaseBandMap?.get(month);
         if (actual === undefined || actual === 0 || !band) return null;
         return { actual, band };
       }
@@ -1346,10 +1303,9 @@ function buildCohortAccuracy(
       }
       const act = effectiveActualMap.get(month);
       if (!act || act[kpi] === 0) return null;
-      const directBand = flowBandMaps?.[kpi]?.get(month);
-      // Fallback to share-scaled band from baseForecast when no direct matchingBfs band.
-      const fallbackBm = directBand ? null : baseForecast.months.find(m => m.month === month);
-      const baseBand = directBand ?? (fallbackBm ? scaledBandFlow(fallbackBm, kpi) : null);
+      // The cohort's OWN band, or nothing. No fallback: a row without a
+      // forecast is unscored, not scored against a scaled neighbour.
+      const baseBand = flowBandMaps?.[kpi]?.get(month);
       if (!baseBand) return null;
       const band = adjMeans ? applyAdjMean(baseBand, adjMeans[kpi as 'inflow' | 'outflow' | 'retention']) : baseBand;
       return { actual: act[kpi], band, isAdjusted: !!adjMeans };
@@ -1397,7 +1353,7 @@ function buildCohortAccuracy(
 
       if (debugCohort) {
         console.group(`[AccuracyScore] ${d.seg}|${d.prod}|${d.chan} — ${KPI_LABEL_MAP[kpi]}`);
-        console.log('Band source:', flowBandMaps ? `forecastStore[${[d.seg, dims.product ? d.prod : 'All', dims.channelL1 ? d.chan : 'All'].join('|')}]` : 'scaledBandFlow (share-scaled aggregate)');
+        console.log('Band source:', flowBandMaps ? `forecastStore[${[d.seg, dims.product ? d.prod : 'All', dims.channelL1 ? d.chan : 'All'].join('|')}]` : 'NONE — row is unscored');
         console.table(detailRows.map(r => ({
           month: r.month,
           actual: r.actual.toFixed(0),
@@ -4699,13 +4655,15 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                     </div>
                     <div className="flex items-center gap-2 text-slate-500 shrink-0">
                       <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium">{incumbentLabel(g)}</span>
-                      {/* No arrow, no challenger, for a derived aggregate: there is
-                          no incumbent to replace, and accepting one would write a
-                          FITTED aggregate to the store. */}
-                      {!g.derivedMix && (<>
-                        <ArrowRight size={12} className="text-slate-400" />
-                        <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-semibold">{g.bestModel.name}</span>
-                      </>)}
+                      {/* No `!g.derivedMix` guard here. This list iterates
+                          acceptAllCandidates, which already filters derived rows
+                          out at its own definition, so the guard was always true
+                          - and a dead guard is worse than none: it says a derived
+                          row can reach this modal, which is exactly the thing the
+                          filter above guarantees it cannot. One authority for the
+                          rule, not two that can drift apart. */}
+                      <ArrowRight size={12} className="text-slate-400" />
+                      <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-semibold">{g.bestModel.name}</span>
                     </div>
                   </div>
                   );
