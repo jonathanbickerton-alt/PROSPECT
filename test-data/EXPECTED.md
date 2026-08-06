@@ -2209,6 +2209,43 @@ was right and said nothing about whether the screen would render.
 
 ---
 
+## SESSION C MERGED — `6726d4c`
+
+**Merged to main 2026-08-06, `--no-ff`, no walk.** The screen change is measured,
+pinned and narrower than eyes would add: 2 rows on one fixture.
+
+Certified `a5d69ec`; the merged tip was `7bb47c8`, adding only these records and
+the session report — no code. Stated for the same reason as last time:
+"certified X, merged Y" is the shape of the verification-before-the-last-edit
+mistake even when the delta is documentation, and the post-merge run is what
+covers it.
+
+Verified ON MAIN after the merge: typecheck 0, build clean, eleven suites 411,
+nullrender 35, challenger 12, traps 3/3, guard-traps 8/8, i18n clean, `.env`
+untracked.
+
+### THE TRANSIENT STATE, named on purpose
+
+**The accuracy table is honest and the chart still fabricates, for the same 2
+edge-fixture rows.** Selecting one shows UNSCORED in the accuracy table and a
+share-scaled line in the chart, at the same moment, for the same cohort.
+
+This was merged knowingly. Before Session C both panels fabricated — wrong but
+consistent; now they disagree in kind, and the honest half is the one that looks
+broken. It is 2 rows on one fixture and 0 on the others.
+
+It is named here so that whoever meets it next finds it described rather than
+discovers it: this is a known intermediate state between two deletions, not a
+regression and not a disagreement about what is true. The chart path is the next
+branch, and this entry should be struck when it lands.
+
+**The accuracy-denominator entry stays OPEN for the chart path**, exactly as
+stage 3 judged it: resolved for the table path Session C touched, not for the
+chart path it did not. Marking it closed would be the
+shrunk-blast-radius-reported-as-fixed error.
+
+---
+
 ## SESSION C — the deletions, and a THIRD fallback they exposed
 
 **2026-08-06, branch `session-c-deletions`, certified `a5d69ec`. Gate: stage 1
