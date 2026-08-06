@@ -3624,8 +3624,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                           <React.Fragment key={sc}>
                             <Line type="monotone" dataKey={`${prefix}_opt`} stroke={c.baseline} strokeWidth={1} strokeDasharray="2 3" dot={false} opacity={0.4} legendType="none" connectNulls />
                             <Line type="monotone" dataKey={`${prefix}_pess`} stroke={c.baseline} strokeWidth={1} strokeDasharray="2 3" dot={false} opacity={0.4} legendType="none" connectNulls />
-                            <Line type="monotone" dataKey={`${prefix}_baseline`} name={`${scenarioLabel(sc)} Forecast`} stroke={c.baseline} strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls />
-                            <Line type="monotone" dataKey={`${prefix}_actual`} name={`${scenarioLabel(sc)} Actual`} stroke={c.actual} strokeWidth={2.5}
+                            <Line type="monotone" className="series-forecast" dataKey={`${prefix}_baseline`} name={`${scenarioLabel(sc)} Forecast`} stroke={c.baseline} strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls />
+                            <Line type="monotone" className="series-actual" dataKey={`${prefix}_actual`} name={`${scenarioLabel(sc)} Actual`} stroke={c.actual} strokeWidth={2.5}
                               dot={(props: any) => {
                                 const { cx, cy, payload } = props;
                                 const av = payload[`${prefix}_actual`];
@@ -3650,8 +3650,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                             <Line type="monotone" dataKey={`${prefix}_opt`} stroke={c.baseline} strokeWidth={1} strokeDasharray="2 3" dot={false} opacity={0.4} legendType="none" connectNulls />
                             <Line type="monotone" dataKey={`${prefix}_pess`} stroke={c.baseline} strokeWidth={1} strokeDasharray="2 3" dot={false} opacity={0.4} legendType="none" connectNulls />
                             </>}
-                            <Line type="monotone" dataKey={`${prefix}_baseline`} name={`${scenarioLabel(sc)} Forecast`} stroke={c.baseline} strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls />
-                            <Line type="monotone" dataKey={`${prefix}_actual`} name={`${scenarioLabel(sc)} Actual`} stroke={c.actual} strokeWidth={2.5}
+                            <Line type="monotone" className="series-forecast" dataKey={`${prefix}_baseline`} name={`${scenarioLabel(sc)} Forecast`} stroke={c.baseline} strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls />
+                            <Line type="monotone" className="series-actual" dataKey={`${prefix}_actual`} name={`${scenarioLabel(sc)} Actual`} stroke={c.actual} strokeWidth={2.5}
                               dot={(props: any) => {
                                 const { cx, cy, payload } = props;
                                 const av = payload[`${prefix}_actual`];

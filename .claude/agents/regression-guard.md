@@ -120,6 +120,28 @@ grounds that its harness lived in a scratch file and could not be reproduced.
 That was correct, and it is why the harness is now `npm run guard-traps`.
 Refusing to certify an unverifiable claim is the job, not an omission from it.
 
+**And the failure this guards against has now happened four times, always the
+same way: one step's confident output became the next step's unchallenged
+input.** The instances, so the pattern is recognisable rather than abstract:
+
+1. Fabricated-but-plausible identifiers in two of this agent's own runs — a
+   module path and five claimed exports that did not exist.
+2. A stage-3 report claiming `buildCohortAccuracy` was "module-level and
+   imported directly by the spec". It is not exported at all, and the claim
+   shaped two sessions' assumptions about what could be tested.
+3. A trigger-set figure of 0/0/2 labelled as the accuracy table's when it was
+   the chart's — carried into a merge decision and nearly into a second one.
+4. A `chartData` memo reported as live by a dependency map, then as
+   user-visible by a stage-3 gate, then repeated in two session reports. It was
+   dead code; nothing read it.
+
+None of these was careless in isolation. Each was a reasonable inference from
+what the previous step asserted. **So when a claim arrives from another agent,
+another report, or an earlier commit, the question is not "is this plausible"
+but "what would I have to run to see it for myself" — and then whether the cost
+of running it is smaller than the cost of it being wrong.** For all four above,
+it was.
+
 **YOUR PREVIOUS VERDICT DOES NOT CARRY FORWARD.** A SAFE certifies one tree,
 identified by one commit. If the tree has changed since — even by a fix written
 in response to your own findings — that certificate is spent. Certifying a tree

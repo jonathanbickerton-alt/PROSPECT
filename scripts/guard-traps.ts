@@ -96,12 +96,17 @@ const TRAPS: Trap[] = [
   { id: '8 the two null meanings collapsed into one', why: 'a generated session is told nothing was generated',
     file: WHATIF, spec: NULLSPEC,
     mutate: s => s.replace('    if (!nothingGenerated) {', '    if (false) {') },
-  // TRAP 9 WITHDRAWN. It replanted the table/chart disagreement and
-  // unscored-row-spec stayed green, which is how the vacuous assertion there
-  // was found. The trap was right and the spec was wrong; with the assertion
-  // withdrawn as a declared gap there is nothing left for the trap to kill, and
-  // a trap that cannot fail for the right reason is the thing this file exists
-  // to prevent. Restore it together with a real series-level assertion.
+  // Trap 9, RESTORED against the rendered surface. The withdrawn version aimed
+  // at chartData, which turned out to be dead code no user ever saw - so it
+  // could not have killed anything. This mutates multiChartData, which IS
+  // rendered: dropping `!selectedCohortRow` lets a SELECTED cohort with no
+  // forecast fall back to the loaded aggregate, so a forecast line appears
+  // beside an unscored table row. That is the disagreement, reinstated where it
+  // would actually be visible.
+  { id: '9 the table/chart disagreement reinstated', why: 'table blank, chart drawing, same cohort',
+    file: FVA_TAB, spec: UNSCORED,
+    mutate: s => s.replace('      } else if (baseForecast && !selectedCohortRow &&',
+                           '      } else if (baseForecast &&') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

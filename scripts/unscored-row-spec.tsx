@@ -232,27 +232,55 @@ async function main() {
     check('PANEL 2 (chart): ACTUALS are still drawn for the unscored row',
       withGeometry.length > 0, `${withGeometry.length} of ${curves.length} curves carry geometry`);
 
-    // ── DECLARED GAP: the forecast line's ABSENCE is not asserted here ──────
+    if (process.env.DBG) {
+      const txt = container.textContent || '';
+      console.log('NOTICE(no forecast matches scope):', /no forecast matches the current view scope/i.test(txt));
+      const varRows = [...container.querySelectorAll('tbody tr')].filter(tr => {
+        const t = [...tr.querySelectorAll('td')];
+        return t.length >= 5 && /^\d{4}-\d{2}$/.test((t[0].textContent || '').trim());
+      });
+      console.log('VARIANCE ROWS (actual AND baseline present):', varRows.length);
+      console.log('GEOM:', curves.filter((p: any) => /[ML]\s*-?\d/.test(p.getAttribute('d') || '')).length, 'of', curves.length);
+    }
+    // ── THE ASSERTION PAIR, same mechanism for both ─────────────────────────
     //
-    // Two attempts, both vacuous, both caught rather than shipped:
+    // The earlier attempt selected by Recharts' own class and matched nothing,
+    // so "no forecast curve has geometry" passed for free - proven vacuous by
+    // trap 9. The component now gives both series a stable className, VERIFIED
+    // to reach the DOM: the groups render as `recharts-layer recharts-line
+    // series-forecast` and `... series-actual`.
     //
-    //  1. Selecting the series by class. Recharts does NOT put the dataKey in
-    //     the group class - every one reads `recharts-layer recharts-line` - so
-    //     the selector matched nothing and the assertion passed for free. Proven
-    //     by guard-traps trap 9: the disagreement was replanted and this spec
-    //     stayed green.
-    //  2. Counting curves that carry path geometry. Measured 4 of 16 both with
-    //     the fix and with the disagreement replanted, so it does not
-    //     discriminate either.
-    //
-    // What IS asserted above is real: the accuracy table shows the gap, the
-    // chart renders, and the actuals are still drawn. What is NOT asserted is
-    // that the forecast line is absent - which is the half this branch changed.
-    //
-    // Whoever closes this needs a handle on the specific series: give the
-    // forecast Line a stable `className` or `name` in the component and assert
-    // on that, or read the chart's data through a test seam. Do not re-attempt
-    // by counting anonymous paths.
+    // Both halves use the same selector and the same geometry test, so the
+    // ACTUALS half is a genuine positive control: it proves the selector matches
+    // and that geometry is detectable. An absence assertion is only worth its
+    // place when its mirror can be shown present by the same means.
+    const geom = (el: Element) => {
+      const p = el.querySelector('path.recharts-curve');
+      const d = p?.getAttribute('d') || '';
+      return d.length > 0 && /[ML]\s*-?\d/.test(d);
+    };
+    const forecastSeries = [...container.querySelectorAll('g.recharts-line.series-forecast')];
+    const actualSeries   = [...container.querySelectorAll('g.recharts-line.series-actual')];
+
+    check('SELECTOR: the forecast series is findable at all',
+      forecastSeries.length > 0,
+      'no g.recharts-line.series-forecast — the absence assertion below would be vacuous');
+    check('SELECTOR: the actuals series is findable at all',
+      actualSeries.length > 0, 'no g.recharts-line.series-actual');
+
+    check('PANEL 2 (chart): ACTUALS are drawn for the unscored row — positive control',
+      actualSeries.some(geom),
+      `${actualSeries.filter(geom).length} of ${actualSeries.length} actual series carry geometry`);
+    check('PANEL 2 (chart): NO forecast series is drawn for the unscored row',
+      forecastSeries.every(el => !geom(el)),
+      `${forecastSeries.filter(geom).length} of ${forecastSeries.length} forecast series carry geometry — a fabricated line is back`);
+
+    // The pair as one property: this is the disagreement the branch closes.
+    check('BOTH PANELS AGREE: table blank, chart forecast absent, actuals present',
+      [...row.querySelectorAll('td')].slice(1, 5).every(td => /^[—\s]+$/.test((td.textContent || '').trim()))
+      && forecastSeries.every(el => !geom(el))
+      && actualSeries.some(geom),
+      'the two panels disagree about whether this cohort has a forecast');
   }
 
   console.log(`unscored-row spec: ${pass} passed, ${fails.length} failed`);
