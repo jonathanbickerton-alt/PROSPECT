@@ -76,6 +76,9 @@ const cohortsIn = (rows: any[]) => {
   const cases: Array<[string, string, number]> = [
     ['trimmed, same file', 'test-data/VBU_IBRO_Trimmed_TariffHierarchy_Jan2023_Jun2026.xlsx', 0],
     ['edge, same file', 'test-data/VBU_IBRO_EdgeCases_ShortHistory_PerScenarioARPU_Jan2023_Jun2026.xlsx', 2],
+    // The walk configuration. Slower (540 leaves) but it is the one a reviewer
+    // actually looks at, and it was confirmed by hand and left unguarded.
+    ['full Dec2025', 'test-data/VBU_IBRO_Synthetic_ForecastTest_TariffHierarchy_Jan2023_Dec2025.xlsx', 0],
   ];
   for (const [label, f, expected] of cases) {
     const rows = read(f);
@@ -141,9 +144,18 @@ check('3: and there is no `?? 0` seed either - zero base is not a neutral defaul
 check('4: acceptAllCandidates still excludes derived rows - the REAL rule',
   /acceptAllCandidates[\s\S]{0,400}?!g\.derivedMix/.test(fvaCode),
   'the filter that makes the removed guard redundant is itself gone');
-const modal = fvaCode.slice(fvaCode.indexOf('acceptAllCandidates.map'));
+// LAST occurrence, and no truncation window. The first version anchored on
+// indexOf(), which found an unrelated `.map` ~77,000 characters earlier, and
+// then tested only the first 1,500 characters after it - so it never looked at
+// the modal at all. A gate reinstated the exact dead guard and this check
+// stayed green. A slice offset is not a location, and a fixed window is a
+// guess about distance.
+const modalStart = fvaCode.lastIndexOf('acceptAllCandidates.map');
+const modal = modalStart === -1 ? '' : fvaCode.slice(modalStart);
+check('4: the modal render block was located', modal.length > 200 && /ArrowRight/.test(modal),
+  `slice length ${modal.length}, ArrowRight present ${/ArrowRight/.test(modal)}`);
 check('4: the modal row no longer re-tests derivedMix',
-  modal.length > 0 && !/!g\.derivedMix &&/.test(modal.slice(0, 1500)),
+  modal.length > 0 && !/!g\.derivedMix/.test(modal),
   'the dead guard is back');
 
 console.log(`deletions spec: ${pass} passed, ${fails.length} failed`);
