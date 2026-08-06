@@ -365,6 +365,23 @@ Produce a structured report:
   behaviour, and the likely file/function responsible
 - A clear "ready for user testing" or "needs fixes first" verdict
 
+14. **Never print diagnostic output through a bare `JSON.stringify` where a
+   `NaN` can occur.** `JSON.stringify(NaN)` is `"null"`. A row whose scores are
+   all `NaN` prints as a tidy list of nulls, which reads as "absent, handled" —
+   the opposite of what it is.
+
+   This laundered a `NaN` twice in one session. The first time it hid that a
+   harness had left `arpu` at zero, so every ARPU component scored `NaN` and
+   poisoned `overallScore` on 72 of 74 rows; the diagnostic said `null` and the
+   obvious reading was "no ARPU data", which was wrong and sent the
+   investigation at the product instead of the harness. The second time the same
+   output hid that the fix was incomplete.
+
+   Print with something that distinguishes them — `String(v)`, or an explicit
+   `Number.isFinite` count alongside the value. **And note the direction of the
+   error: it makes a corrupt value look like a clean absence**, which is exactly
+   the way round that stops you looking further.
+
 13. **To call a state unreachable, exhaust its WRITERS — never inspect the
    reader.** Much of what this tab does is gated on a flag, and the useful
    question is usually "can a row of this kind ever reach that arm?" Reading

@@ -179,13 +179,24 @@ function scoreMonth(actual: number, mean: number, optimistic?: number, pessimist
   return Math.max(0, primary - penalty);
 }
 
+/**
+ * A score renders as a number, or as the em-dash that means "no score".
+ *
+ * NON-FINITE COUNTS AS ABSENT, at the render boundary and not only in the mean.
+ * `scoreVals` filters NaN out of `overallScore`, but the eight COMPONENT scores
+ * reach these helpers unfiltered, and `NaN.toFixed(0)` is the string "NaN" -
+ * which this function would then hand to a coloured badge as though it were a
+ * measurement. A gate found that while checking the aggregate fix and it is the
+ * same gap one level down: guarding the average and leaving the cells is a
+ * half-closed hole, which is worse than an open one because it reads as closed.
+ */
 function scoreLabel(score: number | null): string {
-  if (score === null) return '—';
+  if (score === null || !Number.isFinite(score)) return '—';
   return score.toFixed(0);
 }
 
 function scoreBg(score: number | null): string {
-  if (score === null) return 'bg-slate-100 text-slate-400';
+  if (score === null || !Number.isFinite(score)) return 'bg-slate-100 text-slate-400';
   if (score >= 80) return 'bg-emerald-100 text-emerald-800';
   if (score >= 65) return 'bg-amber-100 text-amber-800';
   if (score >= 40) return 'bg-orange-100 text-orange-800';
@@ -1412,9 +1423,20 @@ export function buildCohortAccuracy(
     const retentionArpuScore = retentionArpuDetail?.score ?? null;
     const baseArpuScore      = baseArpuDetail?.score      ?? null;
 
+    // `Number.isFinite`, not just a null check. `NaN !== null` is true, so a
+    // single NaN component used to pass this filter and poison the mean —
+    // and an overall score of NaN renders as a SCORE, not as the honest gap,
+    // because every downstream test is `!== null`.
+    //
+    // No live path was found that produces one; every division in the scoring
+    // path guards its denominator. But "inspected and plausible" was as far as
+    // two gates would go, and the cost of being wrong is a fabricated number on
+    // screen — the exact class this codebase has spent three sessions deleting.
+    // A NaN that reaches here is now dropped like any other absent component,
+    // and if every component is absent the row is unscored, which is correct.
     const scoreVals = [inflowScore, outflowScore, retentionScore, baseScore,
                        inflowArpuScore, outflowArpuScore, retentionArpuScore, baseArpuScore]
-      .filter((v): v is number => v !== null);
+      .filter((v): v is number => v !== null && Number.isFinite(v));
     const overallScore = scoreVals.length ? scoreVals.reduce((a, b) => a + b, 0) / scoreVals.length : null;
 
     // Worst-scoring volume KPI (used to auto-switch the chart tab on row click)
@@ -1885,13 +1907,13 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   }, [previousForecast, selectedKpi]);
 
   // ---------------------------------------------------------------------------
-  // 4. Per-cohort accuracy (needed before chartData so selectedCohortRow can
+  // 4. Per-cohort accuracy (needed before the chart memos so selectedCohortRow can
   //    be derived and passed into the chart memo below).
   // ---------------------------------------------------------------------------
 
   // aggrSnapshotMap — derived from actualsAggrMap (baseForecast.cohort scope, including L2).
-  // Used ONLY by chartData for proportional scaling of forecast lines against the exact
-  // same cohort that was forecasted.
+  // Feeds broadAggrSnapshotMap below. This said "used ONLY by chartData" for
+  // a long time, which was already untrue before chartData was deleted.
   const aggrSnapshotMap = useMemo((): Map<string, AggrSnapshot> => {
     const map = new Map<string, AggrSnapshot>();
     for (const [month, bucket] of actualsAggrMap.entries()) {
@@ -2001,401 +2023,27 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   //        fallback for forecast-only months where no actuals exist yet.
   //    When no cohort is selected, aggregate values are used for all series.
   // ---------------------------------------------------------------------------
-  const chartData = useMemo(() => {
-    const histMonths = baseForecast?.historicalMonths ?? [];
-    const cohortMonthMap = selectedCohortRow?.monthMap ?? null;
-
-    // When a cohort row is selected, look up its specific forecast in forecastStore.
-    // If found, use it directly (no share-scaling). This gives accurate per-cohort
-    // forecast lines instead of a proportional approximation.
-    const cohortForecastKey = selectedCohortRow
-      ? [
-          selectedCohortRow.seg,
-          cohortDims.product   ? selectedCohortRow.prod   : 'All',
-          cohortDims.productL2 ? selectedCohortRow.prodL2 : 'All',
-          cohortDims.channelL1 ? selectedCohortRow.chan    : 'All',
-          cohortDims.channelL2 ? selectedCohortRow.chanL2  : 'All',
-          cohortDims.tariffL1  ? selectedCohortRow.tariffL1 : 'All',
-          cohortDims.tariffL2  ? selectedCohortRow.tariffL2 : 'All',
-        ].join('|')
-      : null;
-    const cohortSpecificForecast = cohortForecastKey ? resolveForecast(cohortForecastKey).forecast : null;
-
-    // When no cohort row is selected but activeFilter is set, look up a matching
-    // forecast from forecastStore. This ensures the chart forecast line is scoped
-    // to the same dimensions as the filtered actuals (which respect activeFilter).
-    // Without this, the forecast stays at the broad baseForecast scope while actuals
-    // narrow to the filter — causing a visible scale mismatch.
-    const filterForecast = (() => {
-      if (selectedCohortRow || !activeFilter) return null;
-      const seg    = activeFilter.segment && activeFilter.segment !== 'All' ? activeFilter.segment : 'All';
-      const prod   = activeFilter.product.l1 || 'All';
-      const prodL2 = activeFilter.product.l2 || 'All';
-      const chan    = activeFilter.channel.l1 || 'All';
-      const chanL2  = activeFilter.channel.l2 || 'All';
-      const tarL1   = activeFilter.tariff?.l1 || 'All';
-      const tarL2   = activeFilter.tariff?.l2 || 'All';
-      return resolveForecast(`${seg}|${prod}|${prodL2}|${chan}|${chanL2}|${tarL1}|${tarL2}`).forecast;
-    })();
-
-    // Effective specific forecast: cohort selection takes priority over filter lookup.
-    const specificForecast = cohortSpecificForecast ?? filterForecast;
-
-    // DELETED: cohortShareMap / baseShareForChart / arpuScaleRatio.
-    //
-    // Three closures, one mechanism: scale the LOADED cohort's aggregate by the
-    // selected cohort's historical share and draw it as that cohort's forecast.
-    // Measured before deleting - `npm run spec:triggers` - the population that
-    // reaches them is the same set the accuracy table stopped fabricating for:
-    // 4 rows across three fixtures and four groupings, all on the edge fixture,
-    // all its deliberate short-history leaves.
-
-    // Cohort's own BASE actuals. Read directly, never derived - unrelated to the
-    // deleted share-scaling above, and swept up with it by an over-wide cut.
-    const cohortBaseActualMap = (() => {
-      if (!cohortMonthMap || selectedKpi !== 'base') return null;
-      const map = new Map<string, number>();
-      for (const [month, entry] of cohortMonthMap.entries()) {
-        if (entry.base !== null) map.set(month, entry.base);
-      }
-      return map;
-    })();
-
-    // Build month → forecast band lookup (specificFcMonthMap).
-    // If we have an exact BaseForecast, use it directly.  Otherwise aggregate all
-    // matching sub-cohort forecasts from forecastStore so the chart forecast line
-    // reflects the correct summed scale (e.g. "MNC" = sum of all MNC cohorts).
-    // ARPU bounds are optional here for the same reason they are on ArpuBand:
-    // a derived contributor has no interval, and the aggregate must be able to
-    // say so rather than encode it as a number.
-    type FcBand  = { mean: number; optimistic?: number; pessimistic?: number };
-    type FcMonth = { month: string; inflow: FcBand; outflow: FcBand; retention: FcBand; arpu: FcBand };
-
-    // _matchFcs is set by the IIFE below; used afterward to build synActualsMap.
-    const { specificFcMonthMap, fcSeedBase, fcLastIn, fcLastOut, _matchFcs } = (() => {
-      const noFcs: BaseForecast[] = [];
-      if (specificForecast) {
-        return {
-          specificFcMonthMap: new Map(specificForecast.months.map(m => [m.month, m as FcMonth])),
-          fcSeedBase: specificForecast.seedBaseVolume,
-          fcLastIn:   specificForecast.lastHistoricalInflow,
-          fcLastOut:  specificForecast.lastHistoricalOutflow,
-          _matchFcs: noFcs,
-        };
-      }
-
-      // Determine scope for aggregation (selectedCohortRow dims or activeFilter dims)
-      const seg    = selectedCohortRow ? selectedCohortRow.seg
-                   : (activeFilter?.segment && activeFilter.segment !== 'All' ? activeFilter.segment : null);
-      const prod   = selectedCohortRow
-        ? (cohortDims.product   && selectedCohortRow.prod   !== 'All' ? selectedCohortRow.prod   : null)
-        : (activeFilter?.product.l1 ?? null);
-      const prodL2 = selectedCohortRow
-        ? (cohortDims.productL2 && selectedCohortRow.prodL2 !== 'All' ? selectedCohortRow.prodL2 : null)
-        : (activeFilter?.product.l2 ?? null);
-      const chan   = selectedCohortRow
-        ? (cohortDims.channelL1 && selectedCohortRow.chan   !== 'All' ? selectedCohortRow.chan   : null)
-        : (activeFilter?.channel.l1 ?? null);
-      const chanL2 = selectedCohortRow
-        ? (cohortDims.channelL2 && selectedCohortRow.chanL2 !== 'All' ? selectedCohortRow.chanL2 : null)
-        : (activeFilter?.channel.l2 ?? null);
-      const tarL1  = selectedCohortRow
-        ? (cohortDims.tariffL1 && selectedCohortRow.tariffL1 !== 'All' ? selectedCohortRow.tariffL1 : null)
-        : (activeFilter?.tariff?.l1 ?? null);
-      const tarL2  = selectedCohortRow
-        ? (cohortDims.tariffL2 && selectedCohortRow.tariffL2 !== 'All' ? selectedCohortRow.tariffL2 : null)
-        : (activeFilter?.tariff?.l2 ?? null);
-
-      const empty = { specificFcMonthMap: null as null, fcSeedBase: 0, fcLastIn: 0, fcLastOut: 0, _matchFcs: noFcs };
-      // Aggregate matching forecasts whenever a scope context exists (cohort row
-      // or filter bar). seg === null with activeFilter present means "All
-      // segments" — that case must still aggregate the store, otherwise the
-      // code falls through to the loaded baseForecast regardless of its scope,
-      // mismatching a cohort-scale baseline against aggregate-scale actuals.
-      if (!selectedCohortRow && !activeFilter) return empty;
-
-      // Collect all matching forecastStore entries (null dim = wildcard)
-      const matchEntries: { key: string; bf: BaseForecast }[] = [];
-      for (const [key, bf] of forecastStore.entries()) {
-        const p = key.split('|');
-        if (seg    && p[0] !== seg)    continue;
-        if (prod   && p[1] !== prod)   continue;
-        if (prodL2 && p[2] !== prodL2) continue;
-        if (chan   && p[3] !== chan)    continue;
-        if (chanL2 && p[4] !== chanL2) continue;
-        if (tarL1  && p[5] !== tarL1)  continue;
-        if (tarL2  && p[6] !== tarL2)  continue;
-        matchEntries.push({ key, bf });
-      }
-      const matchFcs = dedupeContainedForecasts(matchEntries);
-      if (!matchFcs.length) return empty;
-
-      // Pre-compute running base stock per bf for revenue-proxy ARPU weighting.
-      // Weight = (derivedBase + inflow.mean) matches the denominator used in
-      // cohortActualsMap (Base + Inflow volume), so forecast and actual ARPU
-      // are on the same scale when aggregating multiple sub-cohort forecasts.
-      const bfRunningBase = new Map<BaseForecast, Map<string, number>>();
-      for (const bf of matchFcs) {
-        const bmap = new Map<string, number>();
-        const sortedM = [...bf.months].sort((a, b) => a.month.localeCompare(b.month));
-        let b = bf.seedBaseVolume || 0, pIn = bf.lastHistoricalInflow || 0, pOut = bf.lastHistoricalOutflow || 0;
-        for (const m of sortedM) {
-          b = Math.max(0, b + pIn - pOut);
-          bmap.set(m.month, b);
-          pIn = m.inflow.mean; pOut = m.outflow.mean;
-        }
-        bfRunningBase.set(bf, bmap);
-      }
-
-      // Build per-month sums (flows additive, ARPU revenue-proxy-weighted)
-      const acc = new Map<string, {
-        inflow: FcBand; outflow: FcBand; retention: FcBand;
-        arpuWm: number; arpuWo: number; arpuWp: number; arpuW: number; arpuBandMissing: boolean;
-      }>();
-      for (const bf of matchFcs) {
-        for (const m of bf.months) {
-          if (!acc.has(m.month)) acc.set(m.month, {
-            inflow:    { mean: 0, optimistic: 0, pessimistic: 0 },
-            outflow:   { mean: 0, optimistic: 0, pessimistic: 0 },
-            retention: { mean: 0, optimistic: 0, pessimistic: 0 },
-            arpuWm: 0, arpuWo: 0, arpuWp: 0, arpuW: 0, arpuBandMissing: false,
-          });
-          const e = acc.get(m.month)!;
-          // MEANS only. The BANDS come from deriveAggregate below, in
-          // quadrature - summing the bounds here would put a linear band on the
-          // chart while the accuracy table beside it shows a quadrature one.
-          e.inflow.mean += m.inflow.mean;
-          e.outflow.mean += m.outflow.mean;
-          e.retention.mean += m.retention.mean;
-          const derivedBase = bfRunningBase.get(bf)?.get(m.month) ?? 0;
-          const w = derivedBase + m.inflow.mean;
-          // Absence is skipped, never weighted: undefined * w is NaN.
-          if (w > 0) { e.arpuWm += m.arpu.mean * w; e.arpuW += w;
-            if (m.arpu.optimistic === undefined || m.arpu.pessimistic === undefined) e.arpuBandMissing = true;
-            else { e.arpuWo += m.arpu.optimistic * w; e.arpuWp += m.arpu.pessimistic * w; } }
-        }
-      }
-
-      // ONE derivation for this row's leaves, reused for every month's bands.
-      // matchFcs is already the scoped leaf set, so this is the same input the
-      // accuracy table derives from - and therefore the same numbers.
-      const derivedForChart = matchFcs.length
-        ? deriveAggregate(matchFcs as unknown as import('../types/forecast').BaseForecast[], {
-            segment: 'All', product: 'All', productL2: 'All', channel: 'All',
-            channelL2: 'All', tariffL1: 'All', tariffL2: 'All', scenario: 'Base Case',
-          } as any)
-        : null;
-      const derivedBands = derivedForChart
-        ? new Map(derivedForChart.months.map(m => [m.month, m]))
-        : null;
-      const synMap = new Map<string, FcMonth>();
-      for (const [month, e] of acc.entries()) {
-        const aw = e.arpuW || 1;
-        // Bands from the DERIVED aggregate, means from the accumulator above.
-        // One combination rule for the whole screen.
-        const dm = derivedBands?.get(month);
-        synMap.set(month, {
-          month,
-          inflow:    dm ? dm.inflow    : e.inflow,
-          outflow:   dm ? dm.outflow   : e.outflow,
-          retention: dm ? dm.retention : e.retention,
-          // Bounds OMITTED when any contributor lacked one — not a partial
-          // numerator over the full denominator, which understates silently.
-          arpu: e.arpuBandMissing
-            ? { mean: e.arpuWm / aw }
-            : { mean: e.arpuWm / aw, optimistic: e.arpuWo / aw, pessimistic: e.arpuWp / aw },
-        });
-      }
-
-      return {
-        specificFcMonthMap: synMap as Map<string, FcMonth>,
-        fcSeedBase: matchFcs.reduce((s, bf) => s + (bf.seedBaseVolume || 0), 0),
-        fcLastIn:   matchFcs.reduce((s, bf) => s + bf.lastHistoricalInflow, 0),
-        fcLastOut:  matchFcs.reduce((s, bf) => s + bf.lastHistoricalOutflow, 0),
-        _matchFcs: matchFcs,
-      };
-    })();
-
-    // When the forecast was assembled by aggregating sub-cohort entries from
-    // forecastStore (not an exact filterForecast hit), constrain the actuals to
-    // the same cohort coverage so both chart lines are at the same scale.
-    //
-    // Example: activeFilter = Corporate/All/All but only Corporate|Mobile Data|Direct
-    // exists in forecastStore → without this, actuals = all Corporate while the
-    // forecast line = Mobile Data/Direct only → visible mis-alignment.
-    //
-    // Built from cohortActualsMap (already aggregated) to avoid re-scanning raw data.
-    type SynActBucket = { inflow: number; outflow: number; retention: number; base: number | null; arpuSubVol: number; revSum: number };
-    const synActualsMap = (() => {
-      // Not needed when: an exact forecast covers the full activeFilter scope,
-      // a cohort row is selected (uses cohortMonthMap directly), or no matches.
-      if (specificForecast || !_matchFcs.length || cohortMonthMap) return null;
-      const amap = new Map<string, SynActBucket>();
-      for (const [key, mMap] of cohortActualsMap.entries()) {
-        const [kSeg, kProd, kProdL2, kChan, kChanL2, kTariffL1, kTariffL2] = key.split('|');
-        // Include this cohortActualsMap entry if it falls within ANY matched forecast's scope
-        const matched = _matchFcs.some(bf => {
-          const c = bf.cohort;
-          if (c.segment  !== 'All' && c.segment  !== kSeg)   return false;
-          if (c.product  !== 'All' && c.product  !== kProd)  return false;
-          if (c.productL2 && c.productL2 !== 'All' && c.productL2 !== kProdL2) return false;
-          if (c.channel  !== 'All' && c.channel  !== kChan)  return false;
-          if (c.channelL2 && c.channelL2 !== 'All' && c.channelL2 !== kChanL2) return false;
-          if (c.tariffL1 && c.tariffL1 !== 'All' && c.tariffL1 !== kTariffL1) return false;
-          if (c.tariffL2 && c.tariffL2 !== 'All' && c.tariffL2 !== kTariffL2) return false;
-          return true;
-        });
-        if (!matched) continue;
-        for (const [month, entry] of mMap.entries()) {
-          if (!amap.has(month)) amap.set(month, { inflow: 0, outflow: 0, retention: 0, base: null, arpuSubVol: 0, revSum: 0 });
-          const e = amap.get(month)!;
-          e.inflow     += entry.inflow;
-          e.outflow    += entry.outflow;
-          e.retention  += entry.retention;
-          if (entry.base !== null) e.base = (e.base ?? 0) + entry.base;
-          e.arpuSubVol += entry.arpuSubVol;
-          e.revSum     += entry.arpuRevSum;
-        }
-      }
-      return amap.size > 0 ? amap : null;
-    })();
-
-    // Derived base running stock from the aggregated (or exact) forecast
-    const specificFcBaseMap = (() => {
-      if (!specificFcMonthMap || selectedKpi !== 'base') return null;
-      const months = [...specificFcMonthMap.values()].sort((a, b) => a.month.localeCompare(b.month));
-      const map = new Map<string, number>();
-      let b = fcSeedBase, prevIn = fcLastIn, prevOut = fcLastOut;
-      for (const m of months) {
-        b = Math.max(0, b + prevIn - prevOut);
-        map.set(m.month, b);
-        prevIn = m.inflow.mean;
-        prevOut = m.outflow.mean;
-      }
-      return map;
-    })();
-
-    // Returns the actual value for `month` from either the cohort or the aggregate map.
-    const getActualVal = (month: string): number | undefined => {
-      if (cohortMonthMap) {
-        if (selectedKpi === 'base') {
-          const val = cohortBaseActualMap?.get(month);
-          return val !== undefined ? val : undefined;
-        }
-        const entry = cohortMonthMap.get(month);
-        if (!entry) return undefined;
-        if (selectedKpi === 'inflow')     return entry.inflow    || undefined;
-        if (selectedKpi === 'outflow')    return entry.outflow   || undefined;
-        if (selectedKpi === 'retention')  return entry.retention || undefined;
-        if (selectedKpi === 'arpu')       return entry.arpu      || undefined;
-        return undefined;
-      }
-      // Use synActualsMap when available — it's scoped to the same cohort coverage as
-      // the chart forecast line, preventing scale mis-alignment when activeFilter is
-      // broader than the available forecasts (e.g. All products but only one sub-cohort
-      // forecast exists). Falls back to actualsAggrMap for exact-match or default cases.
-      const act = (synActualsMap ?? actualsAggrMap).get(month);
-      if (!act) return undefined;
-      if (selectedKpi === 'inflow')     return act.inflow;
-      if (selectedKpi === 'outflow')    return act.outflow;
-      if (selectedKpi === 'retention')  return act.retention;
-      if (selectedKpi === 'base')       return act.base ?? undefined;
-      if (selectedKpi === 'arpu')       return act.arpuSubVol > 0 && act.revSum > 0 ? act.revSum / act.arpuSubVol : undefined;
-      return undefined;
-    };
-
-    const histRows = histMonths.map(month => ({
-      month,
-      actual: getActualVal(month),
-      baseline: undefined, adjusted: undefined, optimistic: undefined,
-      pessimistic: undefined, prevBaseline: undefined, variance: undefined,
-    }));
-
-    const switchMonth = modelSwitchPoint?.month ?? null;
-
-    // Guard the raw-baseForecast fallback: when the view is scoped by the
-    // filter bar (no cohort selected) the loaded forecast may belong to a
-    // different cohort entirely — comparing it unscaled against the scoped
-    // actuals produces nonsense variances (e.g. +99.9% on every month).
-    // Cohort rows keep the documented share-scaling approximation; an
-    // unfiltered view is already scoped to baseForecast.cohort by
-    // actualsAggrMap, so both remain valid fallback consumers.
-    const aggregateFallbackOk = cohortMonthMap !== null
-      || !activeFilter
-      || (baseForecast ? cohortMatchesFilter(baseForecast.cohort, activeFilter) : false);
-
-    const fcRows = comparisonRows.map(row => {
-      let baseline: number | undefined;
-      let optimistic: number | undefined;
-      let pessimistic: number | undefined;
-      let adjusted: number | undefined;
-
-      if (specificFcMonthMap) {
-        // Use specific forecast directly (cohort row selected or filter matched) — no scaling needed
-        const cfm = specificFcMonthMap.get(row.month);
-        if (cfm) {
-          if (selectedKpi === 'inflow') {
-            baseline = cfm.inflow.mean; optimistic = cfm.inflow.optimistic; pessimistic = cfm.inflow.pessimistic;
-          } else if (selectedKpi === 'outflow') {
-            baseline = cfm.outflow.mean; optimistic = cfm.outflow.optimistic; pessimistic = cfm.outflow.pessimistic;
-          } else if (selectedKpi === 'retention') {
-            baseline = cfm.retention.mean; optimistic = cfm.retention.optimistic; pessimistic = cfm.retention.pessimistic;
-          } else if (selectedKpi === 'arpu') {
-            // Omitted, not undefined-valued: the revenue precedent at the
-            // MonthlyVarianceRow type says a band that is not a tolerance
-            // should not be drawn, and the same holds for one that does not
-            // exist.
-            baseline = cfm.arpu.mean;
-            if (cfm.arpu.optimistic !== undefined) optimistic = cfm.arpu.optimistic;
-            if (cfm.arpu.pessimistic !== undefined) pessimistic = cfm.arpu.pessimistic;
-          } else if (selectedKpi === 'base') {
-            baseline = specificFcBaseMap?.get(row.month);
-          }
-          adjusted = usingAdjusted ? baseline : undefined; // adjusted not available for sub-cohort forecasts
-        }
-      } else if (!cohortMonthMap && aggregateFallbackOk) {
-        // CASE B, RETAINED. No cohort row is selected, so this is the loaded
-        // aggregate shown UNSCALED against actuals at the same scope. The
-        // `aggregateFallbackOk` guard is a deliberate earlier fix: without it,
-        // an aggregate drawn against filter-scoped actuals produced nonsense
-        // variances around +99.9%.
-        //
-        // CASE A IS GONE. It shared this branch: when a cohort row WAS
-        // selected and no forecast resolved for it, the loaded aggregate was
-        // multiplied by that cohort's historical share and drawn as the
-        // cohort's own line. That is the borrow-an-unrelated-cohort pattern,
-        // and the accuracy table stopped doing it one merge ago - which is
-        // what left the table honest and this chart still fabricating for the
-        // same rows.
-        //
-        // A selected cohort with no forecast now falls through to nothing:
-        // baseline, adjusted, optimistic and pessimistic stay undefined and the
-        // series simply has no forecast points. The actuals are still drawn.
-        baseline    = getKpiVal(row.baseline, selectedKpi) ?? undefined;
-        adjusted    = usingAdjusted ? (getKpiVal(row.adjusted, selectedKpi) ?? undefined) : undefined;
-        optimistic  = selectedKpi !== 'base' ? (row.baseline[selectedKpi + 'Opt']  ?? undefined) : undefined;
-        pessimistic = selectedKpi !== 'base' ? (row.baseline[selectedKpi + 'Pess'] ?? undefined) : undefined;
-      }
-
-      const actual = getActualVal(row.month);
-      // The model-switch overlay was the SECOND entry into share-scaling, and
-      // it carried a weaker guard than the branch above - `specificFcMonthMap`
-      // alone, never `aggregateFallbackOk`. It could not diverge in practice
-      // only because every share self-guarded on `cohortMonthMap` and fell to
-      // 1. With the shares gone there is nothing to scale by, so the overlay
-      // is drawn as fitted. No second guard is left to drift out of step with
-      // the first, because there is only one branch that draws a forecast now.
-      const prevBaseline =
-        switchMonth && row.month >= switchMonth
-          ? (prevFcMap.get(row.month) ?? undefined)
-          : undefined;
-
-      const variance = actual !== undefined && baseline !== undefined ? actual - baseline : undefined;
-      return { month: row.month, actual, baseline, adjusted, optimistic, pessimistic, prevBaseline, variance };
-    });
-
-    return [...histRows, ...fcRows];
-  }, [comparisonRows, baseForecast, actualsAggrMap, aggrSnapshotMap, broadAggrSnapshotMap, selectedKpi, usingAdjusted, prevFcMap, modelSwitchPoint, selectedCohortRow, cohortDims, forecastStore, activeFilter, cohortActualsMap]);
+  // ── chartData DELETED — it was dead code, and stayed dead for a long time.
+  //
+  // A ~395-line memo that nothing read. It was declared, computed on every
+  // relevant state change, and its result was never consumed: the rendered
+  // comparison chart is driven by multiChartData below.
+  //
+  // It cost more than the cycles. Three reviews described it as live - a
+  // dependency map that traced consumers WITHIN it, a gate that inferred a
+  // user-visible defect from it, and two reports repeating both - and a whole
+  // branch was spent deleting share-scaling fallbacks out of it before anyone
+  // asked whether the memo itself was read. That question is now step 0 of
+  // dependency-mapper.md.
+  //
+  // DIVERGENCE CHECKED BEFORE DELETING, because a dead copy can still tell you
+  // something about the live one. 266 logic lines against multiChartData's 355;
+  // 174 had an exact twin. The differences that were not cosmetic all ran the
+  // same way: multiChartData's fallback guard is STRICTER. It requires
+  // baseForecast to exist and keys off selectedCohortRow, where this copy keyed
+  // off that row's monthMap and would have drawn an aggregate for a selected
+  // row whose monthMap happened to be empty. The live copy was never the one
+  // that drifted, and it needs nothing from this one.
 
   // ---------------------------------------------------------------------------
   // 5a. Multi-scenario chart data for the new Volume/Value 2-tab chart
@@ -2431,7 +2079,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   const multiChartData = useMemo((): MultiChartRow[] => {
     const histMonths = baseForecast?.historicalMonths ?? [];
 
-    // Reuse the same lookup infrastructure as the existing chartData memo
+    // Reuse the same lookup infrastructure the deleted chartData memo used
     const cohortMonthMap = selectedCohortRow?.monthMap ?? null;
     const cohortForecastKey = selectedCohortRow
       ? [
@@ -2458,7 +2106,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     })();
     const specificForecast = cohortSpecificForecast ?? filterForecast;
 
-    // Build specificFcMonthMap (same logic as chartData)
+    // Build specificFcMonthMap
     // ARPU bounds are optional here for the same reason they are on ArpuBand:
     // a derived contributor has no interval, and the aggregate must be able to
     // say so rather than encode it as a number.
@@ -2558,7 +2206,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               });
               const e = acc.get(m.month)!;
               // MEANS only - bands come from deriveAggregate below. This is the
-              // second copy of the same summation; the first is in chartData.
+              // this was the second copy; the first was in chartData, now deleted.
               e.inflow.mean += m.inflow.mean;
               e.outflow.mean += m.outflow.mean;
               e.retention.mean += m.retention.mean;
@@ -2574,7 +2222,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               if (derivedBase > 0 && m.baseArpu) { e.baseArpuWm += m.baseArpu.mean * derivedBase; if (m.baseArpu.optimistic !== undefined) e.baseArpuWo += m.baseArpu.optimistic * derivedBase; if (m.baseArpu.pessimistic !== undefined) e.baseArpuWp += m.baseArpu.pessimistic * derivedBase; }
             }
           }
-          // Same derivation as chartData, over the same scoped leaf set.
+          // Derivation over the scoped leaf set.
           const derivedForMulti = matchFcs.length
             ? deriveAggregate(matchFcs as unknown as import('../types/forecast').BaseForecast[], {
                 segment: 'All', product: 'All', productL2: 'All', channel: 'All',
@@ -2616,7 +2264,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       }
     }
 
-    // Build synActualsMap (same as in chartData) for scoped actuals
+    // Build synActualsMap for scoped actuals
     type SynActBucket = { inflow: number; outflow: number; retention: number; base: number | null;
       arpuSubVol: number; revSum: number;
       inflowRev: number; inflowSubVol: number;

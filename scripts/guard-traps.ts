@@ -38,6 +38,7 @@ const WHATIF = 'src/components/WhatIfTab.tsx';
 const SPEC = 'scripts/derived-interaction-spec.ts';
 const NULLSPEC = 'scripts/null-render-spec.tsx';
 const UNSCORED = 'scripts/unscored-row-spec.tsx';
+const LEAFGRAIN = 'scripts/leaf-grain-spec.ts';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const TARGETS = [FILE, ENGINE, WHATIF];
@@ -118,6 +119,32 @@ const TRAPS: Trap[] = [
       '      } else if (baseForecast && !selectedCohortRow &&' + nl +
       '                 (!activeFilter || cohortMatchesFilter(baseForecast.cohort, activeFilter))) {',
       '      } else if (baseForecast && !selectedCohortRow) {') },
+  // Trap 11 is TWO mutations on purpose, and the pairing is the point: no
+  // natural input produces a NaN component score, so weakening the filter
+  // alone would change nothing and the trap would report a false green. The
+  // injection is the SCENARIO; the weakened filter is the DEFECT. Together
+  // they reproduce a NaN overallScore, which renders as a score because every
+  // downstream test is `!== null`.
+  { id: '11 a NaN score laundered into a number', why: 'NaN !== null, so it survives a null-only filter',
+    file: FVA_TAB, spec: LEAFGRAIN,
+    mutate: s => s
+      .replace('    const baseArpuScore      = baseArpuDetail?.score      ?? null;',
+               '    const baseArpuScore      = NaN as any;')
+      .replace('      .filter((v): v is number => v !== null && Number.isFinite(v));',
+               '      .filter((v): v is number => v !== null);') },
+  // Trap 12 is trap 11's sibling, one level down: inject a NaN component and
+  // remove only the RENDER-boundary guard, leaving the aggregate filter intact.
+  // The mean stays finite, so trap 11 would not catch this - but the KPI cell
+  // renders the string "NaN" in a coloured badge. Guarding the average and
+  // leaving the cells is a half-closed hole, and a gate found it while checking
+  // the aggregate fix.
+  { id: '12 a NaN component rendered as a score cell', why: 'scoreLabel(NaN) is the string "NaN"',
+    file: FVA_TAB, spec: LEAFGRAIN,
+    mutate: s => s
+      .replace('    const baseArpuScore      = baseArpuDetail?.score      ?? null;',
+               '    const baseArpuScore      = NaN as any;')
+      .replace("  if (score === null || !Number.isFinite(score)) return '—';",
+               "  if (score === null) return '—';") },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -128,7 +155,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');
