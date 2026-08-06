@@ -2209,6 +2209,83 @@ was right and said nothing about whether the screen would render.
 
 ---
 
+## SESSION E MERGED — `2531585`. The leaf-grain blocker was never what we said.
+
+**Merged to main 2026-08-06, `--no-ff`. Stage 1 PASS, stage 2 PASS, stage 3
+SAFE. One production change — an `export` keyword — and the rest is the
+investigation it made possible.**
+
+Verified on main after the merge: typecheck 0, build clean, thirteen suites 440,
+nullrender 35, challenger 18, unscored 19, traps 3/3, guard-traps 10/10, i18n
+clean, `.env` untracked.
+
+### `buildCohortAccuracy` is exported
+
+Pure move, no logic change. It was module-private, so the only way to ask what
+it produces was to mount the whole tab and read the DOM — the right instrument
+for a screen, the wrong one for arithmetic. **That single fact cost two
+sessions**: a declared gap in `spec:challenger`, a wrong diagnosis carried
+through three reports, and a stage-3 claim that the function was already
+exported when it was not.
+
+### The blocker was none of the three things blamed
+
+`npm run spec:leafgrain` (15 cases) drives the function directly. Measured on
+the edge fixture at full grain:
+
+- **72 of 74 leaf-grain rows SCORE.** The 2 that do not are the deliberately
+  unfitted leaves; they take the `~:767` early return correctly and are flagged
+  `noForecast`. **The early return was doing its job the whole time.**
+- **A plain 7-part store scores identically to one with 5-part keys added** —
+  72/74 both ways, because derivation already resolves the grouped key. The
+  "5-part store arrangement" the docket called for was unnecessary, not
+  load-bearing. The control that proved it is kept in the spec.
+- **Every scored row lands below 85** (min 47.8, max 83.6), so the challenger
+  tab's `overallScore < 85` threshold would not have filtered them either.
+
+**The real blocker was `spec:challenger`'s own 12-fit cap** — twelve fits
+against actuals covering 74 cohorts. A property of the test, declared for two
+sessions as a property of the product, and re-stated in three reports.
+
+### Stage 2's route is REPRODUCIBLE — recorded, not retracted
+
+With the cap removed, toggling Product L1 produces a fitted row that shows a
+model name rather than a leaf mix; selecting it shows the error-ranked legend
+and the chart, with no derived banner. **Stage 2 was right and my inability to
+reproduce it was my harness.** That closes `spec:challenger`'s declared gap with
+the assertions it was standing in for: the fitted case is now the complement of
+the derived one, proving the suppression is scoped to `derivedMix` rather than
+always-on. Stage 2 confirmed it is not decorative by forcing `derivedMix` truthy
+and watching it go red.
+
+### Two harness errors that looked exactly like product defects
+
+Worth recording because both produced confident, wrong-looking output:
+
+1. `fitLeaf` left `arpu` at 0 for every month, so the fitted ARPU bands were zero
+   and all four ARPU components scored **NaN**, poisoning `overallScore` on 72 of
+   74 rows.
+2. Fixing that was not enough — `calculateBaseForecast` fits the four
+   **per-scenario** ARPU series independently, and those were undefined too.
+
+`JSON.stringify` prints `NaN` as `null`, which nearly hid it a third time.
+
+### Open, pre-existing, and NOT introduced here
+
+`scoreVals` filters on `v !== null`, so a `NaN` would pass through and render as
+a score. Every division in the scoring path guards its denominator on
+inspection, and no `NaN` appeared in any suite run — but that is
+**inspected-and-plausible, not proven by execution**, which is how both stage 2
+and stage 3 classified it. Untouched by this branch. Recorded so the next person
+does not have to rediscover the distinction.
+
+### Session C tasks 2 and 3 — CLOSED
+
+The entry recording them as not done, and the correction recording that a prior
+stage-3 report wrongly claimed the function was exported, are both now moot.
+
+---
+
 ## THE SHARE-SCALED FABRICATION FAMILY IS CLOSED — `52843af`
 
 **Session D merged to main 2026-08-06, `--no-ff`. Stage 1 PASS, stage 2 PASS,
