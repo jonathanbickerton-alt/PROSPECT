@@ -2209,6 +2209,75 @@ was right and said nothing about whether the screen would render.
 
 ---
 
+## SESSION F MERGED — `67eca3b`. The close-out branch.
+
+**Merged to main 2026-08-06, `--no-ff`. Stage 1 PASS, stage 2 PASS, stage 3
+SAFE.** Verified on main after the merge: typecheck 0, build clean, thirteen
+suites 442, nullrender 35, challenger 18, unscored 19, traps 3/3, guard-traps
+12/12, i18n clean, `.env` untracked.
+
+### The NaN gap — CLOSED, at both levels
+
+`scoreVals` now requires `Number.isFinite` alongside the null check. `NaN !==
+null`, so a single NaN component survived the old filter and poisoned the mean,
+and a NaN `overallScore` renders as a SCORE because every downstream test is
+`!== null`.
+
+**Stage 2 found the second half while checking the first.** The eight COMPONENT
+scores reach `scoreLabel`/`scoreBg` unfiltered, and `NaN.toFixed(0)` is the
+string `"NaN"` — handed to a coloured badge as though it were a measurement.
+Both helpers now treat non-finite as absent, routing such a cell down the same
+em-dash path as any other missing score.
+
+**Guarding the average and leaving the cells would have been a half-closed hole,
+which is worse than an open one because it reads as closed.** Traps 11 and 12
+cover the two levels: 11 injects a NaN and weakens the aggregate filter; 12
+injects a NaN and removes only the render guard, which trap 11 cannot catch
+because the mean stays finite.
+
+Both traps are deliberately TWO mutations. No natural input produces a NaN, so
+weakening a filter alone would change nothing and the trap would report a false
+green. The injection is the scenario; the weakened guard is the defect.
+
+The entry recording this as "inspected-and-plausible, not proven by execution"
+is closed. It is now proven by execution — 0 non-finite across every suite run,
+and stage 3 measured 1,080 score fields independently with 0 non-finite.
+
+### `chartData` — DELETED, after the divergence check
+
+~395 lines nothing read. The check ran first because a dead copy can still tell
+you something about the live one: 266 logic lines against `multiChartData`'s
+355, 174 with exact twins, and every non-cosmetic difference running the same
+way — **`multiChartData`'s fallback guard is STRICTER.** It requires
+`baseForecast` and keys off `selectedCohortRow`, where the dead copy keyed off
+that row's `monthMap` and would have drawn an aggregate for a selected row whose
+`monthMap` was empty. Stage 2 confirmed that is a real behavioural difference,
+not an equivalence, and in the safe direction. The live copy was never the one
+that drifted.
+
+### A diagnostic rule, recorded
+
+Never print test output through a bare `JSON.stringify` where a NaN can occur.
+`JSON.stringify(NaN)` is `"null"`, so a row of NaN scores prints as a tidy list
+of nulls and reads as "absent, handled". It laundered a NaN twice in one
+session, and the direction is what makes it dangerous: **it makes a corrupt
+value look like a clean absence**, which is exactly the way round that stops you
+looking further. Recorded in `qa-tester.md`.
+
+### Reported, NOT deleted
+
+`broadAggrSnapshotMap` now appears only in its declaration and three dependency
+arrays. Its value has been read by nothing since Session C removed `aggrMap`
+from `buildCohortAccuracy`; stage 2 verified this by reading all three consuming
+memo bodies. `aggrSnapshotMap` is a different case — still read, one hop
+removed, as `broadAggrSnapshotMap`'s fallback return.
+
+Not deleted here: removing it means editing memo dependency arrays, which can
+alter invalidation behaviour, and that is not a change to make at the end of a
+long branch.
+
+---
+
 ## SESSION E MERGED — `2531585`. The leaf-grain blocker was never what we said.
 
 **Merged to main 2026-08-06, `--no-ff`. Stage 1 PASS, stage 2 PASS, stage 3
