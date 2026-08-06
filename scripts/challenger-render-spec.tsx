@@ -106,8 +106,12 @@ async function main() {
   for (const s of segs) for (const p of prods) for (const c of chans) {
     const b = build(s, p, c, 'All');
     if (b?.bf) store.set(b.key, b.bf);
-    if (store.size >= 12) break outer;
   }
+  // NO 12-ENTRY CAP. The cap was the reason this harness could not reach a
+  // fitted row at leaf grain, and the gap it produced was declared for two
+  // sessions as a property of the product. It was a property of the test:
+  // 12 fits against actuals covering every cohort leaves most rows with nothing
+  // to resolve. spec:leafgrain establishes that leaf-grain rows score normally.
   // Also a PRODUCT-grain fit per segment. A store legitimately holds fits at
   // whatever grain someone generated, and this is the grain the challenger's
   // Product L1 toggle asks for - so a fitted row is reachable by a toggle a
@@ -233,25 +237,50 @@ async function main() {
       `${surfaces} surfaces on a chart-bearing tab - if 0, the "no chart" assertion above is vacuous`);
   }
 
-  // ── THE FITTED CASE: attempted, NOT achieved here. Stated precisely. ─────
-  // Toggling the challenger's Product L1 grouping does reach a grain whose key
-  // hits a product-grain fit in the store, but the challenger LIST goes empty
-  // at that grain in this harness: challengerCohortAccuracy carries no scored
-  // rows there, so `c.overallScore !== null` filters everything out and the
-  // "Review All Cohorts Anyway" empty state renders instead. Observed, not
-  // assumed - the row sample at that point contains only chrome buttons.
-  //
-  // A stage-2 review reported reaching a fitted row in this same harness by
-  // toggling Product L1 alone. That was not reproducible here and the
-  // discrepancy is unresolved; it is recorded rather than resolved by picking
-  // whichever result is more convenient.
-  //
-  // So "fitted leaf keeps current behaviour" is NOT asserted at the DOM layer.
-  // What IS asserted: the suppression is gated on
-  // `selectedChallengerGroup.derivedMix` (source), and this harness demonstrably
-  // paints a Recharts surface elsewhere, so the derived-side absence assertions
-  // above are not vacuous. Anyone extending this file: the missing piece is a
-  // fixture/store arrangement that yields SCORED accuracy rows at leaf grain.
+  // ── THE FITTED CASE, and the stage-2 route re-tested ────────────────────
+  // Declared unreachable for two sessions. It was reachable: the blocker was
+  // this harness's own 12-fit cap, now removed. `spec:leafgrain` established
+  // that the product scores leaf-grain rows normally, which is what made a
+  // retry worth running instead of re-declaring the gap.
+  {
+    await clickText(/AutoML Challenger/i, 'button');
+    await (act as any)(async () => {});
+    let toggled = 0;
+    for (const want of [/^Product L1/i]) {
+      await (act as any)(async () => {});
+      const x: any = [...container.querySelectorAll('input[type=checkbox]')]
+        .find((e: any) => want.test((e.closest('label')?.textContent || '').trim())
+          && !e.checked && !e.disabled);
+      if (x) { await (act as any)(async () => { x.click(); }); toggled++; }
+    }
+    await (act as any)(async () => {});
+    await clickText(/Review all cohorts anyway/i, 'button');
+    check('STAGE-2 ROUTE: the Product L1 toggle was available', toggled === 1, `${toggled} of 1`);
+
+    const fitted = [...container.querySelectorAll('button')]
+      .filter(b => /Best:/i.test(b.textContent || ''));
+    check('STAGE-2 ROUTE REPRODUCED: a fitted row appears at leaf grain',
+      fitted.length > 0, `${fitted.length} rows carrying a "Best:" recommendation`);
+
+    if (fitted.length) {
+      check('FITTED: the row shows a model name, not a leaf mix',
+        !/leaves/.test(fitted[0].textContent || ''),
+        (fitted[0].textContent || '').slice(0, 90));
+      await (act as any)(async () => { (fitted[0] as any).click(); });
+      await (act as any)(async () => {});
+      const tf = container.textContent || '';
+      // The complement of the derived assertions above. Together they prove the
+      // suppression is scoped to derivedMix rather than simply always-on.
+      check('FITTED: the error-ranked legend IS shown for a fitted row',
+        /%\s*err/i.test(tf), 'no "% err" on a fitted selection either');
+      check('FITTED: the illustration chart IS drawn for a fitted row',
+        container.querySelectorAll('svg.recharts-surface').length > 0,
+        `${container.querySelectorAll('svg.recharts-surface').length} surfaces`);
+      check('FITTED: the derived suppression banner is NOT shown',
+        !/models live on leaf cohorts/i.test(tf),
+        'the derived-only banner leaked onto a fitted row');
+    }
+  }
 
   if (process.env.DEBUG_CR) {
     console.log('CHECKBOXES:', [...container.querySelectorAll('input[type=checkbox]')]

@@ -581,7 +581,17 @@ type CohortAccuracyRow = {
  */
 type AdjustedMeanMap = Map<string, { inflow: number; outflow: number; retention: number; arpu: number }>;
 
-function buildCohortAccuracy(
+/**
+ * EXPORTED for testability. Pure move — no logic change, same seam move as
+ * `buildRollUpIndex`.
+ *
+ * It was module-private, so the only way to check what it produces was to mount
+ * the whole tab and read the DOM. That is the right check for a screen, and the
+ * wrong one for a question like "why does this row score nothing when its key
+ * resolves" — which is arithmetic, not rendering. Two sessions carried a
+ * declared gap because of it, and one report claimed it was already exported.
+ */
+export function buildCohortAccuracy(
   cohortActualsMap: Map<string, Map<string, CohortMonthEntry>>,
   // `aggrMap` was removed here: it fed the proportional scaling deleted from
   // this function, and nothing read it afterwards. A dead parameter on a
