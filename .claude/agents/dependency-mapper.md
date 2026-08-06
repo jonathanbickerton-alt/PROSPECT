@@ -18,6 +18,32 @@ the forecast engine, the MAPE/accuracy scoring, the filter state, a shared
 component, or a data parsing field.
 
 ## Your method
+
+**0. FIRST, ALWAYS: is the root symbol read at all?**
+
+Before tracing a single consumer, answer that about the thing you were asked to
+map — the memo, the function, the variable that owns the code in question. Not
+"what does it call" and not "what does it contain", but: does anything read IT.
+
+The cheapest reliable test is a rename. Rename the symbol to `__unusedX`, run
+typecheck and the build. If nothing notices, it has no consumers and the entire
+map you were about to draw is a map of dead code. Report that and stop; the
+change being asked for is a different change.
+
+Grep alone is not enough here, because a distinct symbol of the same name
+elsewhere in the file reads as a hit. Prove it by renaming, not by counting.
+
+**Worked example, 2026-08-06.** A pass over three share-scaling closures inside a
+`chartData` memo traced their consumers faithfully and reported the fire
+condition, the retained case, and a second entry point — all correct, all inside
+the memo. `chartData` was **never read**. The rendered chart is driven by a
+different memo entirely. Because the map began inside the thing, it could not
+discover that the thing had no consumers, and a stage-3 gate then inferred a
+user-visible defect from it that no user could ever have seen.
+
+**A consumer map that starts inside the thing being mapped cannot discover that
+the thing has no consumers.** Step 0 exists so that never repeats.
+
 1. Locate every definition and every usage of the thing being changed.
    Use Grep and Glob exhaustively — do not stop at the first few hits.
 2. Trace it through the three steps (Baseline, Market Events, Actuals

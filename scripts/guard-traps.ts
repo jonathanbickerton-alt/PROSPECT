@@ -32,10 +32,12 @@ import * as fs from 'fs';
 import { spawnSync } from 'child_process';
 
 const FILE = 'src/components/ForecastVsActualsTab.tsx';
+const FVA_TAB = FILE;
 const ENGINE = 'src/utils/forecasting.ts';
 const WHATIF = 'src/components/WhatIfTab.tsx';
 const SPEC = 'scripts/derived-interaction-spec.ts';
 const NULLSPEC = 'scripts/null-render-spec.tsx';
+const UNSCORED = 'scripts/unscored-row-spec.tsx';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const TARGETS = [FILE, ENGINE, WHATIF];
@@ -94,6 +96,28 @@ const TRAPS: Trap[] = [
   { id: '8 the two null meanings collapsed into one', why: 'a generated session is told nothing was generated',
     file: WHATIF, spec: NULLSPEC,
     mutate: s => s.replace('    if (!nothingGenerated) {', '    if (false) {') },
+  // Trap 9, RESTORED against the rendered surface. The withdrawn version aimed
+  // at chartData, which turned out to be dead code no user ever saw - so it
+  // could not have killed anything. This mutates multiChartData, which IS
+  // rendered: dropping `!selectedCohortRow` lets a SELECTED cohort with no
+  // forecast fall back to the loaded aggregate, so a forecast line appears
+  // beside an unscored table row. That is the disagreement, reinstated where it
+  // would actually be visible.
+  { id: '9 the table/chart disagreement reinstated', why: 'table blank, chart drawing, same cohort',
+    file: FVA_TAB, spec: UNSCORED,
+    mutate: s => s.replace('      } else if (baseForecast && !selectedCohortRow &&',
+                           '      } else if (baseForecast &&') },
+  // Trap 10 removes the OTHER half of the same guard: the scope check. Without
+  // it an aggregate is drawn against filter-scoped actuals, which is the
+  // +99.9%-variance defect the comment beside the guard records. A gate removed
+  // this half and every spec stayed green - the guard was correct and
+  // unverified, which is the state this trap exists to make impossible.
+  { id: '10 the Case B scope guard removed', why: 'aggregate drawn against filter-scoped actuals',
+    file: FVA_TAB, spec: UNSCORED,
+    mutate: s => s.replace(
+      '      } else if (baseForecast && !selectedCohortRow &&' + nl +
+      '                 (!activeFilter || cohortMatchesFilter(baseForecast.cohort, activeFilter))) {',
+      '      } else if (baseForecast && !selectedCohortRow) {') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -104,7 +128,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');
