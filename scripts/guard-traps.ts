@@ -132,6 +132,19 @@ const TRAPS: Trap[] = [
                '    const baseArpuScore      = NaN as any;')
       .replace('      .filter((v): v is number => v !== null && Number.isFinite(v));',
                '      .filter((v): v is number => v !== null);') },
+  // Trap 12 is trap 11's sibling, one level down: inject a NaN component and
+  // remove only the RENDER-boundary guard, leaving the aggregate filter intact.
+  // The mean stays finite, so trap 11 would not catch this - but the KPI cell
+  // renders the string "NaN" in a coloured badge. Guarding the average and
+  // leaving the cells is a half-closed hole, and a gate found it while checking
+  // the aggregate fix.
+  { id: '12 a NaN component rendered as a score cell', why: 'scoreLabel(NaN) is the string "NaN"',
+    file: FVA_TAB, spec: LEAFGRAIN,
+    mutate: s => s
+      .replace('    const baseArpuScore      = baseArpuDetail?.score      ?? null;',
+               '    const baseArpuScore      = NaN as any;')
+      .replace("  if (score === null || !Number.isFinite(score)) return '—';",
+               "  if (score === null) return '—';") },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

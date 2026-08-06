@@ -179,13 +179,24 @@ function scoreMonth(actual: number, mean: number, optimistic?: number, pessimist
   return Math.max(0, primary - penalty);
 }
 
+/**
+ * A score renders as a number, or as the em-dash that means "no score".
+ *
+ * NON-FINITE COUNTS AS ABSENT, at the render boundary and not only in the mean.
+ * `scoreVals` filters NaN out of `overallScore`, but the eight COMPONENT scores
+ * reach these helpers unfiltered, and `NaN.toFixed(0)` is the string "NaN" -
+ * which this function would then hand to a coloured badge as though it were a
+ * measurement. A gate found that while checking the aggregate fix and it is the
+ * same gap one level down: guarding the average and leaving the cells is a
+ * half-closed hole, which is worse than an open one because it reads as closed.
+ */
 function scoreLabel(score: number | null): string {
-  if (score === null) return '—';
+  if (score === null || !Number.isFinite(score)) return '—';
   return score.toFixed(0);
 }
 
 function scoreBg(score: number | null): string {
-  if (score === null) return 'bg-slate-100 text-slate-400';
+  if (score === null || !Number.isFinite(score)) return 'bg-slate-100 text-slate-400';
   if (score >= 80) return 'bg-emerald-100 text-emerald-800';
   if (score >= 65) return 'bg-amber-100 text-amber-800';
   if (score >= 40) return 'bg-orange-100 text-orange-800';
