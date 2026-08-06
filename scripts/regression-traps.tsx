@@ -71,6 +71,12 @@ async function main() {
   await (i18n as any).init?.();
   const fc: any = await import('../src/utils/forecasting');
   const { ForecastProvider } = await import('../src/context/ForecastContext');
+  const { deriveAggregate } = await import('../src/utils/forecasting');
+  /** Does roll-up key `agg` cover leaf key `leaf`? 'All' matches anything. */
+  const keyCovers = (agg: string, leaf: string) => {
+    const a2 = agg.split('|'), l = leaf.split('|');
+    return a2.length === 7 && l.length === 7 && a2.every((p, i) => p === 'All' || p === l[i]);
+  };
   const mod: any = await import('../src/components/ForecastVsActualsTab');
   const Tab = mod.default ?? mod.ForecastVsActualsTab ?? Object.values(mod).find((x: any) => typeof x === 'function');
   const noop = () => {};
@@ -129,6 +135,23 @@ async function main() {
       root.render(React.createElement(ForecastProvider as any, {
         baseForecast: loaded, setBaseForecast: noop, adjustedForecast: null, setAdjustedForecast: noop,
         forecastStore: store, setForecastStore: noop, hasLegacyBaseline: true,
+        // The seam. The trap harness drives the REAL component, so it must
+        // supply the real contract - store hit, else derive from leaves in
+        // scope, else null with a reason. A stub returning null would make
+        // every trap measure a screen with no forecast.
+        resolveForecast: (key: string) => {
+          const hit = store.get(key);
+          if (hit) return { forecast: hit, reason: null };
+          const leaves = [...store.entries()]
+            .filter(([k]) => k !== key && keyCovers(key, k))
+            .map(([, v]) => v);
+          if (!leaves.length) return { forecast: null, reason: 'never-enumerated' };
+          const [segment, product, productL2, channel, channelL2, tariffL1, tariffL2] = key.split('|');
+          const d = deriveAggregate(leaves, { segment, product, productL2, channel, channelL2, tariffL1, tariffL2, scenario: 'Base Case' } as any);
+          return { forecast: d, reason: d ? null : 'insufficient-history' };
+        },
+        canResolve: (key: string) => store.has(key)
+          || [...store.keys()].some(k => k !== key && keyCovers(key, k)),
         updatedAt: new Date().toISOString(), bulkRuns: [], setBulkRuns: noop,
       }, React.createElement(Tab as any, props)));
     });

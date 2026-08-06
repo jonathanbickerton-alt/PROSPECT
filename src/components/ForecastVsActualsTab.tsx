@@ -17,6 +17,9 @@ import { CohortDimCheckboxes } from './CohortDimCheckboxes';
 import type { ViewFilter } from './ViewFilterBar';
 import type { CohortDims } from './CohortDimCheckboxes';
 import { rowInScope, cohortInScope, dimsFromGrouping, ALL_DIMS, L1_ONLY } from '../utils/cohortScope';
+// The ONE key builder. This file previously hand-rolled a 5-part key here,
+// which is the instance-3 defect.
+import { makeForecastKey, deriveAggregate } from '../utils/forecasting';
 
 // ---------------------------------------------------------------------------
 // Props — all IBRO column mappings come from App; forecast data from context
@@ -584,6 +587,9 @@ function buildCohortAccuracy(
   baseForecast: import('../types/forecast').BaseForecast,
   dims: CohortDims,
   forecastStore: Map<string, import('../types/forecast').BaseForecast>,
+  // The seam, passed in: this is a module-level function, so it cannot reach
+  // the context the component reads it from.
+  resolveForecast: (key: string) => { forecast: import('../types/forecast').BaseForecast | null; reason: import('../types/forecast').SkipReason | null },
   adjustedMeanMap?: AdjustedMeanMap,
 ): CohortAccuracyRow[] {
   const merged = new Map<string, Map<string, CohortMonthEntry>>();
@@ -665,7 +671,8 @@ function buildCohortAccuracy(
       dims.tariffL1  ? d.tariffL1 : 'All',
       dims.tariffL2  ? d.tariffL2 : 'All',
     ].join('|');
-    const cohortSrcEarly = forecastStore.get(cohortFcLookupKeyEarly) ?? null;
+    // Seam, not store: an aggregate key has no stored entry and never will.
+    const cohortSrcEarly = resolveForecast(cohortFcLookupKeyEarly).forecast;
     type BFEarly = import('../types/forecast').BaseForecast;
     const matchingBfs: BFEarly[] = (() => {
       if (cohortSrcEarly) return [cohortSrcEarly];
@@ -945,59 +952,71 @@ function buildCohortAccuracy(
 
     // ── Flow forecast band maps — summed across all matching sub-cohorts ──────
     // Volume metrics (inflow / outflow / retention) are count-additive.
+    // ── ONE derivation, from the seam's own function ─────────────────────────
+    //
+    // flowBandMaps used to sum leaf bands LINEARLY - `iO += m.inflow.optimistic`
+    // - which assumes every leaf hits its optimistic edge in the same month and
+    // produces an interval the forecasting engine's own comment calls
+    // "implausible... absurdly wide". Recorded as a defect against the settled
+    // statistically-combined-bands decision, not as a style divergence.
+    //
+    // cohortBaseBandMap re-summed the three seed fields inline, one of seven
+    // such copies in this file.
+    //
+    // Both now come from deriveAggregate: quadrature bands, month-KEY alignment,
+    // seeds read at the aggregate's own as-of month with a zero floor. One
+    // implementation of leaf-to-aggregate summation, not three.
+    //
+    // ACCURACY SCORES MOVE because of this, and that is the fix working: bands
+    // narrow under quadrature, so actuals that were scoring as inside an
+    // over-wide cone now correctly score as outside it. The new values are the
+    // baseline, pinned in scripts/derive-aggregate-spec.ts.
+    const derivedForRow = matchingBfs.length
+      ? deriveAggregate(matchingBfs as unknown as import('../types/forecast').BaseForecast[], {
+          segment: d.seg,
+          product: dims.product ? d.prod : 'All',
+          productL2: dims.productL2 ? d.prodL2 : 'All',
+          channel: dims.channelL1 ? d.chan : 'All',
+          channelL2: dims.channelL2 ? d.chanL2 : 'All',
+          tariffL1: dims.tariffL1 ? d.tariffL1 : 'All',
+          tariffL2: dims.tariffL2 ? d.tariffL2 : 'All',
+          scenario: 'Base Case',
+        } as any)
+      : null;
+
     const flowBandMaps = (() => {
-      if (!matchingBfs.length) return null;
+      if (!derivedForRow) return null;
       type BandMap = Map<string, { mean: number; opt: number; pess: number }>;
-      const inf: BandMap = new Map();
-      const out: BandMap = new Map();
-      const ret: BandMap = new Map();
-      const monthSet = new Set<string>();
-      for (const bf of matchingBfs) for (const m of bf.months) monthSet.add(m.month);
-      for (const month of monthSet) {
-        let iM=0, iO=0, iP=0, oM=0, oO=0, oP=0, rM=0, rO=0, rP=0;
-        for (const bf of matchingBfs) {
-          const m = bf.months.find(mm => mm.month === month);
-          if (!m) continue;
-          iM += m.inflow.mean;    iO += m.inflow.optimistic;    iP += m.inflow.pessimistic;
-          oM += m.outflow.mean;   oO += m.outflow.optimistic;   oP += m.outflow.pessimistic;
-          rM += m.retention.mean; rO += m.retention.optimistic; rP += m.retention.pessimistic;
-        }
-        inf.set(month, { mean: iM, opt: iO, pess: iP });
-        out.set(month, { mean: oM, opt: oO, pess: oP });
-        ret.set(month, { mean: rM, opt: rO, pess: rP });
+      const inf: BandMap = new Map(), out: BandMap = new Map(), ret: BandMap = new Map();
+      for (const m of derivedForRow.months) {
+        inf.set(m.month, { mean: m.inflow.mean,    opt: m.inflow.optimistic,    pess: m.inflow.pessimistic });
+        out.set(m.month, { mean: m.outflow.mean,   opt: m.outflow.optimistic,   pess: m.outflow.pessimistic });
+        ret.set(m.month, { mean: m.retention.mean, opt: m.retention.optimistic, pess: m.retention.pessimistic });
       }
       return { inflow: inf, outflow: out, retention: ret };
     })();
 
-    // ── Base band — derived running stock using summed seeds + flows ──────────
+    // ── Base band — the IBRO recursion over the DERIVED flows ────────────────
+    // Same recursion as before, but seeded and fed from the derived aggregate
+    // rather than from a second inline summation of the same leaves.
     const cohortBaseBandMap = (() => {
-      if (!matchingBfs.length) return null;
-      const seedBase = matchingBfs.reduce((s, bf) => s + (bf.seedBaseVolume || 0), 0);
-      const lastIn   = matchingBfs.reduce((s, bf) => s + bf.lastHistoricalInflow,  0);
-      const lastOut  = matchingBfs.reduce((s, bf) => s + bf.lastHistoricalOutflow, 0);
-      const monthSet = new Set<string>();
-      for (const bf of matchingBfs) for (const m of bf.months) monthSet.add(m.month);
-      const monthList = [...monthSet].sort();
-      let meanB = seedBase, optB = seedBase, pessB = seedBase;
-      let pMeanIn=lastIn,  pMeanOut=lastOut;
-      let pOptIn =lastIn,  pOptOut =lastOut;
-      let pPessIn=lastIn,  pPessOut=lastOut;
+      if (!derivedForRow) return null;
+      let meanB = derivedForRow.seedBaseVolume;
+      let optB  = derivedForRow.seedBaseVolume;
+      let pessB = derivedForRow.seedBaseVolume;
+      let pMeanIn = derivedForRow.lastHistoricalInflow, pMeanOut = derivedForRow.lastHistoricalOutflow;
+      let pOptIn  = derivedForRow.lastHistoricalInflow, pOptOut  = derivedForRow.lastHistoricalOutflow;
+      let pPessIn = derivedForRow.lastHistoricalInflow, pPessOut = derivedForRow.lastHistoricalOutflow;
       const map = new Map<string, { mean: number; opt: number; pess: number }>();
-      for (const month of monthList) {
-        let iM=0, iO=0, iP=0, oM=0, oO=0, oP=0;
-        for (const bf of matchingBfs) {
-          const m = bf.months.find(mm => mm.month === month);
-          if (!m) continue;
-          iM += m.inflow.mean;    iO += m.inflow.optimistic;    iP += m.inflow.pessimistic;
-          oM += m.outflow.mean;   oO += m.outflow.optimistic;   oP += m.outflow.pessimistic;
-        }
+      for (const m of derivedForRow.months) {
         meanB = Math.max(0, meanB + pMeanIn - pMeanOut);
         optB  = Math.max(0, optB  + pOptIn  - pOptOut);
         pessB = Math.max(0, pessB + pPessIn - pPessOut);
-        map.set(month, { mean: meanB, opt: optB, pess: pessB });
-        pMeanIn=iM; pMeanOut=oM;
-        pOptIn=iO;  pOptOut=oP;   // opt: high inflow, low outflow
-        pPessIn=iP; pPessOut=oO;  // pess: low inflow, high outflow
+        map.set(m.month, { mean: meanB, opt: optB, pess: pessB });
+        pMeanIn = m.inflow.mean;        pMeanOut = m.outflow.mean;
+        // opt: high inflow, low outflow. pess: the reverse.
+        pOptIn  = m.inflow.optimistic;  pOptOut  = m.outflow.pessimistic;
+        pPessIn = m.inflow.pessimistic; pPessOut = m.outflow.optimistic;
       }
       return map;
     })();
@@ -1543,7 +1562,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   activeFilter, onCohortFilterChange,
 }) => {
   const { t } = useTranslation();
-  const { baseForecast, adjustedForecast, forecastStore } = useForecast();
+  const { baseForecast, adjustedForecast, forecastStore, resolveForecast } = useForecast();
   const [useAdjustedScoring, setUseAdjustedScoring] = useState(false);
 
   const [showRemoveModal, setShowRemoveModal] = useState(false);
@@ -1614,7 +1633,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   // Challenger list filter state — independent of the dimension selectors above.
   const [challengerSearch,      setChallengerSearch]      = useState('');
   const [challengerStatus,      setChallengerStatus]      = useState<'all' | 'action_required' | 'best_applied'>('all');
-  const [challengerModelFilter, setChallengerModelFilter] = useState<'All' | ForecastModel>('All');
+  // '__derived__' is its OWN bucket, not a model. A derived aggregate has no
+  // incumbent, so it cannot be a member of any model's set - filtering by
+  // 'Holt Linear' must not return it, and neither must filtering by anything
+  // else except this.
+  const [challengerModelFilter, setChallengerModelFilter] = useState<'All' | '__derived__' | ForecastModel>('All');
   // When true, shows all cohorts regardless of score threshold (user override).
   const [challengerShowAll, setChallengerShowAll] = useState(false);
   // Real challenger forecasts keyed by cohortKey. Set when user clicks "Run Forecast".
@@ -2034,7 +2057,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   // denominator.  Cohorts outside the forecast scope produce null metrics and are
   // filtered out by the validity check inside buildCohortAccuracy.
   const cohortAccuracy = useMemo(
-    () => baseForecast ? buildCohortAccuracy(cohortActualsMap, broadAggrSnapshotMap, baseForecast, cohortDims, forecastStore, adjustedMeanMap) : [],
+    () => baseForecast ? buildCohortAccuracy(cohortActualsMap, broadAggrSnapshotMap, baseForecast, cohortDims, forecastStore, resolveForecast, adjustedMeanMap) : [],
     [baseForecast, cohortActualsMap, broadAggrSnapshotMap, cohortDims, forecastStore, adjustedMeanMap],
   );
 
@@ -2072,7 +2095,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           cohortDims.tariffL2  ? selectedCohortRow.tariffL2 : 'All',
         ].join('|')
       : null;
-    const cohortSpecificForecast = cohortForecastKey ? (forecastStore.get(cohortForecastKey) ?? null) : null;
+    const cohortSpecificForecast = cohortForecastKey ? resolveForecast(cohortForecastKey).forecast : null;
 
     // When no cohort row is selected but activeFilter is set, look up a matching
     // forecast from forecastStore. This ensures the chart forecast line is scoped
@@ -2088,7 +2111,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       const chanL2  = activeFilter.channel.l2 || 'All';
       const tarL1   = activeFilter.tariff?.l1 || 'All';
       const tarL2   = activeFilter.tariff?.l2 || 'All';
-      return forecastStore.get(`${seg}|${prod}|${prodL2}|${chan}|${chanL2}|${tarL1}|${tarL2}`) ?? null;
+      return resolveForecast(`${seg}|${prod}|${prodL2}|${chan}|${chanL2}|${tarL1}|${tarL2}`).forecast;
     })();
 
     // Effective specific forecast: cohort selection takes priority over filter lookup.
@@ -2278,9 +2301,12 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
             arpuWm: 0, arpuWo: 0, arpuWp: 0, arpuW: 0, arpuBandMissing: false,
           });
           const e = acc.get(m.month)!;
-          e.inflow.mean += m.inflow.mean; e.inflow.optimistic += m.inflow.optimistic; e.inflow.pessimistic += m.inflow.pessimistic;
-          e.outflow.mean += m.outflow.mean; e.outflow.optimistic += m.outflow.optimistic; e.outflow.pessimistic += m.outflow.pessimistic;
-          e.retention.mean += m.retention.mean; e.retention.optimistic += m.retention.optimistic; e.retention.pessimistic += m.retention.pessimistic;
+          // MEANS only. The BANDS come from deriveAggregate below, in
+          // quadrature - summing the bounds here would put a linear band on the
+          // chart while the accuracy table beside it shows a quadrature one.
+          e.inflow.mean += m.inflow.mean;
+          e.outflow.mean += m.outflow.mean;
+          e.retention.mean += m.retention.mean;
           const derivedBase = bfRunningBase.get(bf)?.get(m.month) ?? 0;
           const w = derivedBase + m.inflow.mean;
           // Absence is skipped, never weighted: undefined * w is NaN.
@@ -2290,14 +2316,29 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
         }
       }
 
+      // ONE derivation for this row's leaves, reused for every month's bands.
+      // matchFcs is already the scoped leaf set, so this is the same input the
+      // accuracy table derives from - and therefore the same numbers.
+      const derivedForChart = matchFcs.length
+        ? deriveAggregate(matchFcs as unknown as import('../types/forecast').BaseForecast[], {
+            segment: 'All', product: 'All', productL2: 'All', channel: 'All',
+            channelL2: 'All', tariffL1: 'All', tariffL2: 'All', scenario: 'Base Case',
+          } as any)
+        : null;
+      const derivedBands = derivedForChart
+        ? new Map(derivedForChart.months.map(m => [m.month, m]))
+        : null;
       const synMap = new Map<string, FcMonth>();
       for (const [month, e] of acc.entries()) {
         const aw = e.arpuW || 1;
+        // Bands from the DERIVED aggregate, means from the accumulator above.
+        // One combination rule for the whole screen.
+        const dm = derivedBands?.get(month);
         synMap.set(month, {
           month,
-          inflow:    e.inflow,
-          outflow:   e.outflow,
-          retention: e.retention,
+          inflow:    dm ? dm.inflow    : e.inflow,
+          outflow:   dm ? dm.outflow   : e.outflow,
+          retention: dm ? dm.retention : e.retention,
           // Bounds OMITTED when any contributor lacked one — not a partial
           // numerator over the full denominator, which understates silently.
           arpu: e.arpuBandMissing
@@ -2540,7 +2581,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           cohortDims.tariffL2  ? selectedCohortRow.tariffL2 : 'All',
         ].join('|')
       : null;
-    const cohortSpecificForecast = cohortForecastKey ? (forecastStore.get(cohortForecastKey) ?? null) : null;
+    const cohortSpecificForecast = cohortForecastKey ? resolveForecast(cohortForecastKey).forecast : null;
     const filterForecast = (() => {
       if (selectedCohortRow || !activeFilter) return null;
       const seg    = activeFilter.segment && activeFilter.segment !== 'All' ? activeFilter.segment : 'All';
@@ -2550,7 +2591,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       const chanL2  = activeFilter.channel.l2 || 'All';
       const tarL1   = activeFilter.tariff?.l1 || 'All';
       const tarL2   = activeFilter.tariff?.l2 || 'All';
-      return forecastStore.get(`${seg}|${prod}|${prodL2}|${chan}|${chanL2}|${tarL1}|${tarL2}`) ?? null;
+      return resolveForecast(`${seg}|${prod}|${prodL2}|${chan}|${chanL2}|${tarL1}|${tarL2}`).forecast;
     })();
     const specificForecast = cohortSpecificForecast ?? filterForecast;
 
@@ -2653,9 +2694,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                 baseArpuWm: 0, baseArpuWo: 0, baseArpuWp: 0,
               });
               const e = acc.get(m.month)!;
-              e.inflow.mean += m.inflow.mean; e.inflow.optimistic += m.inflow.optimistic; e.inflow.pessimistic += m.inflow.pessimistic;
-              e.outflow.mean += m.outflow.mean; e.outflow.optimistic += m.outflow.optimistic; e.outflow.pessimistic += m.outflow.pessimistic;
-              e.retention.mean += m.retention.mean; e.retention.optimistic += m.retention.optimistic; e.retention.pessimistic += m.retention.pessimistic;
+              // MEANS only - bands come from deriveAggregate below. This is the
+              // second copy of the same summation; the first is in chartData.
+              e.inflow.mean += m.inflow.mean;
+              e.outflow.mean += m.outflow.mean;
+              e.retention.mean += m.retention.mean;
               const derivedBase = bfRunningBase.get(bf)?.get(m.month) ?? 0;
               const w = derivedBase + m.inflow.mean;
               // Absence is skipped, never weighted: undefined * w is NaN.
@@ -2668,6 +2711,16 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               if (derivedBase > 0 && m.baseArpu) { e.baseArpuWm += m.baseArpu.mean * derivedBase; if (m.baseArpu.optimistic !== undefined) e.baseArpuWo += m.baseArpu.optimistic * derivedBase; if (m.baseArpu.pessimistic !== undefined) e.baseArpuWp += m.baseArpu.pessimistic * derivedBase; }
             }
           }
+          // Same derivation as chartData, over the same scoped leaf set.
+          const derivedForMulti = matchFcs.length
+            ? deriveAggregate(matchFcs as unknown as import('../types/forecast').BaseForecast[], {
+                segment: 'All', product: 'All', productL2: 'All', channel: 'All',
+                channelL2: 'All', tariffL1: 'All', tariffL2: 'All', scenario: 'Base Case',
+              } as any)
+            : null;
+          const derivedMultiBands = derivedForMulti
+            ? new Map(derivedForMulti.months.map(m => [m.month, m]))
+            : null;
           const synMap = new Map<string, FcMonthEx>();
           for (const [month, e] of acc.entries()) {
             const aw = e.arpuW || 1;
@@ -2675,11 +2728,12 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
             const wo2 = matchFcs.reduce((s, bf) => s + (bf.months.find(m => m.month === month)?.outflow.mean ?? 0), 0) || 1;
             const wr2 = matchFcs.reduce((s, bf) => s + (bf.months.find(m => m.month === month)?.retention.mean ?? 0), 0) || 1;
             const wb2 = matchFcs.reduce((s, bf) => s + (bfRunningBase.get(bf)?.get(month) ?? 0), 0) || 1;
+            const dmx = derivedMultiBands?.get(month);
             synMap.set(month, {
               month,
-              inflow:    e.inflow,
-              outflow:   e.outflow,
-              retention: e.retention,
+              inflow:    dmx ? dmx.inflow    : e.inflow,
+              outflow:   dmx ? dmx.outflow   : e.outflow,
+              retention: dmx ? dmx.retention : e.retention,
               // Bounds OMITTED when any contributor lacked one — not a partial
           // numerator over the full denominator, which understates silently.
           arpu: e.arpuBandMissing
@@ -3015,16 +3069,46 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
 
   // AutoML Challenger tab — driven by challengerDims (independent of cohortDims)
   const challengerCohortAccuracy = useMemo(
-    () => baseForecast ? buildCohortAccuracy(cohortActualsMap, broadAggrSnapshotMap, baseForecast, challengerDims, forecastStore) : [],
+    () => baseForecast ? buildCohortAccuracy(cohortActualsMap, broadAggrSnapshotMap, baseForecast, challengerDims, forecastStore, resolveForecast) : [],
     [baseForecast, cohortActualsMap, broadAggrSnapshotMap, challengerDims, forecastStore],
   );
 
   // ---------------------------------------------------------------------------
   // 7. Challenger model evaluation (cohorts with MAPE > 5%)
   // ---------------------------------------------------------------------------
+  /**
+   * What to show where an incumbent model name would go.
+   *
+   * A derived aggregate has no incumbent, so it shows what it IS: how many
+   * leaves, fitted with which models. That is the honest answer to "what model
+   * is this cohort using" - several, on cohorts one level down.
+   */
+  const incumbentLabel = (g: { chosenModel: string; derivedMix: { leafCount: number; models: Record<string, number | undefined> } | null }): string => {
+    if (!g.derivedMix) return g.chosenModel;
+    const parts = Object.entries(g.derivedMix.models)
+      .filter(([, n]) => (n ?? 0) > 0)
+      .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
+      .map(([m, n]) => `${m} x${n}`);
+    const leaves = `${g.derivedMix.leafCount} ${t('actuals_leaves')}`;
+    return parts.length ? `${leaves} — ${parts.join(', ')}` : leaves;
+  };
+
   type ChallengerGroup = {
     key: string; seg: string; prod: string; avgMape: number;
+    /** The incumbent model, or '' for a DERIVED aggregate, which has none. */
     chosenModel: string;
+    /**
+     * Set when this row is a derived aggregate. Its presence means: the
+     * accuracy score is real and worth showing, but the model COMPARISON is
+     * not, because there is no incumbent model to beat.
+     *
+     * Fitting a challenger to aggregate data is fit-on-aggregate - dead under
+     * the settled bottom-up decision - and ACCEPTING such a challenger would
+     * write a fitted aggregate into the store, undoing the derivation this
+     * phase exists to establish. So the comparison is suppressed at the source,
+     * not merely hidden.
+     */
+    derivedMix: { leafCount: number; models: Partial<Record<import('../types/forecast').ForecastModel, number>> } | null;
     /** Exact cohort dimensions — used by runChallengerForecast to filter data */
     cohort: import('../types/forecast').CohortKey;
     models: { name: string; error: number; color: string; strokeDasharray: string }[];
@@ -3048,21 +3132,41 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
         if (!monthMap || !monthMap.size) return null;
 
         // Look up the cohort-specific forecast from forecastStore.
-        const cohortFcKey = [
+        // INSTANCE 3, fixed. This built a FIVE-part key by hand -
+        // seg|prod|prodL2|chan|chanL2, omitting tariff entirely - and queried a
+        // store whose keys makeForecastKey always writes with SEVEN parts. Four
+        // pipes against six: it could never match, so cohortFcExact was always
+        // null and the share-scaling branch below ran unconditionally, for
+        // leaves as well as aggregates. Pre-tariff code never updated when the
+        // tariff dimension landed.
+        //
+        // Fixing the key alone changes nothing visible: the sampled keys are
+        // AGGREGATE shapes at the default grouping, so a correct 7-part key
+        // still misses until derivation resolves it. That is why this goes
+        // through resolveForecast and not forecastStore.get.
+        const cohortFcKey = makeForecastKey(
           c.seg,
           challengerDims.product   ? c.prod   : 'All',
           challengerDims.productL2 ? c.prodL2 : 'All',
           challengerDims.channelL1 ? c.chan    : 'All',
           challengerDims.channelL2 ? c.chanL2  : 'All',
-        ].join('|');
-        const cohortFcExact = forecastStore.get(cohortFcKey) ?? null;
+          challengerDims.tariffL1  ? c.tariffL1 : 'All',
+          challengerDims.tariffL2  ? c.tariffL2 : 'All',
+        );
+        const cohortFcExact = resolveForecast(cohortFcKey).forecast;
         // A derived aggregate has no model, so there is nothing to run a
         // challenger against: the row is skipped. Defaulting to a model name
         // here would be the borrow-an-unrelated-cohort pattern in a third
         // place - see EXPECTED.md, "PATTERN: borrow an unrelated cohort's
         // number rather than decline".
-        const chosenModel = provenanceModel((cohortFcExact ?? baseForecast).provenance);
-        if (!chosenModel) return null;
+        // The row STAYS. Its accuracy score is a real measurement of a real
+        // forecast; only the model comparison is meaningless for an aggregate.
+        // Dropping the row threw away the measurement to avoid the comparison.
+        const incumbentSrc = (cohortFcExact ?? baseForecast).provenance;
+        const chosenModel = provenanceModel(incumbentSrc) ?? '';
+        const derivedMix = incumbentSrc.kind === 'derived'
+          ? { leafCount: incumbentSrc.leafCount, models: incumbentSrc.models }
+          : null;
 
         // Issue 9: when no exact forecast exists, scale baseForecast to cohort scale
         // using the cohort's average inflow share over matched actuals months.
@@ -3129,7 +3233,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           channelL2: challengerDims.channelL2 ? c.chanL2 : 'All',
           scenario: baseForecast.cohort.scenario,
         };
-        return { key: c.cohortKey, seg: c.seg, prod: c.prod, avgMape: c.avgMape ?? 0, chosenModel, cohort, models, bestModel: models[0], chartData: cData };
+        return { key: c.cohortKey, seg: c.seg, prod: c.prod, avgMape: c.avgMape ?? 0, chosenModel, derivedMix, cohort, models, bestModel: models[0], chartData: cData };
       })
       .filter(Boolean) as ChallengerGroup[];
   }, [baseForecast, challengerCohortAccuracy, challengerDims, forecastStore, challengerShowAll]);
@@ -3150,7 +3254,10 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       if (challengerStatus === 'action_required'  &&  acceptedCohortKeys.has(g.key)) return false;
       if (challengerStatus === 'best_applied'      && !acceptedCohortKeys.has(g.key)) return false;
       // Model filter — match against the cohort's currently chosen model
-      if (challengerModelFilter !== 'All' && g.chosenModel !== challengerModelFilter) return false;
+      // A derived row belongs to NO model, so it is never a member of a
+      // model's bucket - it has its own.
+      if (challengerModelFilter === '__derived__') return !!g.derivedMix;
+      if (challengerModelFilter !== 'All' && (g.derivedMix || g.chosenModel !== challengerModelFilter)) return false;
       return true;
     });
   }, [challengerGroups, challengerSearch, challengerStatus, challengerModelFilter, acceptedCohortKeys]);
@@ -3175,7 +3282,10 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
 
   // Challenger groups eligible for bulk acceptance: not yet accepted and best model ≠ chosen model.
   const acceptAllCandidates = useMemo(
-    () => challengerGroups.filter(g => !acceptedCohortKeys.has(g.key) && g.bestModel.name !== g.chosenModel),
+    // Derived rows are NEVER acceptance candidates. Accepting a challenger
+    // writes a fitted forecast to the store - for an aggregate that is
+    // fit-on-aggregate, the defect bottom-up replaced.
+    () => challengerGroups.filter(g => !acceptedCohortKeys.has(g.key) && !g.derivedMix && g.bestModel.name !== g.chosenModel),
     [challengerGroups, acceptedCohortKeys],
   );
 
@@ -4136,6 +4246,10 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                       <option value="Holt Linear">Holt Linear</option>
                       <option value="Damped Trend">Damped Trend</option>
                       <option value="Holt-Winters">Holt-Winters</option>
+                      {/* The bucket was wired in state and predicate but had no option,
+                          so it was unreachable - a capability the commit message claimed
+                          and the UI did not offer. */}
+                      <option value="__derived__">{t('actuals_aggregates_no_model')}</option>
                     </select>
                   </div>
 
@@ -4186,9 +4300,22 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                               >
                                 <Info size={10} className="shrink-0" />{t('actuals_best_model_applied_still_outside_threshold')}{' '}<span className="absolute bottom-full left-0 mb-1.5 hidden group-hover:block w-72 bg-white border border-slate-200 rounded-xl shadow-lg text-xs text-slate-600 p-2.5 z-50 pointer-events-none font-normal normal-case">{t('actuals_the_most_appropriate_model_has_been_selected')}</span>
                               </span>
+                            ) : g.derivedMix ? (
+                              /* A derived row shows WHAT IT IS, never a "best model"
+                                 recommendation. This line was gated only on isAccepted,
+                                 which a derived row can never be - so every derived row
+                                 permanently recommended a model it can never adopt.
+
+                                 And it shows the MIX, not a fixed string. The approved
+                                 design put the provenance mix here; a constant label
+                                 left the leaf count and histogram reachable only in the
+                                 store, which is where a walk's expected values were
+                                 measured from and then never rendered. */
+                              <p className="text-[10px] text-slate-500 font-medium mt-0.5 break-words">
+                                {incumbentLabel(g)}
+                              </p>
                             ) : (
                               <p className="text-[10px] text-indigo-600 font-medium mt-0.5">
-                                
                                 {t('actuals_best')}{g.bestModel.name}
                               </p>
                             )}
@@ -4244,7 +4371,12 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                         let currentErr = 0, challengerErr = 0, totalAct = 0;
                         selectedChallengerGroup.chartData.forEach((pt, i) => {
                           if (pt.Actual === undefined) return;
-                          const curFc = pt[selectedChallengerGroup.chosenModel as keyof typeof pt] as number | undefined;
+                          // NEVER index with '' - a derived row has no incumbent
+                          // series, so there is no current-vs-challenger error to
+                          // compute and the comparison below is suppressed anyway.
+                          const curFc = selectedChallengerGroup.chosenModel
+                            ? (pt[selectedChallengerGroup.chosenModel as keyof typeof pt] as number | undefined)
+                            : undefined;
                           const chalFc = preview.months[i]?.inflow.mean;
                           if (curFc) { currentErr += Math.abs(pt.Actual - curFc); totalAct += pt.Actual; }
                           if (chalFc !== undefined) challengerErr += Math.abs(pt.Actual - chalFc);
@@ -4269,7 +4401,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                   </div>
                                   <p className={`text-xs leading-relaxed ${challengerBetter ? 'text-emerald-700' : 'text-amber-700'}`}>
                                     
-                                    {t('actuals_current')}{selectedChallengerGroup.chosenModel}{t('actuals_mape')}{' '}
+                                    {t('actuals_current')}{incumbentLabel(selectedChallengerGroup)}{t('actuals_mape')}{' '}
                                     <strong className="text-rose-600">{currentPct.toFixed(1)}%</strong>
                                     {' · '}
                                     {provenanceModel(preview.provenance) ?? ''} {t('actuals_mape')}{' '}
@@ -4302,7 +4434,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                 <span className="inline-block w-3 h-3 rounded-full bg-slate-800" />{t('actuals_actual')}</span>
                               <span className="flex items-center gap-1.5">
                                 <span className="inline-block w-3 h-3 rounded-full bg-slate-400" />
-                                {selectedChallengerGroup.chosenModel} (current)
+                                {incumbentLabel(selectedChallengerGroup)} (current)
                               </span>
                               <span className="flex items-center gap-1.5">
                                 <span className="inline-block w-3 h-3 rounded-full bg-indigo-500" />
@@ -4322,7 +4454,9 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                     formatter={(v: any, n: string) => [v != null ? formatNumber(v) : '—', n]}
                                   />
                                   <Line type="monotone" dataKey="Actual" stroke="#0f172a" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} connectNulls={false} />
-                                  <Line type="monotone" dataKey={selectedChallengerGroup.chosenModel} stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
+                                  {selectedChallengerGroup.chosenModel && (
+                                    <Line type="monotone" dataKey={selectedChallengerGroup.chosenModel} stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
+                                  )}
                                   <Line type="monotone" dataKey="Challenger (Real)" stroke="#6366f1" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
                                   <Brush dataKey="month" height={24} stroke="#e2e8f0" tickFormatter={() => ''} />
                                 </ComposedChart>
@@ -4352,10 +4486,16 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                     <p className={`text-xs leading-relaxed ${bannerAmber ? 'text-amber-700' : 'text-slate-500'}`}>
                                       {bannerAmber
                                         ? <>{t('actuals_model_applied_from')}{modelSwitchPoint?.month ?? 'this period'}{t('actuals_error_still_above_threshold')}</>
-                                        : alreadyBest
+                                        : selectedChallengerGroup.derivedMix
+                                          /* REPLACES the copy, does not sit beside it.
+                                             The default text says "Run Forecast to
+                                             compare" next to a panel where that button is
+                                             deliberately withheld - telling the user to
+                                             press something that is not there. */
+                                          ? t('actuals_models_live_on_leaf_cohorts')
+                                          : alreadyBest
                                           ? t('actuals_your_chosen_model_is_already_the_best_perform')
                                           : <>
-                                              
                                               {t('actuals_the_chart_below_shows_estimated_trajectories')}{' '}
                                               <strong>{t('actuals_run_forecast')}</strong> {t('actuals_to_compute_the_real')}{' '}
                                               {selectedChallengerGroup.bestModel.name} {t('actuals_output_for_this_cohort_and_compare_it_directl')}
@@ -4363,8 +4503,14 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                                       }
                                     </p>
                                   </div>
+                                  {/* A DERIVED aggregate gets no run buttons. The reason
+                                      is in the banner above, which REPLACES the
+                                      run-this-forecast copy rather than sitting next to
+                                      it. Fitting a challenger to aggregate data is
+                                      fit-on-aggregate, and ACCEPTING one would write a
+                                      fitted aggregate into the store - undoing bottom-up. */}
                                   {/* Run buttons — one per challenger model */}
-                                  {!alreadyAccepted && !alreadyBest && (
+                                  {!selectedChallengerGroup.derivedMix && !alreadyAccepted && !alreadyBest && (
                                     <div className="flex flex-col gap-1.5 shrink-0">
                                       {selectedChallengerGroup.models
                                         .filter(m => m.name !== selectedChallengerGroup.chosenModel)
@@ -4394,6 +4540,23 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                             })()}
                           </div>
 
+                          {/* THE ILLUSTRATION PANEL IS NOT SHOWN FOR A DERIVED
+                              AGGREGATE. The banner above stays and states why.
+
+                              This is a comparison, and the banner says there is
+                              none. `models` is sorted by error (see its
+                              construction) and the legend prints each model's
+                              error percentage, so the panel ranks models on a
+                              cohort that has no incumbent to rank them against -
+                              fit-on-aggregate advice, which bottom-up replaced.
+
+                              Suppressed rather than shown without the rankings,
+                              because there is nothing honest left to keep: two of
+                              the three curves are arithmetic perturbations of the
+                              loaded forecast, not fits, so the ranking is an
+                              artefact of the perturbation constants and would
+                              order the same way on any cohort. */}
+                          {!selectedChallengerGroup.derivedMix && (<>
                           {/* Illustration legend */}
                           <div className="shrink-0 flex flex-wrap gap-4 text-xs text-slate-500 px-6 py-3">
                             <span className="italic text-[11px] text-slate-400 self-center">{t('actuals_estimated_trajectories_only')}</span>
@@ -4439,6 +4602,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                               </ComposedChart>
                             </ResponsiveContainer>
                           </div>
+                          </>)}
                         </>
                       );
                     })()}
@@ -4534,9 +4698,14 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                       <p className="font-semibold text-slate-800">{modalDimParts.join(' · ')}</p>
                     </div>
                     <div className="flex items-center gap-2 text-slate-500 shrink-0">
-                      <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium">{g.chosenModel}</span>
-                      <ArrowRight size={12} className="text-slate-400" />
-                      <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-semibold">{g.bestModel.name}</span>
+                      <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-medium">{incumbentLabel(g)}</span>
+                      {/* No arrow, no challenger, for a derived aggregate: there is
+                          no incumbent to replace, and accepting one would write a
+                          FITTED aggregate to the store. */}
+                      {!g.derivedMix && (<>
+                        <ArrowRight size={12} className="text-slate-400" />
+                        <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-semibold">{g.bestModel.name}</span>
+                      </>)}
                     </div>
                   </div>
                   );

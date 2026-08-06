@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort, Provenance, SkipReason } from './types/forecast';
 import { provenanceModel, provenanceParams } from './types/forecast';
@@ -1459,15 +1459,9 @@ export default function App() {
     return { kind: 'fitted', modelUsed };
   };
 
-  const makeForecastKey = (
-    seg: string,
-    prodL1: string,
-    prodL2: string | null | undefined,
-    chanL1: string,
-    chanL2: string | null | undefined,
-    tariffL1?: string | null | undefined,
-    tariffL2?: string | null | undefined,
-  ) => `${seg}|${prodL1}|${prodL2 || 'All'}|${chanL1}|${chanL2 || 'All'}|${tariffL1 || 'All'}|${tariffL2 || 'All'}`;
+  // Delegates to the shared builder. Kept as a local name so the ~40 call
+  // sites in this file are untouched, but there is now ONE format.
+  const makeForecastKey = sharedMakeForecastKey;
 
   /**
    * P10 — flagged one-off months for a cohort, as a Set ready for
@@ -1496,6 +1490,91 @@ export default function App() {
       f.tariff?.l1,
       f.tariff?.l2,
     );
+
+  /**
+   * Populated cohort keys AND the leaves behind each one.
+   *
+   * One memo, one walk of the data, because they are the same walk: expanding a
+   * leaf into its 54 roll-ups is exactly what tells you which leaves a roll-up
+   * has. Building them separately would be two enumerations of one fact, which
+   * is how they drift.
+   */
+  const populatedCohorts = useMemo(() => {
+    if (!data.length || !wiDateCol) return { set: new Set<string>(), leafMap: new Map<string, string[]>() };
+    const dm = buildCohortDataMap(data, wiDateCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col);
+    // The walk itself lives in forecasting.ts so a spec can drive it. It used
+    // to be inline here, where the only way to test it was to transcribe it -
+    // and a transcribed copy pins itself, not this.
+    return buildRollUpIndex(dm.keys());
+  }, [data, wiDateCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col]);
+
+  // True if a cohort has data. Empty set (no data mapped yet) ⇒ don't filter.
+  const populatedCohortKeys = populatedCohorts.set;
+
+  const cohortHasData = useCallback(
+    (c: any): boolean => populatedCohortKeys.size === 0
+      || populatedCohortKeys.has(makeForecastKey(c.segment, c.product, c.productL2, c.channel, c.channelL2, c.tariffL1, c.tariffL2)),
+    [populatedCohortKeys],
+  );
+
+  /**
+   * THE seam. Every reader of a forecast by key goes through this.
+   *
+   *   stored               -> the stored fit, verbatim
+   *   miss, aggregate key  -> derived from the leaves in scope
+   *   miss, leaf key       -> null, with the reason available
+   *
+   * NOT cached. Worst case is ~204k float operations, which is sub-frame, and
+   * a cache would reintroduce the invalidation problem that decided read-time
+   * over write-time in the first place. If this ever needs a cache, that is a
+   * measurement to take, not an assumption to act on.
+   */
+  const resolveForecast = useCallback((key: string): {
+    forecast: BaseForecast | null;
+    reason: SkipReason | null;
+  } => {
+    const stored = forecastStore.get(key);
+    if (stored) return { forecast: stored, reason: null };
+
+    const leafKeys = populatedCohorts.leafMap.get(key) ?? [];
+    if (leafKeys.length === 0) {
+      // Not a key this data can produce at all.
+      return { forecast: null, reason: 'never-enumerated' };
+    }
+
+    const leaves = leafKeys
+      .map(k => forecastStore.get(k))
+      .filter((b): b is BaseForecast => !!b);
+    if (leaves.length === 0) {
+      // The key is real and every leaf behind it failed to fit.
+      return { forecast: null, reason: 'insufficient-history' };
+    }
+
+    const [segment, product, productL2, channel, channelL2, tariffL1, tariffL2] = key.split('|');
+    const derived = deriveAggregate(leaves, {
+      segment, product, productL2, channel, channelL2, tariffL1, tariffL2,
+      scenario: 'Base Case',
+    } as any);
+    // deriveAggregate only returns null for an EMPTY leaf list, and that case
+    // is handled above - so `derived` is always non-null here. No false arm.
+    return { forecast: derived, reason: null };
+  }, [forecastStore, populatedCohorts]);
+
+  /**
+   * Can a key produce a forecast at all - stored OR derivable?
+   *
+   * Replaces bare `forecastStore.has(key)` at the indicator sites, which said
+   * "no forecast" for a cohort that derivation can serve, contradicting what
+   * the screen then showed.
+   *
+   * Deliberately does NOT derive: it answers reachability, and deriving to
+   * answer a yes/no question would put real work behind an indicator.
+   */
+  const canResolve = useCallback((key: string): boolean => {
+    if (forecastStore.has(key)) return true;
+    const leafKeys = populatedCohorts.leafMap.get(key) ?? [];
+    return leafKeys.some(k => forecastStore.has(k));
+  }, [forecastStore, populatedCohorts]);
 
   /** Build a ViewFilter from a CohortKey (for syncing tab filter bars after generation) */
   const cohortToFilter = (c: { segment: string; product: string; productL2?: string; channel: string; channelL2?: string; tariffL1?: string; tariffL2?: string }): ViewFilter => ({
@@ -1603,35 +1682,36 @@ export default function App() {
   /** Handle ViewFilterBar change on Step 2 — loads the matching forecast (if any). */
   const handleStep2FilterChange = useCallback((filter: ViewFilter) => {
     setStep2Filter(filter);
-    const key = filterToKey(filter);
-    const bf = forecastStore.get(key);
-    if (bf !== undefined) {
-      setBaseForecast(bf);
-      setAdjustedForecast(null);
-    }
-  }, [forecastStore]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Routes through the seam. The old `if (bf !== undefined)` had NO else, so a
+    // miss silently RETAINED the previous cohort's forecast - the screen changed
+    // its label and kept its numbers. Now: stored fit, or derived from the
+    // leaves in scope, or explicitly nothing.
+    const { forecast } = resolveForecast(filterToKey(filter));
+    setBaseForecast(forecast);
+    setAdjustedForecast(null);
+  }, [resolveForecast]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Handle ViewFilterBar change on Step 3 — loads the matching forecast (if any). */
   const handleStep3FilterChange = useCallback((filter: ViewFilter) => {
     setStep3Filter(filter);
-    const key = filterToKey(filter);
-    const bf = forecastStore.get(key);
-    if (bf !== undefined) {
-      setBaseForecast(bf);
-      setAdjustedForecast(null);
-    }
-  }, [forecastStore]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Routes through the seam. The old `if (bf !== undefined)` had NO else, so a
+    // miss silently RETAINED the previous cohort's forecast - the screen changed
+    // its label and kept its numbers. Now: stored fit, or derived from the
+    // leaves in scope, or explicitly nothing.
+    const { forecast } = resolveForecast(filterToKey(filter));
+    setBaseForecast(forecast);
+    setAdjustedForecast(null);
+  }, [resolveForecast]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** When switching tabs, restore the appropriate per-tab forecast. */
   useEffect(() => {
+    // Same correction on the tab-restore path: a miss used to leave whichever
+    // cohort was last loaded in place, so switching tabs could show Step 3 a
+    // forecast belonging to Step 2's filter.
     if (activeView === 'whatif') {
-      const key = filterToKey(step2Filter);
-      const bf = forecastStore.get(key);
-      if (bf !== undefined) setBaseForecast(bf);
+      setBaseForecast(resolveForecast(filterToKey(step2Filter)).forecast);
     } else if (activeView === 'vsactuals') {
-      const key = filterToKey(step3Filter);
-      const bf = forecastStore.get(key);
-      if (bf !== undefined) setBaseForecast(bf);
+      setBaseForecast(resolveForecast(filterToKey(step3Filter)).forecast);
     }
   }, [activeView]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -3289,7 +3369,10 @@ export default function App() {
                 tariffL2: tar.l2,
                 forecastType: 'Standard Forecast',
                 scenario: scen,
-                hasForecast: forecastStore.has(fKey) || !!savedForecasts[stdId],
+                // canResolve, not .has: a derivable aggregate HAS a forecast as far
+                // as the user is concerned, and saying otherwise contradicts the
+                // screen that then shows them one.
+                hasForecast: canResolve(fKey) || !!savedForecasts[stdId],
                 forecastData: savedForecasts[stdId] || null,
               });
             });
@@ -3306,105 +3389,6 @@ export default function App() {
   // populated cohort count (not the inflated cross-product, which tariff blows up
   // ~10× because tariff is collinear with product/channel). Data-driven; never
   // keyed off the user's tariff selection.
-  /**
-   * Populated cohort keys AND the leaves behind each one.
-   *
-   * One memo, one walk of the data, because they are the same walk: expanding a
-   * leaf into its 54 roll-ups is exactly what tells you which leaves a roll-up
-   * has. Building them separately would be two enumerations of one fact, which
-   * is how they drift.
-   */
-  const populatedCohorts = useMemo(() => {
-    const set = new Set<string>();
-    const leafMap = new Map<string, string[]>();
-    if (!data.length || !wiDateCol) return { set, leafMap };
-    const dm = buildCohortDataMap(data, wiDateCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col);
-    for (const dk of dm.keys()) {
-      const [seg, p1, p2, c1, c2, t1, t2] = dk.split('|');
-      const segS: string[] = ['All', seg];
-      const prodS: [string, string][] = [['All', 'All'], [p1, 'All'], [p1, p2]];
-      const chanS: [string, string][] = [['All', 'All'], [c1, 'All'], [c1, c2]];
-      const tarS:  [string, string][] = [['All', 'All'], [t1, 'All'], [t1, t2]];
-      for (const s of segS) for (const p of prodS) for (const c of chanS) for (const t of tarS) {
-        const rollUp = makeForecastKey(s, p[0], p[1], c[0], c[1], t[0], t[1]);
-        set.add(rollUp);
-        // Same loop, same walk: record WHICH leaves each roll-up is made of.
-        // The set alone answers "does this key have data" and throws leaf
-        // identity away, which is the one thing derivation needs.
-        const mine = leafMap.get(rollUp);
-        if (mine) mine.push(dk); else leafMap.set(rollUp, [dk]);
-      }
-    }
-    return { set, leafMap };
-  }, [data, wiDateCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col]);
-
-  // True if a cohort has data. Empty set (no data mapped yet) ⇒ don't filter.
-  const populatedCohortKeys = populatedCohorts.set;
-
-  const cohortHasData = useCallback(
-    (c: any): boolean => populatedCohortKeys.size === 0
-      || populatedCohortKeys.has(makeForecastKey(c.segment, c.product, c.productL2, c.channel, c.channelL2, c.tariffL1, c.tariffL2)),
-    [populatedCohortKeys],
-  );
-
-  /**
-   * THE seam. Every reader of a forecast by key goes through this.
-   *
-   *   stored               -> the stored fit, verbatim
-   *   miss, aggregate key  -> derived from the leaves in scope
-   *   miss, leaf key       -> null, with the reason available
-   *
-   * NOT cached. Worst case is ~204k float operations, which is sub-frame, and
-   * a cache would reintroduce the invalidation problem that decided read-time
-   * over write-time in the first place. If this ever needs a cache, that is a
-   * measurement to take, not an assumption to act on.
-   */
-  const resolveForecast = useCallback((key: string): {
-    forecast: BaseForecast | null;
-    reason: SkipReason | null;
-  } => {
-    const stored = forecastStore.get(key);
-    if (stored) return { forecast: stored, reason: null };
-
-    const leafKeys = populatedCohorts.leafMap.get(key) ?? [];
-    if (leafKeys.length === 0) {
-      // Not a key this data can produce at all.
-      return { forecast: null, reason: 'never-enumerated' };
-    }
-
-    const leaves = leafKeys
-      .map(k => forecastStore.get(k))
-      .filter((b): b is BaseForecast => !!b);
-    if (leaves.length === 0) {
-      // The key is real and every leaf behind it failed to fit.
-      return { forecast: null, reason: 'insufficient-history' };
-    }
-
-    const [segment, product, productL2, channel, channelL2, tariffL1, tariffL2] = key.split('|');
-    const derived = deriveAggregate(leaves, {
-      segment, product, productL2, channel, channelL2, tariffL1, tariffL2,
-      scenario: 'Base Case',
-    } as any);
-    // deriveAggregate only returns null for an EMPTY leaf list, and that case
-    // is handled above - so `derived` is always non-null here. No false arm.
-    return { forecast: derived, reason: null };
-  }, [forecastStore, populatedCohorts]);
-
-  /**
-   * Can a key produce a forecast at all - stored OR derivable?
-   *
-   * Replaces bare `forecastStore.has(key)` at the indicator sites, which said
-   * "no forecast" for a cohort that derivation can serve, contradicting what
-   * the screen then showed.
-   *
-   * Deliberately does NOT derive: it answers reachability, and deriving to
-   * answer a yes/no question would put real work behind an indicator.
-   */
-  const canResolve = useCallback((key: string): boolean => {
-    if (forecastStore.has(key)) return true;
-    const leafKeys = populatedCohorts.leafMap.get(key) ?? [];
-    return leafKeys.some(k => forecastStore.has(k));
-  }, [forecastStore, populatedCohorts]);
 
   // THE canonical "which cohorts still need a Standard Forecast" list.
   //
@@ -3850,6 +3834,8 @@ export default function App() {
       adjustedForecast={adjustedForecast}
       setAdjustedForecast={setAdjustedForecast}
       forecastStore={forecastStore}
+      resolveForecast={resolveForecast}
+      canResolve={canResolve}
       setForecastStore={setForecastStore}
       hasLegacyBaseline={hasLegacyBaseline}
       updatedAt={forecastUpdatedAt}
@@ -3945,8 +3931,20 @@ export default function App() {
             tariffTree={tariffTree}
             hasForecast={
               activeView === 'whatif'
-                ? forecastStore.has(filterToKey(step2Filter))
-                : forecastStore.has(filterToKey(step3Filter))
+                ? canResolve(filterToKey(step2Filter))
+                : canResolve(filterToKey(step3Filter))
+            }
+            /* Gated on the SAME two-state split as the Step 2 panel. Passing the
+               reason unconditionally would suppress the Step 1 link in a session
+               where nothing has been generated at all - and there Step 1 is
+               exactly the right action. resolveForecast reports
+               'insufficient-history' for a key whose leaves all failed to fit,
+               which is indistinguishable from "no forecasts exist yet" unless
+               the store is consulted first. */
+            noForecastReason={
+              (forecastStore.size > 0 || hasLegacyBaseline)
+                ? resolveForecast(filterToKey(activeView === 'whatif' ? step2Filter : step3Filter)).reason
+                : null
             }
             onGoToStep1={() => setActiveView('standard')}
           />
@@ -4060,9 +4058,15 @@ export default function App() {
           />
         )}
 
-        {/* MARKET EVENTS VIEW (Step 2) */}
+        {/* MARKET EVENTS VIEW (Step 2)
+
+            noForecastReason is recomputed at render from the live filter, by the
+            same call that drives ViewFilterBar's hasForecast above, so the panel
+            and the filter bar can never disagree about whether this selection
+            resolves. Recomputed, never remembered. */}
         {activeView === 'whatif' && (
           <WhatIfTab
+            noForecastReason={resolveForecast(filterToKey(step2Filter)).reason}
             data={data}
             wiDateCol={wiDateCol}
             wiSegmentCol={wiSegmentCol}

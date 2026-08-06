@@ -150,49 +150,18 @@ const srcFiles: string[] = [];
     else if (/\.(ts|tsx)$/.test(e.name)) srcFiles.push(f);
   }
 })('src');
-// A CONSTRUCTION uses a comma (`kind: 'derived',`); the union DECLARATION uses
-// a semicolon (`kind: 'derived';`). Matching the comma alone distinguishes them
-// without excluding the types file by name, which would have made this check
-// blind to a future constructor added there.
-// App.tsx's readProvenance is excluded deliberately: it rebuilds a provenance
-// from an IMPORTED row, which is data, not derivation.
-// The readProvenance exemption is per-LINE-REGION, not per-file. It was
-// file-level and gate stage 2 proved that unsound: a `kind: 'derived',`
-// planted anywhere in App.tsx passed, because App.tsx contains the word
-// readProvenance somewhere. App.tsx is where Phase 2's deriveAggregate is
-// planned to live, so that was the file the check was blindest in.
-const constructors: string[] = [];
-for (const f of srcFiles) {
-  const lines = fs.readFileSync(f, 'utf8').split(String.fromCharCode(10))
-    .map(l => l.replace(/\s+$/, ''));
-  lines.forEach((line, i) => {
-    if (!/kind:\s*'derived',/.test(line)) return;
-    // Allowed ONLY inside readProvenance, which rebuilds provenance from an
-    // IMPORTED row - data, not derivation. Judged from the nearest preceding
-    // 20 lines rather than from the whole file: the exemption was file-level
-    // and gate stage 2 proved that unsound, because a construction planted
-    // anywhere in App.tsx passed merely because App.tsx contains the word
-    // readProvenance somewhere. App.tsx is where Phase 2's deriveAggregate is
-    // planned to live, so it was the file this check was blindest in.
-    // Window widened 20 -> 120 and deriveAggregate added: Phase 2 Session A
-    // makes it a legitimate producer, and its construction sits 96 lines
-    // below its header. This guard is now the WEAKER of two - the brace-depth
-    // version in spec:derive supersedes it and is the one planted-violation
-    // tested in three locations. Extend that one, not this.
-    const ctx = lines.slice(Math.max(0, i - 120), i).join(String.fromCharCode(10));
-    if (/readProvenance\s*=|function deriveAggregate/.test(ctx)) return;
-    constructors.push(f + ':' + (i + 1));
-  });
-}
+// The aggregate-free guard that lived here is RETIRED and its machinery is
+// GONE, not left computing a value nothing reads.
+//
+// It used a 120-line backward window - a proximity heuristic, the same class
+// that failed three times elsewhere. Keeping the loop while retiring only its
+// assertion left something that reads like a guard, scans like a guard and
+// checks nothing. Dead guard code is worse than no guard code: it answers the
+// question: is this covered? It answers yes.
+//
+// The live version is GUARD 1 in scripts/derive-aggregate-spec.ts, which
+// tracks enclosure by brace depth and is planted-violation tested.
 
-// RETIRED - superseded by GUARD 1 in scripts/derive-aggregate-spec.ts.
-// Phase 2 Session A makes deriveAggregate a legitimate producer, so the
-// blanket 'nothing constructs derived' assertion is now false by design. The
-// narrower property - deriveAggregate is the ONLY producer - is guarded
-// there, by brace depth rather than proximity, and planted-violation tested
-// in three locations. Not kept as a weaker duplicate: two guards for one
-// property drift, and the weaker one is the one someone reads.
-void constructors;
 
 // -- NO MODEL DEFAULT AT A CONSUMER -----------------------------------------
 // The second required mutation: reinstating `?? 'Holt Linear'` on a

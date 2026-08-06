@@ -1057,6 +1057,159 @@ the reason for `applyEventsToMonth`, `cohortScope`, `resolvedEventVolume` and
 `eventProRataShare`. Hand-generated aggregates get regenerated under derivation
 and their values will move; that is expected, not a question to resolve.
 
+### RESOLVED — and the four options I offered all failed on the premise
+
+I asked which model to show as the incumbent for a derived aggregate. **The
+question was wrong.**
+
+A challenger is only meaningful if it can be ACCEPTED. Accepting one writes a
+fitted forecast into the store - and for an aggregate that is
+**fit-on-aggregate**, the defect bottom-up replaced and the thing this entire
+phase exists to remove. So the comparison is dead at the root, not merely
+awkward to label. Every option I listed argued about the label.
+
+**What is still real is the accuracy SCORE.** It measures a real forecast
+against real actuals and does not depend on any model being nameable. Dropping
+the row threw the measurement away to avoid the comparison.
+
+#### Implemented
+
+- Derived rows **remain**, with their real accuracy scores.
+- Where the incumbent model name sat: **the mix** - leaf count plus model
+  histogram, from `provenance`. The honest answer to "what model is this
+  cohort using" is *several, on cohorts one level down*.
+- The better-model comparison is **suppressed at source** for derived rows,
+  with the reason on screen: models live on individual leaf cohorts.
+- Derived rows are **never acceptance candidates** - that is the line that
+  keeps a fitted aggregate out of the store.
+- The chart series key is **never empty into `pt[chosenModel]`**; the
+  incumbent trajectory line is simply not drawn.
+- The model filter treats derived as **its own bucket**, never a member of
+  any model's set.
+
+#### The spec, and the trap it fell into first
+
+The row-survival cases replicate the survival rule rather than driving the
+component's. Reinstating `if (!chosenModel) return null` left **all of them
+passing** - measure-don't-reimplement, inside the spec written to close that
+exact defect. A source-level guard now asserts the drop is absent, and it is
+the assertion that kills the mutation.
+
+Three mutations shown killing: reinstating the row-drop, letting derived rows
+become acceptance candidates, and removing the on-screen reason.
+
+### BACKLOG: the leaf-grain challenger view — the feature's correct future
+
+Sequenced **behind Alessandro's card work**. Design pass required.
+
+Today the challenger operates at whatever grain the dimension toggles produce,
+which is always an aggregate - so after this fix it shows scores and mixes and
+never a comparison. That is honest but it is not the feature.
+
+**The correct shape:** run incumbent, comparison and acceptance **per leaf**,
+over the aggregate-to-leaf map the seam already builds, and **roll the results
+up for display**. A leaf has one fitted model, so all three operations are
+well-defined there; the aggregate row becomes a summary of its leaves'
+outcomes rather than a thing with a model of its own.
+
+**Consistent with instance 2's Session C fix** - `runChallengerForecast`
+declining to run when the cohort has no forecast of its own, rather than
+seeding from a stranger. Both say the same thing: a challenger belongs where a
+fit belongs.
+
+### DEFECT introduced by B2: the AutoML Challenger tab is empty at EVERY grouping
+
+Found by Jon in the browser (check B3, "Review All Cohorts Anyway" appeared
+unresponsive). **Introduced by this branch. Merge held.**
+
+#### Cause — two of my own changes interacting
+
+B2a fixed instance 3 so the challenger key resolves, and B2a also added:
+
+```js
+const chosenModel = provenanceModel((cohortFcExact ?? baseForecast).provenance);
+if (!chosenModel) return null;   // a derived aggregate has no model
+```
+
+Before the branch the key was 5-part and could never match, so `cohortFcExact`
+was always null and `chosenModel` fell back to the loaded cohort's model - a
+real string. Rows survived. Now the key resolves to a DERIVED aggregate,
+`provenanceModel` returns null, and every row is dropped.
+
+**Measured, not inferred.** Full Dec2025 fixture, 540 leaf forecasts:
+
+```
+default grouping (segment only):   5 of 5   rows dropped
+product + channelL1 groupings on: 40 of 40  rows dropped
+```
+
+**The tab is empty at every grouping, not just the default**, because the
+challenger's dimension toggles never produce a fully-specified 7-part key -
+so every key it builds is an aggregate, and every aggregate is derived.
+
+#### Why this is NOT a mechanical fix
+
+`chosenModel` is load-bearing, not a label: it is the chart series key
+(`pt[chosenModel]`), the incumbent in the better-model comparison
+(`bestModel.name !== chosenModel`), and the model filter value.
+
+A derived aggregate genuinely has no incumbent model - you would change the
+LEAVES' models, not the aggregate's. So "which model is this cohort using"
+has no answer, and every way of supplying one is a product decision:
+
+| option | cost |
+|---|---|
+| exclude derived rows and SAY so | the feature becomes unreachable, since no grouping yields a leaf key |
+| use the dominant model from the mix | approximately true, and misleading in exactly the way the provenance union exists to prevent |
+| show the mix, compare trajectories without a single incumbent | real work; changes the panel |
+| revert to the old fallback | the borrow-an-unrelated-cohort pattern, already rejected three times |
+
+**Reported, not fixed.** Picking among these is the user's call.
+
+### Step 1's chart does not follow the filter bar — pre-existing, queued
+
+Established while resolving Jon's A5. `StandardForecastTab` renders
+`forecastData`, a `useState` written only by `generateStandardForecast` (the
+manual path). It is **not** driven by `baseForecast` and therefore not by the
+seam, and no filter change clears it.
+
+So Step 1 can display a forecast for a cohort `resolveForecast` returns null
+for - not because two stores disagree, but because Step 1 is the manual
+GENERATION panel and never claimed to be a per-filter viewer.
+
+**Not introduced by this branch**: the branch does not touch `forecastData`
+(the single diff hit on that name is a context line). Queued as a coherence
+wrinkle worth deciding on, not a B2 defect.
+
+**Consequence for the browser checklist:** any check about a cohort resolving
+to nothing belongs on Step 2 or Step 3, never Step 1. My A5 path was wrong.
+
+### RESOLVED 2026-08-04 on `session-b2-wire-seam` — aggregates now derive
+
+**The entry below described the open defect. It is fixed, pending merge.**
+
+Measured at gate stage 3 by driving `resolveForecast`'s exact logic against a
+real store built from the trimmed fixture (74 leaf forecasts):
+
+```
+Corporate|All|All|All|All|All|All        -> derived, 12 months, provenance=derived
+Large Enterprise|All|All|All|All|All|All -> derived, 12 months, provenance=derived
+MNC|All|All|All|All|All|All              -> derived, 12 months, provenance=derived
+SME|All|All|All|All|All|All              -> derived, 12 months, provenance=derived
+SOHO|All|All|All|All|All|All             -> derived, 12 months, provenance=derived
+```
+
+Every `All`-bearing key resolves. The defect that has been re-confirmed by
+every gate since 2026-08-04 - and correctly classified pre-existing each time
+- is closed by the seam.
+
+**Not merged.** Jon walks the branch in a browser first; the merge happens on
+the user's word after that. Until then this entry says fixed-pending-merge,
+not fixed.
+
+The original entry follows, unedited, because the diagnosis in it is the
+reasoning the fix was built from.
+
 ### Bottom-up is half-implemented: aggregates never get a typed forecast — 2026-08-04
 
 **Reported defect:** market events appeared to have no effect on the Market
@@ -2007,6 +2160,655 @@ Routine agent runs still use the trimmed file. This one is for the branches the
 trimmed file cannot reach. Both are needed; a fixture that only contains edge
 cases stops being representative of anything.
 
+## WORKING PRACTICE: every browser walk opens with the same anchor
+
+**Standing rule, set by the user 2026-08-05, after a walk was invalidated by
+fixture identity.**
+
+Jon's B3 mini-walk produced no usable verdicts. The session was on the FULL
+fixture (540 cohorts on the challenger tab, six-figure Base at Large Enterprise
+- Fixed Connectivity) with **tariff unmapped**, and A4 was run on Step 1. Every
+observation was real; none of them answered the question asked, because the
+configuration they were taken in was not the configuration the checklist
+assumed.
+
+**The walk I issued omitted the row-count-first anchor that every prior walk
+opened with, and the exact failure that anchor prevents is the one that
+occurred.** That is not bad luck. The anchor is cheap, and it was dropped
+because the checks felt self-evidently well-specified.
+
+### Every walk begins with, in this order
+
+1. **The reload ritual** - hard refresh, so no state survives from a previous
+   session.
+2. **The named file**, in full, including the part of the name that
+   distinguishes it from its near-twins.
+3. **The expected row count**, verified on screen before anything else.
+4. **A mapping-step assertion** - which dimensions must show as mapped. Not
+   "check the mapping looks right": name them.
+
+A walk that does not start with all four is not a walk; it is a set of
+observations about an unknown configuration.
+
+### And the rule the B3-recheck broke
+
+**A checklist expected value must be measured on the SURFACE the user will look
+at, not on the store behind it.**
+
+The B3-recheck was specced on the edge fixture, with expected values (5 rows;
+34/4/14/6/14 leaves) measured by driving `deriveAggregate` over the edge store.
+Those numbers are correct **about the store**. But `challengerGroups`
+(ForecastVsActualsTab.tsx:3130-3133) gates twice on actuals -
+`c.overallScore !== null`, then `if (!monthMap || !monthMap.size) return null` -
+so **the challenger tab renders no row with zero months compared**, and no
+actuals file exists for the edge fixture.
+
+**The B3-recheck as issued was unrunnable.** Jon could not have produced those
+five rows by any sequence of clicks. Measuring the store proved the derivation
+was right and said nothing about whether the screen would render.
+
+---
+
+## RETRACTED: "(not mapped)" is not a fixture tell
+
+**Correction at the lead, 2026-08-05. The entry below used the "(not mapped)"
+label as a positive identification of `ProductL2_Full`. That was wrong.**
+
+**"(not mapped)" beside Tariff on the AutoML Challenger tab is PERMANENT, on
+every file.** `ForecastVsActualsTab.tsx:4181` renders `CohortDimCheckboxes`
+without passing `wiTariffL1Col` or `wiTariffL2Col` at all — the accuracy tab's
+call at `:3908` does pass them. With the props `undefined`, the component takes
+its disabled branch and prints the label regardless of what was loaded. Tariff
+was never wired into the challenger's grouping: the fallback `cohort` literal at
+`:3229` omits `tariffL1`/`tariffL2` too. Observed in a live DOM render, not only
+in source: `spec:challenger` dumps `"Tariff L1(not mapped)"` from a
+TariffHierarchy-backed mount.
+
+**Consequence: the `ProductL2_Full` identification of the Part B session is
+UNESTABLISHED**, not merely less well supported. The label was the only evidence
+for it. Which file that session ran on is now unknown.
+
+### The lesson, by name
+
+**A recorded unresolved tension pointing against a diagnostic is evidence
+against it, not a footnote.**
+
+The ARPU measurement pointed the other way at the time: 16.5 observed sits near
+TariffHierarchy's 16.28 and nowhere near ProductL2_Full's 14.84. That was
+written down, in this file, as "unresolved and flagged rather than resolved" —
+and then the diagnostic was relied on anyway, and two gate stages read past it.
+
+Filing a contradiction as an open question does not neutralise it. If a
+measurement disagrees with a conclusion, the conclusion is provisional until one
+of them is explained, and anything built on it inherits that status.
+
+### Reliable on-screen fixture tells
+
+| pair | reliable tell |
+|---|---|
+| Edge (12,112) vs Trimmed (12,432) | **row count** — distinct |
+| Dec2025 (77,760) vs Jun2026 (90,720) | **row count** — distinct |
+| `ProductL2_Full` vs `TariffHierarchy`, same date range | **row count is identical** (77,760 / 90,720), as are months (36/42) and cohorts (540). Use the **mapping step's Tariff L1/L2 selectors**, or the **Historical Accuracy tab's** dimension checkboxes (`:3908`), which do receive the tariff columns and therefore show Tariff enabled for `TariffHierarchy` and "(not mapped)" for `ProductL2_Full`. **Never the challenger tab's.** |
+
+Secondary independent tell for that pair: `Avg_Unit_Price_GBP` is **0.00
+throughout `ProductL2_Full`** (measured across every row), so any ARPU surface
+there falls back to revenue ÷ volume.
+
+---
+
+## Same fixture name, different file: 540 cohorts is not a fingerprint
+
+**Q1, measured 2026-08-05. Classification: USER PATH, not introduced by the
+branch.**
+
+The same nominal "full fixture" had tariff mapped in Jon's previous walk (he
+filtered Tariff RED S in B4) and unmapped in this one. Measured across every
+fixture in `test-data/`:
+
+| fixture | rows | months | cohorts | tariff columns |
+|---|---|---|---|---|
+| `ProductL2_Full_Jan2023_Jun2026` | 90,720 | 42 | 540 | **ABSENT** |
+| `TariffHierarchy_Jan2023_Jun2026` | 90,720 | 42 | 540 | present |
+| `ProductL2_Full_Jan2023_Dec2025` | 77,760 | 36 | 540 | **ABSENT** |
+| `TariffHierarchy_Jan2023_Dec2025` | 77,760 | 36 | 540 | present |
+| `EdgeCases_ShortHistory_Jan2023_Jun2026` | 12,112 | 42 | 74 | present |
+| `Trimmed_TariffHierarchy_Jan2023_Jun2026` | 12,432 | 42 | 74 | present |
+
+**The two 90,720-row fixtures are indistinguishable on every count a walk
+checks** - same rows, same months, same 540 cohorts - and differ only in
+whether the tariff columns exist. Nothing on screen after load separates them
+except the very mapping state that looked like the bug.
+
+So "(not mapped)" was **correct behaviour reporting a real property of the
+file**, not a defect. `ProductL2_Full` has no tariff columns; the app said so.
+
+**Why it cannot be the branch.** The only writers of `wiTariffL1Col` /
+`wiTariffL2Col` are the auto-map effect (App.tsx:1389-1390) - there is no
+manual control for them anywhere. The branch's `src/App.tsx` diff is a pure
+relocation (133 insertions, 132 deletions, moving memos above their consumers),
+touches no mapping state, and `CohortDimCheckboxes.tsx` - which renders
+"(not mapped)" - is not in the diff at all.
+
+**Noted in passing, not the cause here.** Column detection reads ROW ZERO only:
+`const cols = Object.keys(jsonData[0])` (App.tsx:1794), and `sheet_to_json`
+omits keys for blank cells, so a dimension blank in the first data row is
+unmapped for the whole session. Measured: all six fixtures hide
+`Applied_Flow_Rate_%` from row 0 this way. Tariff is blank in **0** rows of
+every fixture, so this did not cause Jon's session - but the mechanism is real
+and a file with a blank first row would trip it silently.
+
+---
+
+## An unmapped dimension multiplies every derived aggregate
+
+**Q2, measured 2026-08-05 on the edge fixture. This is a real defect.**
+
+When a dimension is unmapped, `buildCohortDataMap` writes `'All'` into those
+key slots - the same `'All'` the seam reads as "aggregated over". Every leaf key
+then carries `All` in the unmapped slots (measured: 72 of 72).
+
+**That alone is harmless.** `resolveForecast` is store-first (App.tsx:1551) and
+never infers aggregate-ness from the key, and `provenance` is carried on the
+`BaseForecast` object rather than derived from key shape. Measured on a
+tariff-unmapped store:
+
+```
+resolve("SOHO|Mobile Voice|Low Value|Direct|Field / Regional Sales|All|All")
+   -> STORE HIT, provenance.kind=fitted, model=Holt Linear
+resolve("SOHO|All|All|All|All|All|All")
+   -> DERIVED,  provenance.kind=derived
+```
+
+Identical tariff slots; correctly distinguished. **A fitted leaf under an
+All-bearing key is NOT distinguishable by key shape, and IS distinguishable by
+provenance** - which is exactly why provenance is on the object.
+
+**What is wrong is `populatedCohorts.leafMap` (App.tsx:1512-1521).** The
+roll-up walk enumerates three variants per dimension -
+`[['All','All'], [t1,'All'], [t1,t2]]`. When the dimension is unmapped all
+three collapse to the same key, and `mine.push(dk)` runs three times for one
+leaf. `resolveForecast` then hands `deriveAggregate` the same leaf repeatedly.
+
+Measured, edge fixture, `SOHO|All|All|All|All|All|All`:
+
+| configuration | roll-ups with duplicate leaves | leafMap entries | month[0] inflow.mean | leafCount |
+|---|---|---|---|---|
+| all mapped | 0 of 1934 | 14 (14 distinct) | 4,970.08 | 14 |
+| tariff L1+L2 unmapped | **421 of 421** | 42 (14 distinct) | **14,910.24** | **42** |
+| tariff L2 only unmapped | 667 | - | 4,970.08 | 14 |
+| Product L2 unmapped | 634 | - | - | - |
+
+**Exactly 3x overstated**, and `provenance.leafCount` reports 42 leaves where
+there are 14 - so the challenger tab's mix label lies too. The general rule: an
+unmapped LEVEL collapses its roll-up variants and doubles the leaves of every
+roll-up at or below it; when BOTH levels of a dimension are unmapped all three
+variants collapse, the factor is 3, and it reaches the top-level aggregates.
+
+This is consistent with the six-figure Base Jon saw at Large Enterprise -
+Fixed Connectivity.
+
+### Classification: the code is pre-existing, the REACHABILITY is this branch's
+
+`leafMap` arrived in `9ac25f6` "Session B1: the seam, built but not yet wired",
+already merged to main. But B1 meant *not yet wired* literally: in main,
+`resolveForecast` is defined at App.tsx:3362 and **referenced nowhere else** -
+0 call sites in App, 0 in ForecastVsActualsTab. `leafMap` is built and never
+read, so the duplication is unreachable.
+
+On this branch there are 4 call sites in App and 11 references in the tab.
+
+So this does **not** qualify as "pre-existing and the diff neither fixes nor
+worsens it". The defective lines are older; the diff is what makes them live.
+Under the classification rule that makes it **introduced by this branch in
+effect** - a widening blast radius, the mirror image of the shrinking-radius
+case the rule already warns about.
+
+**Not fixed** - the user reserved that decision. Two things to note for whoever
+takes it: deduplicating `leafMap` is a one-line change (`[...new Set(v)]` at
+the read, or a `Set` at the write), and it is invisible on any fully-mapped
+fixture, which is why every gate to date passed.
+
+### Retroactive grade of Jon's B3 observations
+
+On a tariff-unmapped full fixture at full grouping, measured over the unmapped
+edge store: **fitted=72, derived=0, null=0**. Every challenger key is a real
+fitted leaf, so every row has an incumbent model and a recommendation, and the
+`Aggregates (no model)` bucket is empty.
+
+**Jon's observations - 540 fitted rows, recommendations present, empty
+Aggregates bucket - are the CORRECT rendering for that configuration. PASS.**
+They are not evidence about the B3 fix, which is about derived rows, and a
+tariff-unmapped run produces none at that grouping.
+
+---
+
+## Step 1's ARPU chart draws two different quantities
+
+**Q3, measured 2026-08-05. Display-coherence finding on the fit-on-aggregate
+path. Recorded for Phase 3, which removes that path. Not fixed.**
+
+Jon saw historical ARPU ~16.5 against a flat forecast ~11.5 at Corporate -
+Fixed Connectivity. The two series are built by different rules:
+
+**Historical** (`StandardForecastTab.tsx:348-380`) is
+`Sum(Monthly_Revenue_GBP) / Sum(Subscriber_Volume)` over rows matching
+**segment, product and channel only** - no Product L2, no Channel L2, no
+tariff, and **no filter on the scenario/metric column at all**, so Base,
+Inflow, Outflow and Retention rows are summed together. Measured for
+Corporate - Fixed Connectivity: **16.28** on `TariffHierarchy`, **14.84** on
+`ProductL2_Full`. The scenario blend is NOT the cause of the gap - all four
+scenarios sit within 0.2 of each other.
+
+**Forecast** (`m.arpu.mean`) is the fitted *blended* ARPU
+(`forecasting.ts:990-1016`), and carries a boundary correction that pins
+forecast month 0 to the last value **of the series it was fitted from**.
+
+So the chart anchors its two lines to two different constructions, and the
+boundary correction - which exists to guarantee continuity - guarantees it
+against the series that is not drawn. A step at the boundary is the expected
+symptom whenever the constructions differ, not an anomaly.
+
+**Unresolved, and flagged rather than resolved:** Jon's ~16.5 is close to
+`TariffHierarchy`'s 16.28 and not to `ProductL2_Full`'s 14.84, which sits in
+tension with the tariff-unmapped observation pointing at `ProductL2_Full`.
+Also measured: `Avg_Unit_Price_GBP` is **0.00 throughout `ProductL2_Full`**, so
+on that fixture ARPU can only come from revenue/volume. I did not isolate which
+quantity 11.5 is - that needs the manual generation path driven headlessly, and
+I did not do it.
+
+## The mix now renders, the illustration panel does not, and the bar stops misdirecting
+
+**2026-08-05, after the reviewer's Part B walk. Three fixes, one cause between
+the first two: a design was approved and only half of it reached a surface.**
+
+### 1. The provenance mix reaches the row
+
+The approved B3 design put the leaf count and model histogram on the derived
+row. The row rendered a fixed string (`actuals_aggregate_of_leaves`), and the
+mix reached no surface at all: `incumbentLabel`'s three call sites are the
+preview banner and legend (both inside `if (preview)`, unreachable without
+running a challenger, which a derived row cannot do) and the Accept-All modal
+(which filters `!g.derivedMix`).
+
+**The shortfall was the implementation, not the walk.** The walk's expected
+value — "each showing 108 leaves" — was the approved design; it was measured
+from the store because no surface carried it, which is the surface-not-store
+rule broken from inside the check written to enforce it.
+
+The row now renders `incumbentLabel(g)`. The word "leaves" is keyed
+(`actuals_leaves`) — it was English inside a template literal, which the JSX
+scanner cannot see.
+
+### 2. The illustration panel is suppressed entirely for a derived selection
+
+Beneath a banner stating that no comparison exists, the panel drew three model
+trajectories with error percentages. `models` is `.sort((a, b) => a.error -
+b.error)` — an error-ranked comparison, on a cohort with no incumbent to rank
+against.
+
+**Suppressed, not de-ranked.** Two of the three curves are arithmetic
+perturbations of the loaded forecast (`dampedTrend = forecast * 0.9`;
+`holtWinters = act.inflow + (forecast − act.inflow) * 0.2 + sin(i) * act.inflow
+* 0.05`), so the percentages are real MAPEs of fabricated series and the ranking
+is an artefact of the perturbation constants — it would order the same way on
+any cohort. There is nothing honest to keep. The banner stays.
+
+**STANDING FINDING, pre-existing, out of scope here: the same synthetic
+trajectories are what a FITTED leaf row is ranked on.** Suppressing the panel on
+aggregates does not make it truthful on leaves. Inherited by the backlogged
+leaf-grain challenger redesign with the constraint: **real fits or nothing.**
+
+### 3. The filter bar's corner link, selection-null only
+
+`ViewFilterBar` offered "Generate in Step 1" whenever `hasForecast` was false —
+including a selection that resolves to nothing in a session full of forecasts,
+where Step 1 is the manual fit-on-aggregate path and cannot give a cohort more
+months of history. It now shows the cause (same `SKIP_REASON_KEY` enum as the
+Step 2 panel) plus a widen-the-filter hint. The never-generated case keeps the
+link unchanged. This was the last consumer of the two-meanings-of-null split.
+
+App gates the reason on `forecastStore.size > 0 || hasLegacyBaseline` before
+passing it, because `resolveForecast` reports `insufficient-history` for a key
+whose leaves all failed to fit — indistinguishable from "nothing generated yet"
+unless the store is consulted first.
+
+### The specs now assert the rendered DOM
+
+`npm run spec:challenger` mounts the real `ForecastVsActualsTab`, clicks to the
+challenger tab, and reads rendered text: the leaf count and histogram appear,
+the derived selection shows the banner and no `% err` legend and no chart
+surface. It carries a positive control — the harness must be shown to paint a
+Recharts surface somewhere — because every one of those is an assertion of
+ABSENCE, and Recharts paints nothing at jsdom's width of −1, which would have
+made them all pass vacuously.
+
+The B3 block in `derived-interaction-spec` kept a tripwire and lost its claim to
+cover the display, with the reason written in: it asserted provenance and source
+text, stayed green throughout, and the mix rendered nowhere.
+
+**DECLARED, NOT ASSERTED:** the fitted-leaf-unchanged case is not driven at the
+DOM layer. Toggling to leaf grain did not produce a fitted row in the harness
+and the cause was not chased down. The suppression is gated on
+`selectedChallengerGroup.derivedMix`, so a fitted row structurally cannot take
+the suppressed branch — but that is a source argument, and source arguments are
+exactly what let the mix ship rendering nowhere.
+
+## Null had two meanings and the screen only spoke one
+
+**2026-08-05, after the A5 crash fix. Found by the reviewer's re-walk: the
+crash was gone, and the message that replaced it was false.**
+
+Selecting the null cohort rendered **"No Baseline Forecast Yet / Go to Step 1"**
+in a session holding a bulk run of **7,588 forecasts**. Two things wrong with
+that, and the second is worse:
+
+1. It is untrue. Forecasts existed.
+2. It directs the user to Step 1 — the manual, fit-on-aggregate path that
+   Phase 3 exists to remove. The message did not merely fail to help; it
+   pointed at the thing being deleted.
+
+The filter bar said **"No forecast for this selection"** at the same moment, so
+the null WAS detected. An older outer gate simply captured it first.
+
+### Root cause is semantic, not a missing guard
+
+Before the seam, a null `baseForecast` had exactly one meaning: nothing had been
+generated yet. That gate's message was therefore always true, and the Step 1
+redirect was always the right action.
+
+The seam gave null a **second** meaning — a generation exists, but THIS
+selection resolves to nothing — and the screen went on speaking the first.
+
+**This is the third defect on this branch whose cause is a widened meaning
+rather than a broken line.** `'All'` came to mean both "aggregated over" and
+"dimension unmapped"; a null resolution came to mean both "never generated" and
+"not for this selection". A value that gains a second meaning silently breaks
+every reader that was written when it had one — and those readers do not fail
+loudly, they keep answering the old question.
+
+### The fix: distinguish the two where the empty state is chosen
+
+`WhatIfTab` now asks `forecastStore.size === 0 && !hasBaseline`:
+
+- **Nothing generated at all** — the original "No Baseline Forecast Yet" state,
+  Go to Step 1 retained. Still correct, still reachable.
+- **A generation exists, this selection does not** — the reason state: cause,
+  not history, rendered through the shared `SkipReason` enum and its existing
+  i18n keys, and **with no Step 1 redirect**, because Step 1 cannot give a
+  cohort more months of history.
+
+`SKIP_REASON_KEY` moved from a module-local const in `BulkGenerateModal.tsx` to
+`src/types/forecast.ts` and is now imported by both consumers. Its own docstring
+says it is "the ONLY place they become words"; a second copy would have been the
+two-vocabularies-for-one-concept pattern this file already records three
+instances of.
+
+The reason is recomputed at render by App, on the line above `<WhatIfTab>`, from
+the same `resolveForecast(filterToKey(step2Filter))` call that drives the filter
+bar's `hasForecast`. The two cannot disagree, and nothing is remembered — a
+remembered reason would be the stale-forecast mistake in a new place.
+
+### Specced at the surface, transitions included
+
+`spec:nullrender` is now 30 cases. The new ones cover: empty store and no legacy
+-> never-generated state with Step 1 retained; populated store -> reason state
+with no Step 1; both reason codes reaching the screen; a legacy-only session
+counting as generated; and the forecast -> null TRANSITION landing on the reason
+state specifically.
+
+**The transition assertion previously accepted "an empty state".** That is
+exactly why the wrong message shipped past a green spec. It now names which
+state it expects. An assertion loose enough to pass on either branch cannot
+distinguish them, which is the whole job.
+
+Trap 8 collapses the two branches back into one and is confirmed killing the
+spec.
+
+### RESOLVED 2026-08-05 — the filter bar no longer offers that redirect
+
+**This entry described the defect while it was open. It is fixed: see "The
+mix now renders, the illustration panel does not, and the bar stops
+misdirecting" above, item 3. Left in place because the reasoning below is what
+the fix was built from — but the heading said "still open" for a while after
+it was not, which a gate caught and is worth noticing: a record corrected
+above without its original heading being touched reads as two live entries
+disagreeing.**
+
+#### The original entry follows, unedited
+
+`ViewFilterBar.tsx:118-121` renders a **"Generate in Step 1"** button
+unconditionally whenever `hasForecast` is false — including the
+selection-resolves-null case. It is the same misdirection as the one just
+removed, in the sibling component, on the same screen at the same moment.
+
+Not changed here: the fix was scoped to the empty state. Flagged because the
+panel no longer sends the user to Step 1 while the bar three inches above it
+still does, and a half-applied correction reads as an inconsistency rather than
+as a decision.
+
+## A5 blanked the app — FOUND AND FIXED (hook order on the transition)
+
+**Resolved 2026-08-05 by Jon's console stack: "Rendered fewer hooks than
+expected. This may be caused by an accidental early return statement" in
+`<WhatIfTab>`. The investigation below it was aimed at the wrong thing and is
+kept because the reasoning it corrected is the lesson.**
+
+### The mechanism
+
+`WhatIfTab` had three `useMemo` calls — `segmentOptions`, `productL1Options`,
+`channelL1Options` — sitting BELOW the `if (!baseForecast) return <empty/>`
+guard.
+
+- With a forecast loaded the guard is false, so all three run.
+- The moment the resolution goes null the guard fires and returns before them.
+- React compares hook counts between renders, sees fewer than last time, and
+  throws. The tree unmounts: a blank white page.
+
+**It never fired on a fresh mount.** A first render with null skips those hooks
+consistently, so hook order is stable and nothing is wrong. It fired only on
+the TRANSITION forecast -> null — which is exactly Jon's click path: load a
+cohort, then switch to Large Enterprise - Fixed Connectivity.
+
+### Why the first spec passed while the app crashed
+
+`spec:nullrender` mounted the screen WITH null and asserted the empty state.
+That is a different question from transitioning TO null, and it is the question
+that cannot fail.
+
+**A mount-with-X spec does not cover transition-to-X.** In React, transitions
+are where hook-order violations live, because the violation is defined
+relative to the PREVIOUS render — a mount has no previous render to differ
+from. Every state a screen can REACH mid-session needs its transition driven,
+not just its mount.
+
+This sits directly beside the surface-not-store rule and is the same error one
+level in: proving the producer says nothing about the consumer, and proving the
+consumer's steady state says nothing about its transitions.
+
+### The fix is structural, not a guard
+
+The three memos moved ABOVE the guard. They depend only on props (`data`,
+`wiSegmentCol`, `wiProductCol`, `wiChannelCol`) and never on `baseForecast`, so
+they run unconditionally at no cost. **No hook may live below a conditional
+return.** Adding a null check inside each memo would have been the guard-shaped
+non-fix: the hooks would still be skipped by the early return.
+
+`spec:nullrender` now drives the transition in BOTH directions — forecast ->
+null must show the empty state without throwing, and null -> forecast must
+restore the working screen. Trap 7 in `npm run guard-traps` replants a hook
+below the guard and is confirmed killing it.
+
+**Trap 7 was wrong first.** Its initial version inserted the hook ABOVE the
+guard — the safe position — and reported MISSED. A trap that plants the wrong
+shape indicts the spec for the trap's own error. The miss was investigated
+rather than accepted, which is the only reason it is a real trap now.
+
+### Classification: introduced-in-effect. SECOND instance of that rule.
+
+The three hooks sit below the guard in main too — measured, 3 of them. So the
+defective SHAPE predates this branch. But it could not fire there:
+
+- main contains `setBaseForecast(null)` **zero times**.
+- The filter and tab-restore paths read
+  `if (bf !== undefined) setBaseForecast(bf);` — retain-on-miss, no else. A
+  miss silently kept the previous cohort's forecast.
+
+So in main `baseForecast` can never become null after the first load, the
+forecast -> null transition never happens, and the violation is unreachable.
+B2a replaced retain-on-miss with `setBaseForecast(resolveForecast(...).forecast)`
+— 2 sites that can pass null — which is what made mid-session null possible.
+
+**The lines are older; this branch is what makes them reachable.** Same
+classification as the roll-up duplication, and the second time this rule has
+decided a finding on this branch. Both were fixed here rather than filed as
+pre-existing.
+
+Worth noting what retain-on-miss was hiding: it was recorded as a display
+defect (the screen changed its label and kept its numbers). It was also
+load-bearing, in that it suppressed this crash by never producing the state
+that triggers it. **Removing a defect can expose the ones it was masking**, and
+that is not an argument for keeping it.
+
+---
+
+## Superseded investigation, kept for the reasoning it corrected
+
+
+
+**2026-08-05. Investigated, not fixed. Do not merge on this entry.**
+
+Jon's A5 selection blanked the app. Treated as introduced-by-branch as
+instructed. What was established:
+
+**The null contract holds, and the null SURFACE now has a spec.** A new
+`npm run spec:nullrender` mounts the real Step 2 components — `WhatIfTab` AND
+`ViewFilterBar`, the sibling that renders from the same filter change — under a
+null resolution, with the real edge-fixture rows. Result: the designed empty
+state (`WhatIfTab.tsx:2284`) renders, nothing throws. 8 cases, all passing.
+
+That spec is the surface-not-store rule applied to specs themselves.
+`deriveAggregate` returning null was proven at the store and re-proven at every
+gate; that the SCREEN survives being handed that null had never been tested
+once. It is now.
+
+**A harness artefact was nearly reported as the defect.** The first run threw
+`Cannot read properties of undefined (reading 'segment')` at
+`WhatIfTab.tsx:1295` — which is a dependency array reading `newYieldEvent`, a
+required PROP the harness had not supplied. A missing prop throws in a place
+that looks exactly like an app bug. **Every required prop must be supplied
+before a mount proves anything**, and the first version also passed `data: []`,
+which makes most paths trivially safe and would have certified a screen nobody
+has.
+
+### The premise depends on which file is loaded, and Jon's was not confirmed
+
+Measured on both candidate fixtures for
+`Large Enterprise|Fixed Connectivity|All|All|All|All|All`:
+
+| fixture | leaves enumerated | fitted | resolves to |
+|---|---|---|---|
+| `EdgeCases_ShortHistory` | 1 | 0 | **null**, `insufficient-history` |
+| `ProductL2_Full_Jun2026` | 27 | 27 | **DERIVED**, 12 months |
+
+Jon's Part B screenshots prove `ProductL2_Full` was loaded at least for that
+part. **On that fixture the A5 filter is not a null case at all** — it is a
+derived aggregate, the object whose `ArpuBand` bounds are deliberately absent,
+which is the shape a band-reading chart is most likely to trip over.
+
+So the derived case was specced too: mounted with a real 27-leaf derived
+aggregate off `ProductL2_Full`, and confirmed absent ARPU bounds. It also
+renders without throwing.
+
+### Status: not reproduced
+
+Neither the null case nor the derived case blanks the Step 2 surface under the
+harness. **No fix has been made, because there is nothing yet shown to fix, and
+inventing one would be a change with no failing case behind it.** Jon's console
+stack is the fastest path from here.
+
+**Declared limitation.** In the derived case Recharts logged
+`width(-1) and height(-1)`, so the chart bailed before painting. "No throw" is
+therefore weaker evidence for the CHART path than for the rest of the screen —
+band-drawing code may not have executed. `scripts/regression-traps.tsx` solves
+exactly this with a sized `ResizeObserver`; the same treatment is wanted here
+before the chart path can be called clear.
+
+---
+
+## The Market Events chart draws no confidence bands at all
+
+**A4, answered 2026-08-05. The third surface-not-store violation.**
+
+Direct measurement: `src/components/WhatIfTab.tsx` contains **zero** matches for
+`<Area`, `Optimistic`, `Pessimistic` or `stackId`. Step 2 renders **no
+confidence band for any series** — not ARPU, not volume. Jon's screenshots
+showing no cone were showing correct behaviour.
+
+**So the A4 check was pointed at a coneless surface.** Asking for the presence
+and absence of an ARPU cone on Step 2 could only ever produce "absent" twice.
+
+### Where ARPU bands ARE user-visible
+
+| surface | bands | follows the view filter? |
+|---|---|---|
+| Step 1 `StandardForecastTab` | yes (`arpuChartData`, Optimistic/Pessimistic) | **no** — renders `forecastData`, written only by manual generation |
+| Step 2 `WhatIfTab` | **none at all** | n/a |
+| Step 3 `ForecastVsActualsTab` | yes | yes — but requires ACTUALS |
+
+Step 1 has the cone but is not a per-filter viewer (recorded above under the
+Step 1 finding), so the aggregate-versus-leaf contrast cannot be driven there.
+Step 3 follows the filter and has the bands, but needs actuals — and the edge
+fixture has no companion actuals file.
+
+**Therefore the edge fixture cannot exercise the A4 contrast on any surface.**
+A4 moves to the headless spec it already has — `deriveAggregate` returning
+absent ARPU bounds on a derived aggregate, pinned in the derive spec — plus a
+future walk item **gated on the backlogged edge-fixture actuals companion**.
+It is not a walk check today.
+
+---
+
+## Every walk now ends step zero with a screenshot handshake
+
+**Protocol change, 2026-08-05, after fixture identity invalidated a walk for
+the second consecutive time.**
+
+The four-part step zero (reload, named file, row count, mapping assertion) was
+in place and Part B still ran on the wrong file. Reading an anchor is not the
+same as confirming it.
+
+**Step zero now ENDS with the walker pasting screenshots of the row-count
+screen and the mapping step, and waiting for confirmation, before any check
+runs.** No check is graded without that handshake.
+
+### What distinguishes the two fixtures on screen
+
+They are identical on rows (90,720), months (42) and cohorts (540). The only
+on-screen difference is tariff:
+
+- `TariffHierarchy…` — the mapping step's **Tariff L1** and **Tariff L2**
+  selectors resolve to the columns `tariff_tier_l1` and `tariff_tier_l2`, and
+  the challenger tab's dimension toggles for Tariff L1/L2 are **enabled**.
+- `ProductL2_Full…` — those columns **do not exist in the file**, so the
+  selectors have nothing to resolve and the challenger toggles render disabled
+  with the grey label **"(not mapped)"** (`CohortDimCheckboxes.tsx`, key
+  `cohortdims_not_mapped`).
+
+"(not mapped)" beside Tariff is therefore a positive identification of
+`ProductL2_Full`, not a bug.
+
+### And this is the DQ line justifying itself
+
+The app gives a user **no persistent indication of which file is loaded**. Once
+past the import screen there is nothing on screen naming the file, so two
+fixtures that differ only in one dimension are indistinguishable during a
+session — which is exactly how this recurred.
+
+That is the "How your data was read" line's case, made twice by accident rather
+than argument: it is not only about data quality, it is about knowing which
+data you are looking at. Recorded against the DQ import phase alongside items
+A–F.
+
 ## WORKING PRACTICE: data issues are told to the user, not handled silently
 
 **Standing principle, set by the user 2026-08-04.**
@@ -2143,6 +2945,36 @@ whether D was orientation or noise. A line that never fires has no frequency.
 The unknown was dissolved by the design rather than answered — worth noticing as
 a move: when a decision hinges on an unmeasured rate, changing the mechanism so
 the rate is irrelevant beats measuring it.
+
+#### F — column detection samples row zero only. QUEUED HERE 2026-08-05.
+
+**Real mechanism, measured; queued to this phase rather than fixed where it was
+found, because mapping robustness lives here.**
+
+`App.tsx` builds the column list as `Object.keys(jsonData[0])` — the keys of the
+FIRST DATA ROW. `sheet_to_json` omits keys for blank cells, so **a column that
+happens to be blank in row 0 does not exist as far as the app is concerned**,
+for the whole session. Auto-mapping then cannot match it, the dimension reads
+"(not mapped)", and every leaf key silently carries `'All'` in that slot.
+
+Measured across all six fixtures in `test-data/`: every one of them hides
+`Applied_Flow_Rate_%` this way — 19 columns in the union of all rows, 18 in row
+zero. The tariff columns are blank in 0 rows of every fixture, so this did not
+cause the 2026-08-05 walk's unmapped tariff (that was fixture identity — see
+"Same fixture name, different file"). The mechanism is real and unfired here,
+not hypothetical.
+
+**Wanted:** detection unions keys across a SAMPLE of rows rather than trusting
+one. And this phase is exactly where the result gets reported — the
+"How your data was read" line already names the extra columns it combined, so
+it is the natural place to say which columns were found and which dimensions
+they mapped to. A dimension the file contains but the app did not map is a data
+issue the user must be told about, not one to work around silently.
+
+Note the interaction with the unmapped-dimension defect fixed on
+`session-b2-wire-seam`: silently unmapping a dimension used to inflate every
+derived aggregate above it by 3x. That amplifier is gone, so this is now a
+correctness-of-reporting problem rather than a correctness-of-numbers one.
 
 #### E — dropped
 
@@ -2353,6 +3185,29 @@ by a missing `@types` package, the i18n scanner blind to object literals, and
 now grep blind to one file. **The pattern is not that the tools are bad. It is
 that a tool's silence is being read as evidence, and silence is what a broken
 tool produces too.**
+
+### The completion panel's "144 skipped" changes MEANING at the seam — Phase 3
+
+Noted, deliberately not fixed here.
+
+The amber line reports `failed`, incremented in the STANDARD-cohort loop
+(`forecasting.worker.ts:292`, `:317`) - cohorts whose every constituent leaf
+could not be fitted. Nothing about that counter changes in B2.
+
+**What changes is whether the number still means what it says.** It is
+produced at GENERATION time and describes what could not be built then. With
+derivation at the seam, a cohort counted there may now RESOLVE on read - the
+leaves it needed are in the store, they simply were not summed at generation
+time. So the panel can report a cohort as skipped while the app then shows the
+user a forecast for it.
+
+That is not a defect introduced by B2; it is a generation-time count being
+read as a coverage statement, which it never was. **It belongs to Phase 3's
+completion-message work**, alongside the already-recorded finding that the
+panel states one fact in two vocabularies.
+
+Fixing it here would mean redefining a counter mid-phase, in a session whose
+control is that leaf behaviour is byte-identical. Recorded instead.
 
 ### Session B1 MERGED to main at `c806370` — 2026-08-04
 
@@ -3519,6 +4374,22 @@ its distribution is. This is accepted and expected.
 ---
 
 ## BACKLOG — requested, design pass required before build
+
+### The edge fixture needs a companion actuals file
+
+**Recorded 2026-08-05, not built.**
+
+`VBU_IBRO_EdgeCases_ShortHistory_PerScenarioARPU_Jan2023_Jun2026.xlsx` is the
+fixture built to exercise short history and per-scenario ARPU divergence - and
+no actuals file exists for it. Because the challenger tab and the accuracy
+table both require a non-empty `monthMap`, **no scoring check can be run on the
+one fixture built to make scoring interesting.** Every scoring check therefore
+falls back to the full fixture, where the edge cases are absent.
+
+Wanted: an actuals file from the same builder, covering the months after the
+edge fixture's forecast start, so scoring checks become runnable on the fixture
+that can actually exercise them.
+
 
 Requests recorded here are **not scheduled and not designed**. Each needs a
 design pass of its own before any branch is cut. Recorded so the request, its
