@@ -66,7 +66,7 @@ async function main() {
   /** A leaf fit, seeded from its own last historical Base. */
   function build(seg: string, prod: string, chan: string, tar: string) {
     const sel = rows.filter(r => v(r, C.seg) === seg && v(r, C.prod) === prod
-      && v(r, C.chan) === chan && (tar === 'All' || v(r, C.t1) === tar));
+      && (chan === 'All' || v(r, C.chan) === chan) && (tar === 'All' || v(r, C.t1) === tar));
     if (!sel.length) return null;
     const acc = new Map<number, any>();
     for (const r of sel) {
@@ -107,6 +107,14 @@ async function main() {
     const b = build(s, p, c, 'All');
     if (b?.bf) store.set(b.key, b.bf);
     if (store.size >= 12) break outer;
+  }
+  // Also a PRODUCT-grain fit per segment. A store legitimately holds fits at
+  // whatever grain someone generated, and this is the grain the challenger's
+  // Product L1 toggle asks for - so a fitted row is reachable by a toggle a
+  // user can actually click, rather than only in principle.
+  for (const s2 of segs) for (const p2 of prods) {
+    const b = build(s2, p2, 'All', 'All');
+    if (b?.bf) store.set(b.key, b.bf);
   }
   check('PREMISE: a store of real leaf fits was built', store.size >= 4, `${store.size} leaves`);
 
@@ -225,14 +233,25 @@ async function main() {
       `${surfaces} surfaces on a chart-bearing tab - if 0, the "no chart" assertion above is vacuous`);
   }
 
-  // DECLARED, NOT ASSERTED: the fitted-leaf case is not driven here. Toggling
-  // Product L1 + Channel L1 to reach leaf grain did not produce a row carrying
-  // a "Best:" recommendation in this harness, and the cause was not chased to
-  // ground. The suppression is gated on `selectedChallengerGroup.derivedMix`,
-  // so a fitted row structurally cannot take the suppressed branch - but that
-  // is a source argument, and this file exists precisely because source
-  // arguments were what let the mix ship rendering nowhere. Treat "fitted leaf
-  // unchanged" as unverified at the DOM layer until a harness reaches it.
+  // ── THE FITTED CASE: attempted, NOT achieved here. Stated precisely. ─────
+  // Toggling the challenger's Product L1 grouping does reach a grain whose key
+  // hits a product-grain fit in the store, but the challenger LIST goes empty
+  // at that grain in this harness: challengerCohortAccuracy carries no scored
+  // rows there, so `c.overallScore !== null` filters everything out and the
+  // "Review All Cohorts Anyway" empty state renders instead. Observed, not
+  // assumed - the row sample at that point contains only chrome buttons.
+  //
+  // A stage-2 review reported reaching a fitted row in this same harness by
+  // toggling Product L1 alone. That was not reproducible here and the
+  // discrepancy is unresolved; it is recorded rather than resolved by picking
+  // whichever result is more convenient.
+  //
+  // So "fitted leaf keeps current behaviour" is NOT asserted at the DOM layer.
+  // What IS asserted: the suppression is gated on
+  // `selectedChallengerGroup.derivedMix` (source), and this harness demonstrably
+  // paints a Recharts surface elsewhere, so the derived-side absence assertions
+  // above are not vacuous. Anyone extending this file: the missing piece is a
+  // fixture/store arrangement that yields SCORED accuracy rows at leaf grain.
 
   if (process.env.DEBUG_CR) {
     console.log('CHECKBOXES:', [...container.querySelectorAll('input[type=checkbox]')]
