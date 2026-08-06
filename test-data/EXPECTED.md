@@ -2209,6 +2209,67 @@ was right and said nothing about whether the screen would render.
 
 ---
 
+## chartData IS DEAD CODE — and that retracts a finding I recorded as fact
+
+**2026-08-06, proven by experiment. This corrects entries in this file and two
+session reports.**
+
+`ForecastVsActualsTab.tsx`'s `chartData` memo is **declared and never read.** The
+only other occurrences of the name are comments and a DIFFERENT `chartData` - a
+property on the challenger group type. Proven rather than grepped: renaming the
+memo to `__unusedChartData` leaves typecheck at 0, the build clean,
+`spec:unscored` 8/8 and `npm run traps` 3/3.
+
+It is dead on **main** too, at the same three occurrences — so it was dead before
+Session D touched it, not made dead by it.
+
+### What this retracts
+
+**Stage 3 of the Session C gate reported that selecting a trigger-population row
+showed "a fabricated share-scaled line in the chart" while the accuracy table
+said unscored.** I recorded that as a finding, wrote it into this file as a named
+transient state, and reasoned from it across two sessions. **It cannot have been
+visible.** The visible comparison chart is driven by `multiChartData` (its Lines
+read `${prefix}_baseline` / `${prefix}_actual`), and the dependency map already
+established that `multiChartData` never had share-scaling — its fallback is
+guarded by `!selectedCohortRow`.
+
+So:
+
+- The "table honest, chart fabricating" transient state **did not exist on
+  screen**. The entry describing it, and the strike that closed it, both rest on
+  a false premise.
+- The "2-row screen change" carried through the Session C merge decision and this
+  branch's reasoning was, on the chart side, **no screen change at all**.
+- Session D's deletion of the three closures and Case A remains correct — dead
+  code that fabricated is still worth removing — but **not for the reason
+  given**, and its blast radius on screen was zero, not two rows.
+
+### How it survived
+
+Three consecutive reviews described this code as live: a dependency-mapper pass
+that traced its consumers within the memo, a stage-3 gate that inferred a user
+impact from reading the branch, and my own reports repeating both. None of them
+asked the prior question — *is the memo read at all* — because each was handed
+the assumption by the one before.
+
+**A consumer map that starts inside the thing being mapped cannot discover that
+the thing has no consumers.** The check that would have caught it is the cheapest
+one available: rename the symbol and see whether anything notices.
+
+### Not yet decided
+
+Whether `chartData` should now be deleted outright is a live question, not a
+tidy-up: it is a ~460-line memo carrying logic duplicated in `multiChartData`,
+and deleting it is a larger change than anything in this branch. Reported, not
+taken.
+
+**The family-closed declaration is withheld** and its wording needs revisiting:
+"three in the chart" describes fallbacks that were unreachable, which is a
+different claim from the table's three.
+
+---
+
 ## SESSION C MERGED — `6726d4c`
 
 **Merged to main 2026-08-06, `--no-ff`, no walk.** The screen change is measured,
