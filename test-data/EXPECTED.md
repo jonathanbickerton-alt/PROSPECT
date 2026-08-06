@@ -2224,7 +2224,19 @@ Verified ON MAIN after the merge: typecheck 0, build clean, eleven suites 411,
 nullrender 35, challenger 12, traps 3/3, guard-traps 8/8, i18n clean, `.env`
 untracked.
 
-### THE TRANSIENT STATE, named on purpose
+### THE TRANSIENT STATE — STRUCK 2026-08-06, the chart side landed
+
+**This entry instructed that it be struck when the chart branch landed. It has.**
+
+The accuracy table and the chart now resolve identically — one tier,
+`resolveForecast` — so they cannot disagree about whether a cohort has a
+forecast. A selected row with no forecast shows the gap in both panels, with its
+actuals still drawn.
+
+The original text follows, unedited, because it is the record of a state that was
+merged knowingly rather than discovered.
+
+#### Original entry
 
 **The accuracy table is honest and the chart still fabricates, for the same 2
 edge-fixture rows.** Selecting one shows UNSCORED in the accuracy table and a
@@ -2243,6 +2255,28 @@ branch, and this entry should be struck when it lands.
 stage 3 judged it: resolved for the table path Session C touched, not for the
 chart path it did not. Marking it closed would be the
 shrunk-blast-radius-reported-as-fixed error.
+
+---
+
+## CORRECTION: the pinned 0/0/2 is the CHART's trigger set, not the table's
+
+**2026-08-06, at the lead of the entry it corrects.**
+
+The Session C entry below describes 0/0/2 as the accuracy table's trigger set.
+It is not. It is `resolveForecast` returning null — **tier one only**, which is
+the CHART's predicate. The accuracy table resolved in TWO tiers until Session D:
+`resolveForecast`, and if that missed, a candidate scan over `forecastStore`. Its
+trigger was both tiers missing, so its set was a SUBSET of the pinned one.
+
+**Session C's shipped scope stands.** `npm run spec:triggers` measures both sets
+across three fixtures and four groupings: the tier-2 scan fired on **zero** of
+the tier-1 misses, so the two sets coincide in fact. The description was wrong,
+not the number, and the deletion was correctly scoped.
+
+The distinction is worth keeping even though it changed nothing here: two
+predicates that agree on the current fixtures are not one predicate, and a figure
+labelled with the wrong one invites exactly the assumption that nearly carried it
+into the next deletion.
 
 ---
 

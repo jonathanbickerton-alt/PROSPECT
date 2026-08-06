@@ -69,6 +69,15 @@ const cohortsIn = (rows: any[]) => {
 };
 
 // ── 1+2. THE TRIGGER SET, pinned ───────────────────────────────────────────
+// CORRECTION, 2026-08-06. This set is `resolveForecast` returning null - which
+// is the CHART's trigger (one tier). The accuracy table resolved in TWO tiers
+// until Session D deleted the second, so before that its trigger set was a
+// SUBSET of this one and describing this figure as "the table's" was wrong.
+//
+// Session C's shipped scope stands: `spec:triggers` measures both and the
+// tier-2 scan fired on ZERO of the tier-1 misses on every fixture, so the two
+// sets coincide in fact. The description was wrong, not the number.
+//
 // This is the population whose rows change from a fabricated number to a blank.
 // Pinned so a fixture edit that silently grows it is noticed: the deletion is
 // only defensible while this set is the deliberate short-history leaves.

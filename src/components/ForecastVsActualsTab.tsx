@@ -583,7 +583,9 @@ type AdjustedMeanMap = Map<string, { inflow: number; outflow: number; retention:
 
 function buildCohortAccuracy(
   cohortActualsMap: Map<string, Map<string, CohortMonthEntry>>,
-  aggrMap: Map<string, AggrSnapshot>,
+  // `aggrMap` was removed here: it fed the proportional scaling deleted from
+  // this function, and nothing read it afterwards. A dead parameter on a
+  // positional signature is a live hazard, not just clutter.
   baseForecast: import('../types/forecast').BaseForecast,
   dims: CohortDims,
   forecastStore: Map<string, import('../types/forecast').BaseForecast>,
@@ -673,68 +675,24 @@ function buildCohortAccuracy(
     // Seam, not store: an aggregate key has no stored entry and never will.
     const cohortSrcEarly = resolveForecast(cohortFcLookupKeyEarly).forecast;
     type BFEarly = import('../types/forecast').BaseForecast;
-    const matchingBfs: BFEarly[] = (() => {
-      if (cohortSrcEarly) return [cohortSrcEarly];
-      const candidates: BFEarly[] = [];
-      // Shared predicate. The store key is the candidate, this row's dims are
-      // the scope, and the view's group-by checkboxes are the ScopeDims -- which
-      // is why product and channelL1 are gateable rather than always applied.
-      const rowScope = { segment: d.seg, product: d.prod, productL2: d.prodL2,
-        channel: d.chan, channelL2: d.chanL2, tariffL1: d.tariffL1, tariffL2: d.tariffL2 };
-      const matchDims = dimsFromGrouping({
-        product: dims.product, productL2: dims.productL2,
-        channelL1: dims.channelL1, channelL2: dims.channelL2,
-        tariffL1: dims.tariffL1, tariffL2: dims.tariffL2,
-      });
-      for (const [key, bf] of forecastStore.entries()) {
-        const p = key.split('|');
-        if (p[0] !== d.seg) continue;
-        if (!cohortInScope({ segment: p[0], product: p[1], productL2: p[2],
-              channel: p[3], channelL2: p[4], tariffL1: p[5], tariffL2: p[6] },
-              rowScope, matchDims)) continue;
-        candidates.push(bf);
-      }
-      // When productL2 is not a GROUP-BY dimension the store may contain both
-      // 'All' productL2 forecasts (aggregated across L2s) and specific-L2 forecasts
-      // for the same (product, channel, chanL2) triple.  flowBandMaps sums every
-      // entry in matchingBfs, so including both would double-count the volume while
-      // effectiveActualMap counts each actual cohort key exactly once.
-      // Deduplication: two dimensions may need to be collapsed.
-      //
-      // 1. productL2: when dims.productL2 is off, the store may contain both
-      //    'All'-L2 forecasts and specific-L2 forecasts for the same
-      //    (product, channel, chanL2) triple.  Prefer the specific-L2 ones.
-      //
-      // 2. channel: when dims.channelL1 is off, the store may contain both
-      //    per-channel forecasts and a channel-aggregate (channel='All') forecast
-      //    for the same product.  Prefer the aggregate to avoid double-counting.
-      //
-      // Group key: always include product; include channel/chanL2 only when
-      // channelL1 IS a grouping dim (otherwise collapse into one group per product).
-      if (candidates.length <= 1 || dims.productL2) return candidates;
-      const grouped = new Map<string, BFEarly[]>();
-      for (const bf of candidates) {
-        const c = bf.cohort;
-        const chanPart = dims.channelL1 ? `|${c.channel ?? ''}|${c.channelL2 ?? ''}` : '';
-        const grpKey = `${c.product ?? ''}${chanPart}`;
-        if (!grouped.has(grpKey)) grouped.set(grpKey, []);
-        grouped.get(grpKey)!.push(bf);
-      }
-      const out: BFEarly[] = [];
-      for (const grpBfs of grouped.values()) {
-        // Prefer productL2-specific over productL2-aggregate within the group.
-        const specificL2 = grpBfs.filter(bf => bf.cohort.productL2 && bf.cohort.productL2 !== 'All');
-        let deduped = specificL2.length > 0 ? specificL2 : grpBfs;
-        // When channelL1 is not a grouping dim, also prefer the channel-aggregate
-        // forecast (channel='All') over per-channel ones to avoid double-counting.
-        if (!dims.channelL1) {
-          const aggChan = deduped.filter(bf => !bf.cohort.channel || bf.cohort.channel === 'All');
-          if (aggChan.length > 0) deduped = aggChan;
-        }
-        out.push(...deduped);
-      }
-      return out;
-    })();
+    // TIER 2 DELETED — the candidate scan.
+    //
+    // It answered "no forecast for this cohort" with a forecast fitted to a
+    // DIFFERENT SCOPE: any stored fit whose scope was contained by this row's,
+    // summed. Different mechanism from the share-scaling deleted alongside it,
+    // same family by definition - a number produced where the honest answer
+    // was nothing.
+    //
+    // MEASURED BEFORE DELETING (`npm run spec:triggers`): across three fixtures
+    // and four groupings, the scan fired on ZERO of the 4 keys where tier 1
+    // missed. It borrowed nothing that was reachable. That measurement is what
+    // made this a deletion rather than a decision, and it is pinned so a fixture
+    // that would make the scan fire again is noticed.
+    //
+    // With it gone the accuracy table and the chart resolve identically - one
+    // tier, `resolveForecast` - so the two panels can no longer disagree about
+    // whether a cohort has a forecast.
+    const matchingBfs: BFEarly[] = cohortSrcEarly ? [cohortSrcEarly] : [];
 
     // ── No forecast for this row → UNSCORED, not a fabricated score ──────
     //
@@ -2013,7 +1971,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   // denominator.  Cohorts outside the forecast scope produce null metrics and are
   // filtered out by the validity check inside buildCohortAccuracy.
   const cohortAccuracy = useMemo(
-    () => baseForecast ? buildCohortAccuracy(cohortActualsMap, broadAggrSnapshotMap, baseForecast, cohortDims, forecastStore, resolveForecast, adjustedMeanMap) : [],
+    () => baseForecast ? buildCohortAccuracy(cohortActualsMap, baseForecast, cohortDims, forecastStore, resolveForecast, adjustedMeanMap) : [],
     [baseForecast, cohortActualsMap, broadAggrSnapshotMap, cohortDims, forecastStore, adjustedMeanMap],
   );
 
@@ -2073,42 +2031,17 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     // Effective specific forecast: cohort selection takes priority over filter lookup.
     const specificForecast = cohortSpecificForecast ?? filterForecast;
 
-    // Build a per-month cohort share map for flow metrics — only used when no direct forecast.
-    const scalableKpi = (selectedKpi === 'inflow' || selectedKpi === 'outflow' || selectedKpi === 'retention')
-      ? selectedKpi : null;
+    // DELETED: cohortShareMap / baseShareForChart / arpuScaleRatio.
+    //
+    // Three closures, one mechanism: scale the LOADED cohort's aggregate by the
+    // selected cohort's historical share and draw it as that cohort's forecast.
+    // Measured before deleting - `npm run spec:triggers` - the population that
+    // reaches them is the same set the accuracy table stopped fabricating for:
+    // 4 rows across three fixtures and four groupings, all on the edge fixture,
+    // all its deliberate short-history leaves.
 
-    // Build a per-month cohort share map — only needed when no direct forecast is available.
-    let cohortShareMap: Map<string, number> | null = null;
-    if (cohortMonthMap && scalableKpi && !specificForecast) {
-      const kpi = scalableKpi;
-      const shares: number[] = [];
-      const sm = new Map<string, number>();
-      const allMonths = [
-        ...(baseForecast?.historicalMonths ?? []),
-        ...(baseForecast?.months.map(bm => bm.month) ?? []),
-      ];
-      for (const month of allMonths) {
-        const cohortVal = cohortMonthMap.get(month)?.[kpi] ?? 0;
-        // broadAggrSnapshotMap, not aggrSnapshotMap: the numerator (cohortMonthMap)
-        // is unfiltered, so a filter-scoped denominator makes the share depend on
-        // what someone else is filtered to. Same denominator buildCohortAccuracy
-        // uses, so the chart and the accuracy tooltip cannot disagree.
-        const aggrSnap  = broadAggrSnapshotMap.get(month);
-        const aggrVal   = aggrSnap?.[kpi] ?? 0;
-        if (cohortVal > 0 && aggrVal > 0) {
-          const share = cohortVal / aggrVal;
-          shares.push(share);
-          sm.set(month, share);
-        }
-      }
-      const avgShare = shares.length > 0 ? shares.reduce((a, b) => a + b, 0) / shares.length : 1;
-      for (const month of allMonths) {
-        if (!sm.has(month)) sm.set(month, avgShare);
-      }
-      cohortShareMap = sm;
-    }
-
-    // For the 'base' KPI when a cohort is selected: read directly from actuals.
+    // Cohort's own BASE actuals. Read directly, never derived - unrelated to the
+    // deleted share-scaling above, and swept up with it by an over-wide cut.
     const cohortBaseActualMap = (() => {
       if (!cohortMonthMap || selectedKpi !== 'base') return null;
       const map = new Map<string, number>();
@@ -2116,45 +2049,6 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
         if (entry.base !== null) map.set(month, entry.base);
       }
       return map;
-    })();
-
-    // For the 'base' KPI when no direct forecast: scale aggregate by inflow share.
-    const baseShareForChart = (() => {
-      if (!cohortMonthMap || selectedKpi !== 'base' || specificForecast) return null;
-      const inflowShares: number[] = [];
-      for (const [month, entry] of cohortMonthMap.entries()) {
-        // Broad denominator — see cohortShareMap above.
-        const aggrSnap = broadAggrSnapshotMap.get(month);
-        if (!aggrSnap || aggrSnap.inflow === 0 || entry.inflow === 0) continue;
-        inflowShares.push(entry.inflow / aggrSnap.inflow);
-      }
-      if (!inflowShares.length) return null;
-      return inflowShares.reduce((s, v) => s + v, 0) / inflowShares.length;
-    })();
-
-    // NOT moved to broadAggrSnapshotMap, and this is a known gap rather than an
-    // oversight: AggrSnapshot is { inflow, outflow, retention } and carries no
-    // revenue/volume, so an ARPU denominator cannot be read from it. Widening
-    // that type also widens buildCohortAccuracy's signature, so it is deliberately
-    // out of scope here. This ratio therefore still uses the activeFilter-scoped
-    // actualsAggrMap and retains the same class of defect the broad map just
-    // fixed for the flow metrics. Tracked in EXPECTED.md §16b.
-    // ARPU ratio scale — when a cohort is selected but no specific forecast found,
-    // scale the aggregate ARPU by the historical cohort/aggregate ARPU ratio.
-    // Mirrors the flow-metric share-scaling approach for ARPU so that cohorts
-    // with above/below-average ARPU (e.g., "High Value" ~36 vs aggregate ~20)
-    // don't produce a visible scale mismatch against the aggregate forecast line.
-    const arpuScaleRatio = (() => {
-      if (!cohortMonthMap || specificForecast) return null;
-      const ratios: number[] = [];
-      for (const [month, entry] of cohortMonthMap.entries()) {
-        const aggrBucket = actualsAggrMap.get(month);
-        if (!aggrBucket || aggrBucket.arpuSubVol === 0 || aggrBucket.revSum === 0) continue;
-        const aggrArpu = aggrBucket.revSum / aggrBucket.arpuSubVol;
-        if (aggrArpu === 0 || entry.arpu === 0) continue;
-        ratios.push(entry.arpu / aggrArpu);
-      }
-      return ratios.length ? ratios.reduce((a, b) => a + b, 0) / ratios.length : null;
     })();
 
     // Build month → forecast band lookup (specificFcMonthMap).
@@ -2449,38 +2343,41 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           }
           adjusted = usingAdjusted ? baseline : undefined; // adjusted not available for sub-cohort forecasts
         }
-      } else if (aggregateFallbackOk) {
-        // Fall back to share-scaled aggregate forecast.
-        // Flow metrics: scale by per-month cohort share (cohortShareMap).
-        // ARPU: scale by historical cohort/aggregate ratio (arpuScaleRatio) — prevents
-        //   the mismatch where e.g. "High Value" ARPU (~36) is compared against the
-        //   unscaled all-cohorts aggregate forecast ARPU (~20).
-        // Base: scale by average inflow share (baseShareForChart).
-        const rawBaseline   = getKpiVal(row.baseline, selectedKpi) ?? undefined;
-        const rawAdjusted   = usingAdjusted ? (getKpiVal(row.adjusted, selectedKpi) ?? undefined) : undefined;
-        const rawOptimistic  = selectedKpi !== 'base' ? (row.baseline[selectedKpi + 'Opt']  ?? undefined) : undefined;
-        const rawPessimistic = selectedKpi !== 'base' ? (row.baseline[selectedKpi + 'Pess'] ?? undefined) : undefined;
-        const share = selectedKpi === 'base'
-          ? (baseShareForChart ?? 1)
-          : selectedKpi === 'arpu'
-          ? (arpuScaleRatio ?? 1)
-          : (cohortShareMap?.get(row.month) ?? 1);
-        baseline    = rawBaseline   !== undefined ? rawBaseline   * share : undefined;
-        adjusted    = rawAdjusted   !== undefined ? rawAdjusted   * share : undefined;
-        optimistic  = rawOptimistic  !== undefined ? rawOptimistic  * share : undefined;
-        pessimistic = rawPessimistic !== undefined ? rawPessimistic * share : undefined;
+      } else if (!cohortMonthMap && aggregateFallbackOk) {
+        // CASE B, RETAINED. No cohort row is selected, so this is the loaded
+        // aggregate shown UNSCALED against actuals at the same scope. The
+        // `aggregateFallbackOk` guard is a deliberate earlier fix: without it,
+        // an aggregate drawn against filter-scoped actuals produced nonsense
+        // variances around +99.9%.
+        //
+        // CASE A IS GONE. It shared this branch: when a cohort row WAS
+        // selected and no forecast resolved for it, the loaded aggregate was
+        // multiplied by that cohort's historical share and drawn as the
+        // cohort's own line. That is the borrow-an-unrelated-cohort pattern,
+        // and the accuracy table stopped doing it one merge ago - which is
+        // what left the table honest and this chart still fabricating for the
+        // same rows.
+        //
+        // A selected cohort with no forecast now falls through to nothing:
+        // baseline, adjusted, optimistic and pessimistic stay undefined and the
+        // series simply has no forecast points. The actuals are still drawn.
+        baseline    = getKpiVal(row.baseline, selectedKpi) ?? undefined;
+        adjusted    = usingAdjusted ? (getKpiVal(row.adjusted, selectedKpi) ?? undefined) : undefined;
+        optimistic  = selectedKpi !== 'base' ? (row.baseline[selectedKpi + 'Opt']  ?? undefined) : undefined;
+        pessimistic = selectedKpi !== 'base' ? (row.baseline[selectedKpi + 'Pess'] ?? undefined) : undefined;
       }
 
       const actual = getActualVal(row.month);
-      const share = specificFcMonthMap ? 1 : (
-        selectedKpi === 'base' ? (baseShareForChart ?? 1) :
-        selectedKpi === 'arpu' ? (arpuScaleRatio ?? 1) :
-        (cohortShareMap?.get(row.month) ?? 1)
-      );
+      // The model-switch overlay was the SECOND entry into share-scaling, and
+      // it carried a weaker guard than the branch above - `specificFcMonthMap`
+      // alone, never `aggregateFallbackOk`. It could not diverge in practice
+      // only because every share self-guarded on `cohortMonthMap` and fell to
+      // 1. With the shares gone there is nothing to scale by, so the overlay
+      // is drawn as fitted. No second guard is left to drift out of step with
+      // the first, because there is only one branch that draws a forecast now.
       const prevBaseline =
         switchMonth && row.month >= switchMonth
-          ? ((prevFcMap.get(row.month) ?? undefined) !== undefined
-              ? (prevFcMap.get(row.month)! * share) : undefined)
+          ? (prevFcMap.get(row.month) ?? undefined)
           : undefined;
 
       const variance = actual !== undefined && baseline !== undefined ? actual - baseline : undefined;
@@ -3025,7 +2922,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
 
   // AutoML Challenger tab — driven by challengerDims (independent of cohortDims)
   const challengerCohortAccuracy = useMemo(
-    () => baseForecast ? buildCohortAccuracy(cohortActualsMap, broadAggrSnapshotMap, baseForecast, challengerDims, forecastStore, resolveForecast) : [],
+    () => baseForecast ? buildCohortAccuracy(cohortActualsMap, baseForecast, challengerDims, forecastStore, resolveForecast) : [],
     [baseForecast, cohortActualsMap, broadAggrSnapshotMap, challengerDims, forecastStore],
   );
 
