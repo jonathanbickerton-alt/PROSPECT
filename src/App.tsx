@@ -2868,10 +2868,19 @@ export default function App() {
       .filter(e => e.inflow > 0 || e.outflow > 0 || e.retention > 0)
       .sort((a, b) => a._parsedDate.getTime() - b._parsedDate.getTime());
 
-    const seedBase = (() => {
-      const existingBf = forecastStore.get(makeForecastKey(cohort.segment, cohort.product, cohort.productL2, cohort.channel, cohort.channelL2, cohort.tariffL1, cohort.tariffL2));
-      return existingBf?.seedBaseVolume ?? baseForecast?.seedBaseVolume ?? 0;
-    })();
+    // INSTANCE 2, fixed. This read the cohort's own stored seed, then fell back
+    // to the LOADED cohort's seed, then to 0. The middle term is the
+    // borrow-an-unrelated-cohort pattern: a challenger for cohort X seeded from
+    // cohort Y's standing base, producing a whole forecast whose level belongs
+    // to a different cohort - and nothing on screen said so.
+    //
+    // It now DECLINES. A challenger cannot be run for a cohort that has no
+    // forecast of its own, because there is no honest seed for it, and a
+    // trailing `?? 0` is not a neutral default either: it seeds a real cohort
+    // at zero standing base and calls the result a forecast.
+    const existingBf = forecastStore.get(makeForecastKey(cohort.segment, cohort.product, cohort.productL2, cohort.channel, cohort.channelL2, cohort.tariffL1, cohort.tariffL2));
+    if (!existingBf) return null;
+    const seedBase = existingBf.seedBaseVolume;
 
     return calculateBaseForecast(
       ibroArr, cohort, seedBase,
@@ -2884,7 +2893,7 @@ export default function App() {
     oneOffMonths,
     wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal,
     wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
-    baseForecast, forecastStore, makeForecastKey,
+    forecastStore, makeForecastKey,
     stdForecastLength, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon,
   ]);
 
