@@ -3089,9 +3089,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       .filter(([, n]) => (n ?? 0) > 0)
       .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
       .map(([m, n]) => `${m} x${n}`);
-    return parts.length
-      ? `${g.derivedMix.leafCount} leaves — ${parts.join(', ')}`
-      : `${g.derivedMix.leafCount} leaves`;
+    const leaves = `${g.derivedMix.leafCount} ${t('actuals_leaves')}`;
+    return parts.length ? `${leaves} — ${parts.join(', ')}` : leaves;
   };
 
   type ChallengerGroup = {
@@ -4305,9 +4304,15 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                               /* A derived row shows WHAT IT IS, never a "best model"
                                  recommendation. This line was gated only on isAccepted,
                                  which a derived row can never be - so every derived row
-                                 permanently recommended a model it can never adopt. */
-                              <p className="text-[10px] text-slate-500 font-medium mt-0.5">
-                                {t('actuals_aggregate_of_leaves')}
+                                 permanently recommended a model it can never adopt.
+
+                                 And it shows the MIX, not a fixed string. The approved
+                                 design put the provenance mix here; a constant label
+                                 left the leaf count and histogram reachable only in the
+                                 store, which is where a walk's expected values were
+                                 measured from and then never rendered. */
+                              <p className="text-[10px] text-slate-500 font-medium mt-0.5 break-words">
+                                {incumbentLabel(g)}
                               </p>
                             ) : (
                               <p className="text-[10px] text-indigo-600 font-medium mt-0.5">
@@ -4535,6 +4540,23 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                             })()}
                           </div>
 
+                          {/* THE ILLUSTRATION PANEL IS NOT SHOWN FOR A DERIVED
+                              AGGREGATE. The banner above stays and states why.
+
+                              This is a comparison, and the banner says there is
+                              none. `models` is sorted by error (see its
+                              construction) and the legend prints each model's
+                              error percentage, so the panel ranks models on a
+                              cohort that has no incumbent to rank them against -
+                              fit-on-aggregate advice, which bottom-up replaced.
+
+                              Suppressed rather than shown without the rankings,
+                              because there is nothing honest left to keep: two of
+                              the three curves are arithmetic perturbations of the
+                              loaded forecast, not fits, so the ranking is an
+                              artefact of the perturbation constants and would
+                              order the same way on any cohort. */}
+                          {!selectedChallengerGroup.derivedMix && (<>
                           {/* Illustration legend */}
                           <div className="shrink-0 flex flex-wrap gap-4 text-xs text-slate-500 px-6 py-3">
                             <span className="italic text-[11px] text-slate-400 self-center">{t('actuals_estimated_trajectories_only')}</span>
@@ -4580,6 +4602,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                               </ComposedChart>
                             </ResponsiveContainer>
                           </div>
+                          </>)}
                         </>
                       );
                     })()}

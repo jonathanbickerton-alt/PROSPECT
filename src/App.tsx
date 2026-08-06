@@ -3934,6 +3934,18 @@ export default function App() {
                 ? canResolve(filterToKey(step2Filter))
                 : canResolve(filterToKey(step3Filter))
             }
+            /* Gated on the SAME two-state split as the Step 2 panel. Passing the
+               reason unconditionally would suppress the Step 1 link in a session
+               where nothing has been generated at all - and there Step 1 is
+               exactly the right action. resolveForecast reports
+               'insufficient-history' for a key whose leaves all failed to fit,
+               which is indistinguishable from "no forecasts exist yet" unless
+               the store is consulted first. */
+            noForecastReason={
+              (forecastStore.size > 0 || hasLegacyBaseline)
+                ? resolveForecast(filterToKey(activeView === 'whatif' ? step2Filter : step3Filter)).reason
+                : null
+            }
             onGoToStep1={() => setActiveView('standard')}
           />
         )}

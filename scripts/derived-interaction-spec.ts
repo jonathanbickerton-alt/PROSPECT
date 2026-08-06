@@ -338,6 +338,25 @@ const runAdj = (bf: BaseForecast, events: MarketEvent[]) => computeAdjustedForec
 
   check('B3 SOURCE: the suppression reason is on screen, keyed',
     /actuals_models_live_on_leaf_cohorts/.test(fva));
+
+  // ── WHAT THIS BLOCK DOES NOT COVER ──────────────────────────────────────
+  // Everything above asserts PROVENANCE and SOURCE TEXT: that deriveAggregate
+  // carries a leafCount, that provenanceModel returns null, that a key appears
+  // in the file. All of it stayed green while the leaf count and model
+  // histogram rendered NOWHERE - the approved design put the mix on the row and
+  // the row showed a fixed string. A spec that cannot tell those two apart is
+  // asserting the wrong layer, and its greenness is not evidence about the
+  // screen.
+  //
+  // The DOM authority is `npm run spec:challenger`, which mounts the real tab
+  // and reads rendered text. The guard below is a cheap tripwire only: it
+  // catches a regression to a constant label, and it is NOT a substitute for
+  // the render spec.
+  const rowStart = fva.indexOf('g.derivedMix ? (');
+  const rowSite = fva.slice(rowStart, fva.indexOf(') : (', rowStart));
+  check('B3 TRIPWIRE: the derived row renders the MIX, not a constant label',
+    /incumbentLabel\(g\)/.test(rowSite),
+    'the derived row is back to a fixed string - see spec:challenger for the real check');
 }
 
 // ── UNMAPPED DIMENSION: the roll-up index must not duplicate a leaf ─────────

@@ -2,6 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { SlidersHorizontal, ChevronDown, CheckCircle2, AlertCircle } from 'lucide-react';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
+import { SKIP_REASON_KEY } from '../types/forecast';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
 
 // Re-export so consumers can import from a single location
@@ -28,6 +29,18 @@ interface ViewFilterBarProps {
   tariffTree?: Map<string, string[]>;
   /** True when the forecastStore has an entry for the current filter selection. */
   hasForecast: boolean;
+  /**
+   * Why the current selection has no forecast, or null when it has one or when
+   * nothing has been generated at all.
+   *
+   * The LAST consumer of the two-meanings-of-null split. `hasForecast` false
+   * used to mean one thing - nothing generated - so an unconditional
+   * "Generate in Step 1" was always the right action. It now also covers a
+   * selection that resolves to nothing in a session full of forecasts, where
+   * Step 1 cannot help: it is the manual fit-on-aggregate path, and it cannot
+   * give a cohort more months of history.
+   */
+  noForecastReason?: import('../types/forecast').SkipReason | null;
   /** Navigate to Step 1 to generate a forecast. */
   onGoToStep1: () => void;
 }
@@ -40,6 +53,7 @@ export function ViewFilterBar({
   channelTree,
   tariffTree,
   hasForecast,
+  noForecastReason = null,
   onGoToStep1,
 }: ViewFilterBarProps) {
   const { t } = useTranslation();
@@ -115,10 +129,19 @@ export function ViewFilterBar({
           <>
             <span className="flex items-center gap-1 text-[10px] text-slate-400">
               <AlertCircle size={11} />{t('viewfilter_no_forecast_for_this_selection')}</span>
-            <button
-              onClick={onGoToStep1}
-              className="text-[10px] font-semibold text-[#e60000] hover:text-red-400 transition-colors underline underline-offset-2"
-            >{t('viewfilter_generate_in_step_1')}</button>
+            {noForecastReason ? (
+              /* A generation exists and does not cover this selection: say why,
+                 through the same reason enum the Step 2 panel uses, and offer
+                 the action that can actually work. No Step 1 link. */
+              <span className="text-[10px] text-slate-500">
+                {t(SKIP_REASON_KEY[noForecastReason])}{' · '}{t('viewfilter_widen_the_filter')}
+              </span>
+            ) : (
+              <button
+                onClick={onGoToStep1}
+                className="text-[10px] font-semibold text-[#e60000] hover:text-red-400 transition-colors underline underline-offset-2"
+              >{t('viewfilter_generate_in_step_1')}</button>
+            )}
           </>
         )}
       </div>

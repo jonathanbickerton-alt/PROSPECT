@@ -389,6 +389,47 @@ async function main() {
     check('BOUNDARY prod: still offers reload', /reload/i.test(pr.t));
   }
 
+  // ── THE FILTER BAR'S CORNER LINK - the last consumer of the split ────────
+  // "No forecast for this selection" used to sit beside an unconditional
+  // "Generate in Step 1". Step 1 is the manual fit-on-aggregate path and cannot
+  // give a cohort more months of history, so on a selection-null it is the
+  // wrong action offered three inches from the panel that stopped offering it.
+  {
+    async function bar(reason: any) {
+      const c = document.createElement('div');
+      host.replaceChildren(); host.appendChild(c);
+      const r = createRoot(c);
+      await (act as any)(async () => {
+        r.render(React.createElement(ViewFilterBar as any, {
+          filter: props.activeFilter, onChange: noop, segments: ['Large Enterprise'],
+          productTree: new Map([['Fixed Connectivity', []]]), channelTree: new Map(),
+          tariffTree: new Map(), hasForecast: false, onGoToStep1: noop,
+          noForecastReason: reason,
+        }));
+      });
+      return { t: c.textContent ?? '', buttons: [...c.querySelectorAll('button')].map(b => b.textContent ?? '') };
+    }
+
+    const nothing = await bar(null);
+    check('FILTER BAR never-generated: keeps the Generate in Step 1 link',
+      nothing.buttons.some(b => /viewfilter_generate_in_step_1|generate in step 1/i.test(b)),
+      nothing.buttons.join(' | '));
+
+    const sel = await bar('insufficient-history');
+    check('FILTER BAR selection-null: no Generate in Step 1 link',
+      !sel.buttons.some(b => /viewfilter_generate_in_step_1|generate in step 1/i.test(b)),
+      sel.buttons.join(' | '));
+    check('FILTER BAR selection-null: states the cause via the shared reason enum',
+      /skip_reason_insufficient_history|too few months/i.test(sel.t),
+      sel.t.slice(0, 160).replace(/\s+/g, ' '));
+    check('FILTER BAR selection-null: offers the widen-the-filter hint instead',
+      /viewfilter_widen_the_filter|widen the filter/i.test(sel.t),
+      sel.t.slice(0, 160).replace(/\s+/g, ' '));
+    check('FILTER BAR selection-null: still says there is no forecast for it',
+      /viewfilter_no_forecast_for_this_selection|no forecast for this selection/i.test(sel.t),
+      sel.t.slice(0, 160).replace(/\s+/g, ' '));
+  }
+
   console.log(`null-render spec: ${pass} passed, ${fails.length} failed`);
   fails.forEach(f => console.log('  FAIL ' + f));
   process.exit(fails.length ? 1 : 0);

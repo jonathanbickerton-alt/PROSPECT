@@ -2209,6 +2209,53 @@ was right and said nothing about whether the screen would render.
 
 ---
 
+## RETRACTED: "(not mapped)" is not a fixture tell
+
+**Correction at the lead, 2026-08-05. The entry below used the "(not mapped)"
+label as a positive identification of `ProductL2_Full`. That was wrong.**
+
+**"(not mapped)" beside Tariff on the AutoML Challenger tab is PERMANENT, on
+every file.** `ForecastVsActualsTab.tsx:4181` renders `CohortDimCheckboxes`
+without passing `wiTariffL1Col` or `wiTariffL2Col` at all — the accuracy tab's
+call at `:3908` does pass them. With the props `undefined`, the component takes
+its disabled branch and prints the label regardless of what was loaded. Tariff
+was never wired into the challenger's grouping: the fallback `cohort` literal at
+`:3229` omits `tariffL1`/`tariffL2` too. Observed in a live DOM render, not only
+in source: `spec:challenger` dumps `"Tariff L1(not mapped)"` from a
+TariffHierarchy-backed mount.
+
+**Consequence: the `ProductL2_Full` identification of the Part B session is
+UNESTABLISHED**, not merely less well supported. The label was the only evidence
+for it. Which file that session ran on is now unknown.
+
+### The lesson, by name
+
+**A recorded unresolved tension pointing against a diagnostic is evidence
+against it, not a footnote.**
+
+The ARPU measurement pointed the other way at the time: 16.5 observed sits near
+TariffHierarchy's 16.28 and nowhere near ProductL2_Full's 14.84. That was
+written down, in this file, as "unresolved and flagged rather than resolved" —
+and then the diagnostic was relied on anyway, and two gate stages read past it.
+
+Filing a contradiction as an open question does not neutralise it. If a
+measurement disagrees with a conclusion, the conclusion is provisional until one
+of them is explained, and anything built on it inherits that status.
+
+### Reliable on-screen fixture tells
+
+| pair | reliable tell |
+|---|---|
+| Edge (12,112) vs Trimmed (12,432) | **row count** — distinct |
+| Dec2025 (77,760) vs Jun2026 (90,720) | **row count** — distinct |
+| `ProductL2_Full` vs `TariffHierarchy`, same date range | **row count is identical** (77,760 / 90,720), as are months (36/42) and cohorts (540). Use the **mapping step's Tariff L1/L2 selectors**, or the **Historical Accuracy tab's** dimension checkboxes (`:3908`), which do receive the tariff columns and therefore show Tariff enabled for `TariffHierarchy` and "(not mapped)" for `ProductL2_Full`. **Never the challenger tab's.** |
+
+Secondary independent tell for that pair: `Avg_Unit_Price_GBP` is **0.00
+throughout `ProductL2_Full`** (measured across every row), so any ARPU surface
+there falls back to revenue ÷ volume.
+
+---
+
 ## Same fixture name, different file: 540 cohorts is not a fingerprint
 
 **Q1, measured 2026-08-05. Classification: USER PATH, not introduced by the
@@ -2368,6 +2415,83 @@ Also measured: `Avg_Unit_Price_GBP` is **0.00 throughout `ProductL2_Full`**, so
 on that fixture ARPU can only come from revenue/volume. I did not isolate which
 quantity 11.5 is - that needs the manual generation path driven headlessly, and
 I did not do it.
+
+## The mix now renders, the illustration panel does not, and the bar stops misdirecting
+
+**2026-08-05, after the reviewer's Part B walk. Three fixes, one cause between
+the first two: a design was approved and only half of it reached a surface.**
+
+### 1. The provenance mix reaches the row
+
+The approved B3 design put the leaf count and model histogram on the derived
+row. The row rendered a fixed string (`actuals_aggregate_of_leaves`), and the
+mix reached no surface at all: `incumbentLabel`'s three call sites are the
+preview banner and legend (both inside `if (preview)`, unreachable without
+running a challenger, which a derived row cannot do) and the Accept-All modal
+(which filters `!g.derivedMix`).
+
+**The shortfall was the implementation, not the walk.** The walk's expected
+value — "each showing 108 leaves" — was the approved design; it was measured
+from the store because no surface carried it, which is the surface-not-store
+rule broken from inside the check written to enforce it.
+
+The row now renders `incumbentLabel(g)`. The word "leaves" is keyed
+(`actuals_leaves`) — it was English inside a template literal, which the JSX
+scanner cannot see.
+
+### 2. The illustration panel is suppressed entirely for a derived selection
+
+Beneath a banner stating that no comparison exists, the panel drew three model
+trajectories with error percentages. `models` is `.sort((a, b) => a.error -
+b.error)` — an error-ranked comparison, on a cohort with no incumbent to rank
+against.
+
+**Suppressed, not de-ranked.** Two of the three curves are arithmetic
+perturbations of the loaded forecast (`dampedTrend = forecast * 0.9`;
+`holtWinters = act.inflow + (forecast − act.inflow) * 0.2 + sin(i) * act.inflow
+* 0.05`), so the percentages are real MAPEs of fabricated series and the ranking
+is an artefact of the perturbation constants — it would order the same way on
+any cohort. There is nothing honest to keep. The banner stays.
+
+**STANDING FINDING, pre-existing, out of scope here: the same synthetic
+trajectories are what a FITTED leaf row is ranked on.** Suppressing the panel on
+aggregates does not make it truthful on leaves. Inherited by the backlogged
+leaf-grain challenger redesign with the constraint: **real fits or nothing.**
+
+### 3. The filter bar's corner link, selection-null only
+
+`ViewFilterBar` offered "Generate in Step 1" whenever `hasForecast` was false —
+including a selection that resolves to nothing in a session full of forecasts,
+where Step 1 is the manual fit-on-aggregate path and cannot give a cohort more
+months of history. It now shows the cause (same `SKIP_REASON_KEY` enum as the
+Step 2 panel) plus a widen-the-filter hint. The never-generated case keeps the
+link unchanged. This was the last consumer of the two-meanings-of-null split.
+
+App gates the reason on `forecastStore.size > 0 || hasLegacyBaseline` before
+passing it, because `resolveForecast` reports `insufficient-history` for a key
+whose leaves all failed to fit — indistinguishable from "nothing generated yet"
+unless the store is consulted first.
+
+### The specs now assert the rendered DOM
+
+`npm run spec:challenger` mounts the real `ForecastVsActualsTab`, clicks to the
+challenger tab, and reads rendered text: the leaf count and histogram appear,
+the derived selection shows the banner and no `% err` legend and no chart
+surface. It carries a positive control — the harness must be shown to paint a
+Recharts surface somewhere — because every one of those is an assertion of
+ABSENCE, and Recharts paints nothing at jsdom's width of −1, which would have
+made them all pass vacuously.
+
+The B3 block in `derived-interaction-spec` kept a tripwire and lost its claim to
+cover the display, with the reason written in: it asserted provenance and source
+text, stayed green throughout, and the mix rendered nowhere.
+
+**DECLARED, NOT ASSERTED:** the fitted-leaf-unchanged case is not driven at the
+DOM layer. Toggling to leaf grain did not produce a fitted row in the harness
+and the cause was not chased down. The suppression is gated on
+`selectedChallengerGroup.derivedMix`, so a fitted row structurally cannot take
+the suppressed branch — but that is a source argument, and source arguments are
+exactly what let the mix ship rendering nowhere.
 
 ## Null had two meanings and the screen only spoke one
 
