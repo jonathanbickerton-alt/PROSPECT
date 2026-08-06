@@ -2564,7 +2564,17 @@ distinguish them, which is the whole job.
 Trap 8 collapses the two branches back into one and is confirmed killing the
 spec.
 
-### Still open, reported not fixed: the filter bar offers the same redirect
+### RESOLVED 2026-08-05 — the filter bar no longer offers that redirect
+
+**This entry described the defect while it was open. It is fixed: see "The
+mix now renders, the illustration panel does not, and the bar stops
+misdirecting" above, item 3. Left in place because the reasoning below is what
+the fix was built from — but the heading said "still open" for a while after
+it was not, which a gate caught and is worth noticing: a record corrected
+above without its original heading being touched reads as two live entries
+disagreeing.**
+
+#### The original entry follows, unedited
 
 `ViewFilterBar.tsx:118-121` renders a **"Generate in Step 1"** button
 unconditionally whenever `hasForecast` is false — including the
