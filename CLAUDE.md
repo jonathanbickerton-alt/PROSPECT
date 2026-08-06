@@ -98,6 +98,27 @@ Specifically: keeping `git status` clean is never a reason to make a call I
 asked to make. A dirty working tree is a cheap, visible, entirely reversible
 state. A decision taken out of my hands is none of those things.
 
+## Reporting conventions
+
+Every session report is **also** written to `reports/<yyyy-mm-dd>-<topic>.md` and
+committed. A report that exists only in a chat transcript is not retrievable by
+anyone who was not in the session, and is lost at compaction.
+
+Each report **begins** with a block titled **FOR ADVISOR**, **maximum 25 lines**,
+containing only:
+
+- the commit hash the session certifies, or `none`;
+- findings, **one line each**;
+- decisions needed from Jon or the advisor, **one line each**;
+- current merge/hold state.
+
+Everything else follows below it.
+
+The line cap is the point, not a formatting preference: this block is read by
+someone who was not in the session and will not read the rest. If a finding does
+not fit on one line, the line states the finding and the detail goes below the
+block — never a second line inside it.
+
 ## Compact instructions
 
 When compacting, preserve: test output, agent findings, code changes, and the
