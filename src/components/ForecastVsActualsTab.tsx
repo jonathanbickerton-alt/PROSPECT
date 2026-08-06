@@ -2745,6 +2745,20 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           if (cfm.retentionArpu) { r.retentionArpu_baseline = cfm.retentionArpu.mean; r.retentionArpu_opt = cfm.retentionArpu.optimistic; r.retentionArpu_pess = cfm.retentionArpu.pessimistic; }
           if (cfm.baseArpu) { r.baseArpu_baseline = cfm.baseArpu.mean; r.baseArpu_opt = cfm.baseArpu.optimistic; r.baseArpu_pess = cfm.baseArpu.pessimistic; }
         }
+      // THIS is the live Case B. The fuller rationale used to sit only beside a
+      // twin of this guard inside the `chartData` memo, which turns out to be
+      // dead code nobody reads — so the reasoning was recorded where it could
+      // never be found by anyone reading the code that actually runs.
+      //
+      // Both halves of the guard earn their place:
+      //   !selectedCohortRow          — a SELECTED cohort with no forecast must
+      //                                 get nothing, not the loaded aggregate.
+      //                                 Covered by guard-traps trap 9.
+      //   cohortMatchesFilter(...)    — an aggregate must not be drawn against
+      //                                 filter-scoped actuals; that produced
+      //                                 nonsense variances around +99.9%.
+      //                                 NOT covered by any spec: a gate removed
+      //                                 this half and everything stayed green.
       } else if (baseForecast && !selectedCohortRow &&
                  (!activeFilter || cohortMatchesFilter(baseForecast.cohort, activeFilter))) {
         // Fall back to baseForecast — only when its cohort scope matches the
