@@ -2209,6 +2209,67 @@ was right and said nothing about whether the screen would render.
 
 ---
 
+## THE SHARE-SCALED FABRICATION FAMILY IS CLOSED — `52843af`
+
+**Session D merged to main 2026-08-06, `--no-ff`. Stage 1 PASS, stage 2 PASS,
+stage 3 SAFE. No walk: the user-visible change on this branch is zero rows.**
+
+**Every REACHABLE fabrication is gone — three fallbacks in the table, the
+borrowed seed, and the candidate scan; the chart-side three lived in dead code
+no user ever saw, deleted regardless.**
+
+That wording is the truth and it is stronger than the version first drafted.
+"Three in the chart" would have implied six live defects removed; there were
+four, and the other three were unreachable. The honest count is the one that
+survives someone checking it.
+
+### What the family was
+
+A single pattern with five faces: **produce a number where the honest answer is
+nothing.**
+
+| what | where | reachable? |
+|---|---|---|
+| `scaledBandFlow` | accuracy table, flow KPIs | yes |
+| `computeAvgShare` + `derivedBaseBands` | accuracy table, Base KPI | yes |
+| the instance-2 seed | `runChallengerForecast` | yes |
+| the tier-2 candidate scan | `buildCohortAccuracy` | yes |
+| `cohortShareMap` / `baseShareForChart` / `arpuScaleRatio` | `chartData` memo | **no — dead code** |
+
+Each answered "this cohort has no forecast" with someone else's: a neighbour's
+bands scaled by a share, a different cohort's standing base, or a fit made at a
+different scope. A row with no forecast now renders unscored, and a chart with
+no forecast draws no line.
+
+### Its permanent defence
+
+- **`npm run spec:triggers`** — pins the population that reaches the deleted
+  paths, measured on three fixtures at four groupings. 4 tier-1 misses, 0
+  candidate-scan hits. If a fixture change ever makes the scan fire again, this
+  is what says so.
+- **`npm run spec:unscored`** — asserts the surface: an unscored row shows the
+  gap in BOTH panels with its actuals still drawn, plus Case B's two halves.
+  Every absence assertion is paired with a positive control using the same
+  selector and the same geometry test.
+- **Traps 9 and 10** — replant the table/chart disagreement and the removed
+  scope guard; both confirmed killing.
+- **The no-hand-rolled-summation guard** in the derive spec, which stops the
+  aggregate arithmetic being re-implemented anywhere.
+
+### What is NOT claimed
+
+The chart-side deletion **removed a mechanism that was never reachable.** That
+is dead-code cleanup, not a behavioural fix, and stage 3 was explicit about the
+distinction. The accuracy-denominator entry's chart path is **moot rather than
+resolved** for the same reason.
+
+`chartData` itself — roughly 460 dead lines — is still there. Deleting it is
+queued behind tasks 2 and 3, opening with a divergence check against
+`multiChartData`'s live logic, because which copy drifted from which may matter
+to the live one.
+
+---
+
 ## chartData IS DEAD CODE — and that retracts a finding I recorded as fact
 
 **2026-08-06, proven by experiment. This corrects entries in this file and two
