@@ -201,6 +201,23 @@ check('CONTROL: with an empty store every row is unscored',
 check('CONTROL: the two runs differ — so scoring depends on the store, not the fixture',
   scored.length > 0 && noneOut.every((r: any) => r.overallScore === null));
 
+// ── NO SCORE MAY BE NaN ───────────────────────────────────────────────────
+// NaN !== null, so a single NaN component used to survive scoreVals' filter and
+// poison the mean - and a NaN overallScore renders as a SCORE, because every
+// downstream test is `!== null`. The filter now also requires Number.isFinite.
+//
+// Guarded by guard-traps trap 11, which injects a NaN component AND weakens the
+// filter, because no natural input produces one: the injection is the scenario,
+// the weakened filter is the defect.
+check('NO ROW carries a non-finite overallScore',
+  rowsOut.every((r: any) => r.overallScore === null || Number.isFinite(r.overallScore)),
+  `${rowsOut.filter((r: any) => r.overallScore !== null && !Number.isFinite(r.overallScore)).length} rows with a non-finite score`);
+check('NO ROW carries a non-finite COMPONENT score either',
+  rowsOut.every((r: any) => ['inflowScore','outflowScore','retentionScore','baseScore',
+    'inflowArpuScore','outflowArpuScore','retentionArpuScore','baseArpuScore']
+    .every(k => r[k] === null || Number.isFinite(r[k]))),
+  'a component score is non-finite');
+
 // ── THE DIAGNOSIS, and it is not what was assumed ─────────────────────────
 // The ~:767 early return was named as the blocker for two sessions. IT IS NOT A
 // BLOCKER AT ALL. Measured here:
