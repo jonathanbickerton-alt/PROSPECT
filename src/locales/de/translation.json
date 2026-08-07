@@ -689,9 +689,10 @@
   "standard_generate_failed": "Generation did not complete. Nothing was changed — try again.",
   "bulk_complete_full_coverage": "Generation complete — every cohort in scope now has a forecast.",
   "bulk_complete_with_gaps": "Generation finished. {{count}} cohorts still have no forecast.",
-  "bulk_complete_series_generated": "{{count}} chart series generated (Step 1 view)",
-  "bulk_complete_leaves_uncovered": "{{count}} forecast leaves could not be forecast. Aggregates above them are summed without these:",
-  "bulk_complete_series_uncovered": "{{count}} chart series could not be forecast",
+  "bulk_complete_series_generated": "chart series generated (Step 1 view)",
+  "bulk_complete_leaves_uncovered": "forecast leaves could not be fitted. Aggregates above them are summed without these:",
+  "bulk_complete_series_uncovered": "chart series could not be forecast",
   "actuals_cohort_months_compared": "{{n}} cohort-months compared",
-  "actuals_mape_lower_is_better": "Lower is better"
+  "actuals_mape_lower_is_better": "Lower is better",
+  "bulk_complete_leaves_uncovered_one": "forecast leaf could not be fitted. Aggregates above it are summed without it:"
 }

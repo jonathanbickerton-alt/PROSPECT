@@ -423,8 +423,13 @@ function BulkCompletePanel({
                 a subtraction that means nothing. */}
             <div className="flex items-center gap-3 bg-emerald-50 rounded-lg px-4 py-2.5">
               <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
-              <span className="text-emerald-700">
-                {t('bulk_complete_series_generated', { count: generated })}
+              {/* The number stays BOLD and outside the string. Folding it
+                  into the interpolation to add the grain lost the emphasis the
+                  other rows in this panel use - the grain was the point, the
+                  emphasis did not have to be the price. */}
+              <span>
+                <strong className="text-emerald-800">{generated}</strong>
+                <span className="text-emerald-700"> {t('bulk_complete_series_generated')}</span>
               </span>
             </div>
 
@@ -442,8 +447,11 @@ function BulkCompletePanel({
               <div className="bg-amber-50 rounded-lg px-4 py-2.5">
                 <div className="flex items-center gap-3">
                   <AlertTriangle size={15} className="text-amber-500 shrink-0" />
-                  <span className="text-amber-700">
-                    {t('bulk_complete_leaves_uncovered', { count: skipped.length })}
+                  <span>
+                    <strong className="text-amber-800">{skipped.length}</strong>
+                    <span className="text-amber-700"> {skipped.length === 1
+                      ? t('bulk_complete_leaves_uncovered_one')
+                      : t('bulk_complete_leaves_uncovered')}</span>
                   </span>
                 </div>
                 {/* NAMED, not counted. The count says an aggregate is
@@ -469,8 +477,9 @@ function BulkCompletePanel({
             {failed > 0 && (
               <div className="flex items-center gap-3 bg-amber-50 rounded-lg px-4 py-2.5">
                 <AlertTriangle size={15} className="text-amber-500 shrink-0" />
-                <span className="text-amber-700">
-                  {t('bulk_complete_series_uncovered', { count: failed })}
+                <span>
+                  <strong className="text-amber-800">{failed}</strong>
+                  <span className="text-amber-700"> {t('bulk_complete_series_uncovered')}</span>
                 </span>
               </div>
             )}

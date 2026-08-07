@@ -102,6 +102,36 @@ const LOCALES = ['en', 'de', 'es', 'fr', 'it', 'pt'] as const;
     'a previous session\'s user-facing statement was dropped by this rewrite');
 }
 
+// ── The emphasis convention, kept while the grain was added ───────────────
+// Found by the gate. The first version of this rewrite folded each count INTO
+// the interpolated string to give it a grain, which silently dropped the
+// <strong> the panel uses on every numeric row. The grain was the point; the
+// emphasis did not have to be the price. Numbers stay bold and outside the
+// string, grain nouns stay inside it.
+{
+  const rows = [
+    ['generated', /<strong className="text-emerald-800">\{generated\}<\/strong>/],
+    ['skipped leaves', /<strong className="text-amber-800">\{skipped\.length\}<\/strong>/],
+    ['failed series', /<strong className="text-amber-800">\{failed\}<\/strong>/],
+  ] as const;
+  for (const [name, re] of rows) {
+    check(`EMPHASIS: the ${name} count is bold, as every numeric row in this panel is`,
+      re.test(modal), 'the count lost its emphasis when it gained its grain');
+  }
+  // And the grain must still be there — otherwise this could be "fixed" by
+  // reverting to the old grainless markup, which passes the checks above.
+  check('EMPHASIS: the grain survived alongside the emphasis',
+    /chart series/.test(String(en['bulk_complete_series_generated'] ?? ''))
+      && /forecast leaves/.test(String(en['bulk_complete_leaves_uncovered'] ?? '')),
+    'the emphasis was restored by reverting the grain');
+  // Singular form, because "1 forecast leaves" is the tell that a plural was
+  // bolted on rather than written.
+  check('EMPHASIS: the leaf row has a singular form',
+    /bulk_complete_leaves_uncovered_one/.test(modal)
+      && /forecast leaf /.test(String(en['bulk_complete_leaves_uncovered_one'] ?? '')),
+    'one skipped leaf reads as "1 forecast leaves"');
+}
+
 // ── The copy batch ────────────────────────────────────────────────────────
 {
   check('COPY: MAPE cards carry a lower-is-better subtitle',
@@ -120,7 +150,8 @@ const LOCALES = ['en', 'de', 'es', 'fr', 'it', 'pt'] as const;
 {
   const NEW = ['bulk_complete_full_coverage', 'bulk_complete_with_gaps',
     'bulk_complete_series_generated', 'bulk_complete_leaves_uncovered',
-    'bulk_complete_series_uncovered', 'actuals_cohort_months_compared',
+    'bulk_complete_series_uncovered', 'bulk_complete_leaves_uncovered_one',
+    'actuals_cohort_months_compared',
     'actuals_mape_lower_is_better'];
   const DEAD = ['bulk_bulk_generation_complete', 'bulk_leaves_no_forecast',
     'bulk_skipped_insufficient_data_points'];
