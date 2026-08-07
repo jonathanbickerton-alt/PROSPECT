@@ -4868,6 +4868,89 @@ intent, and a mistake made and caught during implementation.
 Guarded by `npm run spec:prorata`, which mutation-tests both directions and
 asserts structurally that no pro-rata call site touches a rate metric.
 
+### Stored fit-on-aggregate forecasts are retired at READ time — 2026-08-07
+
+Session G removed both paths that could fit a model to an aggregate: the manual
+Step 1 path (`generateStandardForecast` now declines when any dimension is
+"All (Aggregated)") and the channel=`All` companion fit that bulk generation
+wrote alongside each leaf. Aggregates are derived from leaves, always.
+
+That fixes what gets WRITTEN. It does nothing about what is already written.
+Every session file saved before this change carries fitted forecasts under
+All-bearing keys, and `resolveForecast` is store-first — so those stale fits
+would keep winning over derivation forever, silently, in exactly the sessions
+whose numbers users trust most.
+
+**The rule, in `isRetiredAggregateFit` (`src/utils/forecasting.ts`):** a stored
+forecast is ignored when its provenance is `fitted` AND its key contains `All`
+in any of the seven parts. `resolveForecast` and `canResolve` both gate their
+store hit on it.
+
+Three properties of the rule are deliberate and should not be "tidied":
+
+- **It is read-time, not a migration.** No import path can bypass it, because
+  the seam is the only way a forecast is read. A load-time purge would have to
+  be repeated at every entry point and would be wrong at the first one missed.
+- **It does not delete.** The stale entry stays in the store as a record of what
+  the old session contained. It is demoted from authority to artefact. The cost
+  is accepted: dead entries accumulate, and that is cheaper than a destructive
+  write to a user's saved file.
+- **Both halves of the condition are load-bearing.** Drop the `fitted` test and
+  it retires DERIVED aggregates — that is every answer the seam produces. Drop
+  the All-bearing test and it retires LEAF fits — that is every real forecast in
+  the store. Either widening looks correct on the case the rule was written for.
+
+Guarded by `npm run spec:retire` (22 checks) and guard-traps 13 and 14. The two
+traps are the two widenings, one per direction; the spec's second case exists
+only to be killed by trap 14, and would look like decoration to anyone reading
+it without this note.
+
+**The spec has a structural source guard, and it was added because a trap
+MISSED.** `resolveForecast` is a closure inside `App` and cannot be driven
+headlessly, so the spec's `resolve()` is a transcription of the seam. Trap 13
+restored store-first in `App.tsx` and every behavioural check stayed green — a
+correct rule that nothing calls. The guard now asserts structurally that no
+store-hit return in either closure is ungated, with comments stripped first so
+the docstring beside the call cannot satisfy it, and with an anti-vacuity
+control asserting there is a return to guard at all.
+
+### Test artefacts are evidence, and evidence has provenance too — 2026-08-07
+
+Session G was held once, before any code was written, for a reason worth keeping
+because the same shape will recur.
+
+The change removes the manual path that fits models to aggregates. Verifying the
+retirement rule requires a saved session that CONTAINS such a fit — and the only
+thing that could produce one was the path being removed. Building first and
+asking Jon for the file afterwards would have meant creating the evidence with a
+build that no longer had the ability under test.
+
+That file would still have loaded. It would still have contained aggregates. It
+would have been a weaker witness than it appeared, and nothing about the artefact
+itself would have said so.
+
+**The rule this generalises to: a test artefact created against a partly-changed
+build is a weaker witness than one created against the build it represents, and
+the artefact does not carry that fact with it.** Provenance is the whole of this
+codebase's forecasting model — a number is `fitted`, `derived`, or `accepted`,
+and the seam refuses to conflate them. The same discipline applies to the inputs
+of a test. Where an artefact is meant to represent a PRIOR state of the system,
+it must be created against that prior state, and which build produced it must be
+recorded next to it.
+
+Two limits on this artefact were flagged at the time rather than discovered
+later, which is the only reason they are not defects:
+
+- The confirmation named the file as a literal placeholder, so the artefact was
+  not supplied to the session. Stage 2 verified against a constructed equivalent
+  built by the spec — adequate for the rule, not a substitute for the real file
+  on Jon's walk.
+- The confirmation says "two depths" and names one key
+  (`Corporate|Fixed Connectivity|All|All`, whose 7-part form is
+  `Corporate|Fixed Connectivity|All|All|All|All|All`). The second depth is
+  unnamed. Any key not named is a key whose movement nobody predicted in
+  advance, and a prediction made after seeing the result is not a prediction.
+
 ### Accuracy scores will move — this is not a regression
 
 **CORRECTED 2026-08-01. This entry named the wrong path, and it is the second

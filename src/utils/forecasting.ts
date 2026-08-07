@@ -1887,6 +1887,36 @@ export function makeForecastKey(
  * pass afterwards. The invariant is structural - one leaf contributes to a
  * roll-up at most once - instead of a cleanup step a later edit can drop.
  */
+/**
+ * Should a stored forecast be IGNORED by the seam?
+ *
+ * True for a FITTED forecast stored under an All-bearing key - a fit-on-aggregate
+ * left behind by the manual path that Session G removed. Real saved sessions
+ * contain these, and `resolveForecast` is store-first, so without this rule a
+ * stale manual fit would win over derivation permanently and nothing on screen
+ * would say so.
+ *
+ * A READ-TIME rule, deliberately, rather than a purge:
+ *   - no import path can bypass it by forgetting to call a migration;
+ *   - it never writes destructively to a user's save file;
+ *   - it is one condition at the seam every reader already goes through.
+ *
+ * Its cost is accepted and named: the store keeps entries it will never return.
+ *
+ * SCOPE IS THE WHOLE POINT. Both halves are required. A DERIVED forecast under
+ * an All-bearing key is exactly what the seam produces and must be kept; a
+ * FITTED forecast under a leaf key is a real fit of a real cohort and must be
+ * kept. Only the intersection is retired, and `spec:aggregate-retire`'s
+ * leaf-hit case exists to catch a broadened rule that swallows either.
+ */
+export function isRetiredAggregateFit(
+  key: string,
+  bf: { provenance: { kind: string } },
+): boolean {
+  if (bf.provenance.kind !== 'fitted') return false;
+  return key.split('|').some(part => part === 'All');
+}
+
 export function buildRollUpIndex(leafKeys: Iterable<string>): {
   set: Set<string>;
   leafMap: Map<string, string[]>;
