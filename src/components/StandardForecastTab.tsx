@@ -78,6 +78,10 @@ interface StandardForecastTabProps {
   confidenceHorizon: number;
   setConfidenceHorizon: (val: number) => void;
   generateStandardForecast: () => void;
+  /** Which of the four Step 1 generate situations applies — see stdAggregateState in App. */
+  aggregateState: { kind: 'leaf' | 'generate' | 'covered' | 'never'; missing: number; total: number };
+  /** Outcome of the last scoped leaf run, or null if none has run. */
+  generateResult: { generated: number; skipped: string[] } | null;
   error: string | null;
   forecastData: any[];
   compareCategories: string[];
@@ -144,6 +148,8 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
   postHorizonExpansionRate, setPostHorizonExpansionRate,
   confidenceHorizon, setConfidenceHorizon,
   generateStandardForecast,
+  aggregateState,
+  generateResult,
   error,
   forecastData,
   compareCategories,
@@ -1010,7 +1016,59 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
               )}
             </div>
 
-            <button onClick={generateStandardForecast} className="w-full bg-[#e60000] hover:bg-[#cc0000] text-white font-medium py-2.5 px-4 rounded-lg transition-colors shadow-sm mt-4">{t('common_generate_forecast')}</button>
+            {/* An aggregate selection does not fit a model to the total — it
+                fits the leaves underneath and lets the total be summed from
+                them. The button says which of the four situations applies, so
+                the count is visible BEFORE the click rather than discovered
+                after it. The two disabled states are distinct on purpose:
+                "already covered" and "not in your data" both mean nothing will
+                be generated, and they mean opposite things. */}
+            <button
+              onClick={generateStandardForecast}
+              disabled={aggregateState.kind === 'covered' || aggregateState.kind === 'never'}
+              className="w-full bg-[#e60000] hover:bg-[#cc0000] text-white font-medium py-2.5 px-4 rounded-lg transition-colors shadow-sm mt-4 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {aggregateState.kind === 'generate'
+                ? (aggregateState.missing === 1
+                    ? t('standard_generate_missing_leaves_one')
+                    : t('standard_generate_missing_leaves', { count: aggregateState.missing }))
+                : aggregateState.kind === 'covered'
+                  ? t('standard_scope_fully_covered')
+                  : aggregateState.kind === 'never'
+                    ? t('standard_scope_not_in_data')
+                    : t('common_generate_forecast')}
+            </button>
+            {aggregateState.kind === 'generate' && (
+              <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
+                {t('standard_generate_missing_hint', { total: aggregateState.total })}
+              </p>
+            )}
+            {/* The outcome of the last scoped run. The skipped leaves are NAMED,
+                not counted: "2 skipped" tells the user a number, the names tell
+                them which parts of their book are not covered. This is the only
+                account Step 1 gives — it has no progress panel and the app has
+                no toast. */}
+            {generateResult && (
+              <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2.5">
+                <p className="text-[11px] text-slate-600 leading-snug">
+                  {t('standard_generate_result', { generated: generateResult.generated })}
+                </p>
+                {generateResult.skipped.length > 0 && (
+                  <>
+                    <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
+                      {t('standard_generate_result_skipped', { count: generateResult.skipped.length })}
+                    </p>
+                    <ul className="mt-1 space-y-0.5">
+                      {generateResult.skipped.map(k => (
+                        <li key={k} className="text-[11px] text-slate-400 font-mono leading-snug break-all">
+                          {k.split('|').join(' · ')}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
