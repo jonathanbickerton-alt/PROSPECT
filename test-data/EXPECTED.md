@@ -4951,14 +4951,88 @@ later, which is the only reason they are not defects:
   the constructed one.
 - The confirmation says "two depths" and names one key
   (`Corporate|Fixed Connectivity|All|All`, whose 7-part form is
-  `Corporate|Fixed Connectivity|All|All|All|All|All`). **The file contains only
-  that one.** The second depth is not in the artefact — either it was not saved,
-  or it was not created. That is not a discrepancy to resolve by assuming the
-  more convenient answer: any key not named in advance is a key whose movement
-  nobody predicted, and a prediction made after seeing the result is not a
-  prediction.
+  `Corporate|Fixed Connectivity|All|All|All|All|All`). The file contains only
+  that one. **RESOLVED 2026-08-07: one aggregate was generated, not two.** Jon
+  confirmed directly; "two depths" was a drafting remnant of the advisor's
+  template, not a description of the artefact. So the expected set was a single
+  key all along, and stage 2's enumeration — 1 of 541 keys moving, 540
+  unchanged — verified exactly that set rather than a subset of a larger one.
+  The discrepancy is worth leaving on the record even though it resolved
+  benignly: it was found by counting what the file contained instead of
+  accepting what the covering note said it contained, and had it gone the other
+  way, the enumeration would have been silently incomplete.
 
-### The retirement rule made two read paths diverge — OPEN, 2026-08-07
+### First measured fit-on-aggregate vs derived divergence — UAT context
+
+Keep this to hand for Alessandro and anyone else who asks why a total from an
+older session moved. It is the first time the gap has been measured on a real
+saved session rather than argued from the mechanism.
+
+Session of 07 Aug 2026, key `Corporate|Fixed Connectivity|All|All|All|All|All`,
+24-month horizon, derived from 27 leaves:
+
+| metric | stored fit-on-aggregate | derived from leaves | change |
+|---|---|---|---|
+| inflow | 375,624.74 | 367,906.31 | **−2.06%** |
+| outflow | 325,487.81 | 324,990.60 | −0.15% |
+| retention | 254,602.64 | 247,553.43 | −2.77% |
+| ARPU (volume-weighted) | 15.9474 | 16.2990 | **+2.20%** |
+
+The direction is the expected one and the reason is worth being able to say in
+one sentence: **fitting one curve to summed history is not the same as summing
+27 individually-fitted curves, and it overstates volume because a single smooth
+fit cannot reproduce the leaves' individual turning points.** ARPU moves the
+other way because it is a ratio — a smaller derived volume against broadly
+similar revenue raises the per-unit figure.
+
+Two things to say plainly if asked. The old number was not a rounding artefact:
+2% of a book this size is material. And the new number is not a re-forecast —
+nothing was re-fitted, the leaves are the same leaves the old session already
+contained. Only the arithmetic joining them changed.
+
+### The retirement rule made two read paths diverge — CLOSED, 2026-08-07
+
+**Closed the same session it was found.** The seam was extracted to a pure
+`resolveFromStore(store, leafMap, key)` in `forecasting.ts`; `resolveForecast`
+now delegates to it and session import calls it directly. One implementation,
+two callers — which is what "the seam is the only door" has to mean if it is to
+be more than a slogan.
+
+Passing the store IN rather than closing over it also removed a hazard the fix
+would otherwise have walked into: the import path **cannot** call App's
+`resolveForecast`, because at that moment `setForecastStore` has not committed
+and the closure still holds the store being replaced. A fix that looked correct
+would have resolved against stale state.
+
+**The claim is now verified over the full set, not sampled.** All 11
+`setBaseForecast` call sites in App.tsx are enumerated and classified in
+`spec:import-seam`: 4 seam-routed, 5 freshly fitted or accepted (a fresh fit in
+`generateStandardForecast` sits behind the aggregate decline; an accepted
+challenger carries provenance `accepted`, which the rule never retires), 1 the
+import fix, 1 cleared by name below. The site count is pinned, so a new call
+site fails the spec even if it happens to match an accepted shape — matching a
+shape is not the same as having been thought about. Guard-trap 15 reverts the
+import to the raw read and is confirmed killing.
+
+Verified on the real artefact: the Is_Active key resolves to `derived` with
+leafCount 27, is not the stored object, and carries the figures in the UAT table
+above.
+
+**One site is deliberately NOT routed: the legacy pre-option-C import.** Its
+keys are manufactured by defaulting *absent columns* to `'All'`, and its
+provenance defaults to `fitted`, so nearly every legacy forecast is All-bearing
+and fitted and the rule would retire almost all of them. That would be wrong,
+and the reason is a real limit on the rule's premise: **an `'All'` part means
+"aggregate over this dimension" only for keys built by the current enumeration.
+Where a key was built by defaulting a column that did not exist, the same marker
+means "this dimension was not recorded" — and there are no leaves to derive
+from, so retiring it replaces a number with no number and old files stop
+loading.** The rule detects aggregation by reading a marker; the marker is not
+always evidence of the thing.
+
+Original finding follows.
+
+
 
 Found by the gate on the artefact above, and classified as introduced by the
 change that exposed it rather than as pre-existing.

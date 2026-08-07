@@ -30,7 +30,8 @@
     "spec:triggers": "tsx scripts/trigger-sets-spec.ts",
     "spec:unscored": "tsx scripts/unscored-row-spec.tsx",
     "spec:leafgrain": "tsx scripts/leaf-grain-spec.ts",
-    "spec:retire": "tsx scripts/aggregate-retire-spec.ts"
+    "spec:retire": "tsx scripts/aggregate-retire-spec.ts",
+    "spec:import-seam": "tsx scripts/import-seam-spec.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

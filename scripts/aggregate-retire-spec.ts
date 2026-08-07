@@ -175,27 +175,52 @@ function resolve(key: string) {
 // all walked past a guard that matched trap 1's exact text. The rule here is
 // "no return on a store hit in these closures that is not gated by the
 // predicate", which has no preferred spelling to evade.
+// UPDATE, same session: the seam was extracted to the pure `resolveFromStore`
+// in forecasting.ts, so `resolveForecast` no longer contains a store read at
+// all. This guard's ANCHOR check caught that immediately — it failed with "the
+// seam was renamed or restructured, this guard is now blind" rather than
+// passing over a window that no longer existed. That is the whole reason the
+// anchor is a separate check from the rule it protects, and it is worth saying
+// out loud: the guard's own failure was the first sign the refactor had moved
+// something it depended on.
 {
   const app = fs.readFileSync('src/App.tsx', 'utf8');
-  // Each seam window runs from its store read to the leafMap fallback that
-  // follows it — the whole of the store-first branch, and nothing else.
+  const engine = fs.readFileSync('src/utils/forecasting.ts', 'utf8');
+
+  // `resolveForecast` must DELEGATE, not reimplement. Two copies of the seam
+  // that agree today are the divergence this session already paid for once.
+  const rfStart = app.indexOf('const resolveForecast = useCallback');
+  check('WIRING ANCHOR: resolveForecast was found', rfStart !== -1);
+  if (rfStart !== -1) {
+    const body = app.slice(rfStart, app.indexOf('}, [forecastStore, populatedCohorts]);', rfStart))
+      .replace(/\/\/[^\n]*/g, '');
+    check('WIRING: resolveForecast delegates to the pure seam',
+      body.includes('resolveFromStore('), 'it is not calling the seam');
+    check('WIRING: and does not read the store itself',
+      !body.includes('forecastStore.get('),
+      'a second copy of the seam is growing back inside App');
+  }
+
+  // The store-first branch now lives in one place. Same structural rule as
+  // before, applied where the code actually is.
   const sites = [
-    { name: 'resolveForecast', get: 'const stored = forecastStore.get(key);' },
-    { name: 'canResolve', get: 'const hit = forecastStore.get(key);' },
+    { name: 'resolveFromStore (engine)', get: 'const stored = store.get(key);', src: engine },
+    { name: 'canResolve', get: 'const hit = forecastStore.get(key);', src: app },
   ];
   for (const site of sites) {
-    const start = app.indexOf(site.get);
+    const src = site.src;
+    const start = src.indexOf(site.get);
     check(`WIRING ANCHOR: ${site.name}'s store read was found`, start !== -1,
       'the seam was renamed or restructured — this guard is now blind, fix it');
     if (start === -1) continue;
-    const end = app.indexOf('populatedCohorts.leafMap.get(key)', start);
+    const end = src.indexOf('leafMap.get(key)', start);
     check(`WIRING ANCHOR: ${site.name}'s derivation fallback follows it`,
       end > start, 'window could not be bounded');
     if (end <= start) continue;
     // Comments are prose and must not be able to satisfy a code guard: a
     // window whose only mention of the predicate is the docstring beside it
     // would pass while the call was gone.
-    const code = app.slice(start, end).replace(/\/\/[^\n]*/g, '');
+    const code = src.slice(start, end).replace(/\/\/[^\n]*/g, '');
     const hitVar = site.get.includes('stored') ? 'stored' : 'hit';
     const returns = code.split('\n').filter(l =>
       /\bif\s*\(/.test(l) && /\breturn\b/.test(l) && new RegExp(`\\b${hitVar}\\b`).test(l));

@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort, Provenance, SkipReason } from './types/forecast';
 import { provenanceModel, provenanceParams } from './types/forecast';
@@ -864,8 +864,27 @@ export default function App() {
             setForecastStore(() => restoredStore);
             if (restoredLog.length > 0) setCohortGenLog(restoredLog);
 
-            // Use Is_Active cohort as the active forecast; fall back to first entry
-            const bf = activeBf ?? (restoredStore.values().next().value as BaseForecast | undefined) ?? null;
+            // Use Is_Active cohort as the active forecast; fall back to first entry.
+            //
+            // ROUTED THROUGH THE SEAM, and it must be. `activeBf` is the raw
+            // stored row, and on a session saved before the retirement rule the
+            // Is_Active row is exactly the kind of thing the rule refuses - a
+            // fit-on-aggregate. Setting it directly showed the stale total on
+            // Step 1 until a filter change quietly replaced it, which is worse
+            // than showing it permanently: the number that appears first is the
+            // one people write down.
+            //
+            // resolveFromStore, not resolveForecast: setForecastStore above has
+            // not committed yet, so that closure still holds the OLD store.
+            const rawBf = activeBf ?? (restoredStore.values().next().value as BaseForecast | undefined) ?? null;
+            const restoredLeafMap = buildRestoredLeafIndex(restoredStore.keys());
+            const bf = rawBf
+              ? resolveFromStore(restoredStore, restoredLeafMap, makeForecastKey(
+                  rawBf.cohort.segment, rawBf.cohort.product, rawBf.cohort.productL2,
+                  rawBf.cohort.channel, rawBf.cohort.channelL2,
+                  rawBf.cohort.tariffL1, rawBf.cohort.tariffL2,
+                )).forecast
+              : null;
             if (bf) {
               setBaseForecast(bf);
               setForecastUpdatedAt(new Date().toISOString());
@@ -909,6 +928,26 @@ export default function App() {
               };
               const fKeyImport = makeForecastKey(restoredBf.cohort.segment, restoredBf.cohort.product, restoredBf.cohort.productL2, restoredBf.cohort.channel, restoredBf.cohort.channelL2, restoredBf.cohort.tariffL1, restoredBf.cohort.tariffL2);
               setForecastStore(prev => new Map(prev).set(fKeyImport, restoredBf));
+              // RAW ON PURPOSE - the retirement rule must NOT be applied here,
+              // and the reason is a limit on what an 'All' part means.
+              //
+              // This is the pre-option-C format. Its keys are manufactured a few
+              // lines above by defaulting ABSENT COLUMNS to 'All' (Product_L2,
+              // Channel_L2, Tariff_L1/L2 did not exist in that version), and its
+              // provenance defaults to 'fitted' because everything in a file that
+              // old was. So almost every legacy forecast is All-bearing AND
+              // fitted, and the rule would retire practically all of them.
+              //
+              // It would be wrong to. An 'All' here means "this dimension did not
+              // exist when the file was written", not "this is an aggregate over
+              // that dimension's values". There is nothing to derive FROM: the
+              // legacy path restores a single forecast, so retiring it replaces a
+              // number with no number and old files stop loading.
+              //
+              // The distinction is the point: the rule detects aggregation by
+              // reading 'All' as a marker of it, and that inference only holds
+              // for keys built by the current enumeration. Where a key was built
+              // by defaulting, the marker means something else.
               setBaseForecast(restoredBf);
               setForecastUpdatedAt(new Date().toISOString());
               setStep2Filter(cohortToFilter(restoredBf.cohort));
@@ -1533,35 +1572,9 @@ export default function App() {
     forecast: BaseForecast | null;
     reason: SkipReason | null;
   } => {
-    const stored = forecastStore.get(key);
-    // A stored FITTED forecast under an All-bearing key is a fit-on-aggregate
-    // left behind by the manual path Session G removed. It is ignored here
-    // rather than purged, so derivation answers instead - see
-    // isRetiredAggregateFit for why the rule lives at read time.
-    if (stored && !isRetiredAggregateFit(key, stored)) return { forecast: stored, reason: null };
-
-    const leafKeys = populatedCohorts.leafMap.get(key) ?? [];
-    if (leafKeys.length === 0) {
-      // Not a key this data can produce at all.
-      return { forecast: null, reason: 'never-enumerated' };
-    }
-
-    const leaves = leafKeys
-      .map(k => forecastStore.get(k))
-      .filter((b): b is BaseForecast => !!b);
-    if (leaves.length === 0) {
-      // The key is real and every leaf behind it failed to fit.
-      return { forecast: null, reason: 'insufficient-history' };
-    }
-
-    const [segment, product, productL2, channel, channelL2, tariffL1, tariffL2] = key.split('|');
-    const derived = deriveAggregate(leaves, {
-      segment, product, productL2, channel, channelL2, tariffL1, tariffL2,
-      scenario: 'Base Case',
-    } as any);
-    // deriveAggregate only returns null for an EMPTY leaf list, and that case
-    // is handled above - so `derived` is always non-null here. No false arm.
-    return { forecast: derived, reason: null };
+    // Delegates to the pure seam so this closure and the session-import path
+    // cannot drift. See resolveFromStore for why it is not inlined here.
+    return resolveFromStore(forecastStore, populatedCohorts.leafMap, key);
   }, [forecastStore, populatedCohorts]);
 
   /**
