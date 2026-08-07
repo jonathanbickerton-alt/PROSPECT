@@ -677,5 +677,7 @@
   "whatif_no_forecast_for_selection_generic": "This selection has no forecast.",
   "whatif_choose_another_selection": "Choose another selection, or widen the filter to a level that has one.",
   "actuals_leaves": "leaves",
-  "viewfilter_widen_the_filter": "widen the filter"
+  "viewfilter_widen_the_filter": "widen the filter",
+  "standard_aggregates_are_summed_not_generated": "Aggregates are summed from their leaf cohorts, not generated. Select a specific cohort to generate a forecast for it.",
+  "bulk_complete_retired": "Stored aggregate forecasts from an earlier session are no longer used; those totals are now summed from their leaf cohorts and may differ."
 }

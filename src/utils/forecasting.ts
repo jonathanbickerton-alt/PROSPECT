@@ -1887,6 +1887,112 @@ export function makeForecastKey(
  * pass afterwards. The invariant is structural - one leaf contributes to a
  * roll-up at most once - instead of a cleanup step a later edit can drop.
  */
+/**
+ * Should a stored forecast be IGNORED by the seam?
+ *
+ * True for a FITTED forecast stored under an All-bearing key - a fit-on-aggregate
+ * left behind by the manual path that Session G removed. Real saved sessions
+ * contain these, and `resolveForecast` is store-first, so without this rule a
+ * stale manual fit would win over derivation permanently and nothing on screen
+ * would say so.
+ *
+ * A READ-TIME rule, deliberately, rather than a purge:
+ *   - no import path can bypass it by forgetting to call a migration;
+ *   - it never writes destructively to a user's save file;
+ *   - it is one condition at the seam every reader already goes through.
+ *
+ * Its cost is accepted and named: the store keeps entries it will never return.
+ *
+ * SCOPE IS THE WHOLE POINT. Both halves are required. A DERIVED forecast under
+ * an All-bearing key is exactly what the seam produces and must be kept; a
+ * FITTED forecast under a leaf key is a real fit of a real cohort and must be
+ * kept. Only the intersection is retired, and `spec:aggregate-retire`'s
+ * leaf-hit case exists to catch a broadened rule that swallows either.
+ */
+export function isRetiredAggregateFit(
+  key: string,
+  bf: { provenance: { kind: string } },
+): boolean {
+  if (bf.provenance.kind !== 'fitted') return false;
+  return key.split('|').some(part => part === 'All');
+}
+
+/**
+ * THE SEAM. Store hit, or derive from the leaves in scope, or nothing with a
+ * reason. Every read of a forecast by key goes through this.
+ *
+ * It lives here, pure, rather than inside App's `resolveForecast` closure for a
+ * reason found the hard way. The retirement rule made the seam SELECTIVE — it
+ * now refuses things a raw `store.get(key)` would return. That instantly turned
+ * every other raw store read into a divergence, and session import was one:
+ * it took the Is_Active row straight to the screen, so opening a file whose
+ * active forecast was a retired aggregate showed the stale total until a filter
+ * change laundered it. Making a seam selective does not make it the only door.
+ *
+ * A pure function with the store passed IN is what actually makes it the only
+ * door, and it closes a second hazard at the same time. The import path cannot
+ * call App's `resolveForecast`: that closure captures `forecastStore` state, and
+ * at import time `setForecastStore` has not committed yet, so it would resolve
+ * against the store being replaced. Passing the restored store explicitly means
+ * the caller cannot accidentally resolve against stale state.
+ *
+ * Do not reintroduce a copy of this logic at a call site. If a caller needs
+ * different inputs, give it different arguments.
+ */
+export function resolveFromStore(
+  store: Map<string, BaseForecast>,
+  leafMap: Map<string, string[]>,
+  key: string,
+): { forecast: BaseForecast | null; reason: SkipReason | null } {
+  const stored = store.get(key);
+  // A stored FITTED forecast under an All-bearing key is a fit-on-aggregate
+  // left behind by the manual path Session G removed. Ignored here rather than
+  // purged, so derivation answers instead.
+  if (stored && !isRetiredAggregateFit(key, stored)) return { forecast: stored, reason: null };
+
+  const leafKeys = leafMap.get(key) ?? [];
+  if (leafKeys.length === 0) {
+    // Not a key this data can produce at all.
+    return { forecast: null, reason: 'never-enumerated' };
+  }
+
+  const leaves = leafKeys
+    .map(k => store.get(k))
+    .filter((b): b is BaseForecast => !!b);
+  if (leaves.length === 0) {
+    // The key is real and every leaf behind it failed to fit.
+    return { forecast: null, reason: 'insufficient-history' };
+  }
+
+  const [segment, product, productL2, channel, channelL2, tariffL1, tariffL2] = key.split('|');
+  const derived = deriveAggregate(leaves, {
+    segment, product, productL2, channel, channelL2, tariffL1, tariffL2,
+    scenario: 'Base Case',
+  } as any);
+  // deriveAggregate only returns null for an EMPTY leaf list, handled above -
+  // so `derived` is always non-null here. No false arm.
+  return { forecast: derived, reason: null };
+}
+
+/**
+ * The roll-up index for a store being restored from a file, built from the
+ * store's own keys.
+ *
+ * The normal index comes from the DATA map, but at import time the store is
+ * restored before (and independently of) the data it was fitted from. The
+ * store's own leaf keys are the honest substitute.
+ *
+ * All-bearing keys are excluded deliberately. A retired aggregate fit is still
+ * IN the store — feeding it to `buildRollUpIndex` as though it were a leaf
+ * would enrol it as a member of every aggregate above it and count its volume a
+ * second time, on top of the leaves it was fitted from. That is the roll-up
+ * duplication defect wearing a different hat.
+ */
+export function buildRestoredLeafIndex(storeKeys: Iterable<string>): Map<string, string[]> {
+  const leaves = [...storeKeys].filter(k => !k.split('|').some(p => p === 'All'));
+  return buildRollUpIndex(leaves).leafMap;
+}
+
 export function buildRollUpIndex(leafKeys: Iterable<string>): {
   set: Set<string>;
   leafMap: Map<string, string[]>;

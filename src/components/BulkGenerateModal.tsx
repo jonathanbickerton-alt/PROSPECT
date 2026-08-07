@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2, Zap, X, AlertTriangle, Loader2 } from 'lucide-react';
+import { CheckCircle2, Zap, X, AlertTriangle, Loader2, Info } from 'lucide-react';
 import type { ForecastModel, SkipReason, SkippedCohort } from '../types/forecast';
 import { SKIP_REASON_KEY } from '../types/forecast';
 
@@ -406,6 +406,16 @@ function BulkCompletePanel({
                 <strong className="text-emerald-800">{generated}</strong>
                 <span className="text-emerald-700"> forecast{generated !== 1 ? 's' : ''} generated successfully</span>
               </span>
+            </div>
+
+            {/* The retirement rule, stated on screen rather than left to be
+                discovered. A restored session's aggregate totals CHANGE when
+                stored fit-on-aggregate entries stop being returned by the seam,
+                and the standing principle is that a data issue is told to the
+                user, not silently handled - including one we introduce. */}
+            <div className="flex items-start gap-3 bg-slate-50 rounded-lg px-4 py-2.5">
+              <Info size={15} className="text-slate-400 shrink-0 mt-0.5" />
+              <span className="text-slate-600 text-[13px] leading-snug">{t('bulk_complete_retired')}</span>
             </div>
 
             {skipped.length > 0 && (

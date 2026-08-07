@@ -4868,6 +4868,222 @@ intent, and a mistake made and caught during implementation.
 Guarded by `npm run spec:prorata`, which mutation-tests both directions and
 asserts structurally that no pro-rata call site touches a rate metric.
 
+### Stored fit-on-aggregate forecasts are retired at READ time — 2026-08-07
+
+Session G removed both paths that could fit a model to an aggregate: the manual
+Step 1 path (`generateStandardForecast` now declines when any dimension is
+"All (Aggregated)") and the channel=`All` companion fit that bulk generation
+wrote alongside each leaf. Aggregates are derived from leaves, always.
+
+That fixes what gets WRITTEN. It does nothing about what is already written.
+Every session file saved before this change carries fitted forecasts under
+All-bearing keys, and `resolveForecast` is store-first — so those stale fits
+would keep winning over derivation forever, silently, in exactly the sessions
+whose numbers users trust most.
+
+**The rule, in `isRetiredAggregateFit` (`src/utils/forecasting.ts`):** a stored
+forecast is ignored when its provenance is `fitted` AND its key contains `All`
+in any of the seven parts. `resolveForecast` and `canResolve` both gate their
+store hit on it.
+
+Three properties of the rule are deliberate and should not be "tidied":
+
+- **It is read-time, not a migration.** No import path can bypass it, because
+  the seam is the only way a forecast is read. A load-time purge would have to
+  be repeated at every entry point and would be wrong at the first one missed.
+- **It does not delete.** The stale entry stays in the store as a record of what
+  the old session contained. It is demoted from authority to artefact. The cost
+  is accepted: dead entries accumulate, and that is cheaper than a destructive
+  write to a user's saved file.
+- **Both halves of the condition are load-bearing.** Drop the `fitted` test and
+  it retires DERIVED aggregates — that is every answer the seam produces. Drop
+  the All-bearing test and it retires LEAF fits — that is every real forecast in
+  the store. Either widening looks correct on the case the rule was written for.
+
+Guarded by `npm run spec:retire` (22 checks) and guard-traps 13 and 14. The two
+traps are the two widenings, one per direction; the spec's second case exists
+only to be killed by trap 14, and would look like decoration to anyone reading
+it without this note.
+
+**The spec has a structural source guard, and it was added because a trap
+MISSED.** `resolveForecast` is a closure inside `App` and cannot be driven
+headlessly, so the spec's `resolve()` is a transcription of the seam. Trap 13
+restored store-first in `App.tsx` and every behavioural check stayed green — a
+correct rule that nothing calls. The guard now asserts structurally that no
+store-hit return in either closure is ungated, with comments stripped first so
+the docstring beside the call cannot satisfy it, and with an anti-vacuity
+control asserting there is a return to guard at all.
+
+### Test artefacts are evidence, and evidence has provenance too — 2026-08-07
+
+Session G was held once, before any code was written, for a reason worth keeping
+because the same shape will recur.
+
+The change removes the manual path that fits models to aggregates. Verifying the
+retirement rule requires a saved session that CONTAINS such a fit — and the only
+thing that could produce one was the path being removed. Building first and
+asking Jon for the file afterwards would have meant creating the evidence with a
+build that no longer had the ability under test.
+
+That file would still have loaded. It would still have contained aggregates. It
+would have been a weaker witness than it appeared, and nothing about the artefact
+itself would have said so.
+
+**The rule this generalises to: a test artefact created against a partly-changed
+build is a weaker witness than one created against the build it represents, and
+the artefact does not carry that fact with it.** Provenance is the whole of this
+codebase's forecasting model — a number is `fitted`, `derived`, or `accepted`,
+and the seam refuses to conflate them. The same discipline applies to the inputs
+of a test. Where an artefact is meant to represent a PRIOR state of the system,
+it must be created against that prior state, and which build produced it must be
+recorded next to it.
+
+Two limits on this artefact were flagged at the time rather than discovered
+later, which is the only reason they are not defects:
+
+- The confirmation named the file as a literal placeholder. The real artefact
+  was then located by timestamp (`PROSPECT Forecast Save — 07 Aug 2026 1026`,
+  exported 10:26 that day, before any Session G change) and identified by
+  content, not by name: its `Baseline_Forecasts` sheet holds 541 keys, of which
+  exactly one is both `fitted` and All-bearing. Stage 2 ran against that file.
+  The spec still builds a constructed equivalent, because a spec cannot depend
+  on a file in someone's Downloads folder — but the branch was not graded on
+  the constructed one.
+- The confirmation says "two depths" and names one key
+  (`Corporate|Fixed Connectivity|All|All`, whose 7-part form is
+  `Corporate|Fixed Connectivity|All|All|All|All|All`). The file contains only
+  that one. **RESOLVED 2026-08-07: one aggregate was generated, not two.** Jon
+  confirmed directly; "two depths" was a drafting remnant of the advisor's
+  template, not a description of the artefact. So the expected set was a single
+  key all along, and stage 2's enumeration — 1 of 541 keys moving, 540
+  unchanged — verified exactly that set rather than a subset of a larger one.
+  The discrepancy is worth leaving on the record even though it resolved
+  benignly: it was found by counting what the file contained instead of
+  accepting what the covering note said it contained, and had it gone the other
+  way, the enumeration would have been silently incomplete.
+
+### First measured fit-on-aggregate vs derived divergence — UAT context
+
+Keep this to hand for Alessandro and anyone else who asks why a total from an
+older session moved. It is the first time the gap has been measured on a real
+saved session rather than argued from the mechanism.
+
+Session of 07 Aug 2026, key `Corporate|Fixed Connectivity|All|All|All|All|All`,
+24-month horizon, derived from 27 leaves:
+
+| metric | stored fit-on-aggregate | derived from leaves | change |
+|---|---|---|---|
+| inflow | 375,624.74 | 367,906.31 | **−2.06%** |
+| outflow | 325,487.81 | 324,990.60 | −0.15% |
+| retention | 254,602.64 | 247,553.43 | −2.77% |
+| ARPU (volume-weighted) | 15.9474 | 16.2990 | **+2.20%** |
+
+The direction is the expected one and the reason is worth being able to say in
+one sentence: **fitting one curve to summed history is not the same as summing
+27 individually-fitted curves, and it overstates volume because a single smooth
+fit cannot reproduce the leaves' individual turning points.** ARPU moves the
+other way because it is a ratio — a smaller derived volume against broadly
+similar revenue raises the per-unit figure.
+
+Two things to say plainly if asked. The old number was not a rounding artefact:
+2% of a book this size is material. And the new number is not a re-forecast —
+nothing was re-fitted, the leaves are the same leaves the old session already
+contained. Only the arithmetic joining them changed.
+
+### The retirement rule made two read paths diverge — CLOSED, 2026-08-07
+
+**Closed the same session it was found.** The seam was extracted to a pure
+`resolveFromStore(store, leafMap, key)` in `forecasting.ts`; `resolveForecast`
+now delegates to it and session import calls it directly. One implementation,
+two callers — which is what "the seam is the only door" has to mean if it is to
+be more than a slogan.
+
+Passing the store IN rather than closing over it also removed a hazard the fix
+would otherwise have walked into: the import path **cannot** call App's
+`resolveForecast`, because at that moment `setForecastStore` has not committed
+and the closure still holds the store being replaced. A fix that looked correct
+would have resolved against stale state.
+
+**The claim is now verified over the full set, not sampled.** All 11
+`setBaseForecast` call sites in App.tsx are enumerated and classified in
+`spec:import-seam`: 4 seam-routed, 5 freshly fitted or accepted (a fresh fit in
+`generateStandardForecast` sits behind the aggregate decline; an accepted
+challenger carries provenance `accepted`, which the rule never retires), 1 the
+import fix, 1 cleared by name below. The site count is pinned, so a new call
+site fails the spec even if it happens to match an accepted shape — matching a
+shape is not the same as having been thought about. Guard-trap 15 reverts the
+import to the raw read and is confirmed killing.
+
+Verified on the real artefact: the Is_Active key resolves to `derived` with
+leafCount 27, is not the stored object, and carries the figures in the UAT table
+above.
+
+**One site is deliberately NOT routed: the legacy pre-option-C import.** Its
+keys are manufactured by defaulting *absent columns* to `'All'`, and its
+provenance defaults to `fitted`, so nearly every legacy forecast is All-bearing
+and fitted and the rule would retire almost all of them. That would be wrong,
+and the reason is a real limit on the rule's premise: **an `'All'` part means
+"aggregate over this dimension" only for keys built by the current enumeration.
+Where a key was built by defaulting a column that did not exist, the same marker
+means "this dimension was not recorded" — and there are no leaves to derive
+from, so retiring it replaces a number with no number and old files stop
+loading.** The rule detects aggregation by reading a marker; the marker is not
+always evidence of the thing.
+
+**RESIDUAL RISK, pre-existing, OPEN — the accept-challenger writers.**
+`acceptPreviewForecast` and `acceptAllChallengerModels` store the raw
+`calculateBaseForecast` output, whose provenance stays `fitted`, and nothing at
+either site prevents an All-bearing key. Their safety rests entirely on the
+`derivedMix` UI gate in `ForecastVsActualsTab` — a file this branch does not
+touch — and that gate falls back to `baseForecast.provenance` when
+`resolveForecast` returns null, which is what a legacy single-forecast import
+produces. If exercised, they would write a fresh fit-on-aggregate.
+
+Not introduced here and not reproduced live — the writers were traced, the
+component was not driven. It is recorded rather than fixed because the fix
+belongs to the accept path, not to the retirement rule.
+
+**The reason this is written as residual risk and not as a cleared site is
+itself the finding.** The first version of `spec:import-seam` accounted for
+these two sites under "provenance is `accepted`, which the rule never retires".
+That is false of both — `kind: 'accepted'` is set in exactly two places in
+App.tsx, and neither is theirs. The spec passed anyway, because it matched call
+sites by the SPELLING OF THE ARGUMENT and accepted a site if any row's pattern
+fit, so a row written for one function silently absorbed sites in others. A
+reason not bound to a specific site is not a reason; it is a shape that happens
+to fit. The table is now keyed by enclosing function, per-function counts are
+pinned so a second call cannot inherit an existing reason unexamined, and every
+row claiming a call the site's own line does not show is verified against the
+function body.
+
+Original finding follows.
+
+
+
+Found by the gate on the artefact above, and classified as introduced by the
+change that exposed it rather than as pre-existing.
+
+`resolveForecast` is not the only route from the store to the screen. Session
+import (`src/App.tsx` ~:868) takes the `Is_Active` row straight into
+`setBaseForecast`, with no call to the seam. Before this change that bypass was
+harmless: the seam returned whatever was stored, so a raw read and a resolved
+read could not disagree. The retirement rule is the first thing to make them
+disagree — and it disagrees precisely for the keys the import path is most
+likely to be carrying.
+
+On Jon's artefact the two facts meet: `Is_Active` is set on
+`Corporate|Fixed Connectivity|All|All|All|All|All`, which is the retired key.
+Loading that session lands Step 1 on the stale fitted total and holds it until a
+filter change or tab switch routes through the seam and silently replaces it.
+
+**The general shape, which outlives this instance: making a seam selective does
+not make it the only door. Every raw store read that previously agreed with the
+seam by accident becomes a divergence the moment the seam starts refusing
+things.** The audit that matters is not "is the rule correct" but "what else
+reads the store without asking the rule". One other candidate was checked and
+cleared during the gate — `acceptChallengerModel` reaches the store only behind
+a `derivedMix` computed from `resolveForecast`, so it inherits the rule.
+
 ### Accuracy scores will move — this is not a regression
 
 **CORRECTED 2026-08-01. This entry named the wrong path, and it is the second

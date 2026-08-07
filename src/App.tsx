@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort, Provenance, SkipReason } from './types/forecast';
 import { provenanceModel, provenanceParams } from './types/forecast';
@@ -864,8 +864,27 @@ export default function App() {
             setForecastStore(() => restoredStore);
             if (restoredLog.length > 0) setCohortGenLog(restoredLog);
 
-            // Use Is_Active cohort as the active forecast; fall back to first entry
-            const bf = activeBf ?? (restoredStore.values().next().value as BaseForecast | undefined) ?? null;
+            // Use Is_Active cohort as the active forecast; fall back to first entry.
+            //
+            // ROUTED THROUGH THE SEAM, and it must be. `activeBf` is the raw
+            // stored row, and on a session saved before the retirement rule the
+            // Is_Active row is exactly the kind of thing the rule refuses - a
+            // fit-on-aggregate. Setting it directly showed the stale total on
+            // Step 1 until a filter change quietly replaced it, which is worse
+            // than showing it permanently: the number that appears first is the
+            // one people write down.
+            //
+            // resolveFromStore, not resolveForecast: setForecastStore above has
+            // not committed yet, so that closure still holds the OLD store.
+            const rawBf = activeBf ?? (restoredStore.values().next().value as BaseForecast | undefined) ?? null;
+            const restoredLeafMap = buildRestoredLeafIndex(restoredStore.keys());
+            const bf = rawBf
+              ? resolveFromStore(restoredStore, restoredLeafMap, makeForecastKey(
+                  rawBf.cohort.segment, rawBf.cohort.product, rawBf.cohort.productL2,
+                  rawBf.cohort.channel, rawBf.cohort.channelL2,
+                  rawBf.cohort.tariffL1, rawBf.cohort.tariffL2,
+                )).forecast
+              : null;
             if (bf) {
               setBaseForecast(bf);
               setForecastUpdatedAt(new Date().toISOString());
@@ -909,6 +928,26 @@ export default function App() {
               };
               const fKeyImport = makeForecastKey(restoredBf.cohort.segment, restoredBf.cohort.product, restoredBf.cohort.productL2, restoredBf.cohort.channel, restoredBf.cohort.channelL2, restoredBf.cohort.tariffL1, restoredBf.cohort.tariffL2);
               setForecastStore(prev => new Map(prev).set(fKeyImport, restoredBf));
+              // RAW ON PURPOSE - the retirement rule must NOT be applied here,
+              // and the reason is a limit on what an 'All' part means.
+              //
+              // This is the pre-option-C format. Its keys are manufactured a few
+              // lines above by defaulting ABSENT COLUMNS to 'All' (Product_L2,
+              // Channel_L2, Tariff_L1/L2 did not exist in that version), and its
+              // provenance defaults to 'fitted' because everything in a file that
+              // old was. So almost every legacy forecast is All-bearing AND
+              // fitted, and the rule would retire practically all of them.
+              //
+              // It would be wrong to. An 'All' here means "this dimension did not
+              // exist when the file was written", not "this is an aggregate over
+              // that dimension's values". There is nothing to derive FROM: the
+              // legacy path restores a single forecast, so retiring it replaces a
+              // number with no number and old files stop loading.
+              //
+              // The distinction is the point: the rule detects aggregation by
+              // reading 'All' as a marker of it, and that inference only holds
+              // for keys built by the current enumeration. Where a key was built
+              // by defaulting, the marker means something else.
               setBaseForecast(restoredBf);
               setForecastUpdatedAt(new Date().toISOString());
               setStep2Filter(cohortToFilter(restoredBf.cohort));
@@ -1533,31 +1572,9 @@ export default function App() {
     forecast: BaseForecast | null;
     reason: SkipReason | null;
   } => {
-    const stored = forecastStore.get(key);
-    if (stored) return { forecast: stored, reason: null };
-
-    const leafKeys = populatedCohorts.leafMap.get(key) ?? [];
-    if (leafKeys.length === 0) {
-      // Not a key this data can produce at all.
-      return { forecast: null, reason: 'never-enumerated' };
-    }
-
-    const leaves = leafKeys
-      .map(k => forecastStore.get(k))
-      .filter((b): b is BaseForecast => !!b);
-    if (leaves.length === 0) {
-      // The key is real and every leaf behind it failed to fit.
-      return { forecast: null, reason: 'insufficient-history' };
-    }
-
-    const [segment, product, productL2, channel, channelL2, tariffL1, tariffL2] = key.split('|');
-    const derived = deriveAggregate(leaves, {
-      segment, product, productL2, channel, channelL2, tariffL1, tariffL2,
-      scenario: 'Base Case',
-    } as any);
-    // deriveAggregate only returns null for an EMPTY leaf list, and that case
-    // is handled above - so `derived` is always non-null here. No false arm.
-    return { forecast: derived, reason: null };
+    // Delegates to the pure seam so this closure and the session-import path
+    // cannot drift. See resolveFromStore for why it is not inlined here.
+    return resolveFromStore(forecastStore, populatedCohorts.leafMap, key);
   }, [forecastStore, populatedCohorts]);
 
   /**
@@ -1571,7 +1588,11 @@ export default function App() {
    * answer a yes/no question would put real work behind an indicator.
    */
   const canResolve = useCallback((key: string): boolean => {
-    if (forecastStore.has(key)) return true;
+    // Same rule as resolveForecast: a retired aggregate fit is not a hit. The
+    // indicator must agree with the seam, or it says "forecast loaded" for a
+    // key the seam declines to return.
+    const hit = forecastStore.get(key);
+    if (hit && !isRetiredAggregateFit(key, hit)) return true;
     const leafKeys = populatedCohorts.leafMap.get(key) ?? [];
     return leafKeys.some(k => forecastStore.has(k));
   }, [forecastStore, populatedCohorts]);
@@ -1883,6 +1904,30 @@ export default function App() {
       setError('Please map Date, Metric, Value columns and select an IBRO scenario identifier.');
       return;
     }
+
+    // ── PATH A REMOVED: no forecast is fitted to an aggregate ───────────────
+    //
+    // When any dimension was "All (Aggregated)" this function used to sum the
+    // series across that scope, fit ONE model to the sum, and write the result
+    // to forecastStore under an All-bearing key. That is fit-on-aggregate: a
+    // model fitted to a total rather than to the things the total is made of,
+    // and the defect bottom-up replaced.
+    //
+    // An aggregate is now SUMMED FROM ITS LEAVES at read time, by
+    // resolveForecast. There is nothing to generate for it.
+    //
+    // It declines rather than silently doing nothing. Session H replaces this
+    // decline with generate-the-missing-leaves-in-scope; until then an
+    // All-selection is an explicit "not this way", not a dead button, because a
+    // button that appears to work and produces nothing is the worse of the two.
+    const anyAggregated =
+      segmentValue === 'All (Aggregated)' || productValue === 'All (Aggregated)' ||
+      channelValue === 'All (Aggregated)' || tariffValue === 'All (Aggregated)';
+    if (anyAggregated) {
+      setError(t('standard_aggregates_are_summed_not_generated'));
+      return;
+    }
+
 
     let processedData = data
       .map(row => ({ ...row, _parsedDate: new Date(row[wiDateCol]) }))
@@ -2567,92 +2612,17 @@ export default function App() {
         setStep2Filter(newFilter);
         setStep3Filter(newFilter);
 
-        // When a channel-specific forecast was just generated, also store an aggregate
-        // (channel='All') forecast so that dims.product=true cohort rows in the
-        // Historical Accuracy table can find an exact-match key for drill-down charts.
-        if (wiChannelCol && channelValue !== 'All (Aggregated)') {
-          const aggIBRO = data
-            .map(row => ({ ...row, _parsedDate: new Date(row[wiDateCol]) }))
-            .filter(row => isValid(row._parsedDate)
-              && (!wiSegmentCol || segmentValue === 'All (Aggregated)' || String(row[wiSegmentCol]) === segmentValue)
-              && (!wiProductCol || productValue === 'All (Aggregated)' || String(row[wiProductCol]) === productValue)
-              && (!wiProductL2Col || !productL2Value || String(row[wiProductL2Col]) === productL2Value)
-              && (!wiTariffL1Col || !tariffValue || tariffValue === 'All (Aggregated)' || String(row[wiTariffL1Col]) === tariffValue)
-              && (!wiTariffL2Col || !tariffL2Value || String(row[wiTariffL2Col]) === tariffL2Value)
-            );
-          const aggIBROmap = new Map<number, AggregatedIBRORow>();
-          aggIBRO.forEach(row => {
-            const t = row._parsedDate.getTime();
-            if (!aggIBROmap.has(t)) aggIBROmap.set(t, { _parsedDate: row._parsedDate, inflow: 0, outflow: 0, retention: 0, arpu: 0, inflowArpu: 0, outflowArpu: 0, retentionArpu: 0, baseArpu: 0 });
-            const entry = aggIBROmap.get(t)!;
-            const metric = String(row[wiMetricCol]);
-            const val = Number(row[wiValueCol]) || 0;
-            if (metric === wiInflowVal) entry.inflow += val;
-            else if (metric === wiOutflowVal) entry.outflow += val;
-            else if (metric === wiRetentionVal) entry.retention += val;
-          });
-          // Compute blended ARPU and per-scenario ARPU for the aggregate (same logic as "All Aggregated" path)
-          if (wiRevenueCol || wiArpuCol) {
-            type ScenAccum = { subs: number; rev: number };
-            const inflowAcc    = new Map<number, ScenAccum>();
-            const outflowAcc   = new Map<number, ScenAccum>();
-            const retentionAcc = new Map<number, ScenAccum>();
-            const baseAcc      = new Map<number, ScenAccum>();
-            aggIBRO.forEach(row => {
-              const t = row._parsedDate.getTime();
-              const metric = String(row[wiMetricCol]);
-              const val = Number(row[wiValueCol]) || 0;
-              const rev  = Number(row[wiRevenueCol]) || 0;
-              const arpu = Number(row[wiArpuCol]) || 0;
-              const revVal = rev || (arpu * val);
-              if (metric === wiInflowVal)    { const a = inflowAcc.get(t)    ?? {subs:0,rev:0}; a.subs+=val; a.rev+=revVal; inflowAcc.set(t,a); }
-              else if (metric === wiOutflowVal)   { const a = outflowAcc.get(t)   ?? {subs:0,rev:0}; a.subs+=val; a.rev+=revVal; outflowAcc.set(t,a); }
-              else if (metric === wiRetentionVal) { const a = retentionAcc.get(t) ?? {subs:0,rev:0}; a.subs+=val; a.rev+=revVal; retentionAcc.set(t,a); }
-              else if (metric === wiBaseVal)      { const a = baseAcc.get(t)      ?? {subs:0,rev:0}; a.subs+=val; a.rev+=revVal; baseAcc.set(t,a); }
-            });
-            aggIBROmap.forEach((entry, t) => {
-              const ia = inflowAcc.get(t)    ?? {subs:0,rev:0};
-              const oa = outflowAcc.get(t)   ?? {subs:0,rev:0};
-              const ra = retentionAcc.get(t) ?? {subs:0,rev:0};
-              const ba = baseAcc.get(t)      ?? {subs:0,rev:0};
-              const totalSubs = ia.subs + oa.subs + ra.subs + ba.subs;
-              const totalRev  = ia.rev  + oa.rev  + ra.rev  + ba.rev;
-              if (totalSubs > 0) entry.arpu = totalRev / totalSubs;
-              entry.inflowArpu    = ia.subs > 0 ? ia.rev / ia.subs : 0;
-              entry.outflowArpu   = oa.subs > 0 ? oa.rev / oa.subs : 0;
-              entry.retentionArpu = ra.subs > 0 ? ra.rev / ra.subs : 0;
-              entry.baseArpu      = ba.subs > 0 ? ba.rev / ba.subs : 0;
-            });
-          }
-          // Compute the correct all-channel seed base (most recent Base reading across all channels)
-          const aggBaseReadings = new Map<number, number>();
-          aggIBRO.filter(r => String(r[wiMetricCol]) === wiBaseVal).forEach(r => {
-            const t = r._parsedDate.getTime();
-            aggBaseReadings.set(t, (aggBaseReadings.get(t) || 0) + (Number(r[wiValueCol]) || 0));
-          });
-          const aggSeed = aggBaseReadings.size > 0
-            ? (aggBaseReadings.get(Math.max(...aggBaseReadings.keys())) ?? 0)
-            : 0;
-          const aggIBROarr = Array.from(aggIBROmap.values())
-            .filter(e => e.inflow > 0 || e.outflow > 0 || e.retention > 0)
-            .sort((a, b) => a._parsedDate.getTime() - b._parsedDate.getTime());
-          const aggCohortObj = { ...bf.cohort, channel: 'All', channelL2: 'All' };
-          const aggBf = calculateBaseForecast(
-            aggIBROarr,
-            aggCohortObj,
-            aggSeed,
-            stdForecastLength,
-            preHorizonUncertainty,
-            postHorizonExpansionRate,
-            confidenceHorizon,
-            selectedForecastModel,
-            getOneOffFlagsForCohort(aggCohortObj),
-          );
-          if (aggBf) {
-            const aggFKey = makeForecastKey(aggBf.cohort.segment, aggBf.cohort.product, aggBf.cohort.productL2, aggBf.cohort.channel, aggBf.cohort.channelL2, aggBf.cohort.tariffL1, aggBf.cohort.tariffL2);
-            setForecastStore(prev => new Map(prev).set(aggFKey, aggBf));
-          }
-        }
+        // ── PATH B REMOVED: the companion channel='All' write ──────────────
+        //
+        // After a channel-specific generation this fitted a SECOND model with
+        // channel='All' and stored it, so that - in its own words - "dims.product
+        // =true cohort rows in the Historical Accuracy table can find an
+        // exact-match key for drill-down charts."
+        //
+        // resolveForecast answers that lookup by derivation now. This was writing
+        // a fitted aggregate to satisfy a question the seam already answers, which
+        // is the same defect as path A wearing a different justification: a
+        // convenience for a reader that has since learned to compute the answer.
       }
     }
 

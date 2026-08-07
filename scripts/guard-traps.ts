@@ -39,9 +39,12 @@ const SPEC = 'scripts/derived-interaction-spec.ts';
 const NULLSPEC = 'scripts/null-render-spec.tsx';
 const UNSCORED = 'scripts/unscored-row-spec.tsx';
 const LEAFGRAIN = 'scripts/leaf-grain-spec.ts';
+const RETIRE = 'scripts/aggregate-retire-spec.ts';
+const IMPORTSEAM = 'scripts/import-seam-spec.ts';
+const APP = 'src/App.tsx';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
-const TARGETS = [FILE, ENGINE, WHATIF];
+const TARGETS = [FILE, ENGINE, WHATIF, APP];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -145,6 +148,34 @@ const TRAPS: Trap[] = [
                '    const baseArpuScore      = NaN as any;')
       .replace("  if (score === null || !Number.isFinite(score)) return '—';",
                "  if (score === null) return '—';") },
+  // Traps 13 and 14 are the two halves of the retirement rule's SCOPE, and
+  // they fail in opposite directions. 13 restores store-first for All-keys, so
+  // a stale fit-on-aggregate wins over derivation again. 14 broadens the rule
+  // by dropping the All-bearing test, so it swallows every LEAF fit - a rule
+  // that looks correct on the case it was written for and destroys the store.
+  { id: '13 store-first restored for All-keys', why: 'a stale fit-on-aggregate wins over derivation',
+    // Retargeted to ENGINE when the seam moved out of App into the pure
+    // resolveFromStore. The move was caught by spec:retire's own anchor check,
+    // which went red rather than passing over a window that no longer existed.
+    file: ENGINE, spec: RETIRE,
+    mutate: s => s.replace('  if (stored && !isRetiredAggregateFit(key, stored)) return { forecast: stored, reason: null };',
+                           '  if (stored) return { forecast: stored, reason: null };') },
+  { id: '14 the retirement rule broadened past its scope', why: 'it retires leaf fits too',
+    file: ENGINE, spec: RETIRE,
+    mutate: s => s.replace("  return key.split('|').some(part => part === 'All');",
+                           '  return true;') },
+  // Trap 15 is the one that matters most, because its defect SHIPPED. The
+  // retirement rule was correct and specced, and session import read the store
+  // raw anyway - so opening an old file showed the stale total until a filter
+  // change laundered it. This reverts the import site to that raw read.
+  { id: '15 session import bypasses the seam again', why: 'an opened session shows the stale aggregate on Step 1',
+    file: APP, spec: IMPORTSEAM,
+    mutate: s => {
+      const start = s.indexOf('            const bf = rawBf');
+      const end = s.indexOf('              : null;', start);
+      if (start === -1 || end === -1) return s; // unchanged -> reported as MISSED, correctly
+      return s.slice(0, start) + '            const bf = rawBf;' + s.slice(end + '              : null;'.length);
+    } },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -155,7 +186,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');
