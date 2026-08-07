@@ -1694,6 +1694,7 @@ export default function App() {
    */
   useEffect(() => {
     setError('');
+    setNotice('');
     setStdGenerateResult(null);
   }, [segmentValue, productValue, productL2Value, channelValue, channelL2Value,
       tariffValue, tariffL2Value]);
@@ -2001,6 +2002,10 @@ export default function App() {
   /** The aggregate a just-finished scoped run should display, or null. */
   const [pendingAggregateKey, setPendingAggregateKey] = useState<string | null>(null);
 
+  /** Step 1 coverage statements. Distinct from `error`: these report what was
+   *  built, not that something failed. */
+  const [notice, setNotice] = useState('');
+
   /**
    * Show the derived aggregate for `key`, through the seam.
    *
@@ -2025,6 +2030,7 @@ export default function App() {
 
   const generateStandardForecast = () => {
     setError('');
+    setNotice('');
     setCompareCategories([]);
     
     const targetMetric = stdScenario === 'Inflow' ? wiInflowVal :
@@ -2065,7 +2071,7 @@ export default function App() {
         // No leaves at all — the selection is not something this data can
         // produce. Distinct from "already covered", and it must stay distinct:
         // both have zero missing leaves and they mean opposite things.
-        setError(t('standard_selection_never_enumerated'));
+        setNotice(t('standard_selection_never_enumerated'));
         return;
       }
       if (missing.length === 0) {
@@ -2073,7 +2079,7 @@ export default function App() {
         // not interchangeable: a scope blocked by leaves that cannot be fitted
         // is not a covered scope, and saying it is would be the button's old
         // lie in a different place.
-        setError(unfittable.length > 0
+        setNotice(unfittable.length > 0
           ? t('standard_scope_blocked_by_unfittable', { count: unfittable.length })
           : t('standard_all_leaves_present', { count: leaves.length }));
         return;
@@ -4289,6 +4295,7 @@ export default function App() {
             generateStandardForecast={generateStandardForecast}
             aggregateState={stdAggregateState}
             generateResult={stdGenerateResult}
+            notice={notice}
             error={error}
             forecastData={forecastData}
             compareCategories={compareCategories}

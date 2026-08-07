@@ -83,6 +83,8 @@ interface StandardForecastTabProps {
     missing: number; total: number; unfittable: number };
   /** Outcome of the last scoped leaf run, or null if none has run. */
   generateResult: { generated: number; skipped: string[] } | null;
+  /** Coverage statements from Step 1 — not failures, see the render site. */
+  notice: string;
   error: string | null;
   forecastData: any[];
   compareCategories: string[];
@@ -151,6 +153,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
   generateStandardForecast,
   aggregateState,
   generateResult,
+  notice,
   error,
   forecastData,
   compareCategories,
@@ -1102,6 +1105,14 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && <div className="mb-6 bg-red-50 text-red-700 p-4 rounded-xl border border-red-100 text-sm flex items-start gap-3"><Info className="shrink-0 mt-0.5" size={18} /><p>{error}</p></div>}
+        {/* A COVERAGE STATEMENT IS NOT AN ERROR. "The remaining cohorts have
+            too little history, the aggregate is summed from the rest" reports
+            what was built; red says something went wrong. Session I made the
+            completion modal a coverage statement rather than a success claim
+            for the same reason, and routing this through the error banner
+            would contradict that decision one screen away from it. Styled to
+            match the modal informational row. */}
+        {notice && <div className="mb-6 bg-slate-50 text-slate-600 p-4 rounded-xl border border-slate-200 text-sm flex items-start gap-3"><Info className="shrink-0 mt-0.5 text-slate-400" size={18} /><p>{notice}</p></div>}
         
         {forecastData.length > 0 && !emptyCohortSelection ? (
           <div className="flex gap-4 items-start">

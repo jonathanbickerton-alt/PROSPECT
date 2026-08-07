@@ -295,6 +295,42 @@ function stateOf(store: Map<string, BaseForecast>, unfittable: ReadonlySet<strin
     'the effect would erase the error the generate just set');
 }
 
+// ── A COVERAGE STATEMENT IS NOT AN ERROR ─────────────────────────────────
+// Raised by the gate. Session I made the completion modal a coverage statement
+// rather than a success claim; routing "the remaining cohorts have too little
+// history" through a red error banner one screen away would contradict that.
+// Red says something went wrong. These messages report what was built.
+{
+  const app = fs.readFileSync('src/App.tsx', 'utf8');
+  const tab = fs.readFileSync('src/components/StandardForecastTab.tsx', 'utf8');
+
+  for (const key of ['standard_scope_blocked_by_unfittable', 'standard_all_leaves_present',
+                     'standard_selection_never_enumerated']) {
+    const i = app.indexOf(key);
+    check(`NOTICE: ${key} is a notice, not an error`, i !== -1
+      && /setNotice\(/.test(app.slice(Math.max(0, i - 260), i)),
+      'a coverage statement is being reported as a failure');
+  }
+  // The genuine failures must STAY on the error surface, or this has traded one
+  // miscategorisation for another.
+  // Anchored on the CODE form. The first version searched for the message text
+  // and found it in a comment above, so it was testing prose rather than a call
+  // site — and reported a failure that was entirely its own.
+  const realFailures = (app.match(/setError\('Not enough valid data points/g) ?? []).length;
+  check('NOTICE: real failures are still errors', realFailures === 2,
+    `found ${realFailures} — everything became a notice, which is the same defect facing the other way`);
+
+  check('NOTICE: the tab renders the notice on its own non-red surface',
+    /\{notice && <div className="mb-6 bg-slate-50/.test(tab),
+    'the notice has no surface, or reuses the red one');
+  check('NOTICE: and the error banner is still red',
+    /\{error && <div className="mb-6 bg-red-50/.test(tab),
+    'the error surface lost its distinctness');
+  check('NOTICE: the notice is cleared on selection change with the error',
+    /setNotice\(''\)/.test(app),
+    'a coverage statement can now outlive its scope — the defect this session fixed');
+}
+
 // ── THE FLAG CANNOT STAY STUCK ────────────────────────────────────────────
 {
   const app = fs.readFileSync('src/App.tsx', 'utf8');

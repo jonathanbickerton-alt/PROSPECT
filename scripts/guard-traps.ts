@@ -278,8 +278,16 @@ const TRAPS: Trap[] = [
   // Trap 26: the error banner outlives its subject again.
   { id: '26 the error banner survives a selection change', why: 'it describes a cohort the user has left',
     file: APP, spec: WALKFIX,
-    mutate: s => s.replace("    setError('');" + nl + '    setStdGenerateResult(null);',
-                           '    /* cleared nothing */') },
+    // Anchored on the effect BODY, not on an exact run of lines: the first
+    // version broke the moment setNotice was added between them, and correctly
+    // reported INCONCLUSIVE rather than a false catch.
+    mutate: s => {
+      const i = s.indexOf(`    setError('');${nl}    setNotice('');`);
+      if (i === -1) return s;
+      const j = s.indexOf('    setStdGenerateResult(null);', i);
+      if (j === -1) return s;
+      return s.slice(0, i) + '    /* cleared nothing */' + s.slice(j + '    setStdGenerateResult(null);'.length);
+    } },
   // Trap 27: the finally goes back to the call site, where a new caller can
   // miss it. This one has already happened once.
   { id: '27 the generating flag is unprotected again', why: 'a throw disables Generate Missing permanently',
