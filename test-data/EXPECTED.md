@@ -5030,6 +5030,32 @@ from, so retiring it replaces a number with no number and old files stop
 loading.** The rule detects aggregation by reading a marker; the marker is not
 always evidence of the thing.
 
+**RESIDUAL RISK, pre-existing, OPEN — the accept-challenger writers.**
+`acceptPreviewForecast` and `acceptAllChallengerModels` store the raw
+`calculateBaseForecast` output, whose provenance stays `fitted`, and nothing at
+either site prevents an All-bearing key. Their safety rests entirely on the
+`derivedMix` UI gate in `ForecastVsActualsTab` — a file this branch does not
+touch — and that gate falls back to `baseForecast.provenance` when
+`resolveForecast` returns null, which is what a legacy single-forecast import
+produces. If exercised, they would write a fresh fit-on-aggregate.
+
+Not introduced here and not reproduced live — the writers were traced, the
+component was not driven. It is recorded rather than fixed because the fix
+belongs to the accept path, not to the retirement rule.
+
+**The reason this is written as residual risk and not as a cleared site is
+itself the finding.** The first version of `spec:import-seam` accounted for
+these two sites under "provenance is `accepted`, which the rule never retires".
+That is false of both — `kind: 'accepted'` is set in exactly two places in
+App.tsx, and neither is theirs. The spec passed anyway, because it matched call
+sites by the SPELLING OF THE ARGUMENT and accepted a site if any row's pattern
+fit, so a row written for one function silently absorbed sites in others. A
+reason not bound to a specific site is not a reason; it is a shape that happens
+to fit. The table is now keyed by enclosing function, per-function counts are
+pinned so a second call cannot inherit an existing reason unexamined, and every
+row claiming a call the site's own line does not show is verified against the
+function body.
+
 Original finding follows.
 
 

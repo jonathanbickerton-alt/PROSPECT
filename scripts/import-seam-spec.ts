@@ -53,26 +53,104 @@ const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails
   check('ENUMERATION: setBaseForecast call sites were found at all',
     sites.length > 0, 'the matcher found nothing — it is broken, not the code');
 
-  /** Every accepted shape, with why it is safe. Order does not matter. */
-  const ACCOUNTED: { why: string; test: (t: string) => boolean }[] = [
-    { why: 'seam-routed: the argument is a resolveForecast/resolveFromStore result',
-      test: t => /resolveForecast\(|resolveFromStore\(/.test(t) },
-    { why: 'seam-routed via a local named `forecast` destructured from the seam',
-      test: t => /^setBaseForecast\(forecast\);$/.test(t) },
-    { why: 'seam-routed: import path resolves before setting (bf from resolveFromStore)',
-      test: t => /^setBaseForecast\(bf\);$/.test(t) },
-    { why: 'freshly fitted in generateStandardForecast, behind the anyAggregated decline',
-      test: t => /^setBaseForecast\(bf\);$/.test(t) },
-    { why: 'freshly accepted challenger — provenance is `accepted`, which the rule never retires',
-      test: t => /^setBaseForecast\((finalBf|lastBf)\);$/.test(t) },
-    { why: 'legacy pre-option-C import — CLEARED, see the comment at the site',
-      test: t => /^setBaseForecast\(restoredBf\);$/.test(t) },
-  ];
+  // Sites are identified by their ENCLOSING FUNCTION, not by how the argument
+  // is spelled. The first version of this table matched argument text and
+  // accepted a site if ANY row's regex matched — so `setBaseForecast(bf)` in
+  // acceptChallengerModel was silently absorbed by the row written for
+  // generateStandardForecast, and two sites were accepted under the claim
+  // "provenance is `accepted`, which the rule never retires" which is FALSE of
+  // them. It passed, for the wrong reason, while asserting a safety property
+  // that did not hold. A reason that is not bound to a specific site is not a
+  // reason, it is a shape that happens to fit.
+  const fnOf = (line: number): string => {
+    for (let i = line - 1; i >= 0; i--) {
+      const m = lines[i].match(/^  const ([A-Za-z0-9_]+)\s*=\s*(useCallback|async|\(|function)/);
+      if (m) return m[1];
+      if (/^  const handleFile|^  const importSession/.test(lines[i])) return 'importSession';
+    }
+    return '<top-level>';
+  };
 
-  const unaccounted = sites.filter(s => !ACCOUNTED.some(a => a.test(s.text)));
-  check('ENUMERATION: every setBaseForecast call site is accounted for',
+  // SEAM-ROUTED SITES ARE SELF-EVIDENT and are classified by their own text,
+  // not by where they live: if the argument IS a seam call, the site is safe
+  // wherever it sits. This also keeps the tab-restore sites (inside a useEffect,
+  // which has no enclosing named const) from being lumped under whichever
+  // function happens to precede them.
+  const seamRouted = sites.filter(s => /resolveForecast\(|resolveFromStore\(/.test(s.text));
+  check('ENUMERATION: the inline seam-routed sites are self-evidently safe',
+    seamRouted.length === 2,
+    `found ${seamRouted.length}, expected 2 (the two tab-restore arms)`);
+  const rest = sites.filter(s => !seamRouted.includes(s));
+
+  /** One row per SITE, keyed by enclosing function, with a reason true of it. */
+  const ACCOUNTED: Record<string, { count: number; why: string; seam: boolean }> = {
+    // These two destructure the seam result on the PRECEDING line, so the call
+    // site's own text does not name it. The reason is verified against the
+    // function body below rather than taken on trust.
+    handleStep2FilterChange: { count: 1, seam: true,
+      why: 'sets the `forecast` destructured from resolveForecast() one line above' },
+    handleStep3FilterChange: { count: 1, seam: true,
+      why: 'sets the `forecast` destructured from resolveForecast() one line above' },
+    handleImportSaveFile: { count: 2, seam: false,
+      why: 'two sites: the Is_Active restore resolves via resolveFromStore before setting (bf); the legacy pre-option-C restore is CLEARED at the site (restoredBf)' },
+    generateStandardForecast: { count: 2, seam: false,
+      why: 'fresh fit; the anyAggregated decline above it makes an All-bearing cohort unreachable' },
+    acceptChallengerModel: { count: 1, seam: false,
+      why: 'provenance is overwritten to `accepted` at the site before storing; the rule only retires `fitted`' },
+    // HONEST, WEAKER REASONS. These two store the raw calculateBaseForecast
+    // output, whose provenance stays `fitted`. Nothing at the site prevents an
+    // All-bearing key. Their safety rests entirely on the UI gate that stops a
+    // derived selection reaching the accept controls - which is a real gate but
+    // a weaker guarantee than the ones above, and it lives in a file this
+    // branch does not touch. Recorded as residual risk in EXPECTED.md rather
+    // than claimed away here.
+    acceptPreviewForecast: { count: 1, seam: false,
+      why: 'RESIDUAL RISK: provenance stays `fitted`; safety depends on the derivedMix UI gate, not on anything at this site' },
+    acceptAllChallengerModels: { count: 1, seam: false,
+      why: 'RESIDUAL RISK: provenance stays `fitted`; safety depends on the derivedMix UI gate, not on anything at this site' },
+  };
+
+  const byFn = new Map<string, number>();
+  for (const s of rest) byFn.set(fnOf(s.line), (byFn.get(fnOf(s.line)) ?? 0) + 1);
+
+  // The import fix specifically: the Is_Active site must resolve before setting.
+  const importSites = rest.filter(s => fnOf(s.line) === 'handleImportSaveFile');
+  check('ENUMERATION: both session-import sites were located', importSites.length === 2,
+    `found ${importSites.length}`);
+
+  const unaccounted = rest.filter(s => !(fnOf(s.line) in ACCOUNTED));
+  check('ENUMERATION: every setBaseForecast call site is accounted for BY SITE',
     unaccounted.length === 0,
-    unaccounted.map(s => `App.tsx:${s.line} ${s.text}`).join(' ; ') || 'n/a');
+    unaccounted.map(s => `App.tsx:${s.line} in ${fnOf(s.line)}`).join(' ; ') || 'n/a');
+
+  // Per-function counts are pinned too: a SECOND setBaseForecast appearing
+  // inside an already-accounted function would otherwise inherit that
+  // function's reason without anyone checking it still applies.
+  for (const [fn, spec] of Object.entries(ACCOUNTED)) {
+    check(`ENUMERATION: ${fn} still has exactly ${spec.count} site(s)`,
+      (byFn.get(fn) ?? 0) === spec.count,
+      `found ${byFn.get(fn) ?? 0} — reason on file: ${spec.why}`);
+  }
+
+  // And the claim that makes acceptChallengerModel safe is verified against the
+  // source rather than asserted, because it is the one load-bearing claim in
+  // the table that a source change could quietly falsify.
+  // The `seam: true` rows claim a call the site's own line does not show. Verify
+  // it in the body, or the claim is exactly the kind this table was rewritten
+  // to stop accepting.
+  for (const fn of Object.keys(ACCOUNTED).filter(f => ACCOUNTED[f].seam)) {
+    const start = app.indexOf(`const ${fn} = useCallback`);
+    const body = start === -1 ? '' : app.slice(start, app.indexOf('}, [resolveForecast]', start));
+    check(`ENUMERATION: ${fn} really does call the seam`,
+      start !== -1 && /resolveForecast\(/.test(body),
+      'the reason on file claims a seam call this function does not make');
+  }
+
+  const acmStart = app.indexOf('const acceptChallengerModel = useCallback');
+  const acmBody = app.slice(acmStart, app.indexOf('setBaseForecast(bf);', acmStart));
+  check('ENUMERATION: acceptChallengerModel really does set provenance to `accepted`',
+    acmStart !== -1 && /kind:\s*'accepted'/.test(acmBody),
+    'the reason on file for this site is no longer true of it');
 
   // The count is pinned so that ADDING a site is a deliberate act. A new call
   // site that happens to match an accepted shape would otherwise slip in
