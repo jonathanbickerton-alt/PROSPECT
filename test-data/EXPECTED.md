@@ -4962,6 +4962,78 @@ later, which is the only reason they are not defects:
   accepting what the covering note said it contained, and had it gone the other
   way, the enumeration would have been silently incomplete.
 
+### The retirement rule misfires on unmapped dimensions — OPEN, works by accident
+
+Found in Session H while writing the mirror control, and it changes how the
+mirror control had to be stated.
+
+**`isRetiredAggregateFit` is pure key-plus-provenance and has no idea which
+dimensions were mapped.** When the upload has no tariff columns, every genuine
+leaf key ends `|All|All` — those are real fitted leaves, not aggregates. The
+rule classifies all of them as retired. Measured: it returns `true` for them.
+
+Nothing is lost, and the reason is an accident rather than a design:
+
+1. `buildRollUpIndex` maps a leaf key to a list containing **itself**;
+2. the leaf read inside derivation is **not** gated by the retirement rule;
+3. `deriveAggregate` of a single leaf returns that leaf **unchanged**.
+
+So the refused store hit is handed straight back with provenance and model name
+intact. Verified end to end.
+
+**The load-bearing part is step 3, and it is not obviously permanent.** If
+single-leaf derivation ever stops being an identity — a re-derived confidence
+band would do it, and that is a plausible future change — then every forecast on
+every unmapped-dimension dataset changes at once, silently, with no failing
+test to say so. `spec:generate-missing` pins the identity for that reason.
+
+**What it forced on the mirror control.** "Zero All-bearing writes" is FALSE as
+an invariant: on an unmapped-dimension dataset it would refuse every real leaf.
+The honest invariant is **no write under a key that is All-bearing in a
+dimension that is actually MAPPED**. An `'All'` in an unmapped dimension is a
+leaf; an `'All'` in a mapped dimension is an aggregate. Same marker, different
+meaning, decided by how the key was built — which is the third time this
+distinction has mattered (the legacy import site draws it too).
+
+Left OPEN rather than fixed. The fix is to give the rule the mapped-dimension
+set, which reaches into how forecasts are keyed and belongs to its own pass, not
+to a session whose scope is generation. Recorded here so the accident is known
+and the identity is not removed by someone who does not know it is holding this
+up.
+
+### Generate-the-missing-leaves — the two zero states are not one state
+
+An aggregate selection on Step 1 generates the leaves under it, never a fit to
+the total. Two situations produce zero leaves to generate and they mean opposite
+things:
+
+- **covered** — every leaf in scope is already fitted; the aggregate is summed
+  from them and there is nothing left to do;
+- **never-enumerated** — the selection does not appear in the data at all.
+
+`missingLeavesForKey` returns `enumerated` precisely so these cannot be
+collapsed into `missing.length === 0`, and the button renders them differently
+(both disabled, different text). A single "generate 0" state would be wrong in
+one case and misleading in the other.
+
+Measured on the edge fixture: **74 leaves, 72 fit, 2 skipped** — both with two
+months of history, classified `insufficient-history` by the app's own
+`classifySkip`. They are reported **by name**: a skipped cohort the user can see
+is a coverage statement, a silent one is a lie about what was produced.
+
+Two spec defects were caught by their own anti-vacuity controls while this was
+written, both worth the space:
+
+- the spec invented a `series.length < 8` skip threshold and asserted 2 leaves
+  would skip. Zero did. The app's rule is `calculateBaseForecast` returning
+  null, named by `classifySkip` — the spec had been measuring its author's guess
+  about the app rather than the app;
+- the aggregate under test was one segment's roll-up, and the two unfittable
+  leaves sit under *different* segments, so the skip checks covered neither.
+
+Both passed a plausible reading of the brief. Neither would have failed if the
+control had only asserted "some leaves were skipped" without pinning the count.
+
 ### First measured fit-on-aggregate vs derived divergence — UAT context
 
 Keep this to hand for Alessandro and anyone else who asks why a total from an
@@ -5029,6 +5101,22 @@ means "this dimension was not recorded" — and there are no leaves to derive
 from, so retiring it replaces a number with no number and old files stop
 loading.** The rule detects aggregation by reading a marker; the marker is not
 always evidence of the thing.
+
+**CLOSED 2026-08-07 by Session H.** Both accept sites now decline an
+All-bearing key before writing, and `spec:generate-missing`'s mirror control
+enumerates every store-writing site and asserts it. Guard-trap 16 removes the
+decline and is confirmed killing.
+
+The direction matters more than the fix. **Prevent the write; never re-stamp it
+`accepted`.** Marking it accepted would satisfy any rule phrased as "no fitted
+All-bearing writes" while making the defect *permanent*: the retirement rule
+only retires `fitted`, so an `accepted` aggregate would never be caught on the
+way back out. The rule's refusal to retire `accepted` is a deliberate safety net
+for genuine acceptances, and laundering through it removes the net. Guard-trap
+17 is that exact mutation — write allowed, provenance laundered — and it exists
+because a guard which passes it is worse than no guard.
+
+Original entry follows.
 
 **RESIDUAL RISK, pre-existing, OPEN — the accept-challenger writers.**
 `acceptPreviewForecast` and `acceptAllChallengerModels` store the raw
