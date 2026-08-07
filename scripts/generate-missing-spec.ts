@@ -245,6 +245,37 @@ const AGG = makeForecastKey('All', 'All', 'All', 'All', 'All', 'All', 'All');
     'the two zero-missing states are collapsed');
 }
 
+// ── PART 2b: a scoped run must REPORT the work it did ────────────────────
+// The counters `generated`/`failed`/`generatedIds` are incremented only in the
+// worker's STANDARD-cohort loop. A scoped leaf run sends an empty standard
+// list by construction, so those counters are structurally zero however many
+// leaves it fits — a run that fitted everything asked of it recorded
+// "generated 0" and rendered in the bulk drawer as a run that did nothing.
+// Found by the gate, not by review. These pin the fix.
+{
+  const worker = fs.readFileSync('src/workers/forecasting.worker.ts', 'utf8');
+  const app = fs.readFileSync('src/App.tsx', 'utf8');
+
+  check('COUNTS: the worker tallies typed leaves separately',
+    /ibroGenerated\+\+/.test(worker) && /ibroFailed\+\+/.test(worker)
+      && /ibroGeneratedKeys\.push/.test(worker),
+    'the typed path reports nothing again');
+  check('COUNTS: and does NOT fold them into the standard tallies',
+    !/generated\+\+[\s\S]{0,200}newTypedForecasts\.push/.test(worker),
+    'folding would silently change what every existing bulk run reports');
+  check('COUNTS: the run record uses the typed tallies for a scoped run',
+    /restrictToLeafKeys \? ibroGeneratedKeys : generatedIds/.test(app)
+      && /restrictToLeafKeys \? ibroGenerated : generated/.test(app),
+    'the BulkRunRecord still reports zero for scoped runs');
+  check('COUNTS: the Step 1 call USES the result rather than voiding it',
+    !/void generateAllMissingForecasts/.test(app)
+      && /setStdGenerateResult/.test(app),
+    'the skipped-leaf list is computed and thrown away');
+  check('COUNTS: the skipped leaves are rendered by NAME on Step 1',
+    /generateResult\.skipped\.map/.test(fs.readFileSync('src/components/StandardForecastTab.tsx', 'utf8')),
+    'they are counted but not named');
+}
+
 // Behavioural half: nothing produced by the generate path is an aggregate key.
 {
   const mapped = { seg: true, prod: true, prodL2: true, chan: true, chanL2: true, t1: true, t2: true };

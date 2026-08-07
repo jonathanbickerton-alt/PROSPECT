@@ -696,5 +696,7 @@
   "standard_generate_missing_leaves_one": "Generate 1 missing cohort forecast",
   "standard_scope_fully_covered": "All cohorts in scope already forecast",
   "standard_scope_not_in_data": "No cohorts in your data match this selection",
-  "standard_generate_missing_hint": "{{total}} cohorts make up this scope. The aggregate total is summed from them, never fitted directly."
+  "standard_generate_missing_hint": "{{total}} cohorts make up this scope. The aggregate total is summed from them, never fitted directly.",
+  "standard_generate_result": "Generated {{generated}} cohort forecasts. The aggregate total is summed from them.",
+  "standard_generate_result_skipped": "{{count}} could not be forecast — too little history. They are not included in the total:"
 }

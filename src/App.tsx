@@ -1937,6 +1937,10 @@ export default function App() {
     if (saved) setForecastData(saved);
   }, [savedForecasts]);
 
+  /** What the last scoped leaf run produced — surfaced on Step 1, see the call site. */
+  const [stdGenerateResult, setStdGenerateResult] = useState<
+    { generated: number; skipped: string[] } | null>(null);
+
   const generateStandardForecast = () => {
     setError('');
     setCompareCategories([]);
@@ -1987,7 +1991,19 @@ export default function App() {
         return;
       }
       // Scoped run through the ONE generator. Not a second leaf-fitting path.
-      void generateAllMissingForecasts({ restrictToLeafKeys: new Set(missing) });
+      //
+      // The result is USED, not discarded. Step 1 has no progress panel and the
+      // app has no toast, so a `void` call here would leave the user with no
+      // account of what happened - and the leaves that could not be fitted are
+      // exactly the ones worth saying out loud. A skipped cohort the user can
+      // see is a coverage statement; a silent one misrepresents what was built.
+      setStdGenerateResult(null);
+      generateAllMissingForecasts({ restrictToLeafKeys: new Set(missing) })
+        .then(res => setStdGenerateResult({
+          generated: res.generated,
+          skipped: res.skipped.map(sk => sk.fKey),
+        }))
+        .catch(() => setStdGenerateResult(null));
       return;
     }
 
@@ -3650,6 +3666,11 @@ export default function App() {
     let generated = 0;
     let failed = 0;
     let empty = 0;
+    // Typed-leaf tallies, tracked separately - see the worker for why they are
+    // not folded into the counters above.
+    let ibroGenerated = 0;
+    let ibroFailed = 0;
+    const ibroGeneratedKeys: string[] = [];
     const newForecasts: Record<string, any> = {};
     const generatedIds: string[] = [];
 
@@ -3813,6 +3834,11 @@ export default function App() {
               generated: number;
               failed: number;
               empty?: number;
+              /** Typed-leaf tallies. Optional so a worker build predating them
+               *  reads as absent rather than as zero work done. */
+              ibroGenerated?: number;
+              ibroFailed?: number;
+              ibroGeneratedKeys?: string[];
               shortLeafWarnings?: Array<[string, { shortLeaves: number; totalLeaves: number; share: number }]>;
               skipped?: SkippedCohort[];
             };
@@ -3827,14 +3853,20 @@ export default function App() {
             generated += result.generated;
             failed    += result.failed;
             empty     += result.empty ?? 0;
+            ibroGenerated += result.ibroGenerated ?? 0;
+            ibroFailed    += result.ibroFailed ?? 0;
+            ibroGeneratedKeys.push(...(result.ibroGeneratedKeys ?? []));
             for (const [k, v] of result.newTypedForecasts) {
               console.log(`[generateAllMissingForecasts] BaseForecast built for store key: ${k}`);
               newTypedForecasts.set(k, v);
             }
             setGenerationProgress(prev => ({
               ...prev,
-              // advance for every processed cohort (generated + insufficient + empty)
-              current: prev.current + result.generated + result.failed + (result.empty ?? 0),
+              // advance for every processed cohort (generated + insufficient + empty).
+              // A scoped leaf run has no standard cohorts at all, so without the
+              // typed tallies the bar would never move while real work happened.
+              current: prev.current + result.generated + result.failed + (result.empty ?? 0)
+                     + (options?.restrictToLeafKeys ? (result.ibroGenerated ?? 0) + (result.ibroFailed ?? 0) : 0),
             }));
             worker.terminate();
             resolve();
@@ -3888,14 +3920,20 @@ export default function App() {
         confidenceHorizon:       options?.confidenceHorizon ?? confidenceHorizon,
         forecastLength: genLength,
       },
-      cohortIds: generatedIds,
-      generated,
-      failed,
+      // A scoped leaf run does zero STANDARD-cohort work by construction, so
+      // reporting those tallies would record 'generated 0' for a run that just
+      // fitted every leaf asked of it - and the drawer would render it as a run
+      // that did nothing. Report what the run actually did.
+      cohortIds: options?.restrictToLeafKeys ? ibroGeneratedKeys : generatedIds,
+      generated: options?.restrictToLeafKeys ? ibroGenerated : generated,
+      failed:    options?.restrictToLeafKeys ? ibroFailed    : failed,
     };
     console.log('[generateAllMissingForecasts] saving BulkRunRecord:', { name: record.name, comment: record.comment, generated, failed });
     setBulkRuns(prev => [...prev, record]);
 
-    return { generated, failed, skipped: collectedSkipped };
+    return options?.restrictToLeafKeys
+      ? { generated: ibroGenerated, failed: ibroFailed, skipped: collectedSkipped }
+      : { generated, failed, skipped: collectedSkipped };
   }, [allCohorts, missingStandardCohorts, computeCohortForecastData, selectedForecastModel, genPreHorizonUncertainty, genPostHorizonExpansionRate, confidenceHorizon, genLength, data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, oneOffMonths]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // After a single-combo forecast is saved, check whether there are remaining combinations
@@ -4125,6 +4163,7 @@ export default function App() {
             setConfidenceHorizon={setConfidenceHorizon}
             generateStandardForecast={generateStandardForecast}
             aggregateState={stdAggregateState}
+            generateResult={stdGenerateResult}
             error={error}
             forecastData={forecastData}
             compareCategories={compareCategories}

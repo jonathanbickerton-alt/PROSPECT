@@ -201,6 +201,27 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "    if (isAllBearing(fKey)) {" + nl + "      setError(t('accept_not_available_for_aggregates'));" + nl + '      return;',
       "    if (isAllBearing(fKey)) {" + nl + "      finalBf.provenance = { kind: 'accepted', modelUsed: 'Holt Linear' } as any;") },
+  // Trap 18 covers the SECOND accept site. Traps 16 and 17 mutate
+  // acceptPreviewForecast only; the gate pointed out that
+  // acceptAllChallengerModels' decline had no mutation-tested guard, just a
+  // static regex. Two sites with the same rule need two traps, or one of them
+  // is protected by a check nobody has watched fail.
+  { id: '18 the second accept site loses its decline', why: 'acceptAllChallengerModels can store a fit-on-aggregate',
+    file: APP, spec: GENMISSING,
+    mutate: s => {
+      const anchor = '        if (isAllBearing(fKeyAll)) {';
+      const start = s.indexOf(anchor);
+      if (start === -1) return s;
+      const end = s.indexOf('        }', s.indexOf('return;', start)) + '        }'.length;
+      return s.slice(0, start) + s.slice(end);
+    } },
+  // Trap 19: the scoped run reports the standard tallies again, which are
+  // structurally zero for it. The bulk drawer then renders a run that fitted
+  // every requested leaf as a run that did nothing.
+  { id: '19 a scoped run reports zero work done', why: 'the BulkRunRecord misreports every Step 1 generation',
+    file: APP, spec: GENMISSING,
+    mutate: s => s.replace('      generated: options?.restrictToLeafKeys ? ibroGenerated : generated,',
+                           '      generated,') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

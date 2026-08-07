@@ -111,6 +111,10 @@ export interface WorkerOutMessage {
    * Advisory only — it changes no numbers, it makes the condition visible.
    * Serialised as an array because Map cannot cross postMessage.
    */
+  /** Typed-leaf tallies, kept apart from the standard-cohort ones. */
+  ibroGenerated: number;
+  ibroFailed: number;
+  ibroGeneratedKeys: string[];
   shortLeafWarnings: Array<[string, ShortLeafWarning]>;
 }
 
@@ -401,6 +405,15 @@ export function runForecastJob(input: WorkerInMessage): WorkerOutMessage {
 
   // ── IBRO cohorts: typed BaseForecast (all 4 metrics combined) ────────────
   const newTypedForecasts: Array<[string, BaseForecast]> = [];
+  // Counted SEPARATELY from the standard-cohort tallies above, not folded into
+  // them. A scoped leaf run sends an empty standardCohorts list, so those
+  // tallies are structurally zero and reported zero work done however many
+  // leaves were fitted. Folding the two together instead would have changed
+  // what every existing bulk run reports, which is a figure users have already
+  // seen and no part of this change earns the right to move.
+  let ibroGenerated = 0;
+  let ibroFailed = 0;
+  const ibroGeneratedKeys: string[] = [];
 
   if (wiInflowVal && wiOutflowVal && wiRetentionVal && wiDateCol && wiMetricCol && wiValueCol) {
     for (const { fKey, seg, prod, prodL2, chan, chanL2, tariffL1, tariffL2 } of ibroCohorts) {
@@ -542,9 +555,12 @@ export function runForecastJob(input: WorkerInMessage): WorkerOutMessage {
       // forecast bias rather than as a coverage gap.
       if (bf) {
         newTypedForecasts.push([fKey, bf]);
+        ibroGenerated++;
+        ibroGeneratedKeys.push(fKey);
       } else {
         const reason = classifySkip(allIBRO, bf);
         if (reason) skipped.push({ fKey, reason });
+        ibroFailed++;
       }
     }
   }
@@ -557,6 +573,9 @@ export function runForecastJob(input: WorkerInMessage): WorkerOutMessage {
     generated,
     failed,
     empty,
+    ibroGenerated,
+    ibroFailed,
+    ibroGeneratedKeys,
     shortLeafWarnings: Array.from(shortLeafWarnings.entries()),
     // Always an array, never omitted. An absent field and an empty one read the
     // same at a call site using `?? []`, and "no skips" is a result worth being
