@@ -155,6 +155,37 @@ check('BEFORE: the narrow scope is non-empty — the gap is a disagreement, not 
   }
 }
 
+// ── The metric axis is POOLED on purpose — do not "fix" it ───────────────
+// A gate reviewer flagged that arpuChartData never filters by scenario/metric
+// while generateStandardForecast's processedData does, and read that as the
+// same population defect on an eighth axis. It is not, and the reason is worth
+// pinning because the flag was reasonable.
+//
+// processedData is the VOLUME series' scope: it filters to ONE metric because
+// it is fitting that metric's volume. The chart's ARPU line plots the BLENDED
+// arpu, and the fit builds that as totalRev/totalSubs summed across all four
+// metrics (App.tsx, second pass in the manual generation path). A blended
+// figure needs a blended denominator. Filtering the history by metric would
+// introduce the mismatch, not remove it.
+{
+  const app = fs.readFileSync('src/App.tsx', 'utf8');
+  check('METRIC: the fit blends ARPU across all four metrics',
+    /const totalSubs = ia\.subs \+ oa\.subs \+ ra\.subs \+ ba\.subs;/.test(app)
+      && /entry\.arpu = totalRev \/ totalSubs;/.test(app),
+    'the blended ARPU is no longer pooled — the history must now match whatever it does');
+  const tab = fs.readFileSync('src/components/StandardForecastTab.tsx', 'utf8');
+  const start = tab.indexOf('const arpuChartData = useMemo');
+  const body = tab.slice(start, tab.indexOf('const rows: any[] = [];', start));
+  check('METRIC: and the ARPU history pools them too, matching it',
+    !/wiMetricCol/.test(body),
+    'a metric filter was added to the ARPU history — it now disagrees with the blended fit');
+  // The chart must actually be plotting the blended series, or the two checks
+  // above are about a number nobody sees.
+  check('METRIC: the chart plots the blended arpu, not a per-scenario one',
+    /'Mean \(Base\)': m\.arpu\.mean/.test(tab),
+    'the chart switched to a per-scenario ARPU — the pooling argument no longer applies');
+}
+
 console.log(`chart-scope spec: ${pass} passed, ${fails.length} failed`);
 fails.forEach(f => console.log('  FAIL ' + f));
 process.exit(fails.length ? 1 : 0);
