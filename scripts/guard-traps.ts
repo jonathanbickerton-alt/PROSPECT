@@ -41,6 +41,7 @@ const UNSCORED = 'scripts/unscored-row-spec.tsx';
 const LEAFGRAIN = 'scripts/leaf-grain-spec.ts';
 const RETIRE = 'scripts/aggregate-retire-spec.ts';
 const IMPORTSEAM = 'scripts/import-seam-spec.ts';
+const GENMISSING = 'scripts/generate-missing-spec.ts';
 const APP = 'src/App.tsx';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
@@ -176,6 +177,30 @@ const TRAPS: Trap[] = [
       if (start === -1 || end === -1) return s; // unchanged -> reported as MISSED, correctly
       return s.slice(0, start) + '            const bf = rawBf;' + s.slice(end + '              : null;'.length);
     } },
+  // Trap 16 reinstates ONE All-bearing write - the mirror control's whole
+  // point. acceptPreviewForecast loses its decline and can once again store a
+  // fit under an aggregate key. This is the residual risk Session G recorded
+  // OPEN and Session H closed, so the trap is what proves it stays closed.
+  { id: '16 an All-bearing write reinstated at the accept path', why: 'a fit-on-aggregate can be stored again',
+    file: APP, spec: GENMISSING,
+    mutate: s => {
+      const anchor = "    if (isAllBearing(fKey)) {";
+      const start = s.indexOf(anchor);
+      if (start === -1) return s;
+      const end = s.indexOf('    }', s.indexOf('return;', start)) + '    }'.length;
+      return s.slice(0, start) + s.slice(end);
+    } },
+  // Trap 17 is the OTHER direction, and it is the one that matters more.
+  // Instead of removing the guard it LAUNDERS the provenance: the write is
+  // allowed but re-stamped `accepted`, which satisfies any rule phrased as
+  // "no fitted All-bearing writes" while making the defect permanent - the
+  // retirement rule only retires `fitted`, so nothing catches it on the way
+  // back out. A guard that this passes is worse than no guard.
+  { id: '17 the All-bearing write laundered as accepted', why: 'it evades the retirement rule permanently',
+    file: APP, spec: GENMISSING,
+    mutate: s => s.replace(
+      "    if (isAllBearing(fKey)) {" + nl + "      setError(t('accept_not_available_for_aggregates'));" + nl + '      return;',
+      "    if (isAllBearing(fKey)) {" + nl + "      finalBf.provenance = { kind: 'accepted', modelUsed: 'Holt Linear' } as any;") },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -186,7 +211,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

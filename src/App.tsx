@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, isAllBearing, missingLeavesForKey, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort, Provenance, SkipReason } from './types/forecast';
 import { provenanceModel, provenanceParams } from './types/forecast';
@@ -1605,6 +1605,51 @@ export default function App() {
     tariff: { l1: c.tariffL1 && c.tariffL1 !== 'All' ? c.tariffL1 : null, l2: c.tariffL2 && c.tariffL2 !== 'All' ? c.tariffL2 : null },
   });
 
+  /**
+   * Step 1's own selection, as a ViewFilter.
+   *
+   * Step 1 keeps its selection in separate pieces of state using two sentinels
+   * the rest of the app does not: 'All (Aggregated)' for an aggregated L1, and
+   * '' for an unset L2. Converting once, here, is what lets Step 1 use
+   * `filterToKey` and the roll-up index like every other consumer instead of
+   * building keys its own way — which is how Step 1 came to have a separate
+   * notion of a cohort in the first place.
+   */
+  const stdSelectionFilter = useMemo<ViewFilter>(() => ({
+    segment: segmentValue === 'All (Aggregated)' ? 'All' : segmentValue,
+    product: { l1: productValue === 'All (Aggregated)' ? null : productValue || null,
+               l2: productL2Value || null },
+    channel: { l1: channelValue === 'All (Aggregated)' ? null : channelValue || null,
+               l2: channelL2Value || null },
+    tariff:  { l1: tariffValue === 'All (Aggregated)' ? null : tariffValue || null,
+               l2: tariffL2Value || null },
+  }), [segmentValue, productValue, productL2Value, channelValue, channelL2Value, tariffValue, tariffL2Value]);
+
+  /**
+   * What the Step 1 generate button should say, and whether it should act.
+   *
+   * Four states, and the two zero-missing ones are NOT the same:
+   *   'leaf'          — an ordinary cohort selection; manual generation, unchanged.
+   *   'generate'      — an aggregate with N leaves still to fit.
+   *   'covered'       — an aggregate whose leaves are all present already.
+   *   'never'         — an aggregate this data cannot produce at all.
+   * 'covered' and 'never' both have missing.length === 0 and mean opposite
+   * things; collapsing them is the degenerate case these states exist to keep
+   * apart, and a button reading "generate 0" would be both wrong and unhelpful.
+   */
+  const stdAggregateState = useMemo(() => {
+    const anyAggregated =
+      segmentValue === 'All (Aggregated)' || productValue === 'All (Aggregated)' ||
+      channelValue === 'All (Aggregated)' || tariffValue === 'All (Aggregated)';
+    if (!anyAggregated) return { kind: 'leaf' as const, missing: 0, total: 0 };
+    const { enumerated, missing, leaves } =
+      missingLeavesForKey(filterToKey(stdSelectionFilter), populatedCohorts.leafMap, forecastStore);
+    if (!enumerated) return { kind: 'never' as const, missing: 0, total: 0 };
+    if (missing.length === 0) return { kind: 'covered' as const, missing: 0, total: leaves.length };
+    return { kind: 'generate' as const, missing: missing.length, total: leaves.length };
+  }, [segmentValue, productValue, channelValue, tariffValue, stdSelectionFilter,
+      populatedCohorts, forecastStore]);
+
   /** Distinct segment values from the uploaded dataset. */
   const availableSegments = useMemo(
     () => wiSegmentCol
@@ -1905,26 +1950,44 @@ export default function App() {
       return;
     }
 
-    // ── PATH A REMOVED: no forecast is fitted to an aggregate ───────────────
+    // ── AN AGGREGATE SELECTION GENERATES ITS MISSING LEAVES ─────────────────
     //
-    // When any dimension was "All (Aggregated)" this function used to sum the
-    // series across that scope, fit ONE model to the sum, and write the result
-    // to forecastStore under an All-bearing key. That is fit-on-aggregate: a
-    // model fitted to a total rather than to the things the total is made of,
-    // and the defect bottom-up replaced.
+    // This function used to sum the series across the aggregated scope, fit ONE
+    // model to the sum, and store it under an All-bearing key — fit-on-aggregate,
+    // the defect bottom-up replaced. Session G removed that and declined
+    // instead. The decline was honest but useless: the user's actual intent,
+    // "I want a forecast covering this scope", is satisfiable, just not by
+    // fitting the total.
     //
-    // An aggregate is now SUMMED FROM ITS LEAVES at read time, by
-    // resolveForecast. There is nothing to generate for it.
+    // So: enumerate the leaves under the selection, fit the ones that are
+    // missing, and let derivation cover the aggregate from there. Nothing is
+    // ever written under the All-bearing key itself — the aggregate is not
+    // stored, it is summed at read time, every time.
     //
-    // It declines rather than silently doing nothing. Session H replaces this
-    // decline with generate-the-missing-leaves-in-scope; until then an
-    // All-selection is an explicit "not this way", not a dead button, because a
-    // button that appears to work and produces nothing is the worse of the two.
+    // Already-fitted leaves are left alone. Regenerating them would silently
+    // overwrite work the user has, and reusing them is the whole point of
+    // deriving.
     const anyAggregated =
       segmentValue === 'All (Aggregated)' || productValue === 'All (Aggregated)' ||
       channelValue === 'All (Aggregated)' || tariffValue === 'All (Aggregated)';
     if (anyAggregated) {
-      setError(t('standard_aggregates_are_summed_not_generated'));
+      const aggKey = filterToKey(stdSelectionFilter);
+      const { enumerated, missing, leaves } = missingLeavesForKey(
+        aggKey, populatedCohorts.leafMap, forecastStore,
+      );
+      if (!enumerated) {
+        // No leaves at all — the selection is not something this data can
+        // produce. Distinct from "already covered", and it must stay distinct:
+        // both have zero missing leaves and they mean opposite things.
+        setError(t('standard_selection_never_enumerated'));
+        return;
+      }
+      if (missing.length === 0) {
+        setError(t('standard_all_leaves_present', { count: leaves.length }));
+        return;
+      }
+      // Scoped run through the ONE generator. Not a second leaf-fitting path.
+      void generateAllMissingForecasts({ restrictToLeafKeys: new Set(missing) });
       return;
     }
 
@@ -2881,6 +2944,23 @@ export default function App() {
       }
     }
     const fKey = makeForecastKey(finalBf.cohort.segment, finalBf.cohort.product, finalBf.cohort.productL2, finalBf.cohort.channel, finalBf.cohort.channelL2, finalBf.cohort.tariffL1, finalBf.cohort.tariffL2);
+    // DECLINE rather than write a fit under an All-bearing key. Closes the
+    // residual risk Session G recorded OPEN: this path stores raw
+    // calculateBaseForecast output, whose provenance stays `fitted`, and its
+    // only protection was the derivedMix UI gate — which falls back to
+    // baseForecast.provenance when the seam returns null, exactly what a legacy
+    // single-forecast import produces.
+    //
+    // PREVENT, never re-stamp. Marking it `accepted` instead would satisfy the
+    // no-All-bearing-fitted-writes rule while making the thing WORSE: the
+    // retirement rule would then no longer catch it on the way back out, so a
+    // fit-on-aggregate would become permanent and invisible. The rule's refusal
+    // to retire `accepted` is a safety net for genuine acceptances; laundering
+    // through it would remove the net.
+    if (isAllBearing(fKey)) {
+      setError(t('accept_not_available_for_aggregates'));
+      return;
+    }
     setForecastStore(prev => new Map(prev).set(fKey, finalBf));
     setBaseForecast(finalBf);
     setForecastUpdatedAt(format(new Date(), 'dd MMM yyyy, HH:mm'));
@@ -3006,6 +3086,13 @@ export default function App() {
 
       if (lastBf !== baseForecast) {
         const fKeyAll = makeForecastKey(lastBf.cohort.segment, lastBf.cohort.product, lastBf.cohort.productL2, lastBf.cohort.channel, lastBf.cohort.channelL2, lastBf.cohort.tariffL1, lastBf.cohort.tariffL2);
+        // Same decline as acceptPreviewForecast, same reason: prevent the write,
+        // never re-stamp it accepted. See that site for why laundering the
+        // provenance would be worse than the defect it hides.
+        if (isAllBearing(fKeyAll)) {
+          setError(t('accept_not_available_for_aggregates'));
+          return;
+        }
         setForecastStore(prev => new Map(prev).set(fKeyAll, lastBf));
         setBaseForecast(lastBf);
         setForecastUpdatedAt(format(new Date(), 'dd MMM yyyy, HH:mm'));
@@ -3533,6 +3620,16 @@ export default function App() {
   const generateAllMissingForecasts = useCallback(async (options?: {
     /** When provided, only these cohort IDs are (re-)generated. Otherwise all missing are targeted. */
     cohortIds?: string[];
+    /**
+     * When provided, only these 7-part leaf keys are fitted — the Step 1
+     * "generate the missing leaves under this aggregate" path.
+     *
+     * Scoping this generator rather than writing a second one is deliberate. A
+     * parallel leaf-fitting implementation would be two things that must agree
+     * about seeding, one-off flags, short-history skipping and model choice,
+     * and the ones this codebase has had did not stay agreeing.
+     */
+    restrictToLeafKeys?: Set<string>;
     preHorizonUncertainty?: number;
     postHorizonExpansionRate?: number;
     confidenceHorizon?: number;
@@ -3577,9 +3674,15 @@ export default function App() {
     // consumer now shares. Keeps every data-spanning aggregate (derived in the
     // worker by summing its constituent leaves), drops only genuinely-empty
     // combinations, and never keys off the user's tariff selection.
-    const targets = options?.cohortIds
-      ? allCohorts.filter(c => options.cohortIds!.includes(c.id))
-      : missingStandardCohorts;
+    const targets = options?.restrictToLeafKeys
+      // A scoped leaf run fits IBRO leaves only. The "Standard" cohort
+      // population is a separate enumeration with its own 5-part identity and
+      // nothing to do with the aggregate the user selected; sweeping it in
+      // would generate work nobody asked for and inflate the reported count.
+      ? []
+      : options?.cohortIds
+        ? allCohorts.filter(c => options.cohortIds!.includes(c.id))
+        : missingStandardCohorts;
 
     // ── Phase 2: Build IBRO cohort list (needed before workers spawn) ────────
     // Enumerate unique L1×L2 combinations that exist in the data.
@@ -3611,6 +3714,11 @@ export default function App() {
       }
 
       for (const [fKey, spec] of uniqueCohorts.entries()) {
+        // Scoped run: only the leaves asked for. The filter is applied HERE,
+        // after enumeration from the data, rather than by intersecting a
+        // caller-supplied list — so a key that does not exist in the data is
+        // simply absent rather than silently fitted from nothing.
+        if (options?.restrictToLeafKeys && !options.restrictToLeafKeys.has(fKey)) continue;
         ibroCohortArray.push({ fKey, ...spec });
       }
     }
@@ -4016,6 +4124,7 @@ export default function App() {
             confidenceHorizon={confidenceHorizon}
             setConfidenceHorizon={setConfidenceHorizon}
             generateStandardForecast={generateStandardForecast}
+            aggregateState={stdAggregateState}
             error={error}
             forecastData={forecastData}
             compareCategories={compareCategories}

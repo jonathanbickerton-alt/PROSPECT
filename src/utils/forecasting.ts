@@ -1914,7 +1914,51 @@ export function isRetiredAggregateFit(
   bf: { provenance: { kind: string } },
 ): boolean {
   if (bf.provenance.kind !== 'fitted') return false;
+  return isAllBearing(key);
+}
+
+/**
+ * Does this key aggregate over at least one dimension?
+ *
+ * Extracted because four call sites now ask it and a fifth is one copy-paste
+ * away. Read the caveat on `isRetiredAggregateFit` before using it as a test
+ * for "is an aggregate": it is only that for keys built by the current
+ * enumeration. A key whose 'All' parts came from defaulting ABSENT COLUMNS —
+ * the legacy import — is All-bearing without aggregating anything.
+ */
+export function isAllBearing(key: string): boolean {
   return key.split('|').some(part => part === 'All');
+}
+
+/**
+ * The leaves under an aggregate key, split by whether they are already fitted.
+ *
+ * This is what "generate the missing leaves" needs to know, and it is a pure
+ * function of the roll-up index and the store so a spec can drive it without
+ * mounting anything.
+ *
+ * `missing` is what still has to be fitted. `present` is what does not — an
+ * already-fitted leaf is never refitted, because generating an aggregate must
+ * not silently overwrite work the user already has, and because the whole point
+ * of deriving is that existing leaves are reused.
+ *
+ * A key with no leaves at all returns empty arrays and `enumerated: false`. That
+ * is a different state from "all leaves present" and the caller must not
+ * conflate them: one means the selection is covered, the other means the
+ * selection is not something this data can produce. They look identical if you
+ * only test `missing.length === 0`, which is the degenerate case the button
+ * states exist to keep apart.
+ */
+export function missingLeavesForKey(
+  key: string,
+  leafMap: Map<string, string[]>,
+  store: Map<string, unknown>,
+): { enumerated: boolean; leaves: string[]; missing: string[]; present: string[] } {
+  const leaves = leafMap.get(key) ?? [];
+  if (leaves.length === 0) return { enumerated: false, leaves: [], missing: [], present: [] };
+  const present = leaves.filter(k => store.has(k));
+  const missing = leaves.filter(k => !store.has(k));
+  return { enumerated: true, leaves, missing, present };
 }
 
 /**

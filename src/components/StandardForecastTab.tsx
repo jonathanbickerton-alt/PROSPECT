@@ -78,6 +78,8 @@ interface StandardForecastTabProps {
   confidenceHorizon: number;
   setConfidenceHorizon: (val: number) => void;
   generateStandardForecast: () => void;
+  /** Which of the four Step 1 generate situations applies — see stdAggregateState in App. */
+  aggregateState: { kind: 'leaf' | 'generate' | 'covered' | 'never'; missing: number; total: number };
   error: string | null;
   forecastData: any[];
   compareCategories: string[];
@@ -144,6 +146,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
   postHorizonExpansionRate, setPostHorizonExpansionRate,
   confidenceHorizon, setConfidenceHorizon,
   generateStandardForecast,
+  aggregateState,
   error,
   forecastData,
   compareCategories,
@@ -1010,7 +1013,33 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
               )}
             </div>
 
-            <button onClick={generateStandardForecast} className="w-full bg-[#e60000] hover:bg-[#cc0000] text-white font-medium py-2.5 px-4 rounded-lg transition-colors shadow-sm mt-4">{t('common_generate_forecast')}</button>
+            {/* An aggregate selection does not fit a model to the total — it
+                fits the leaves underneath and lets the total be summed from
+                them. The button says which of the four situations applies, so
+                the count is visible BEFORE the click rather than discovered
+                after it. The two disabled states are distinct on purpose:
+                "already covered" and "not in your data" both mean nothing will
+                be generated, and they mean opposite things. */}
+            <button
+              onClick={generateStandardForecast}
+              disabled={aggregateState.kind === 'covered' || aggregateState.kind === 'never'}
+              className="w-full bg-[#e60000] hover:bg-[#cc0000] text-white font-medium py-2.5 px-4 rounded-lg transition-colors shadow-sm mt-4 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {aggregateState.kind === 'generate'
+                ? (aggregateState.missing === 1
+                    ? t('standard_generate_missing_leaves_one')
+                    : t('standard_generate_missing_leaves', { count: aggregateState.missing }))
+                : aggregateState.kind === 'covered'
+                  ? t('standard_scope_fully_covered')
+                  : aggregateState.kind === 'never'
+                    ? t('standard_scope_not_in_data')
+                    : t('common_generate_forecast')}
+            </button>
+            {aggregateState.kind === 'generate' && (
+              <p className="text-[11px] text-slate-500 mt-2 leading-snug">
+                {t('standard_generate_missing_hint', { total: aggregateState.total })}
+              </p>
+            )}
           </>
         )}
       </div>
