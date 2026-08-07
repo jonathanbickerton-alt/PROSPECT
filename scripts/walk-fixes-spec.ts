@@ -1,0 +1,372 @@
+/**
+ * THE THREE THINGS JON'S WALK FOUND AT SECTION A, AND THE FOURTH IT BLOCKED ON.
+ *
+ *   npm run spec:walk-fixes
+ *
+ * ── 1. "Generate 1 missing" forever ───────────────────────────────────────
+ *
+ * `missing` meant has-no-forecast. One leaf in the edge fixture has two months
+ * of history and cannot be fitted, so it never acquired a forecast, so it was
+ * counted as missing on every render. The button invited a generate, the
+ * generate produced nothing, the count did not move, and the loop had no exit.
+ *
+ * `missing` now means fittable-and-not-fitted. A leaf a run has PROVED
+ * unfittable leaves the count and gets its own statement. Unfittability is only
+ * knowable by trying, so the known-unfittable set starts empty and grows from
+ * run results — a leaf is generatable until something demonstrates otherwise.
+ *
+ * The state machine, which is the part worth pinning:
+ *
+ *   N fittable-missing > 0            -> 'generate', count N
+ *   0 fittable-missing, unfittable > 0 -> 'blocked', named, NOT an invitation
+ *   0 and 0                            -> 'covered'
+ *   no leaves at all                   -> 'never'
+ *
+ * 'blocked' and 'covered' both have zero generatable leaves and mean opposite
+ * things. So do 'covered' and 'never'. Three distinct zero states, and
+ * collapsing any pair is the defect.
+ *
+ * ── 2. The forecast must be VISIBLE when generation finishes ──────────────
+ *
+ * The user story ends with a forecast on screen, not a placeholder. After a
+ * scoped run the aggregate is resolved through the seam and set as the base
+ * forecast, with no further interaction.
+ *
+ * ── 3. The error banner outlived its subject ─────────────────────────────
+ *
+ * "Not enough valid data points" was raised for one cohort and never cleared,
+ * so it followed the user across selections onto unrelated screens. Cleared on
+ * selection change.
+ *
+ * ── 4. Generate Missing permanently disabled ─────────────────────────────
+ *
+ * Independent of 1 and 3, and the mechanism is the one this codebase keeps
+ * meeting: `isGeneratingMissing` was cleared in a `finally` at the bulk modal's
+ * call site, not inside the function. Session H added a second caller that does
+ * not go through the modal, so a throw on that path left the flag set and the
+ * button disabled forever. The wrapper's own comment predicted this symptom
+ * exactly. The `finally` now lives inside the function.
+ */
+import * as fs from 'fs';
+import * as XLSX from 'xlsx';
+import {
+  buildCohortDataMap, buildRollUpIndex, missingLeavesForKey, resolveFromStore,
+  calculateBaseForecast, makeForecastKey,
+} from '../src/utils/forecasting';
+import type { BaseForecast } from '../src/types/forecast';
+
+let pass = 0; const fails: string[] = [];
+const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails.push(n + (d ? `  [${d}]` : '')); };
+
+const FIX = 'test-data/VBU_IBRO_EdgeCases_ShortHistory_PerScenarioARPU_Jan2023_Jun2026.xlsx';
+const C = { date: 'Month', metric: 'IBRO_Scenario_Type', value: 'Subscriber_Volume',
+  seg: 'Customer_Segment', prod: 'Product_L1', prodL2: 'Product_L2_Value_Tier',
+  chan: 'Channel_Level_1', chanL2: 'Channel_Level_2',
+  t1: 'tariff_tier_l1', t2: 'tariff_tier_l2', rev: 'Monthly_Revenue_GBP' };
+const v = (r: any, k: string) => String(r[k] ?? '').trim();
+const wb = XLSX.read(fs.readFileSync(FIX), { type: 'buffer', cellDates: true });
+const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+const month = (r: any) => String(v(r, C.date)).slice(0, 7);
+
+function seriesFor(k: string) {
+  const [seg, prod, prodL2, chan, chanL2, t1, t2] = k.split('|');
+  const sel = rows.filter(r => v(r, C.seg) === seg && v(r, C.prod) === prod && v(r, C.prodL2) === prodL2
+    && v(r, C.chan) === chan && v(r, C.chanL2) === chanL2 && v(r, C.t1) === t1 && v(r, C.t2) === t2);
+  const acc = new Map<number, any>();
+  for (const r of sel) {
+    const d = new Date(month(r) + '-01'); if (isNaN(d.getTime())) continue;
+    const t = d.getTime();
+    if (!acc.has(t)) acc.set(t, { _parsedDate: d, inflow: 0, outflow: 0, retention: 0,
+      arpu: 0, inflowArpu: 0, outflowArpu: 0, retentionArpu: 0, baseArpu: 0, _rev: 0, _vol: 0 });
+    const e = acc.get(t)!, m = v(r, C.metric), val = Number(r[C.value]) || 0;
+    if (m === 'Inflow') e.inflow += val; else if (m === 'Outflow') e.outflow += val;
+    else if (m === 'Retention') e.retention += val;
+    e._rev += Number(r[C.rev]) || 0; e._vol += val;
+  }
+  for (const e of acc.values()) {
+    e.arpu = e._vol > 0 ? e._rev / e._vol : 0;
+    e.inflowArpu = e.arpu; e.outflowArpu = e.arpu; e.retentionArpu = e.arpu; e.baseArpu = e.arpu;
+  }
+  return [...acc.values()].sort((a, b) => a._parsedDate - b._parsedDate);
+}
+function fitLeafKey(k: string): BaseForecast | null {
+  const [seg, prod, prodL2, chan, chanL2, t1, t2] = k.split('|');
+  return calculateBaseForecast(seriesFor(k),
+    { segment: seg, product: prod, productL2: prodL2, channel: chan, channelL2: chanL2,
+      tariffL1: t1, tariffL2: t2, scenario: 'Base Case' } as any,
+    1000, 12, 1.0, 1.5, 3, 'Holt Linear');
+}
+
+const dm = buildCohortDataMap(rows, C.date, C.seg, C.prod, C.prodL2, C.chan, C.chanL2, C.t1, C.t2);
+const { leafMap } = buildRollUpIndex([...dm.keys()]);
+const AGG = makeForecastKey('All', 'All', 'All', 'All', 'All', 'All', 'All');
+
+/** The App's state machine, as a pure function of what the engine reports. */
+type Kind = 'generate' | 'blocked' | 'covered' | 'never';
+function stateOf(store: Map<string, BaseForecast>, unfittable: ReadonlySet<string>): {
+  kind: Kind; missing: number; unfittable: number;
+} {
+  const r = missingLeavesForKey(AGG, leafMap, store, unfittable);
+  if (!r.enumerated) return { kind: 'never', missing: 0, unfittable: 0 };
+  if (r.missing.length > 0) return { kind: 'generate', missing: r.missing.length, unfittable: r.unfittable.length };
+  if (r.unfittable.length > 0) return { kind: 'blocked', missing: 0, unfittable: r.unfittable.length };
+  return { kind: 'covered', missing: 0, unfittable: 0 };
+}
+
+// ── THE LOOP JON HIT, reproduced then closed ──────────────────────────────
+{
+  const store = new Map<string, BaseForecast>();
+  let unfittable = new Set<string>();
+
+  const first = stateOf(store, unfittable);
+  check('COLD: every leaf is generatable before anything has been tried',
+    first.kind === 'generate' && first.missing === 74,
+    `${first.kind}/${first.missing}`);
+  check('COLD: nothing is known-unfittable yet — it is only knowable by trying',
+    first.unfittable === 0);
+
+  // Run 1: fit what can be fitted; record what could not.
+  const r1 = missingLeavesForKey(AGG, leafMap, store, unfittable);
+  const skipped: string[] = [];
+  for (const k of r1.missing) {
+    const bf = fitLeafKey(k);
+    if (bf) store.set(k, bf); else skipped.push(k);
+  }
+  check('RUN 1: 72 fitted, 2 could not be', store.size === 72 && skipped.length === 2,
+    `${store.size} fitted, ${skipped.length} skipped`);
+
+  // THE OLD BEHAVIOUR, still measurable: without the known-unfittable set the
+  // state stays 'generate' with the same count, forever. This is the check that
+  // proves the fix is doing something rather than the fixture being kind.
+  const withoutMemory = stateOf(store, new Set());
+  check('WITHOUT THE FIX: the button still invites a generate that does nothing',
+    withoutMemory.kind === 'generate' && withoutMemory.missing === 2,
+    `${withoutMemory.kind}/${withoutMemory.missing} — if this is not 'generate' the defect no longer reproduces and these checks prove nothing`);
+
+  unfittable = new Set(skipped);
+  const second = stateOf(store, unfittable);
+  check('AFTER RUN 1: the state is BLOCKED, not generate',
+    second.kind === 'blocked', second.kind);
+  check('AFTER RUN 1: and it names how many are unfittable',
+    second.unfittable === 2, String(second.unfittable));
+  check('AFTER RUN 1: nothing is offered for generation',
+    second.missing === 0, String(second.missing));
+
+  // Idempotence: clicking again cannot re-enter the loop.
+  const third = stateOf(store, unfittable);
+  check('STABLE: the state does not oscillate on a second look',
+    third.kind === 'blocked' && third.missing === 0);
+}
+
+// ── THE THREE ZERO STATES ARE DISTINCT ────────────────────────────────────
+{
+  const full = new Map<string, BaseForecast>();
+  const skipped: string[] = [];
+  for (const k of leafMap.get(AGG)!) {
+    const bf = fitLeafKey(k);
+    if (bf) full.set(k, bf); else skipped.push(k);
+  }
+  const blocked = stateOf(full, new Set(skipped));
+  check('ZERO STATES: unfittable present -> blocked', blocked.kind === 'blocked');
+
+  // 'covered' needs a scope with no unfittable leaves in it. Take one segment
+  // whose leaves all fit.
+  const segs = [...new Set([...dm.keys()].map(k => k.split('|')[0]))];
+  const cleanSeg = segs.find(sg => {
+    const key = makeForecastKey(sg, 'All', 'All', 'All', 'All', 'All', 'All');
+    return (leafMap.get(key) ?? []).every(k => !skipped.includes(k));
+  });
+  check('ZERO STATES PREMISE: a fully-fittable scope exists to test covered with',
+    !!cleanSeg, 'every segment contains an unfittable leaf — covered is untestable here');
+  if (cleanSeg) {
+    const key = makeForecastKey(cleanSeg, 'All', 'All', 'All', 'All', 'All', 'All');
+    const r = missingLeavesForKey(key, leafMap, full, new Set(skipped));
+    check('ZERO STATES: all fitted, none unfittable -> covered',
+      r.enumerated && r.missing.length === 0 && r.unfittable.length === 0);
+  }
+  const never = missingLeavesForKey(
+    makeForecastKey('No Such Segment', 'All', 'All', 'All', 'All', 'All', 'All'),
+    leafMap, full, new Set(skipped));
+  check('ZERO STATES: no leaves at all -> never', !never.enumerated);
+  check('ZERO STATES: never is distinguishable from covered by `enumerated` alone',
+    never.enumerated === false,
+    'both report zero missing — only `enumerated` separates them');
+}
+
+// ── THE STATE MACHINE IN THE APP, not just in this file ───────────────────
+// `stateOf` above is a TRANSCRIPTION of App's memo — it cannot be driven
+// headlessly, so mutating App.tsx leaves every check above green. Trap 24
+// proved exactly that by collapsing the blocked branch and going unnoticed.
+// Same fault trap 13 found in the retire spec, and the same answer: guard the
+// wiring structurally, so the trap has something to kill.
+{
+  const app = fs.readFileSync('src/App.tsx', 'utf8');
+  const start = app.indexOf('const stdAggregateState = useMemo');
+  check('MACHINE ANCHOR: stdAggregateState was found', start !== -1,
+    'renamed — this guard is blind, fix it before trusting the checks above');
+  const body = start === -1 ? ''
+    : app.slice(start, app.indexOf('populatedCohorts, forecastStore, unfittableLeaves]', start));
+  const code = body.replace(/\/\/[^\n]*/g, '');
+
+  check('MACHINE: the memo is given the known-unfittable set',
+    /missingLeavesForKey\([\s\S]{0,200}unfittableLeaves/.test(code),
+    'it cannot tell a generatable leaf from one that will never fit');
+  check('MACHINE: a blocked state exists',
+    /kind: 'blocked'/.test(code),
+    'the two zero states are collapsed — a blocked scope will claim full coverage');
+  check('MACHINE: blocked is decided BEFORE covered',
+    code.indexOf("kind: 'blocked'") < code.indexOf("kind: 'covered'"),
+    'covered wins first, so blocked is unreachable');
+  check('MACHINE: the blocked branch is reachable — it is not gated on a constant',
+    /if \(unfittable\.length > 0\)/.test(code),
+    'the branch is present but dead');
+  check('MACHINE: all four states are produced',
+    ["'generate'", "'blocked'", "'covered'", "'never'"].every(k => code.includes(`kind: ${k}`)),
+    'a state was dropped');
+  // The button must actually honour blocked, or the memo is correct and unread.
+  const tab = fs.readFileSync('src/components/StandardForecastTab.tsx', 'utf8');
+  check('MACHINE: the button is disabled in the blocked state',
+    /disabled=\{[\s\S]{0,200}=== 'blocked'/.test(tab),
+    'a blocked scope still offers a generate that would do nothing');
+  check('MACHINE: and says why, rather than reusing the covered wording',
+    /standard_scope_blocked/.test(tab),
+    'blocked renders as covered — the collapse moved to the label');
+}
+
+// ── THE FORECAST IS VISIBLE WHEN THE RUN ENDS ─────────────────────────────
+{
+  const store = new Map<string, BaseForecast>();
+  for (const k of leafMap.get(AGG)!) { const bf = fitLeafKey(k); if (bf) store.set(k, bf); }
+  const { forecast } = resolveFromStore(store, leafMap, AGG);
+  check('VISIBLE: the aggregate resolves immediately after its leaves are fitted',
+    !!forecast, 'the run ends with nothing to show');
+  check('VISIBLE: and it is derived, with real months on it',
+    !!forecast && (forecast.provenance as any).kind === 'derived' && forecast.months.length > 0,
+    forecast ? `${(forecast.provenance as any).kind}/${forecast.months.length}` : 'null');
+
+  // Wiring: the App must actually do this, not merely be able to.
+  const app = fs.readFileSync('src/App.tsx', 'utf8');
+  const start = app.indexOf('generateAllMissingForecasts({ restrictToLeafKeys');
+  const after = app.slice(start, start + 2200).replace(/\/\/[^\n]*/g, '');
+  // The run HANDS OFF rather than resolving inline, because the store it just
+  // wrote has not committed when the .then fires. The first version read it by
+  // passing an identity updater to setForecastStore — a state setter used as a
+  // getter, which the mirror control correctly counted as a store write.
+  check('VISIBLE WIRING: the scoped run hands the aggregate to the render effect',
+    /setPendingAggregateKey\(aggKey\)/.test(after),
+    'the run finishes without asking for anything to be shown');
+  check('VISIBLE WIRING: and does NOT abuse the store setter to read state',
+    !/setForecastStore\(/.test(after),
+    'a reader that looks like a writer is one refactor from being one');
+  check('VISIBLE WIRING: the skipped leaves are recorded as known-unfittable',
+    /setUnfittableLeaves\(/.test(after), 'the loop can re-enter on the next render');
+
+  const res = app.indexOf('const showResolvedAggregate = useCallback');
+  check('VISIBLE WIRING: the resolver exists', res !== -1, 'renamed — this guard is blind');
+  const rbody = res === -1 ? '' : app.slice(res, app.indexOf('}, [resolveForecast]);', res));
+  check('VISIBLE WIRING: it resolves through the seam',
+    /resolveForecast\(key\)/.test(rbody), 'it reads the store directly');
+  check('VISIBLE WIRING: and sets it as the base forecast',
+    /setBaseForecast\(forecast\)/.test(rbody), 'it resolves and then discards the result');
+  const eff = app.indexOf('if (!pendingAggregateKey) return;');
+  check('VISIBLE WIRING: an effect drives it after the store commits',
+    eff !== -1 && /showResolvedAggregate\(pendingAggregateKey\)/.test(app.slice(eff, eff + 1400)),
+    'nothing calls the resolver');
+
+  // Found by the gate: generation runs in a worker pool, so a user can start a
+  // Step 1 generate and switch tabs before it lands. Without this gate the
+  // effect calls setBaseForecast with Step 1's aggregate while they are looking
+  // at Step 2 or 3, replacing the cohort under them.
+  const effBody = eff === -1 ? '' : app.slice(eff, eff + 1400);
+  check('VISIBLE WIRING: it only fires while the user is still on Step 1',
+    /activeView !== 'standard'/.test(effBody),
+    'a Step 1 result can overwrite what the user is looking at on Step 2 or 3');
+  check('VISIBLE WIRING: and discards the pending key rather than holding it',
+    /activeView !== 'standard'\) \{ setPendingAggregateKey\(null\); return; \}/.test(effBody),
+    'the result would resurrect on return, from a selection the user has left');
+  check('VISIBLE WIRING: activeView is in the dependency array',
+    /\[pendingAggregateKey, forecastStore, showResolvedAggregate, activeView\]/.test(app),
+    'the gate is read but the effect will not re-run when it changes');
+}
+
+// ── THE BANNER DOES NOT OUTLIVE ITS SUBJECT ───────────────────────────────
+{
+  const app = fs.readFileSync('src/App.tsx', 'utf8');
+  const i = app.indexOf("Transient generation feedback is cleared when the SELECTION changes");
+  check('BANNER ANCHOR: the clearing effect was found', i !== -1,
+    'removed or renamed — this guard is blind');
+  const eff = i === -1 ? '' : app.slice(i, app.indexOf('}, [', i) + 220);
+  check('BANNER: the effect clears the error', /setError\(''\)/.test(eff));
+  check('BANNER: and the stale result panel with it', /setStdGenerateResult\(null\)/.test(eff));
+  for (const d of ['segmentValue', 'productValue', 'productL2Value', 'channelValue',
+                   'channelL2Value', 'tariffValue', 'tariffL2Value']) {
+    check(`BANNER: ${d} change clears it`, eff.includes(d),
+      'a selection dimension the banner can survive');
+  }
+  // It must NOT be keyed on anything that changes during a generate, or it
+  // would wipe the message the generate just raised.
+  check('BANNER: not keyed on the store or the result itself',
+    !/forecastStore|stdGenerateResult\b(?!\s*\()/.test(eff.slice(eff.indexOf('}, ['))),
+    'the effect would erase the error the generate just set');
+}
+
+// ── A COVERAGE STATEMENT IS NOT AN ERROR ─────────────────────────────────
+// Raised by the gate. Session I made the completion modal a coverage statement
+// rather than a success claim; routing "the remaining cohorts have too little
+// history" through a red error banner one screen away would contradict that.
+// Red says something went wrong. These messages report what was built.
+{
+  const app = fs.readFileSync('src/App.tsx', 'utf8');
+  const tab = fs.readFileSync('src/components/StandardForecastTab.tsx', 'utf8');
+
+  for (const key of ['standard_scope_blocked_by_unfittable', 'standard_all_leaves_present',
+                     'standard_selection_never_enumerated']) {
+    const i = app.indexOf(key);
+    check(`NOTICE: ${key} is a notice, not an error`, i !== -1
+      && /setNotice\(/.test(app.slice(Math.max(0, i - 260), i)),
+      'a coverage statement is being reported as a failure');
+  }
+  // The genuine failures must STAY on the error surface, or this has traded one
+  // miscategorisation for another.
+  // Anchored on the CODE form. The first version searched for the message text
+  // and found it in a comment above, so it was testing prose rather than a call
+  // site — and reported a failure that was entirely its own.
+  const realFailures = (app.match(/setError\('Not enough valid data points/g) ?? []).length;
+  check('NOTICE: real failures are still errors', realFailures === 2,
+    `found ${realFailures} — everything became a notice, which is the same defect facing the other way`);
+
+  check('NOTICE: the tab renders the notice on its own non-red surface',
+    /\{notice && <div className="mb-6 bg-slate-50/.test(tab),
+    'the notice has no surface, or reuses the red one');
+  check('NOTICE: and the error banner is still red',
+    /\{error && <div className="mb-6 bg-red-50/.test(tab),
+    'the error surface lost its distinctness');
+  check('NOTICE: the notice is cleared on selection change with the error',
+    /setNotice\(''\)/.test(app),
+    'a coverage statement can now outlive its scope — the defect this session fixed');
+}
+
+// ── THE FLAG CANNOT STAY STUCK ────────────────────────────────────────────
+{
+  const app = fs.readFileSync('src/App.tsx', 'utf8');
+  const start = app.indexOf('setIsGeneratingMissing(true);');
+  const end = app.indexOf('}, [allCohorts, missingStandardCohorts', start);
+  const body = app.slice(start, end);
+  check('FLAG: the clear is inside the function, in a finally',
+    /\}\s*finally\s*\{[\s\S]{0,400}setIsGeneratingMissing\(false\);/.test(body),
+    'a throw still leaves Generate Missing disabled forever');
+  // Anti-vacuity: there must be exactly one clear inside the function, and it
+  // must be the one in the finally — a stray unconditional clear before a
+  // throw point would pass a naive search while fixing nothing.
+  const clears = (body.match(/setIsGeneratingMissing\(false\)/g) ?? []).length;
+  check('FLAG: exactly one clear inside the function', clears === 1, `found ${clears}`);
+  check('FLAG: the Step 1 caller does not need its own protection',
+    !/finally[\s\S]{0,120}setIsGeneratingMissing/.test(
+      app.slice(app.indexOf('generateAllMissingForecasts({ restrictToLeafKeys'),
+                app.indexOf('generateAllMissingForecasts({ restrictToLeafKeys') + 1400)),
+    'the caller is compensating for the function again');
+}
+
+console.log(`walk-fixes spec: ${pass} passed, ${fails.length} failed`);
+fails.forEach(f => console.log('  FAIL ' + f));
+process.exit(fails.length ? 1 : 0);

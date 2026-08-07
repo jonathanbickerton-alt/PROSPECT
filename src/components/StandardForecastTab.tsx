@@ -79,9 +79,12 @@ interface StandardForecastTabProps {
   setConfidenceHorizon: (val: number) => void;
   generateStandardForecast: () => void;
   /** Which of the four Step 1 generate situations applies — see stdAggregateState in App. */
-  aggregateState: { kind: 'leaf' | 'generate' | 'covered' | 'never'; missing: number; total: number };
+  aggregateState: { kind: 'leaf' | 'generate' | 'covered' | 'never' | 'blocked';
+    missing: number; total: number; unfittable: number };
   /** Outcome of the last scoped leaf run, or null if none has run. */
   generateResult: { generated: number; skipped: string[] } | null;
+  /** Coverage statements from Step 1 — not failures, see the render site. */
+  notice: string;
   error: string | null;
   forecastData: any[];
   compareCategories: string[];
@@ -150,6 +153,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
   generateStandardForecast,
   aggregateState,
   generateResult,
+  notice,
   error,
   forecastData,
   compareCategories,
@@ -1046,7 +1050,8 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                 be generated, and they mean opposite things. */}
             <button
               onClick={generateStandardForecast}
-              disabled={aggregateState.kind === 'covered' || aggregateState.kind === 'never'}
+              disabled={aggregateState.kind === 'covered' || aggregateState.kind === 'never'
+                        || aggregateState.kind === 'blocked'}
               className="w-full bg-[#e60000] hover:bg-[#cc0000] text-white font-medium py-2.5 px-4 rounded-lg transition-colors shadow-sm mt-4 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {aggregateState.kind === 'generate'
@@ -1055,13 +1060,17 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                     : t('standard_generate_missing_leaves', { count: aggregateState.missing }))
                 : aggregateState.kind === 'covered'
                   ? t('standard_scope_fully_covered')
-                  : aggregateState.kind === 'never'
-                    ? t('standard_scope_not_in_data')
-                    : t('common_generate_forecast')}
+                  : aggregateState.kind === 'blocked'
+                    ? t('standard_scope_blocked', { count: aggregateState.unfittable })
+                    : aggregateState.kind === 'never'
+                      ? t('standard_scope_not_in_data')
+                      : t('common_generate_forecast')}
             </button>
-            {aggregateState.kind === 'generate' && (
+            {(aggregateState.kind === 'generate' || aggregateState.kind === 'blocked') && (
               <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
                 {t('standard_generate_missing_hint', { total: aggregateState.total })}
+                {aggregateState.unfittable > 0
+                  && ' ' + t('standard_hint_unfittable', { count: aggregateState.unfittable })}
               </p>
             )}
             {/* The outcome of the last scoped run. The skipped leaves are NAMED,
@@ -1096,6 +1105,14 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
 
       <div className="flex-1 overflow-y-auto p-8">
         {error && <div className="mb-6 bg-red-50 text-red-700 p-4 rounded-xl border border-red-100 text-sm flex items-start gap-3"><Info className="shrink-0 mt-0.5" size={18} /><p>{error}</p></div>}
+        {/* A COVERAGE STATEMENT IS NOT AN ERROR. "The remaining cohorts have
+            too little history, the aggregate is summed from the rest" reports
+            what was built; red says something went wrong. Session I made the
+            completion modal a coverage statement rather than a success claim
+            for the same reason, and routing this through the error banner
+            would contradict that decision one screen away from it. Styled to
+            match the modal informational row. */}
+        {notice && <div className="mb-6 bg-slate-50 text-slate-600 p-4 rounded-xl border border-slate-200 text-sm flex items-start gap-3"><Info className="shrink-0 mt-0.5 text-slate-400" size={18} /><p>{notice}</p></div>}
         
         {forecastData.length > 0 && !emptyCohortSelection ? (
           <div className="flex gap-4 items-start">
