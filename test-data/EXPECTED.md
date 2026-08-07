@@ -4941,15 +4941,48 @@ recorded next to it.
 Two limits on this artefact were flagged at the time rather than discovered
 later, which is the only reason they are not defects:
 
-- The confirmation named the file as a literal placeholder, so the artefact was
-  not supplied to the session. Stage 2 verified against a constructed equivalent
-  built by the spec — adequate for the rule, not a substitute for the real file
-  on Jon's walk.
+- The confirmation named the file as a literal placeholder. The real artefact
+  was then located by timestamp (`PROSPECT Forecast Save — 07 Aug 2026 1026`,
+  exported 10:26 that day, before any Session G change) and identified by
+  content, not by name: its `Baseline_Forecasts` sheet holds 541 keys, of which
+  exactly one is both `fitted` and All-bearing. Stage 2 ran against that file.
+  The spec still builds a constructed equivalent, because a spec cannot depend
+  on a file in someone's Downloads folder — but the branch was not graded on
+  the constructed one.
 - The confirmation says "two depths" and names one key
   (`Corporate|Fixed Connectivity|All|All`, whose 7-part form is
-  `Corporate|Fixed Connectivity|All|All|All|All|All`). The second depth is
-  unnamed. Any key not named is a key whose movement nobody predicted in
-  advance, and a prediction made after seeing the result is not a prediction.
+  `Corporate|Fixed Connectivity|All|All|All|All|All`). **The file contains only
+  that one.** The second depth is not in the artefact — either it was not saved,
+  or it was not created. That is not a discrepancy to resolve by assuming the
+  more convenient answer: any key not named in advance is a key whose movement
+  nobody predicted, and a prediction made after seeing the result is not a
+  prediction.
+
+### The retirement rule made two read paths diverge — OPEN, 2026-08-07
+
+Found by the gate on the artefact above, and classified as introduced by the
+change that exposed it rather than as pre-existing.
+
+`resolveForecast` is not the only route from the store to the screen. Session
+import (`src/App.tsx` ~:868) takes the `Is_Active` row straight into
+`setBaseForecast`, with no call to the seam. Before this change that bypass was
+harmless: the seam returned whatever was stored, so a raw read and a resolved
+read could not disagree. The retirement rule is the first thing to make them
+disagree — and it disagrees precisely for the keys the import path is most
+likely to be carrying.
+
+On Jon's artefact the two facts meet: `Is_Active` is set on
+`Corporate|Fixed Connectivity|All|All|All|All|All`, which is the retired key.
+Loading that session lands Step 1 on the stale fitted total and holds it until a
+filter change or tab switch routes through the seam and silently replaces it.
+
+**The general shape, which outlives this instance: making a seam selective does
+not make it the only door. Every raw store read that previously agreed with the
+seam by accident becomes a divergence the moment the seam starts refusing
+things.** The audit that matters is not "is the rule correct" but "what else
+reads the store without asking the rule". One other candidate was checked and
+cleared during the gate — `acceptChallengerModel` reaches the store only behind
+a `derivedMix` computed from `resolveForecast`, so it inherits the rule.
 
 ### Accuracy scores will move — this is not a regression
 
