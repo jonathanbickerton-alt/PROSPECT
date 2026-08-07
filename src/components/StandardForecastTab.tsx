@@ -1036,7 +1036,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                     : t('common_generate_forecast')}
             </button>
             {aggregateState.kind === 'generate' && (
-              <p className="text-[11px] text-slate-500 mt-2 leading-snug">
+              <p className="text-[11px] text-slate-400 mt-1.5 leading-snug">
                 {t('standard_generate_missing_hint', { total: aggregateState.total })}
               </p>
             )}
