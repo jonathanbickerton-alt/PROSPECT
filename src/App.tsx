@@ -2003,7 +2003,12 @@ export default function App() {
           generated: res.generated,
           skipped: res.skipped.map(sk => sk.fKey),
         }))
-        .catch(() => setStdGenerateResult(null));
+        .catch(() => {
+          // Silence here would contradict this branch's own argument: an
+          // outcome the user cannot see misrepresents what was produced.
+          setStdGenerateResult(null);
+          setError(t('standard_generate_failed'));
+        });
       return;
     }
 
@@ -3815,7 +3820,12 @@ export default function App() {
     // list would understate coverage for the run as a whole.
     const collectedSkipped: SkippedCohort[] = [];
 
-    setGenerationProgress({ current: 0, total: targets.length });
+    // A scoped run has no standard targets by construction, so `targets.length`
+    // would leave total at 0 while current climbed. Harmless today - Step 1 is
+    // the only scoped caller and it opens no progress modal - but that is an
+    // apparent guarantee resting on one call site, not a real one.
+    setGenerationProgress({ current: 0,
+      total: options?.restrictToLeafKeys ? options.restrictToLeafKeys.size : targets.length });
     const newTypedForecasts = new Map<string, BaseForecast>();
 
     await Promise.all(

@@ -687,7 +687,6 @@
   "whatif_choose_another_selection": "Choose another selection, or widen the filter to a level that has one.",
   "actuals_leaves": "leaves",
   "viewfilter_widen_the_filter": "widen the filter",
-  "standard_aggregates_are_summed_not_generated": "Aggregates are summed from their leaf cohorts, not generated. Select a specific cohort to generate a forecast for it.",
   "bulk_complete_retired": "Stored aggregate forecasts from an earlier session are no longer used; those totals are now summed from their leaf cohorts and may differ.",
   "standard_selection_never_enumerated": "This combination does not appear in your data, so there are no cohorts to forecast for it. Choose a different selection.",
   "standard_all_leaves_present": "All {{count}} cohorts in this scope already have forecasts. The aggregate is summed from them — there is nothing left to generate.",
@@ -698,5 +697,6 @@
   "standard_scope_not_in_data": "No cohorts in your data match this selection",
   "standard_generate_missing_hint": "{{total}} cohorts make up this scope. The aggregate total is summed from them, never fitted directly.",
   "standard_generate_result": "Generated {{generated}} cohort forecasts. The aggregate total is summed from them.",
-  "standard_generate_result_skipped": "{{count}} could not be forecast — too little history. They are not included in the total:"
+  "standard_generate_result_skipped": "{{count}} could not be forecast — too little history. They are not included in the total:",
+  "standard_generate_failed": "Generation did not complete. Nothing was changed — try again."
 }
