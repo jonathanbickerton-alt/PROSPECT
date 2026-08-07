@@ -3105,9 +3105,17 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
                     {SCENARIO_LABELS[kpi]} MAPE
                   </p>
+                  <p className="text-[9px] text-slate-400 -mt-0.5 mb-1">{t('actuals_mape_lower_is_better')}</p>
                   <p className={`text-xl font-bold ${mapeColor(mape)}`}>{mapeLabel(mape)}</p>
+                  {/* COHORT-months, not months. summaryMape sums
+                      monthsWithActuals across every matching forecast, so with
+                      40 cohorts over 6 months this reads 240 - a figure that
+                      was labelled "months compared" and invited being read as
+                      a period length. Also the first time this string has had
+                      a key at all: it was hardcoded English and had never been
+                      translated in any locale. */}
                   <p className="text-[10px] text-slate-400 mt-1">
-                    {summaryMape.monthsWithActuals} month{summaryMape.monthsWithActuals !== 1 ? 's' : ''} compared
+                    {t('actuals_cohort_months_compared', { n: summaryMape.monthsWithActuals })}
                   </p>
                   <p className="text-[9px] font-medium text-slate-300 mt-0.5 uppercase tracking-wide">
                     {useAdjustedScoring && adjustedForecast ? t('actuals_adjusted') : t('actuals_baseline')}
@@ -3125,9 +3133,17 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
                     {SCENARIO_LABELS[kpi]} MAPE
                   </p>
+                  <p className="text-[9px] text-slate-400 -mt-0.5 mb-1">{t('actuals_mape_lower_is_better')}</p>
                   <p className={`text-xl font-bold ${mapeColor(mape)}`}>{mapeLabel(mape)}</p>
+                  {/* COHORT-months, not months. summaryMape sums
+                      monthsWithActuals across every matching forecast, so with
+                      40 cohorts over 6 months this reads 240 - a figure that
+                      was labelled "months compared" and invited being read as
+                      a period length. Also the first time this string has had
+                      a key at all: it was hardcoded English and had never been
+                      translated in any locale. */}
                   <p className="text-[10px] text-slate-400 mt-1">
-                    {summaryMape.monthsWithActuals} month{summaryMape.monthsWithActuals !== 1 ? 's' : ''} compared
+                    {t('actuals_cohort_months_compared', { n: summaryMape.monthsWithActuals })}
                   </p>
                   <p className="text-[9px] font-medium text-slate-300 mt-0.5 uppercase tracking-wide">
                     {useAdjustedScoring && adjustedForecast ? t('actuals_adjusted') : t('actuals_baseline')}

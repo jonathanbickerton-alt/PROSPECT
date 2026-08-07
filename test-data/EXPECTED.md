@@ -5213,6 +5213,43 @@ its distribution is. This is accepted and expected.
 
 ## BACKLOG — requested, design pass required before build
 
+### QUEUED to the DQ phase — a mapped-dimension source of truth
+
+**The rider closes the retirement rule's misfire, and it is queued here rather
+than fixed because the DQ phase needs the same thing for its own reasons.**
+
+Three sites now decide what an `'All'` in a cohort key MEANS, and they disagree
+because none of them can see which dimensions the user actually mapped:
+
+1. **`isRetiredAggregateFit`** treats All-bearing + fitted as a retired
+   fit-on-aggregate. On a dataset with an unmapped dimension every genuine leaf
+   is All-bearing, so it misfires on all of them — surviving only by the
+   single-leaf-identity accident recorded above.
+2. **The legacy pre-option-C import** manufactures `'All'` by defaulting absent
+   columns, so its keys are All-bearing without aggregating anything. That site
+   is deliberately not routed through the seam for exactly this reason.
+3. **The mirror control** in `spec:generate-missing` had to be restated from
+   "no All-bearing writes" to "no writes All-bearing in a MAPPED dimension",
+   because the first version would refuse every real leaf on such a dataset.
+
+All three are the same missing fact: **which dimensions were mapped.** Each has
+worked around it separately, and the workarounds do not agree with each other.
+
+**Why the DQ phase owns it.** That phase needs the mapped-dimension set anyway,
+for the "How your data was read" orientation line — the line whose absence has
+now invalidated two of Jon's walks. It has to compute the set regardless, so
+making it the source of truth costs nothing extra there and removes three
+private answers elsewhere.
+
+**The rider:** once the set exists, `isRetiredAggregateFit` takes it and tests
+`'All'` only in mapped slots. That closes site 1 against sites 2 and 3 rather
+than adding a fourth private answer, and it removes the dependency on
+single-leaf identity that `spec:generate-missing` currently has to pin.
+
+Do not fix site 1 alone. A local fix there would give the retirement rule a
+fourth notion of what `'All'` means and leave the other two untouched — which is
+how there came to be three.
+
 ### The edge fixture needs a companion actuals file
 
 **Recorded 2026-08-05, not built.**

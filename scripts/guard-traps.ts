@@ -42,10 +42,14 @@ const LEAFGRAIN = 'scripts/leaf-grain-spec.ts';
 const RETIRE = 'scripts/aggregate-retire-spec.ts';
 const IMPORTSEAM = 'scripts/import-seam-spec.ts';
 const GENMISSING = 'scripts/generate-missing-spec.ts';
+const CHARTSCOPE = 'scripts/chart-scope-spec.ts';
+const COVCOPY = 'scripts/coverage-copy-spec.ts';
+const SFT = 'src/components/StandardForecastTab.tsx';
+const MODAL = 'src/components/BulkGenerateModal.tsx';
 const APP = 'src/App.tsx';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
-const TARGETS = [FILE, ENGINE, WHATIF, APP];
+const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -222,6 +226,25 @@ const TRAPS: Trap[] = [
     file: APP, spec: GENMISSING,
     mutate: s => s.replace('      generated: options?.restrictToLeafKeys ? ibroGenerated : generated,',
                            '      generated,') },
+  // Trap 20: the Step 1 history is drawn wider than the forecast beside it
+  // again. Measured on the fixture, the narrow filter covers 168 rows and the
+  // wide one 1,344 - so the chart shows two lines from populations 8x apart
+  // and labels them Historical and Mean.
+  { id: '20 the Step 1 chart history widens past its forecast', why: 'history and forecast drawn from different populations',
+    file: SFT, spec: CHARTSCOPE,
+    mutate: s => s.replace("      if (wiProductL2Col && productL2Value", "      if (false && productL2Value") },
+  // Trap 21: the completion heading goes back to reporting the RUN. It is the
+  // difference between 'the job finished' and 'your book is covered', and only
+  // one of those is what the reader came to learn.
+  { id: '21 the completion modal over-claims again', why: 'a run with gaps reads as full coverage',
+    file: MODAL, spec: COVCOPY,
+    mutate: s => s.replace('            {uncovered > 0', '            {false') },
+  // Trap 22: the grain comes off the cohort-months label. The number is
+  // unchanged and the word is wrong, which is the shape that survives review.
+  { id: '22 the cohort-months label loses its grain', why: '240 cohort-months reads as a 240-month period',
+    file: FVA_TAB, spec: COVCOPY,
+    mutate: s => s.replace("t('actuals_cohort_months_compared', { n: summaryMape.monthsWithActuals })",
+                           'summaryMape.monthsWithActuals') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -232,7 +255,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

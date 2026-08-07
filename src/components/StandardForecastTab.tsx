@@ -353,6 +353,18 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
     // Accumulate historical ARPU from raw data rows matching the current cohort selection
     const histMap = new Map<string, { revSum: number; volSum: number; arpuVol: number }>();
     for (const row of data) {
+      // SEVEN dimensions, matching generateStandardForecast's own filter chain
+      // exactly. This used to filter on segment, product and channel only, so
+      // the historical line was drawn from every Product L2, Channel L2 and
+      // tariff under the selection while the forecast beside it was fitted to
+      // one leaf. On the measured case the history covered 15x the rows the fit
+      // did and read ARPU 8.67 against the forecast's 4.18 — a 107% gap between
+      // two lines on one chart, presented as history versus projection.
+      //
+      // The semantics are copied deliberately, not tightened: an L2 or tariff
+      // filter applies only when a value is SET, because that is what the fit
+      // does. Filtering more strictly here than the fit did would reintroduce
+      // the same disagreement from the other side.
       const rowSeg  = wiSegmentCol  ? String(row[wiSegmentCol]  ?? '') : '';
       const rowProd = wiProductCol  ? String(row[wiProductCol]  ?? '') : '';
       const rowChan = wiChannelCol  ? String(row[wiChannelCol]  ?? '') : '';
@@ -360,6 +372,15 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
       const prodOk = !wiProductCol  || productValue === 'All (Aggregated)' || rowProd === productValue;
       const chanOk = !wiChannelCol  || channelValue === 'All (Aggregated)' || rowChan === channelValue;
       if (!segOk || !prodOk || !chanOk) continue;
+      if (wiProductL2Col && productL2Value
+          && String(row[wiProductL2Col] ?? '') !== productL2Value) continue;
+      if (wiChannelL2Col && channelL2Value
+          && String(row[wiChannelL2Col] ?? '') !== channelL2Value) continue;
+      if (wiTariffL1Col && tariffValue && tariffValue !== 'All (Aggregated)') {
+        if (String(row[wiTariffL1Col] ?? '') !== tariffValue) continue;
+        if (wiTariffL2Col && tariffL2Value
+            && String(row[wiTariffL2Col] ?? '') !== tariffL2Value) continue;
+      }
       const dateVal = row[wiDateCol];
       if (!dateVal) continue;
       const dateObj = new Date(dateVal as string);
@@ -398,7 +419,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
       });
     }
     return rows.sort((a, b) => (a.date as string).localeCompare(b.date as string));
-  }, [baseForecast, data, wiDateCol, wiValueCol, wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiChannelCol, segmentValue, productValue, channelValue]);
+  }, [baseForecast, data, wiDateCol, wiValueCol, wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiChannelCol, wiProductL2Col, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, segmentValue, productValue, channelValue, productL2Value, channelL2Value, tariffValue, tariffL2Value]);
 
   // --- Manual-generation side panel helpers ---
 

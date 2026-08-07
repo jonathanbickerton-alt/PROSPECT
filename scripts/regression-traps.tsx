@@ -172,7 +172,15 @@ async function main() {
       if (ps.length < 2) continue;
       const head = (ps[0].textContent || '').trim();
       if (!/ MAPE$/.test(head)) continue;
-      summaryCards.push(`${head}=${(ps[1].textContent || '').trim()}`);
+      // FIND the value, do not index to it. This read `ps[1]` and broke the
+      // moment a subtitle was inserted between the heading and the number: it
+      // then scraped the same static caption from every card, so the filtered
+      // and cleared states compared textually identical and trap B "passed"
+      // by measuring nothing. An index into sibling paragraphs encodes the
+      // layout, and the layout is not what this trap is about.
+      const valueEl = ps.slice(1).find(p => /[%—]/.test(p.textContent || ''));
+      if (!valueEl) continue;
+      summaryCards.push(`${head}=${(valueEl.textContent || '').trim()}`);
     }
     // Monthly variance table: month | actual | baseline | variance | var% | inBand
     const variance: { month: string; actual: number; baseline: number }[] = [];

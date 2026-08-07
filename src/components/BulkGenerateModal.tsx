@@ -382,6 +382,10 @@ function BulkCompletePanel({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  // Everything the run could not cover, across BOTH populations. The heading
+  // reads this rather than the run status: a run can finish cleanly and still
+  // leave gaps, and that is the case the old heading hid.
+  const uncovered = skipped.length + failed;
   // A skipped leaf is not a failure - the run did what it was asked. It IS a
   // coverage gap, and the panel stays amber rather than green because any
   // aggregate summed from these leaves is understated by exactly their
@@ -396,15 +400,36 @@ function BulkCompletePanel({
         </div>
 
         <div>
-          <h3 className="text-lg font-bold text-slate-900 mb-3">{t('bulk_bulk_generation_complete')}</h3>
+          {/* A COVERAGE STATEMENT, not a success claim.
+              "Bulk generation complete" was true of the RUN and misleading about
+              the RESULT: it read as "everything is forecast" while leaves were
+              missing. The run finishing and the book being covered are two
+              different facts, and only one of them is what the user came to
+              learn. When anything is uncovered the heading says so. */}
+          <h3 className="text-lg font-bold text-slate-900 mb-3">
+            {uncovered > 0
+              ? t('bulk_complete_with_gaps', { count: uncovered })
+              : t('bulk_complete_full_coverage')}
+          </h3>
 
           {/* Result rows */}
           <div className="space-y-2 text-sm text-left max-w-xs mx-auto">
+            {/* GRAIN IS STATED. This counter and the skipped list below come
+                from DIFFERENT populations: `generated` counts chart series (the
+                5-part Step 1 cohorts), `skipped` counts forecast leaves (the
+                7-part keys the accuracy view and every aggregate are built
+                from). They were previously stacked as though they were two
+                views of one number, so "31,852 generated / 2 skipped" invited
+                a subtraction that means nothing. */}
             <div className="flex items-center gap-3 bg-emerald-50 rounded-lg px-4 py-2.5">
               <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
+              {/* The number stays BOLD and outside the string. Folding it
+                  into the interpolation to add the grain lost the emphasis the
+                  other rows in this panel use - the grain was the point, the
+                  emphasis did not have to be the price. */}
               <span>
                 <strong className="text-emerald-800">{generated}</strong>
-                <span className="text-emerald-700"> forecast{generated !== 1 ? 's' : ''} generated successfully</span>
+                <span className="text-emerald-700"> {t('bulk_complete_series_generated')}</span>
               </span>
             </div>
 
@@ -424,7 +449,9 @@ function BulkCompletePanel({
                   <AlertTriangle size={15} className="text-amber-500 shrink-0" />
                   <span>
                     <strong className="text-amber-800">{skipped.length}</strong>
-                    <span className="text-amber-700"> {t('bulk_leaves_no_forecast')}</span>
+                    <span className="text-amber-700"> {skipped.length === 1
+                      ? t('bulk_complete_leaves_uncovered_one')
+                      : t('bulk_complete_leaves_uncovered')}</span>
                   </span>
                 </div>
                 {/* NAMED, not counted. The count says an aggregate is
@@ -440,12 +467,19 @@ function BulkCompletePanel({
               </div>
             )}
 
+            {/* ONE SKIP VOCABULARY. This row and the leaf list above both used
+                the word "skipped" for different populations at different
+                grains, which made the modal read as though a leaf skip and a
+                series skip were the same event counted twice. Both now say
+                "could not be forecast", and each names its own grain. The
+                reason wording comes from SKIP_REASON_KEY in both places, so
+                there is one enum behind the whole panel. */}
             {failed > 0 && (
               <div className="flex items-center gap-3 bg-amber-50 rounded-lg px-4 py-2.5">
                 <AlertTriangle size={15} className="text-amber-500 shrink-0" />
                 <span>
                   <strong className="text-amber-800">{failed}</strong>
-                  <span className="text-amber-700"> {t('bulk_skipped_insufficient_data_points')}</span>
+                  <span className="text-amber-700"> {t('bulk_complete_series_uncovered')}</span>
                 </span>
               </div>
             )}
