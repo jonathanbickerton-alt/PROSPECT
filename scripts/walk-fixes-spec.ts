@@ -270,8 +270,23 @@ function stateOf(store: Map<string, BaseForecast>, unfittable: ReadonlySet<strin
     /setBaseForecast\(forecast\)/.test(rbody), 'it resolves and then discards the result');
   const eff = app.indexOf('if (!pendingAggregateKey) return;');
   check('VISIBLE WIRING: an effect drives it after the store commits',
-    eff !== -1 && /showResolvedAggregate\(pendingAggregateKey\)/.test(app.slice(eff, eff + 400)),
+    eff !== -1 && /showResolvedAggregate\(pendingAggregateKey\)/.test(app.slice(eff, eff + 1400)),
     'nothing calls the resolver');
+
+  // Found by the gate: generation runs in a worker pool, so a user can start a
+  // Step 1 generate and switch tabs before it lands. Without this gate the
+  // effect calls setBaseForecast with Step 1's aggregate while they are looking
+  // at Step 2 or 3, replacing the cohort under them.
+  const effBody = eff === -1 ? '' : app.slice(eff, eff + 1400);
+  check('VISIBLE WIRING: it only fires while the user is still on Step 1',
+    /activeView !== 'standard'/.test(effBody),
+    'a Step 1 result can overwrite what the user is looking at on Step 2 or 3');
+  check('VISIBLE WIRING: and discards the pending key rather than holding it',
+    /activeView !== 'standard'\) \{ setPendingAggregateKey\(null\); return; \}/.test(effBody),
+    'the result would resurrect on return, from a selection the user has left');
+  check('VISIBLE WIRING: activeView is in the dependency array',
+    /\[pendingAggregateKey, forecastStore, showResolvedAggregate, activeView\]/.test(app),
+    'the gate is read but the effect will not re-run when it changes');
 }
 
 // ── THE BANNER DOES NOT OUTLIVE ITS SUBJECT ───────────────────────────────

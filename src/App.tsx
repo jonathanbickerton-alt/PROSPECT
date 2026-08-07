@@ -2024,9 +2024,19 @@ export default function App() {
   // whole reason this is an effect and not a line in the .then above.
   useEffect(() => {
     if (!pendingAggregateKey) return;
+    // Only while the user is still on Step 1. Generation runs in a worker pool,
+    // so a user can start one and switch tabs before it lands - and this effect
+    // would then call setBaseForecast with Step 1's aggregate while they are
+    // looking at Step 2 or 3, silently replacing the cohort under them.
+    //
+    // The pending key is DISCARDED rather than held for their return. Firing it
+    // later would resurrect a result from a selection they have moved on from,
+    // which is the same class of surprise one tab further away - and the filter
+    // and tab-restore paths own what is displayed by then.
+    if (activeView !== 'standard') { setPendingAggregateKey(null); return; }
     showResolvedAggregate(pendingAggregateKey);
     setPendingAggregateKey(null);
-  }, [pendingAggregateKey, forecastStore, showResolvedAggregate]);
+  }, [pendingAggregateKey, forecastStore, showResolvedAggregate, activeView]);
 
   const generateStandardForecast = () => {
     setError('');
@@ -4496,11 +4506,16 @@ export default function App() {
         currentModel={selectedForecastModel}
         generationProgress={generationProgress}
         onConfirm={async (opts) => {
-          // generateAllMissingForecasts has no finally, so a synchronous throw
-          // before its await (worker construction, a non-cloneable postMessage
-          // payload) would skip the line that clears isGeneratingMissing and
-          // leave Generate Missing permanently disabled reading "Generating...".
-          // The modal catches the rejection but cannot reach App's state.
+          // Redundant since the finally moved INSIDE
+          // generateAllMissingForecasts, and kept deliberately: it costs
+          // nothing and clearing an already-cleared flag is idempotent.
+          //
+          // Its original comment claimed the function had no finally, which is
+          // no longer true - and that stale claim is worth correcting rather
+          // than deleting, because it names the exact symptom this wrapper was
+          // built for and that symptom recurred: Session H added a caller that
+          // did not go through here, and Generate Missing was disabled for the
+          // rest of Jon's walk.
           try {
             return await generateAllMissingForecasts(opts);
           } finally {
