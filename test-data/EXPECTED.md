@@ -5001,6 +5001,96 @@ to a session whose scope is generation. Recorded here so the accident is known
 and the identity is not removed by someone who does not know it is holding this
 up.
 
+### "Generate 1 missing" forever — the count meant the wrong thing, 2026-08-07
+
+Found by Jon's Phase 3 walk at section A, which is the point: the loop is
+invisible to every spec that checks one click.
+
+`missing` meant **has-no-forecast**. One leaf in the edge fixture has two months
+of history and cannot be fitted, so it never acquired a forecast, so it was
+counted as missing on every render. The button offered a generate, the generate
+produced nothing, the count did not move, and there was no exit. Each individual
+step was correct; only the cycle was wrong.
+
+`missing` now means **fittable-and-not-fitted**. A leaf a run has PROVED
+unfittable leaves the count and gets its own statement.
+
+**Unfittability is only knowable by trying**, so the known-unfittable set starts
+empty and grows from run results. A leaf is generatable until something
+demonstrates otherwise — the alternative, predicting fittability before fitting,
+would be a second copy of the fitting rule and would drift from it. The set is
+additive and never cleared by a later run: a leaf with two months of history does
+not acquire more because something else was generated. A new upload resets it,
+because that is genuinely new facts.
+
+**THREE zero states, not one.** This is the part to preserve:
+
+| state | leaves | meaning | button |
+|---|---|---|---|
+| `generate` | N fittable-missing | work to do | invites, names N |
+| `blocked` | 0 fittable, at least 1 unfittable | cannot be completed | disabled, says why |
+| `covered` | 0 and 0 | genuinely complete | disabled, says so |
+| `never` | no leaves at all | not in the data | disabled, says so |
+
+`blocked` and `covered` both have zero generatable leaves and mean opposite
+things; so do `covered` and `never`. Collapsing any pair is the defect, and
+guard-trap 24 is that collapse.
+
+**When only unfittable leaves remain, the button is not an invitation.** The
+caption already named them; the button state now agrees with the caption instead
+of contradicting it.
+
+### The user story ends with a forecast, not a placeholder — 2026-08-07
+
+After a scoped generate the aggregate is resolved through the seam and shown,
+with no further interaction. Generating and then displaying a placeholder leaves
+the user to guess whether it worked.
+
+It is handed to an **effect** rather than resolved in the promise callback,
+because the store the run just wrote has not committed when that callback fires.
+The first attempt read it by passing an identity updater to `setForecastStore` —
+a state setter used as a getter. It worked, and `spec:generate-missing`'s mirror
+control counted it as a ninth store-writing site, which is the correct
+complaint: **a reader that looks like a writer is one refactor from being one.**
+
+### A transient error must not outlive its subject — 2026-08-07
+
+"Not enough valid data points" was raised for one cohort and never cleared, so it
+followed the user across selections and onto unrelated screens, describing a
+cohort they had left. Cleared on selection change, along with the previous run's
+result panel — a list of skipped leaves belongs to the scope it was produced for.
+
+**The pass hiding inside the failure, worth recording because it was nearly
+mis-filed:** on a nonexistent leaf combination the app rendered "No data for this
+selection" correctly. That screen was right. The stale banner sitting on top of
+it was this defect, not that empty state — and an empty state wearing someone
+else's error looks exactly like a broken empty state.
+
+### The generating flag was protected at the call site, not in the function — 2026-08-07
+
+Jon could not trigger bulk generation at all. **Independent of the three defects
+above** — established before assuming otherwise, because the button has two
+disable conditions and only one of them was suspected.
+
+`isGeneratingMissing` is set at the top of `generateAllMissingForecasts` and was
+cleared on the normal path only. A `try/finally` existed — in the **bulk modal's
+`onConfirm` wrapper**, with a comment predicting the exact symptom: "would skip
+the line that clears isGeneratingMissing and leave Generate Missing permanently
+disabled reading Generating...".
+
+Session H added a second caller. The Step 1 aggregate branch calls the function
+directly and never touches that wrapper, so a throw on that path left the flag
+set and the button disabled for the rest of the session.
+
+**This is the third time this shape has cost a session**, after Session G's
+import bypass and the retirement rule's reach: a protection that lives at a call
+site rather than inside the thing it protects. The `finally` is now inside the
+function, where no caller can forget it. The modal's wrapper is left in place as
+harmless redundancy.
+
+The general rule, since three instances is enough to state one: **if the reason a
+thing is safe lives outside the thing, the next caller will not inherit it.**
+
 ### Generate-the-missing-leaves — the two zero states are not one state
 
 An aggregate selection on Step 1 generates the leaves under it, never a fit to

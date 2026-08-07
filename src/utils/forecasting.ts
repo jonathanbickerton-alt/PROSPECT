@@ -1953,12 +1953,40 @@ export function missingLeavesForKey(
   key: string,
   leafMap: Map<string, string[]>,
   store: Map<string, unknown>,
-): { enumerated: boolean; leaves: string[]; missing: string[]; present: string[] } {
+  /**
+   * Leaves a previous run has already PROVED cannot be fitted — too little
+   * history. Empty on a cold start, which is correct: unfittability is only
+   * knowable by trying, so a leaf is "missing" until a run demonstrates
+   * otherwise.
+   */
+  knownUnfittable: ReadonlySet<string> = new Set(),
+): {
+  enumerated: boolean;
+  leaves: string[];
+  /** Not fitted, and not yet known to be unfittable — the generatable set. */
+  missing: string[];
+  present: string[];
+  /** Not fitted, and proved unfittable. Counted apart, never generatable. */
+  unfittable: string[];
+} {
   const leaves = leafMap.get(key) ?? [];
-  if (leaves.length === 0) return { enumerated: false, leaves: [], missing: [], present: [] };
+  if (leaves.length === 0) {
+    return { enumerated: false, leaves: [], missing: [], present: [], unfittable: [] };
+  }
   const present = leaves.filter(k => store.has(k));
-  const missing = leaves.filter(k => !store.has(k));
-  return { enumerated: true, leaves, missing, present };
+  const absent = leaves.filter(k => !store.has(k));
+  // THE SPLIT THAT MAKES THE BUTTON HONEST. `missing` used to mean
+  // has-no-forecast, which counts a leaf that CANNOT have one. The button then
+  // read "Generate 1 missing" forever and generated nothing per click — an
+  // invitation the app could not honour, repeated indefinitely.
+  //
+  // Unfittable leaves leave the count and get their own statement. They are
+  // not a failure and not a to-do: they are a coverage fact, and the caption
+  // already names them. The button state joins the caption rather than
+  // contradicting it.
+  const unfittable = absent.filter(k => knownUnfittable.has(k));
+  const missing = absent.filter(k => !knownUnfittable.has(k));
+  return { enumerated: true, leaves, missing, present, unfittable };
 }
 
 /**

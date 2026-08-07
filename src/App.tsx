@@ -1637,18 +1637,75 @@ export default function App() {
    * things; collapsing them is the degenerate case these states exist to keep
    * apart, and a button reading "generate 0" would be both wrong and unhelpful.
    */
+  /**
+   * Leaves a run has PROVED cannot be fitted, accumulated across runs.
+   *
+   * Unfittability is only knowable by trying, so this starts empty and a leaf
+   * counts as generatable until a run says otherwise. It is additive and never
+   * cleared by a later run: a leaf with two months of history does not acquire
+   * more history because something else was generated, and forgetting would
+   * put the button straight back to offering a generate that does nothing.
+   * A new upload replaces `data`, which is when it should reset - see the
+   * effect below.
+   */
+  const [unfittableLeaves, setUnfittableLeaves] = useState<ReadonlySet<string>>(new Set());
+
   const stdAggregateState = useMemo(() => {
     const anyAggregated =
       segmentValue === 'All (Aggregated)' || productValue === 'All (Aggregated)' ||
       channelValue === 'All (Aggregated)' || tariffValue === 'All (Aggregated)';
-    if (!anyAggregated) return { kind: 'leaf' as const, missing: 0, total: 0 };
-    const { enumerated, missing, leaves } =
-      missingLeavesForKey(filterToKey(stdSelectionFilter), populatedCohorts.leafMap, forecastStore);
-    if (!enumerated) return { kind: 'never' as const, missing: 0, total: 0 };
-    if (missing.length === 0) return { kind: 'covered' as const, missing: 0, total: leaves.length };
-    return { kind: 'generate' as const, missing: missing.length, total: leaves.length };
+    if (!anyAggregated) return { kind: 'leaf' as const, missing: 0, total: 0, unfittable: 0 };
+    const { enumerated, missing, leaves, unfittable } = missingLeavesForKey(
+      filterToKey(stdSelectionFilter), populatedCohorts.leafMap, forecastStore, unfittableLeaves,
+    );
+    if (!enumerated) return { kind: 'never' as const, missing: 0, total: 0, unfittable: 0 };
+    if (missing.length > 0) {
+      return { kind: 'generate' as const, missing: missing.length, total: leaves.length,
+               unfittable: unfittable.length };
+    }
+    // Zero generatable leaves. Which of the two zero states this is depends on
+    // whether anything is KNOWN unfittable — "covered" claims the scope is
+    // fully forecast, which is false when leaves are missing and cannot be
+    // fitted. A blocked scope is not an invitation, so the button says so
+    // instead of offering a generate that would produce nothing.
+    if (unfittable.length > 0) {
+      return { kind: 'blocked' as const, missing: 0, total: leaves.length,
+               unfittable: unfittable.length };
+    }
+    return { kind: 'covered' as const, missing: 0, total: leaves.length, unfittable: 0 };
   }, [segmentValue, productValue, channelValue, tariffValue, stdSelectionFilter,
-      populatedCohorts, forecastStore]);
+      populatedCohorts, forecastStore, unfittableLeaves]);
+
+  /**
+   * Transient generation feedback is cleared when the SELECTION changes.
+   *
+   * "Not enough valid data points" is true of the cohort it was raised for and
+   * false of every other one. It was set and never cleared, so it followed the
+   * user across selections and onto unrelated screens, describing a cohort they
+   * had left. An error that outlives its subject stops being information and
+   * starts being furniture - and the honest empty state underneath it took the
+   * blame for the banner sitting on top.
+   *
+   * The last run's result panel goes with it, for the same reason: a list of
+   * skipped leaves belongs to the scope it was produced for.
+   *
+   * Keyed on the selection only. A generate raises its error with the selection
+   * unchanged, so this cannot wipe the message it just produced.
+   */
+  useEffect(() => {
+    setError('');
+    setStdGenerateResult(null);
+  }, [segmentValue, productValue, productL2Value, channelValue, channelL2Value,
+      tariffValue, tariffL2Value]);
+
+  /**
+   * A new upload is a new set of facts. Leaves proved unfittable against the
+   * old file say nothing about this one, and carrying them over would suppress
+   * generation for cohorts that may now have history.
+   */
+  useEffect(() => {
+    setUnfittableLeaves(new Set());
+  }, [data]);
 
   /** Distinct segment values from the uploaded dataset. */
   const availableSegments = useMemo(
@@ -1941,6 +1998,31 @@ export default function App() {
   const [stdGenerateResult, setStdGenerateResult] = useState<
     { generated: number; skipped: string[] } | null>(null);
 
+  /** The aggregate a just-finished scoped run should display, or null. */
+  const [pendingAggregateKey, setPendingAggregateKey] = useState<string | null>(null);
+
+  /**
+   * Show the derived aggregate for `key`, through the seam.
+   *
+   * Named rather than inlined into the effect so the setBaseForecast call-site
+   * enumeration can attribute it to something, with a reason that is true of
+   * it: the argument is a resolveForecast result.
+   */
+  const showResolvedAggregate = useCallback((key: string) => {
+    const { forecast } = resolveForecast(key);
+    if (!forecast) return;
+    setBaseForecast(forecast);
+    setForecastUpdatedAt(format(new Date(), 'dd MMM yyyy, HH:mm'));
+  }, [resolveForecast]);
+
+  // Runs after the generated leaves have landed in the store, which is the
+  // whole reason this is an effect and not a line in the .then above.
+  useEffect(() => {
+    if (!pendingAggregateKey) return;
+    showResolvedAggregate(pendingAggregateKey);
+    setPendingAggregateKey(null);
+  }, [pendingAggregateKey, forecastStore, showResolvedAggregate]);
+
   const generateStandardForecast = () => {
     setError('');
     setCompareCategories([]);
@@ -1976,8 +2058,8 @@ export default function App() {
       channelValue === 'All (Aggregated)' || tariffValue === 'All (Aggregated)';
     if (anyAggregated) {
       const aggKey = filterToKey(stdSelectionFilter);
-      const { enumerated, missing, leaves } = missingLeavesForKey(
-        aggKey, populatedCohorts.leafMap, forecastStore,
+      const { enumerated, missing, leaves, unfittable } = missingLeavesForKey(
+        aggKey, populatedCohorts.leafMap, forecastStore, unfittableLeaves,
       );
       if (!enumerated) {
         // No leaves at all — the selection is not something this data can
@@ -1987,7 +2069,13 @@ export default function App() {
         return;
       }
       if (missing.length === 0) {
-        setError(t('standard_all_leaves_present', { count: leaves.length }));
+        // Nothing generatable. Which message depends on WHY, and the two are
+        // not interchangeable: a scope blocked by leaves that cannot be fitted
+        // is not a covered scope, and saying it is would be the button's old
+        // lie in a different place.
+        setError(unfittable.length > 0
+          ? t('standard_scope_blocked_by_unfittable', { count: unfittable.length })
+          : t('standard_all_leaves_present', { count: leaves.length }));
         return;
       }
       // Scoped run through the ONE generator. Not a second leaf-fitting path.
@@ -1999,10 +2087,25 @@ export default function App() {
       // see is a coverage statement; a silent one misrepresents what was built.
       setStdGenerateResult(null);
       generateAllMissingForecasts({ restrictToLeafKeys: new Set(missing) })
-        .then(res => setStdGenerateResult({
-          generated: res.generated,
-          skipped: res.skipped.map(sk => sk.fKey),
-        }))
+        .then(res => {
+          const skippedKeys = res.skipped.map(sk => sk.fKey);
+          setStdGenerateResult({ generated: res.generated, skipped: skippedKeys });
+          // A leaf this run could not fit is now KNOWN unfittable. Recording it
+          // is what stops the button offering the same generate forever.
+          if (skippedKeys.length) {
+            setUnfittableLeaves(prev => new Set([...prev, ...skippedKeys]));
+          }
+          // THE USER STORY ENDS WITH THE FORECAST VISIBLE. Generating and then
+          // showing a placeholder leaves the user to guess whether it worked.
+          //
+          // Handed to an effect rather than resolved here, because the store
+          // this run just wrote has not committed yet. The first version read
+          // it by passing an identity updater to setForecastStore - a state
+          // setter used as a getter. It worked, and the mirror control counted
+          // it as a ninth store-writing site, which is the correct complaint:
+          // a reader that looks like a writer is one refactor from being one.
+          setPendingAggregateKey(aggKey);
+        })
         .catch(() => {
           // Silence here would contradict this branch's own argument: an
           // outcome the user cannot see misrepresents what was produced.
@@ -3664,286 +3767,298 @@ export default function App() {
     // generating panel BEFORE the synchronous pre-flight (cohort enumeration +
     // data-map build + worker payload clone). Without this the main thread is
     // blocked for that whole phase and the modal appears frozen at 0%.
+    // The clear is in a `finally` HERE, not at a call site. It used to live
+    // only in the bulk modal's onConfirm wrapper, which is the shape that
+    // fails the moment a second caller appears - and one did: Session H's
+    // Step 1 aggregate branch calls this directly. A throw on that path left
+    // isGeneratingMissing true forever, which disables Generate Missing
+    // permanently and is exactly the symptom the wrapper's own comment
+    // predicted. A protection a call site can forget is not a protection.
     setIsGeneratingMissing(true);
-    setGenerationProgress({ current: 0, total: 0 });
-    await new Promise<void>(resolve => setTimeout(resolve, 0));
+    try {
+      setGenerationProgress({ current: 0, total: 0 });
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
 
-    let generated = 0;
-    let failed = 0;
-    let empty = 0;
-    // Typed-leaf tallies, tracked separately - see the worker for why they are
-    // not folded into the counters above.
-    let ibroGenerated = 0;
-    let ibroFailed = 0;
-    const ibroGeneratedKeys: string[] = [];
-    const newForecasts: Record<string, any> = {};
-    const generatedIds: string[] = [];
+      let generated = 0;
+      let failed = 0;
+      let empty = 0;
+      // Typed-leaf tallies, tracked separately - see the worker for why they are
+      // not folded into the counters above.
+      let ibroGenerated = 0;
+      let ibroFailed = 0;
+      const ibroGeneratedKeys: string[] = [];
+      const newForecasts: Record<string, any> = {};
+      const generatedIds: string[] = [];
 
-    // ── Phase 1: Pre-Aggregation ─────────────────────────────────────────────
-    // Single O(N) pass over data builds a Map<cohortKey, rows[]>.
-    // All per-cohort filter chains inside the loop become O(1) .get() lookups.
-    // Built BEFORE target selection so we can enumerate only populated cohorts.
-    const cohortDataMap: CohortDataMap = buildCohortDataMap(
-      data,
-      wiDateCol,
-      wiSegmentCol,
-      wiProductCol,
-      wiProductL2Col,
-      wiChannelCol,
-      wiChannelL2Col,
-      wiTariffL1Col,
-      wiTariffL2Col,
-    );
+      // ── Phase 1: Pre-Aggregation ─────────────────────────────────────────────
+      // Single O(N) pass over data builds a Map<cohortKey, rows[]>.
+      // All per-cohort filter chains inside the loop become O(1) .get() lookups.
+      // Built BEFORE target selection so we can enumerate only populated cohorts.
+      const cohortDataMap: CohortDataMap = buildCohortDataMap(
+        data,
+        wiDateCol,
+        wiSegmentCol,
+        wiProductCol,
+        wiProductL2Col,
+        wiChannelCol,
+        wiChannelL2Col,
+        wiTariffL1Col,
+        wiTariffL2Col,
+      );
 
-    // Enumerate only cohorts that actually exist in the data — see the canonical
-    // missingStandardCohorts memo defined above, which every missing-count
-    // consumer now shares. Keeps every data-spanning aggregate (derived in the
-    // worker by summing its constituent leaves), drops only genuinely-empty
-    // combinations, and never keys off the user's tariff selection.
-    const targets = options?.restrictToLeafKeys
-      // A scoped leaf run fits IBRO leaves only. The "Standard" cohort
-      // population is a separate enumeration with its own 5-part identity and
-      // nothing to do with the aggregate the user selected; sweeping it in
-      // would generate work nobody asked for and inflate the reported count.
-      ? []
-      : options?.cohortIds
-        ? allCohorts.filter(c => options.cohortIds!.includes(c.id))
-        : missingStandardCohorts;
+      // Enumerate only cohorts that actually exist in the data — see the canonical
+      // missingStandardCohorts memo defined above, which every missing-count
+      // consumer now shares. Keeps every data-spanning aggregate (derived in the
+      // worker by summing its constituent leaves), drops only genuinely-empty
+      // combinations, and never keys off the user's tariff selection.
+      const targets = options?.restrictToLeafKeys
+        // A scoped leaf run fits IBRO leaves only. The "Standard" cohort
+        // population is a separate enumeration with its own 5-part identity and
+        // nothing to do with the aggregate the user selected; sweeping it in
+        // would generate work nobody asked for and inflate the reported count.
+        ? []
+        : options?.cohortIds
+          ? allCohorts.filter(c => options.cohortIds!.includes(c.id))
+          : missingStandardCohorts;
 
-    // ── Phase 2: Build IBRO cohort list (needed before workers spawn) ────────
-    // Enumerate unique L1×L2 combinations that exist in the data.
-    // These produce typed BaseForecast objects consumed by ForecastVsActualsTab.
-    type IbroCohortSpec = { fKey: string; seg: string; prod: string; prodL2: string; chan: string; chanL2: string; tariffL1: string; tariffL2: string };
-    const ibroCohortArray: IbroCohortSpec[] = [];
+      // ── Phase 2: Build IBRO cohort list (needed before workers spawn) ────────
+      // Enumerate unique L1×L2 combinations that exist in the data.
+      // These produce typed BaseForecast objects consumed by ForecastVsActualsTab.
+      type IbroCohortSpec = { fKey: string; seg: string; prod: string; prodL2: string; chan: string; chanL2: string; tariffL1: string; tariffL2: string };
+      const ibroCohortArray: IbroCohortSpec[] = [];
 
-    if (wiInflowVal && wiOutflowVal && wiRetentionVal && wiDateCol && wiMetricCol && wiValueCol) {
-      type CohortSpec = { seg: string; prod: string; prodL2: string; chan: string; chanL2: string; tariffL1: string; tariffL2: string };
-      const uniqueCohorts = new Map<string, CohortSpec>();
+      if (wiInflowVal && wiOutflowVal && wiRetentionVal && wiDateCol && wiMetricCol && wiValueCol) {
+        type CohortSpec = { seg: string; prod: string; prodL2: string; chan: string; chanL2: string; tariffL1: string; tariffL2: string };
+        const uniqueCohorts = new Map<string, CohortSpec>();
 
-      if (wiSegmentCol || wiProductCol || wiChannelCol || wiTariffL1Col) {
-        data.forEach(row => {
-          const seg    = wiSegmentCol   ? String(row[wiSegmentCol]   || 'All').trim() : 'All';
-          const prod   = wiProductCol   ? String(row[wiProductCol]   || 'All').trim() : 'All';
-          const prodL2 = wiProductL2Col ? String(row[wiProductL2Col] || 'All').trim() : 'All';
-          const chan   = wiChannelCol   ? String(row[wiChannelCol]   || 'All').trim() : 'All';
-          const chanL2 = wiChannelL2Col ? String(row[wiChannelL2Col] || 'All').trim() : 'All';
-          const tarL1  = wiTariffL1Col  ? String(row[wiTariffL1Col]  || 'All').trim() : 'All';
-          const tarL2  = wiTariffL2Col  ? String(row[wiTariffL2Col]  || 'All').trim() : 'All';
-          const k = makeForecastKey(seg, prod, prodL2 !== '' ? prodL2 : 'All', chan, chanL2 !== '' ? chanL2 : 'All', tarL1 !== '' ? tarL1 : 'All', tarL2 !== '' ? tarL2 : 'All');
-          if (!uniqueCohorts.has(k)) {
-            uniqueCohorts.set(k, { seg, prod, prodL2: prodL2 || 'All', chan, chanL2: chanL2 || 'All', tariffL1: tarL1 || 'All', tariffL2: tarL2 || 'All' });
-          }
-        });
-      } else {
-        const k = makeForecastKey('All', 'All', null, 'All', null);
-        uniqueCohorts.set(k, { seg: 'All', prod: 'All', prodL2: 'All', chan: 'All', chanL2: 'All', tariffL1: 'All', tariffL2: 'All' });
-      }
-
-      for (const [fKey, spec] of uniqueCohorts.entries()) {
-        // Scoped run: only the leaves asked for. The filter is applied HERE,
-        // after enumeration from the data, rather than by intersecting a
-        // caller-supplied list — so a key that does not exist in the data is
-        // simply absent rather than silently fitted from nothing.
-        if (options?.restrictToLeafKeys && !options.restrictToLeafKeys.has(fKey)) continue;
-        ibroCohortArray.push({ fKey, ...spec });
-      }
-    }
-
-    // ── Phase 3: Worker pool ──────────────────────────────────────────────────
-    // Determine how many workers to spawn — capped at hardwareConcurrency and 8.
-    const runPreUnc  = options?.preHorizonUncertainty   ?? genPreHorizonUncertainty;
-    const runPostExp = options?.postHorizonExpansionRate ?? genPostHorizonExpansionRate;
-    const runConfHor = options?.confidenceHorizon        ?? confidenceHorizon;
-    const runModel   = options?.model                   ?? selectedForecastModel;
-
-    const hardwareCores = typeof navigator !== 'undefined' ? (navigator.hardwareConcurrency || 4) : 4;
-    const poolSize = Math.min(hardwareCores, 8, Math.max(targets.length, ibroCohortArray.length, 1));
-
-    // Distribute standard cohorts and IBRO cohorts across workers round-robin.
-    type StandardCohortSpec = { id: string; segment: string; product: string; productL2?: string; channel?: string; channelL2?: string; tariffL1?: string; tariffL2?: string; scenario: string };
-    const workerStandard: StandardCohortSpec[][] = Array.from({ length: poolSize }, () => []);
-    const workerIbro: IbroCohortSpec[][] = Array.from({ length: poolSize }, () => []);
-
-    targets.forEach((c, i) => {
-      workerStandard[i % poolSize].push({
-        id: c.id,
-        segment: c.segment,
-        product: c.product,
-        productL2: c.productL2,
-        channel: c.channel,
-        channelL2: c.channelL2,
-        tariffL1: c.tariffL1,
-        tariffL2: c.tariffL2,
-        scenario: c.scenario,
-      });
-    });
-    ibroCohortArray.forEach((spec, i) => workerIbro[i % poolSize].push(spec));
-
-    // Flatten the entire pre-aggregated map into a single array shared by every worker.
-    // Each worker receives all rows so it can rebuild the leaf buckets it needs and derive
-    // any 'All'-dimension aggregate by summing those leaves (bottom-up — there is no
-    // O(N) scan fallback any more). The dataset is small enough that structured-clone
-    // overhead is acceptable.
-    const allRows: PreAggRow[] = Array.from(cohortDataMap.values()).flat();
-
-    const workerConfig = {
-      wiDateCol, wiMetricCol, wiValueCol,
-      wiSegmentCol, wiProductCol, wiProductL2Col,
-      wiChannelCol, wiChannelL2Col,
-      wiTariffL1Col, wiTariffL2Col,
-      wiInflowVal: wiInflowVal || '',
-      wiOutflowVal: wiOutflowVal || '',
-      wiBaseVal: wiBaseVal || '',
-      wiRetentionVal: wiRetentionVal || '',
-      wiArpuCol: wiArpuCol || '',
-      wiRevenueCol: wiRevenueCol || '',
-      genLength,
-      runPreUnc,
-      runPostExp,
-      runConfHor,
-      runModel,
-      autoModel:      options?.autoModel      ?? true,
-      autoConfidence: options?.autoConfidence ?? true,
-      // P10 — cohort key -> flagged yyyy-MM months (reason text dropped; the
-      // worker only needs to know which months to substitute).
-      oneOffMonths: (() => {
-        const out: Record<string, string[]> = {};
-        for (const key in oneOffMonths) out[key] = oneOffMonths[key].map(f => f.month);
-        return out;
-      })(),
-    };
-
-    // Bottom-up short-leaf warnings collected across the worker pool.
-    const collectedShortLeafWarnings = new Map<string, { shortLeaves: number; totalLeaves: number; share: number }>();
-    // Typed-path cohorts that produced no forecast, NAMED. Accumulated across
-    // the whole pool: each worker only sees its own slice, so a per-worker
-    // list would understate coverage for the run as a whole.
-    const collectedSkipped: SkippedCohort[] = [];
-
-    // A scoped run has no standard targets by construction, so `targets.length`
-    // would leave total at 0 while current climbed. Harmless today - Step 1 is
-    // the only scoped caller and it opens no progress modal - but that is an
-    // apparent guarantee resting on one call site, not a real one.
-    setGenerationProgress({ current: 0,
-      total: options?.restrictToLeafKeys ? options.restrictToLeafKeys.size : targets.length });
-    const newTypedForecasts = new Map<string, BaseForecast>();
-
-    await Promise.all(
-      Array.from({ length: poolSize }, (_, w) =>
-        new Promise<void>((resolve) => {
-          const worker = new Worker(
-            new URL('./workers/forecasting.worker.ts', import.meta.url),
-            { type: 'module' },
-          );
-
-          worker.onmessage = (ev: MessageEvent) => {
-            const result = ev.data as {
-              newForecasts: Record<string, any>;
-              generatedIds: string[];
-              newTypedForecasts: Array<[string, BaseForecast]>;
-              generated: number;
-              failed: number;
-              empty?: number;
-              /** Typed-leaf tallies. Optional so a worker build predating them
-               *  reads as absent rather than as zero work done. */
-              ibroGenerated?: number;
-              ibroFailed?: number;
-              ibroGeneratedKeys?: string[];
-              shortLeafWarnings?: Array<[string, { shortLeaves: number; totalLeaves: number; share: number }]>;
-              skipped?: SkippedCohort[];
-            };
-            // Bottom-up: aggregates whose seasonal amplitude may be understated
-            // because most constituent leaves are too short to fit seasonality.
-            collectedSkipped.push(...(result.skipped ?? []));
-            for (const [cohortId, w] of result.shortLeafWarnings ?? []) {
-              collectedShortLeafWarnings.set(cohortId, w);
+        if (wiSegmentCol || wiProductCol || wiChannelCol || wiTariffL1Col) {
+          data.forEach(row => {
+            const seg    = wiSegmentCol   ? String(row[wiSegmentCol]   || 'All').trim() : 'All';
+            const prod   = wiProductCol   ? String(row[wiProductCol]   || 'All').trim() : 'All';
+            const prodL2 = wiProductL2Col ? String(row[wiProductL2Col] || 'All').trim() : 'All';
+            const chan   = wiChannelCol   ? String(row[wiChannelCol]   || 'All').trim() : 'All';
+            const chanL2 = wiChannelL2Col ? String(row[wiChannelL2Col] || 'All').trim() : 'All';
+            const tarL1  = wiTariffL1Col  ? String(row[wiTariffL1Col]  || 'All').trim() : 'All';
+            const tarL2  = wiTariffL2Col  ? String(row[wiTariffL2Col]  || 'All').trim() : 'All';
+            const k = makeForecastKey(seg, prod, prodL2 !== '' ? prodL2 : 'All', chan, chanL2 !== '' ? chanL2 : 'All', tarL1 !== '' ? tarL1 : 'All', tarL2 !== '' ? tarL2 : 'All');
+            if (!uniqueCohorts.has(k)) {
+              uniqueCohorts.set(k, { seg, prod, prodL2: prodL2 || 'All', chan, chanL2: chanL2 || 'All', tariffL1: tarL1 || 'All', tariffL2: tarL2 || 'All' });
             }
-            Object.assign(newForecasts, result.newForecasts);
-            generatedIds.push(...result.generatedIds);
-            generated += result.generated;
-            failed    += result.failed;
-            empty     += result.empty ?? 0;
-            ibroGenerated += result.ibroGenerated ?? 0;
-            ibroFailed    += result.ibroFailed ?? 0;
-            ibroGeneratedKeys.push(...(result.ibroGeneratedKeys ?? []));
-            for (const [k, v] of result.newTypedForecasts) {
-              console.log(`[generateAllMissingForecasts] BaseForecast built for store key: ${k}`);
-              newTypedForecasts.set(k, v);
-            }
-            setGenerationProgress(prev => ({
-              ...prev,
-              // advance for every processed cohort (generated + insufficient + empty).
-              // A scoped leaf run has no standard cohorts at all, so without the
-              // typed tallies the bar would never move while real work happened.
-              current: prev.current + result.generated + result.failed + (result.empty ?? 0)
-                     + (options?.restrictToLeafKeys ? (result.ibroGenerated ?? 0) + (result.ibroFailed ?? 0) : 0),
-            }));
-            worker.terminate();
-            resolve();
-          };
-
-          worker.onerror = (err) => {
-            console.error(`[Worker ${w} error]`, err);
-            // Count all cohorts this worker was responsible for as failed.
-            const workerTotal = workerStandard[w].length;
-            failed += workerTotal;
-            setGenerationProgress(prev => ({ ...prev, current: prev.current + workerTotal }));
-            worker.terminate();
-            resolve(); // resolve so Promise.all doesn't short-circuit
-          };
-
-          worker.postMessage({
-            workerId: w,
-            config: workerConfig,
-            rows: allRows,
-            standardCohorts: workerStandard[w],
-            ibroCohorts: workerIbro[w],
           });
-        })
-      )
-    );
+        } else {
+          const k = makeForecastKey('All', 'All', null, 'All', null);
+          uniqueCohorts.set(k, { seg: 'All', prod: 'All', prodL2: 'All', chan: 'All', chanL2: 'All', tariffL1: 'All', tariffL2: 'All' });
+        }
 
-    setGenerationProgress({ current: 0, total: 0 });
-    setIsGeneratingMissing(false);
-    setShortLeafWarnings(prev => ({ ...prev, ...Object.fromEntries(collectedShortLeafWarnings) }));
-    setSavedForecasts(prev => ({ ...prev, ...newForecasts }));
+        for (const [fKey, spec] of uniqueCohorts.entries()) {
+          // Scoped run: only the leaves asked for. The filter is applied HERE,
+          // after enumeration from the data, rather than by intersecting a
+          // caller-supplied list — so a key that does not exist in the data is
+          // simply absent rather than silently fitted from nothing.
+          if (options?.restrictToLeafKeys && !options.restrictToLeafKeys.has(fKey)) continue;
+          ibroCohortArray.push({ fKey, ...spec });
+        }
+      }
 
-    if (newTypedForecasts.size > 0) {
-      setForecastStore(prev => {
-        const next = new Map(prev);
-        for (const [k, v] of newTypedForecasts.entries()) next.set(k, v);
-        return next;
+      // ── Phase 3: Worker pool ──────────────────────────────────────────────────
+      // Determine how many workers to spawn — capped at hardwareConcurrency and 8.
+      const runPreUnc  = options?.preHorizonUncertainty   ?? genPreHorizonUncertainty;
+      const runPostExp = options?.postHorizonExpansionRate ?? genPostHorizonExpansionRate;
+      const runConfHor = options?.confidenceHorizon        ?? confidenceHorizon;
+      const runModel   = options?.model                   ?? selectedForecastModel;
+
+      const hardwareCores = typeof navigator !== 'undefined' ? (navigator.hardwareConcurrency || 4) : 4;
+      const poolSize = Math.min(hardwareCores, 8, Math.max(targets.length, ibroCohortArray.length, 1));
+
+      // Distribute standard cohorts and IBRO cohorts across workers round-robin.
+      type StandardCohortSpec = { id: string; segment: string; product: string; productL2?: string; channel?: string; channelL2?: string; tariffL1?: string; tariffL2?: string; scenario: string };
+      const workerStandard: StandardCohortSpec[][] = Array.from({ length: poolSize }, () => []);
+      const workerIbro: IbroCohortSpec[][] = Array.from({ length: poolSize }, () => []);
+
+      targets.forEach((c, i) => {
+        workerStandard[i % poolSize].push({
+          id: c.id,
+          segment: c.segment,
+          product: c.product,
+          productL2: c.productL2,
+          channel: c.channel,
+          channelL2: c.channelL2,
+          tariffL1: c.tariffL1,
+          tariffL2: c.tariffL2,
+          scenario: c.scenario,
+        });
       });
+      ibroCohortArray.forEach((spec, i) => workerIbro[i % poolSize].push(spec));
+
+      // Flatten the entire pre-aggregated map into a single array shared by every worker.
+      // Each worker receives all rows so it can rebuild the leaf buckets it needs and derive
+      // any 'All'-dimension aggregate by summing those leaves (bottom-up — there is no
+      // O(N) scan fallback any more). The dataset is small enough that structured-clone
+      // overhead is acceptable.
+      const allRows: PreAggRow[] = Array.from(cohortDataMap.values()).flat();
+
+      const workerConfig = {
+        wiDateCol, wiMetricCol, wiValueCol,
+        wiSegmentCol, wiProductCol, wiProductL2Col,
+        wiChannelCol, wiChannelL2Col,
+        wiTariffL1Col, wiTariffL2Col,
+        wiInflowVal: wiInflowVal || '',
+        wiOutflowVal: wiOutflowVal || '',
+        wiBaseVal: wiBaseVal || '',
+        wiRetentionVal: wiRetentionVal || '',
+        wiArpuCol: wiArpuCol || '',
+        wiRevenueCol: wiRevenueCol || '',
+        genLength,
+        runPreUnc,
+        runPostExp,
+        runConfHor,
+        runModel,
+        autoModel:      options?.autoModel      ?? true,
+        autoConfidence: options?.autoConfidence ?? true,
+        // P10 — cohort key -> flagged yyyy-MM months (reason text dropped; the
+        // worker only needs to know which months to substitute).
+        oneOffMonths: (() => {
+          const out: Record<string, string[]> = {};
+          for (const key in oneOffMonths) out[key] = oneOffMonths[key].map(f => f.month);
+          return out;
+        })(),
+      };
+
+      // Bottom-up short-leaf warnings collected across the worker pool.
+      const collectedShortLeafWarnings = new Map<string, { shortLeaves: number; totalLeaves: number; share: number }>();
+      // Typed-path cohorts that produced no forecast, NAMED. Accumulated across
+      // the whole pool: each worker only sees its own slice, so a per-worker
+      // list would understate coverage for the run as a whole.
+      const collectedSkipped: SkippedCohort[] = [];
+
+      // A scoped run has no standard targets by construction, so `targets.length`
+      // would leave total at 0 while current climbed. Harmless today - Step 1 is
+      // the only scoped caller and it opens no progress modal - but that is an
+      // apparent guarantee resting on one call site, not a real one.
+      setGenerationProgress({ current: 0,
+        total: options?.restrictToLeafKeys ? options.restrictToLeafKeys.size : targets.length });
+      const newTypedForecasts = new Map<string, BaseForecast>();
+
+      await Promise.all(
+        Array.from({ length: poolSize }, (_, w) =>
+          new Promise<void>((resolve) => {
+            const worker = new Worker(
+              new URL('./workers/forecasting.worker.ts', import.meta.url),
+              { type: 'module' },
+            );
+
+            worker.onmessage = (ev: MessageEvent) => {
+              const result = ev.data as {
+                newForecasts: Record<string, any>;
+                generatedIds: string[];
+                newTypedForecasts: Array<[string, BaseForecast]>;
+                generated: number;
+                failed: number;
+                empty?: number;
+                /** Typed-leaf tallies. Optional so a worker build predating them
+                 *  reads as absent rather than as zero work done. */
+                ibroGenerated?: number;
+                ibroFailed?: number;
+                ibroGeneratedKeys?: string[];
+                shortLeafWarnings?: Array<[string, { shortLeaves: number; totalLeaves: number; share: number }]>;
+                skipped?: SkippedCohort[];
+              };
+              // Bottom-up: aggregates whose seasonal amplitude may be understated
+              // because most constituent leaves are too short to fit seasonality.
+              collectedSkipped.push(...(result.skipped ?? []));
+              for (const [cohortId, w] of result.shortLeafWarnings ?? []) {
+                collectedShortLeafWarnings.set(cohortId, w);
+              }
+              Object.assign(newForecasts, result.newForecasts);
+              generatedIds.push(...result.generatedIds);
+              generated += result.generated;
+              failed    += result.failed;
+              empty     += result.empty ?? 0;
+              ibroGenerated += result.ibroGenerated ?? 0;
+              ibroFailed    += result.ibroFailed ?? 0;
+              ibroGeneratedKeys.push(...(result.ibroGeneratedKeys ?? []));
+              for (const [k, v] of result.newTypedForecasts) {
+                console.log(`[generateAllMissingForecasts] BaseForecast built for store key: ${k}`);
+                newTypedForecasts.set(k, v);
+              }
+              setGenerationProgress(prev => ({
+                ...prev,
+                // advance for every processed cohort (generated + insufficient + empty).
+                // A scoped leaf run has no standard cohorts at all, so without the
+                // typed tallies the bar would never move while real work happened.
+                current: prev.current + result.generated + result.failed + (result.empty ?? 0)
+                       + (options?.restrictToLeafKeys ? (result.ibroGenerated ?? 0) + (result.ibroFailed ?? 0) : 0),
+              }));
+              worker.terminate();
+              resolve();
+            };
+
+            worker.onerror = (err) => {
+              console.error(`[Worker ${w} error]`, err);
+              // Count all cohorts this worker was responsible for as failed.
+              const workerTotal = workerStandard[w].length;
+              failed += workerTotal;
+              setGenerationProgress(prev => ({ ...prev, current: prev.current + workerTotal }));
+              worker.terminate();
+              resolve(); // resolve so Promise.all doesn't short-circuit
+            };
+
+            worker.postMessage({
+              workerId: w,
+              config: workerConfig,
+              rows: allRows,
+              standardCohorts: workerStandard[w],
+              ibroCohorts: workerIbro[w],
+            });
+          })
+        )
+      );
+
+      setGenerationProgress({ current: 0, total: 0 });
+      setShortLeafWarnings(prev => ({ ...prev, ...Object.fromEntries(collectedShortLeafWarnings) }));
+      setSavedForecasts(prev => ({ ...prev, ...newForecasts }));
+
+      if (newTypedForecasts.size > 0) {
+        setForecastStore(prev => {
+          const next = new Map(prev);
+          for (const [k, v] of newTypedForecasts.entries()) next.set(k, v);
+          return next;
+        });
+      }
+
+      // Record the run in ForecastContext history.
+      const now = new Date().toISOString();
+      const record: BulkRunRecord = {
+        id: Math.random().toString(36).slice(2, 11),
+        name: options?.name?.trim() || `Bulk Run — ${format(new Date(now), 'dd MMM yyyy, HH:mm')}`,
+        comment: options?.comment?.trim() ?? '',
+        timestamp: now,
+        settings: {
+          model:                   options?.model ?? selectedForecastModel,
+          preHorizonUncertainty:   options?.preHorizonUncertainty  ?? genPreHorizonUncertainty,
+          postHorizonExpansionRate: options?.postHorizonExpansionRate ?? genPostHorizonExpansionRate,
+          confidenceHorizon:       options?.confidenceHorizon ?? confidenceHorizon,
+          forecastLength: genLength,
+        },
+        // A scoped leaf run does zero STANDARD-cohort work by construction, so
+        // reporting those tallies would record 'generated 0' for a run that just
+        // fitted every leaf asked of it - and the drawer would render it as a run
+        // that did nothing. Report what the run actually did.
+        cohortIds: options?.restrictToLeafKeys ? ibroGeneratedKeys : generatedIds,
+        generated: options?.restrictToLeafKeys ? ibroGenerated : generated,
+        failed:    options?.restrictToLeafKeys ? ibroFailed    : failed,
+      };
+      console.log('[generateAllMissingForecasts] saving BulkRunRecord:', { name: record.name, comment: record.comment, generated, failed });
+      setBulkRuns(prev => [...prev, record]);
+
+      return options?.restrictToLeafKeys
+        ? { generated: ibroGenerated, failed: ibroFailed, skipped: collectedSkipped }
+        : { generated, failed, skipped: collectedSkipped };
+    } finally {
+      // Unconditional. Every exit - return, throw, or a rejection from the
+      // worker pool - clears the flag, so no caller has to remember to.
+      setIsGeneratingMissing(false);
     }
-
-    // Record the run in ForecastContext history.
-    const now = new Date().toISOString();
-    const record: BulkRunRecord = {
-      id: Math.random().toString(36).slice(2, 11),
-      name: options?.name?.trim() || `Bulk Run — ${format(new Date(now), 'dd MMM yyyy, HH:mm')}`,
-      comment: options?.comment?.trim() ?? '',
-      timestamp: now,
-      settings: {
-        model:                   options?.model ?? selectedForecastModel,
-        preHorizonUncertainty:   options?.preHorizonUncertainty  ?? genPreHorizonUncertainty,
-        postHorizonExpansionRate: options?.postHorizonExpansionRate ?? genPostHorizonExpansionRate,
-        confidenceHorizon:       options?.confidenceHorizon ?? confidenceHorizon,
-        forecastLength: genLength,
-      },
-      // A scoped leaf run does zero STANDARD-cohort work by construction, so
-      // reporting those tallies would record 'generated 0' for a run that just
-      // fitted every leaf asked of it - and the drawer would render it as a run
-      // that did nothing. Report what the run actually did.
-      cohortIds: options?.restrictToLeafKeys ? ibroGeneratedKeys : generatedIds,
-      generated: options?.restrictToLeafKeys ? ibroGenerated : generated,
-      failed:    options?.restrictToLeafKeys ? ibroFailed    : failed,
-    };
-    console.log('[generateAllMissingForecasts] saving BulkRunRecord:', { name: record.name, comment: record.comment, generated, failed });
-    setBulkRuns(prev => [...prev, record]);
-
-    return options?.restrictToLeafKeys
-      ? { generated: ibroGenerated, failed: ibroFailed, skipped: collectedSkipped }
-      : { generated, failed, skipped: collectedSkipped };
   }, [allCohorts, missingStandardCohorts, computeCohortForecastData, selectedForecastModel, genPreHorizonUncertainty, genPostHorizonExpansionRate, confidenceHorizon, genLength, data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, oneOffMonths]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // After a single-combo forecast is saved, check whether there are remaining combinations

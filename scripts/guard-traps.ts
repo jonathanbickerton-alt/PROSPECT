@@ -44,6 +44,7 @@ const IMPORTSEAM = 'scripts/import-seam-spec.ts';
 const GENMISSING = 'scripts/generate-missing-spec.ts';
 const CHARTSCOPE = 'scripts/chart-scope-spec.ts';
 const COVCOPY = 'scripts/coverage-copy-spec.ts';
+const WALKFIX = 'scripts/walk-fixes-spec.ts';
 const SFT = 'src/components/StandardForecastTab.tsx';
 const MODAL = 'src/components/BulkGenerateModal.tsx';
 const APP = 'src/App.tsx';
@@ -245,6 +246,49 @@ const TRAPS: Trap[] = [
     file: FVA_TAB, spec: COVCOPY,
     mutate: s => s.replace("t('actuals_cohort_months_compared', { n: summaryMape.monthsWithActuals })",
                            'summaryMape.monthsWithActuals') },
+  // Trap 23: `missing` goes back to meaning has-no-forecast. The button then
+  // offers a generate for a leaf that cannot be fitted, produces nothing, and
+  // offers it again - the loop Jon's walk stopped on.
+  { id: '23 missing counts unfittable leaves again', why: 'the button invites a generate that can never complete',
+    file: ENGINE, spec: WALKFIX,
+    mutate: s => s.replace(
+      "  const unfittable = absent.filter(k => knownUnfittable.has(k));" + nl +
+      "  const missing = absent.filter(k => !knownUnfittable.has(k));",
+      "  const unfittable: string[] = [];" + nl + "  const missing = absent;") },
+  // Trap 24: blocked collapses into covered. Both have zero generatable
+  // leaves; one says the scope is complete and the other says it cannot be.
+  { id: '24 the blocked state collapses into covered', why: 'a scope with unfittable leaves claims full coverage',
+    file: APP, spec: WALKFIX,
+    mutate: s => s.replace('    if (unfittable.length > 0) {', '    if (false) {') },
+  // Trap 25: the run ends without showing anything. The user story stops at a
+  // placeholder and the user is left to guess whether it worked.
+  { id: '25 generation ends on a placeholder', why: 'the derived forecast is never rendered',
+    file: APP, spec: WALKFIX,
+    mutate: s => {
+      // Anchored INSIDE showResolvedAggregate. The first version replaced the
+      // bare line, which matches handleStep2FilterChange earlier in the file -
+      // so it mutated the wrong site and reported MISSED for a reason that said
+      // nothing about the guard. Same fault as trap 7's first version.
+      const i = s.indexOf('const showResolvedAggregate = useCallback');
+      if (i === -1) return s;
+      const j = s.indexOf('    setBaseForecast(forecast);', i);
+      if (j === -1) return s;
+      return s.slice(0, j) + '    void forecast;' + s.slice(j + '    setBaseForecast(forecast);'.length);
+    } },
+  // Trap 26: the error banner outlives its subject again.
+  { id: '26 the error banner survives a selection change', why: 'it describes a cohort the user has left',
+    file: APP, spec: WALKFIX,
+    mutate: s => s.replace("    setError('');" + nl + '    setStdGenerateResult(null);',
+                           '    /* cleared nothing */') },
+  // Trap 27: the finally goes back to the call site, where a new caller can
+  // miss it. This one has already happened once.
+  { id: '27 the generating flag is unprotected again', why: 'a throw disables Generate Missing permanently',
+    file: APP, spec: WALKFIX,
+    mutate: s => s.replace('    } finally {' + nl +
+      '      // Unconditional. Every exit - return, throw, or a rejection from the' + nl +
+      '      // worker pool - clears the flag, so no caller has to remember to.' + nl +
+      '      setIsGeneratingMissing(false);' + nl + '    }',
+      '    }') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -255,7 +299,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');
