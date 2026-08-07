@@ -109,12 +109,47 @@ and is lost at compaction.
 sort chronologically by name alone — filesystem timestamps do not survive
 copying, archiving, or a fresh clone, and several reports a day is normal.
 
+### Timestamps are COMMAND-SOURCED, never composed
+
+Every timestamp in a report — the `HHMM` in the filename and the `Generated:`
+line — is read from the system clock at write time by running `date`. It is
+never inferred from context, estimated from how long a session felt, or carried
+forward from an earlier message.
+
+**This rule exists because a stamp was fabricated.** The Session H report is
+headed `21:34`; it was written at about 13:56. No timezone accounts for a
+7h38m gap, so the figure was composed rather than read. The conclusions in that
+report were sound, which is exactly what makes the failure worth a rule: a
+plausible number in a header is not checkable by the person reading it, and the
+header is the part that outlives the transcript.
+
+It is the same species as the fabricated module paths that moved
+regression-guard from Haiku to Sonnet — precision failing where reasoning held —
+and the same answer applies: not "be more careful", but "read it from the thing
+that knows".
+
+**Pin the offset, do not trust the label.** Measured on this machine
+2026-08-07: `date` reports `Fri Aug  7 16:48:39 GMTST 2026`, offset `+0100`,
+UTC `15:48`. `GMTST` is not a real zone abbreviation — the offset is sound but
+the label is malformed, so a bare local time is ambiguous to a later reader.
+Therefore:
+
+- the filename uses local 24-hour time, as before, so sorting is unchanged;
+- the `Generated:` line carries the offset and UTC:
+  `Generated: <yyyy-mm-dd HH:MM> <±hhmm> (UTC <yyyy-mm-dd HH:MM>)`.
+
+Get all of it from one command so the parts cannot disagree:
+
+```bash
+date +"%Y-%m-%d %H:%M %z (UTC $(date -u +'%Y-%m-%d %H:%M'))"
+```
+
 Each report **begins** with a block titled **FOR ADVISOR**, **maximum 25 lines**,
 containing only:
 
-- `Generated: <yyyy-mm-dd HH:MM>` as the first line, so the moment survives
-  copying and renaming — a filename is not evidence of when something was
-  written;
+- `Generated: <yyyy-mm-dd HH:MM> <±hhmm> (UTC <yyyy-mm-dd HH:MM>)` as the first
+  line, read from `date` — so the moment survives copying and renaming, and a
+  filename is not evidence of when something was written;
 - the commit hash the session certifies, or `none`;
 - findings, **one line each**;
 - decisions needed from Jon or the advisor, **one line each**;
