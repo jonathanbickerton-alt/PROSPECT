@@ -330,6 +330,30 @@ async function main() {
       'the context still holds a forecast the panel is no longer showing');
   }
 
+  // ── WALK STEP 10: the not-in-data state, mounted ───────────────────────
+  // Folded in from the gate. Stage 3 had to write this check itself because
+  // the shipped spec never set kind:'never' - so the state Jon's step 10
+  // exercises had no mounted coverage at all, in the spec written because a
+  // previous claim was never checked against the screen. A check that lives
+  // in a gate prompt runs once; this one now runs every time.
+  {
+    const c = await render({
+      aggregateState: { kind: 'never', missing: 0, total: 0, unfittable: 0 },
+      forecastData: [], stdChartData: [],
+    });
+    const btns = [...c.querySelectorAll('button')]
+      .filter(b => (b.textContent || '').includes(i18n.t('standard_scope_not_in_data')));
+    check('STEP 10: the not-in-data text renders on the button', btns.length > 0,
+      'the never state has no visible text');
+    check('STEP 10: and the button is disabled',
+      btns.some(b => (b as HTMLButtonElement).disabled),
+      'a selection with no cohorts still invites a generate');
+    // The whole point of keeping the states apart is that they READ apart.
+    check('STEP 10: its text differs from the blocked text',
+      i18n.t('standard_scope_not_in_data') !== i18n.t('standard_scope_blocked', { count: 2 }),
+      'not-in-data and blocked render identically - the distinction is invisible');
+  }
+
   console.log(`step1-panel spec: ${pass} passed, ${fails.length} failed`);
   fails.forEach(f => console.log('  FAIL ' + f));
   process.exit(fails.length ? 1 : 0);
