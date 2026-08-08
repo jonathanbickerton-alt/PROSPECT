@@ -297,6 +297,32 @@ const TRAPS: Trap[] = [
       '      // worker pool - clears the flag, so no caller has to remember to.' + nl +
       '      setIsGeneratingMissing(false);' + nl + '    }',
       '    }') },
+  // Trap 28: the panel gate wins again. Removing setForecastData leaves the
+  // store correct and the screen showing 'Ready to forecast' - the exact
+  // failure Jon's second walk hit, which the previous spec could not see
+  // because it asserted on state rather than on a mounted component.
+  { id: '28 the derived forecast never reaches the panel', why: 'the placeholder persists after a successful run',
+    file: APP, spec: WALKFIX,
+    mutate: s => {
+      const i = s.indexOf('const showResolvedAggregate = useCallback');
+      if (i === -1) return s;
+      const j = s.indexOf('    setForecastData([', i);
+      if (j === -1) return s;
+      const k = s.indexOf('  }, [resolveForecast, stdScenario', j);
+      if (k === -1) return s;
+      return s.slice(0, j) + s.slice(k);
+    } },
+  // Trap 29: the aggregation predicate stops asking whether the dimension is
+  // MAPPED. Every dimension defaults to 'All (Aggregated)', so an unmapped one
+  // makes a genuine leaf look aggregated - and a fitted leaf then reads
+  // 'covered' and cannot be regenerated.
+  { id: '29 the state machine swallows leaf selections again', why: 'a fitted leaf becomes un-regenerable',
+    file: APP, spec: WALKFIX,
+    mutate: s => s
+      .replace('    (!!wiSegmentCol  && segmentValue === ', '    ((true) && segmentValue === ')
+      .replace('    (!!wiProductCol  && productValue === ', '    ((true) && productValue === ')
+      .replace('    (!!wiChannelCol  && channelValue === ', '    ((true) && channelValue === ')
+      .replace('    (!!wiTariffL1Col && tariffValue  === ', '    ((true) && tariffValue  === ') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

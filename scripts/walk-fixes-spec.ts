@@ -310,6 +310,70 @@ function stateOf(store: Map<string, BaseForecast>, unfittable: ReadonlySet<strin
     'the effect would erase the error the generate just set');
 }
 
+// ── THE PANEL GATE, which swallowed the last fix ─────────────────────────
+// Jon's second walk: 72 leaves generated, "Ready to forecast" still on screen.
+// StandardForecastTab renders the whole result panel behind
+// `forecastData.length > 0`, and the aggregate path set only `baseForecast`.
+// The store was right and the surface was never reached.
+//
+// spec:step1-panel is what actually proves the panel mounts - it renders the
+// real component so the gate is INSIDE the assertion. These are the wiring
+// half: the App must populate the state that gate reads.
+{
+  const app = fs.readFileSync('src/App.tsx', 'utf8');
+  const res = app.indexOf('const showResolvedAggregate = useCallback');
+  const body = res === -1 ? '' : app.slice(res, app.indexOf('stdSelectionFilter, t]);', res));
+  check('PANEL: the resolver populates forecastData, not only baseForecast',
+    /setForecastData\(/.test(body),
+    'the panel gate stays shut and the placeholder persists - the exact walk failure');
+  check('PANEL: it still sets baseForecast too',
+    /setBaseForecast\(forecast\)/.test(body), 'the context lost its forecast');
+  check('PANEL: the rows carry the Type field the chart splits on',
+    /Type: 'Historical'/.test(body) && /Type: 'Forecast'/.test(body),
+    'stdChartData cannot tell history from forecast');
+  // A derived aggregate has no Base VOLUME band, so the Base scenario cannot be
+  // plotted from one. Saying so beats plotting a different band under its name.
+  check('PANEL: the Base scenario is declined rather than substituted',
+    /standard_base_series_not_derivable/.test(body),
+    'a Base selection would plot inflow, outflow or retention under a Base label');
+
+  const tab = fs.readFileSync('src/components/StandardForecastTab.tsx', 'utf8');
+  check('PANEL: the gate this is feeding is still the one we think',
+    /forecastData\.length > 0 && !emptyCohortSelection/.test(tab),
+    'the panel gate changed - re-read what opens it before trusting these checks');
+}
+
+// ── THE MACHINE'S SCOPE: aggregates only, and only MAPPED ones ────────────
+// Every Step 1 dimension defaults to 'All (Aggregated)', so an UNMAPPED
+// dimension left at its default made every selection look aggregated - and a
+// genuine leaf then fell into the aggregate state machine, where a fitted
+// scope reads `covered` and disables the button. A leaf whose forecast exists
+// became un-regenerable.
+{
+  const app = fs.readFileSync('src/App.tsx', 'utf8');
+  const i = app.indexOf('const stdAggregatesMappedDim = useMemo');
+  check('SCOPE ANCHOR: the predicate was found', i !== -1,
+    'renamed - this guard is blind');
+  const body = i === -1 ? '' : app.slice(i, app.indexOf('channelValue, tariffValue]);', i));
+  for (const [dim, col] of [['segment', 'wiSegmentCol'], ['product', 'wiProductCol'],
+                            ['channel', 'wiChannelCol'], ['tariff', 'wiTariffL1Col']] as const) {
+    check(`SCOPE: the ${dim} test requires the column to be MAPPED`,
+      new RegExp(`!!${col}\\s*&&`).test(body),
+      'an unmapped dimension at its default still reads as an aggregate');
+  }
+  // ONE predicate, not two. It was two copies - one in the button's state
+  // machine, one in the generate handler - which must agree about what the
+  // button offers and what the click does.
+  const copies = (app.match(/=== 'All \(Aggregated\)' \|\|/g) ?? []).length;
+  check('SCOPE: there is a single aggregation predicate, not a copy per caller',
+    copies <= 3,
+    `found ${copies} chained All-checks - the button and the handler can disagree`);
+  check('SCOPE: the state machine reads it', /if \(!stdAggregatesMappedDim\)/.test(app),
+    'the machine has its own notion of aggregated again');
+  check('SCOPE: and so does the generate handler', /if \(stdAggregatesMappedDim\) \{/.test(app),
+    'the handler has its own notion of aggregated again');
+}
+
 // ── A COVERAGE STATEMENT IS NOT AN ERROR ─────────────────────────────────
 // Raised by the gate. Session I made the completion modal a coverage statement
 // rather than a success claim; routing "the remaining cohorts have too little

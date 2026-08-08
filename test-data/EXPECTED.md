@@ -5001,6 +5001,68 @@ to a session whose scope is generation. Recorded here so the accident is known
 and the identity is not removed by someone who does not know it is holding this
 up.
 
+### Surface-not-store at PANEL level — the gate that swallowed a fix, 2026-08-07
+
+Session J shipped "the user story ends with the forecast visible", specced it,
+gated it, and merged it. Jon generated 72 leaves and watched "Ready to forecast"
+stay on screen.
+
+`StandardForecastTab` renders the entire result panel behind
+`forecastData.length > 0 && !emptyCohortSelection`. `forecastData` is a
+**different piece of state** from `baseForecast`, written only by the manual leaf
+paths. The aggregate path set `baseForecast` and returned, so the panel never
+mounted.
+
+**This is surface-not-store one level up from where this codebase had met it
+before.** The earlier instances were a wrong value inside a component that
+rendered. This was a correct value in a component that does not render — and the
+distinction is invisible to any spec that asserts on state, or that mounts the
+subtree below the gate.
+
+The Session J spec did exactly that: it asserted `showResolvedAggregate` calls
+`setBaseForecast` with a derived forecast. That assertion was true, and the
+screen was still wrong.
+
+**The rule: a spec for "the user sees X" must mount from ABOVE every gate
+between the state and X, so the gates are inside the assertion rather than
+assumed open.** `spec:step1-panel` mounts the real tab and asserts the
+placeholder is gone, the panel is present, and the chart has geometry — with a
+positive control proving the placeholder is reachable, because "no placeholder"
+would otherwise pass for a component that failed to render at all.
+
+`showResolvedAggregate` now populates `forecastData` in the shape the manual
+path produces, since `stdChartData` and the preview table both read that shape.
+
+**One honest limitation, stated rather than papered over:** `BaseForecastMonth`
+carries inflow, outflow and retention bands but no Base VOLUME band, so a
+derived aggregate cannot produce a Base series. Selecting Base on an aggregate
+says so instead of plotting one of the other three under a Base label.
+
+### The state machine's scope — 'All' again means only what it means, 2026-08-07
+
+The four button states describe filling an AGGREGATE's missing leaves. A leaf
+selection keeps the manual Generate Forecast, regeneration of an already-fitted
+leaf included.
+
+Every Step 1 dimension defaults to `'All (Aggregated)'`. The predicate asked
+whether any dimension was at that value, so an **unmapped** dimension sitting at
+its default made every selection look aggregated — and a genuine leaf then fell
+into the aggregate machine, where a fully-fitted scope reads `covered` and
+DISABLES the button. A leaf whose forecast already existed became
+un-regenerable.
+
+The predicate now requires the dimension to be **mapped**: an `'All'` in a
+dimension this dataset does not have is not an aggregate.
+
+**Fourth site of the same marker-meaning distinction**, after the legacy import,
+the retirement rule, and the mirror control — which is the argument for the
+single mapped-dimension source of truth already queued to the DQ phase, rather
+than a fifth private answer.
+
+It was also **two copies** of the predicate: one in the button's state machine,
+one in the generate handler. Two copies that must agree about what the button
+offers and what the click does. They are now one memo, read by both.
+
 ### "Generate 1 missing" forever — the count meant the wrong thing, 2026-08-07
 
 Found by Jon's Phase 3 walk at section A, which is the point: the loop is
