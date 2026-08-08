@@ -437,6 +437,37 @@ async function main() {
       'the export loses provenance columns when the panel is derived');
   }
 
+  // ── THE DISABLED TREATMENT IS THE FILE'S, NOT AN INVENTED ONE ──────────
+  // Raised by the gate: the first version used bg-slate-100/text-slate-500 with
+  // a border, which exists nowhere else. This file already has a
+  // permanently-disabled style, and a coverage state is exactly that.
+  {
+    const tab = fs.readFileSync('src/components/StandardForecastTab.tsx', 'utf8');
+    check('DISABLED STYLE: the coverage states use the file established treatment',
+      /bg-slate-200 text-slate-400 cursor-not-allowed/.test(tab),
+      'an invented disabled style - name the sibling it should match');
+    // The coverage branch of the ternary must be the slate one, and the red
+    // must sit in the OTHER branch. Checking only "slate appears somewhere"
+    // would pass for a button that is red in every state with slate elsewhere.
+    // Bounded FORWARD from the ternary. The first version searched for the red
+    // class from position 0, which matched an earlier red button in the file
+    // and produced an empty window — a check over nothing, reported as a
+    // failure only because the slate half then also went missing.
+    const ternStart = tab.indexOf("aggregateState.kind === 'covered' || aggregateState.kind === 'blocked'");
+    const ternEnd = tab.indexOf('bg-[#e60000] hover:bg-[#cc0000] text-white', ternStart);
+    check('DISABLED STYLE ANCHOR: the ternary was bounded',
+      ternStart !== -1 && ternEnd > ternStart, 'the window is empty and the check below is vacuous');
+    const tern = ternStart === -1 || ternEnd < 0 ? '' : tab.slice(ternStart, ternEnd);
+    check('DISABLED STYLE: and the coverage branch is OFF the red action colour',
+      /bg-slate-200 text-slate-400/.test(tern) && !/#e60000/.test(tern),
+      'a coverage statement is back on the action colour');
+    // Styling alone is not disabling. The attribute must still be set, or the
+    // button looks inert and is clickable.
+    check('DISABLED STYLE: the disabled ATTRIBUTE still covers all three states',
+      /disabled=\{aggregateState\.kind === 'covered'[\s\S]{0,120}'blocked'\}/.test(tab),
+      'the button is styled disabled but still clickable');
+  }
+
   console.log(`step1-panel spec: ${pass} passed, ${fails.length} failed`);
   fails.forEach(f => console.log('  FAIL ' + f));
   process.exit(fails.length ? 1 : 0);

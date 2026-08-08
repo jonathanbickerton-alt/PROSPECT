@@ -1061,7 +1061,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                      is "there is nothing to click, and here is why". Session J
                      moved coverage off red surfaces; the disabled button kept
                      the convention only by accident of opacity. */
-                  ? 'bg-slate-100 text-slate-500 border border-slate-200 cursor-not-allowed'
+                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                   : 'bg-[#e60000] hover:bg-[#cc0000] text-white'
               }`}
             >
