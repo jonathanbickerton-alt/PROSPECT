@@ -5001,6 +5001,87 @@ to a session whose scope is generation. Recorded here so the accident is known
 and the identity is not removed by someone who does not know it is holding this
 up.
 
+### C-17 second half — CLOSED as unreproduced, with a tripwire, 2026-08-08
+
+Jon saw a restored session render Step 1 while Actuals Review showed the
+never-generated message. It did not reproduce, twice:
+
+- **By diagnosis.** Session L's diff touches neither `ForecastVsActualsTab.tsx`
+  nor `ForecastContext.tsx`; no hunk covers the restore path; `resolveFromStore`
+  is unchanged; L *removed* a `setBaseForecast(null)` rather than adding one.
+  Replaying the real save through the seam resolved BOTH surfaces.
+- **By protocol.** Fresh reload, restore, mapping green: direct Step 3 renders
+  with the committed cohort in the filter bar, and the Step 1 round trip renders
+  too.
+
+One asymmetry candidate survived: **navigation order**. `stdSelectionFilter` is
+Step 1's own state and restore does not set it, while the tab-switch effect
+overwrites `baseForecast` from `step3Filter` on every `activeView` change with
+`[activeView]` as its only dependency. A mount-with-X spec cannot see that —
+transitions are where this class lives.
+
+So `spec:step3-transition` encodes four sequences as mounted transitions:
+restore → Step 3; restore → Step 1 → Step 3; restore → Step 1 → selection change
+→ Step 3; restore → Step 3 → Step 1 → Step 3. Each mounts the real tab and
+asserts the never-generated message is absent, with a positive control proving
+that message reachable on a genuinely empty store.
+
+**What green here does and does not mean.** It proves those four orders do not
+produce the defect, on this store, with columns mapped. It does not prove the
+defect impossible. That scope is stated in the spec header so a later reader does
+not upgrade it.
+
+**On recurrence, capture the exact navigation sequence since reload.** That is
+the one input the tripwire cannot supply itself.
+
+**Two extractions were required to make it honest**, both the same lesson:
+
+- `filterToKey` / `cohortToFilter` moved to `utils/viewFilter` so the sequences
+  drive the production conversion instead of transcribing it.
+- `forecastForView` — the tab-switch effect's whole body — moved there too, and
+  this one was found the hard way. The first tripwire *modelled* the effect, so
+  trap 36 broke the real effect and **all four sequences stayed green**; only a
+  structural source check noticed. A tripwire that cannot see the thing it
+  watches is the defect it exists to catch. Retargeted, the mutation now kills
+  8 of 17 checks including every sequence.
+
+Trap 37 also MISSED first time, for a different reason worth keeping: the
+sequences used a segment-only key, where `product` is already `'All'`, so the
+product arm of the round trip was never exercised. **A population that cannot
+express the defect proves nothing about it.** The key is now partially specified
+(segment + product), matching the shape of Jon's real `Is_Active` cohort.
+
+### The MAPE cards read zero after restore — CORRECT, not a defect, 2026-08-08
+
+Jon's restored session shows all eight accuracy cards at "0 cohort-months
+compared" and draws no actual series. Measured on the artefact rather than
+inferred:
+
+| | measured |
+|---|---|
+| save's `Actuals` sheet | **77,760 rows**, months **2023-01 → 2025-12** |
+| the pristine Dec2025 TariffHierarchy fixture | **77,760 rows** — identical count |
+| save's forecast horizon (`Metadata`, `Baseline_Forecasts`) | **2026-01 → 2027-12**, 24 months |
+| forecast months that have actuals | **0** |
+
+`comparisonRows` iterates `baseForecast.months` and looks up
+`actualsAggrMap.get(bm.month)`; `monthsWithActuals` counts rows where
+`actual !== null`. With zero month intersection every lookup misses, so **zero is
+the arithmetically correct answer** and the absent actual series is correct too.
+
+**The round trip is not at fault, and was checked rather than assumed:** imported
+actuals append to `data` (`App.tsx:405`), export writes the `Actuals` sheet from
+`data` (`:427`), restore reads it back (`:770`). Imported actuals *would* survive
+a save. This save contains exactly the pristine fixture, so none were imported in
+the session that produced it.
+
+**What could have produced the earlier solid ~15K line**, so the discrepancy is
+explained rather than shrugged at: that session must have had actuals inside the
+forecast window — separately imported, or a different file — and it is not the
+session this artefact represents. **Scope of this conclusion: the 07 Aug 10:26
+save only.** If the earlier screens came from a different session, the finding is
+open against that artefact and needs it supplied.
+
 ### A restored session never rendered in Step 1 — DESIGN GAP, 2026-08-08
 
 Walk C step 17. After a session restore, forecasts existed and drew in Actuals
@@ -5475,6 +5556,54 @@ its distribution is. This is accepted and expected.
 ---
 
 ## BACKLOG — requested, design pass required before build
+
+### DQ PHASE REQUIREMENT — the retirement statement belongs on the orientation line
+
+**Provenance: walk finding C-19 (2026-08-08).** After a session restore there is
+no mention of coverage or retirement anywhere in the app.
+
+**Mechanism, established not assumed.** `grep -rn "bulk_complete_retired" src/`
+— covering all of `src/` — returns exactly ONE render site:
+`BulkGenerateModal.tsx:443`, inside `BulkCompletePanel`, which renders only under
+`phase === 'complete'`, set only in `handleConfirm`. Restore never opens that
+modal. Checked every commit that touches the string (`dbbee82`, `53a0651`,
+`7578038`, `05c1b3c`) for any occurrence in `App.tsx`: **all zero.** The statement
+has never existed outside the generate modal, so a restored session has never
+shown it.
+
+**Classification: DESIGN GAP.** Introduced with the statement itself in Session G
+(`7578038`), whose scope was the generate path. Restore is the next caller that
+did not inherit it — the same shape as C-17 and the third-instance rule.
+
+**Decision taken (2026-08-08): no new surface this phase.** The retirement
+statement is a fact about the session's STORE, not about an action the user just
+took, so it does not belong on an action's completion panel and it does not
+justify a surface of its own.
+
+**Its home is the DQ phase's always-present "How your data was read" orientation
+line.** When the loaded store contains retired All-bearing fitted entries, that
+line states:
+
+> *N stored aggregate fits are retired; aggregates derive from their leaves.*
+
+**Why there and not on Step 1's notice surface** — recorded because it was the
+obvious candidate and was rejected for a reason worth keeping: Session J clears
+that surface on every selection change, so a statement about the SESSION would
+vanish on the first filter click. A session-level fact needs a surface with
+session-level lifetime, which is exactly what the orientation line is.
+
+**Requirement for the DQ prompt to inherit:**
+- the count is derived from what the restored store CONTAINS — All-bearing
+  entries whose provenance is `fitted`, i.e. the population `isRetiredAggregateFit`
+  identifies — never from which path populated the screen;
+- it is present on every load that has such entries, including restore, and
+  absent when there are none (an always-present line must not carry a statement
+  about zero things);
+- it survives selection changes, because it describes the store and not the
+  selection.
+
+Not implemented in this session. Recorded now so the DQ phase inherits it rather
+than rediscovering C-19.
 
 ### QUEUED to the DQ phase — a mapped-dimension source of truth
 

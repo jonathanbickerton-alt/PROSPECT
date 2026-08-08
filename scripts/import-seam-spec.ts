@@ -77,10 +77,19 @@ const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails
   // which has no enclosing named const) from being lumped under whichever
   // function happens to precede them.
   const seamRouted = sites.filter(s => /resolveForecast\(|resolveFromStore\(/.test(s.text));
-  check('ENUMERATION: the inline seam-routed sites are self-evidently safe',
-    seamRouted.length === 2,
-    `found ${seamRouted.length}, expected 2 (the two tab-restore arms)`);
-  const rest = sites.filter(s => !seamRouted.includes(s));
+  check('ENUMERATION: no site inlines a seam call any more',
+    seamRouted.length === 0,
+    `found ${seamRouted.length} - the two tab-restore arms were collapsed into forecastForView`);
+
+  // THE TAB-RESTORE SITE, classified by its own text rather than by where it
+  // sits. It lives inside a useEffect, so walking back to the nearest named
+  // const would attribute it to handleStep3FilterChange - a reason that is not
+  // true of it, which is exactly what this table was rewritten to stop.
+  const tabRestore = sites.filter(s => /setBaseForecast\(r\.forecast as any\)/.test(s.text));
+  check('ENUMERATION: the tab-restore site is seam-routed via forecastForView',
+    tabRestore.length === 1,
+    `found ${tabRestore.length}`);
+  const rest = sites.filter(s => !seamRouted.includes(s) && !tabRestore.includes(s));
 
   /** One row per SITE, keyed by enclosing function, with a reason true of it. */
   const ACCOUNTED: Record<string, { count: number; why: string; seam: boolean }> = {
@@ -159,7 +168,7 @@ const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails
   // The count is pinned so that ADDING a site is a deliberate act. A new call
   // site that happens to match an accepted shape would otherwise slip in
   // unreviewed — matching a shape is not the same as having been thought about.
-  const EXPECTED_SITES = 12;
+  const EXPECTED_SITES = 11;
   check(`ENUMERATION: the call-site count is still ${EXPECTED_SITES}`,
     sites.length === EXPECTED_SITES,
     `found ${sites.length} — if this is intentional, classify the new site and update the count`);

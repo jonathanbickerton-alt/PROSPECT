@@ -36,7 +36,8 @@
     "spec:chart-scope": "tsx scripts/chart-scope-spec.ts",
     "spec:coverage-copy": "tsx scripts/coverage-copy-spec.ts",
     "spec:walk-fixes": "tsx scripts/walk-fixes-spec.ts",
-    "spec:step1-panel": "tsx scripts/step1-panel-spec.tsx"
+    "spec:step1-panel": "tsx scripts/step1-panel-spec.tsx",
+    "spec:step3-transition": "tsx scripts/step3-transition-spec.tsx"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",
