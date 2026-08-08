@@ -133,6 +133,11 @@ async function main() {
   check('PREMISE: restore resolves the active cohort', !!restored,
     'the premise of every sequence below is absent');
   let step3Filter = vf.cohortToFilter(restored!.cohort);
+  // DO NOT PRUNE THIS AS REDUNDANT. The gate found that trap 37 - a break in
+  // the cohort->filter round trip - is caught by THIS assertion alone: the four
+  // sequences stay green under it, because the store's aggregation still
+  // resolves the malformed key to something renderable. Removing this check
+  // would leave trap 37 reporting CAUGHT today and silently catching nothing.
   check('PREMISE: step3Filter round-trips back to the same key',
     vf.filterToKey(step3Filter) === activeKey,
     `${vf.filterToKey(step3Filter)} vs ${activeKey}`);
