@@ -5062,6 +5062,44 @@ selection's numbers under another's label. A derived panel cannot.
   file would carry a claim about a fit forward past the moment it was measured,
   which is what provenance discipline exists to prevent.
 
+**Two consequences of deriving, found by the gate and recorded rather than
+fixed.**
+
+**1. The legacy multi-combo branch now agrees with the rest of the app.** When a
+hierarchy dimension is unmapped while its selector sits at
+`'All (Aggregated)'`, `generateStandardForecast` takes a legacy branch that
+writes `forecastData` as a **sum of per-combo Holt-Winters fits**, and separately
+stores **one `calculateBaseForecast` fit on the combined series** (that call sits
+outside `combos.forEach`). Those are different procedures.
+
+With the panel derived, Step 1 now shows the STORE's combined fit rather than
+the sum-of-fits. That is a **convergence, not a regression**: `forecastStore` is
+what the seam reads and what Actuals Review scores against, so Step 1 previously
+displayed a figure no other screen in the app agreed with for this path.
+
+Measured on the trimmed fixture, 5 real segment series: sum-of-combos
+`31570.16` against single-fit-on-combined `31570.15` — 0.00003%. **The
+confidence BANDS were not compared**, and they depend on differently-computed
+residual variance in each approach, so they are the more likely place for a
+visible difference. Stated as a limit rather than claimed equivalent.
+
+**2. A latent divergence that no shipped fixture can exercise.** The old written
+path filtered rows to the target metric; the derived path builds from the IBRO
+series and drops months where all metrics are zero. On a **regular grid** — every
+metric present for every month a cohort has data — these select identical months,
+which is why the manual path's derived output is byte-identical to its written
+output on both shipped fixtures (verified across two leaves and two scenarios).
+
+They would diverge on an **irregular** grid: a month where the target metric's
+row is absent but other metrics exist would be dropped by the old path and kept
+as zero by the new one. Both shipped fixtures were checked programmatically and
+contain zero such combinations, so this is untested rather than working.
+
+**Cosmetic, verified invisible:** derived historical rows omit the explicit
+`Optimistic: null` / `Pessimistic: null` keys and the spurious `_parsedDate`
+column the old rows carried. `downloadExcel` uses `json_to_sheet`, which unions
+keys across rows, so no column is lost from the sheet.
+
 **Guarded by `spec:step1-panel`,** which restores a store inside the test and
 drives the production resolver end to end — store to rendered pixel — because a
 spec that builds its own rows proves things about the component and nothing
