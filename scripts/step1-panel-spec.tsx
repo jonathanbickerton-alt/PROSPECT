@@ -107,22 +107,30 @@ async function main() {
     derived ? String(derived.months.length) : 'null');
   check('PREMISE: it came from the whole leaf set', store.size === 72, String(store.size));
 
-  /** forecastData in the shape showResolvedAggregate produces. */
-  const histMap = new Map<number, any>();
-  for (const r of rows) {
-    if (v(r, C.metric) !== 'Inflow') continue;
-    const d = new Date(String(v(r, C.date)).slice(0, 7) + '-01');
-    if (isNaN(d.getTime())) continue;
-    const t = d.getTime(), val = Number(r[C.value]) || 0;
-    const prev = histMap.get(t);
-    if (prev) prev['Mean (Base)'] += val;
-    else histMap.set(t, { [C.date]: String(v(r, C.date)).slice(0, 7), 'Mean (Base)': val, Type: 'Historical' });
-  }
-  const aggForecastData = [
-    ...[...histMap.entries()].sort((a, b) => a[0] - b[0]).map(e => e[1]),
-    ...derived!.months.map((m: any) => ({ [C.date]: m.month, 'Mean (Base)': m.inflow.mean,
-      Optimistic: m.inflow.optimistic, Pessimistic: m.inflow.pessimistic, Type: 'Forecast' })),
-  ];
+  /**
+   * forecastData built by the REAL production function, not by a copy.
+   *
+   * This spec used to construct these rows itself. That made it a proof that
+   * the COMPONENT renders correctly given good rows - and no proof at all that
+   * the APP produces them. A verification pass planted the exact Session J
+   * defect (the App populating only baseForecast) and every mounted assertion
+   * here stayed green, because the rows arrived from this file rather than from
+   * production. Calling buildAggregateForecastRows closes that: trap 33 mutates
+   * it and the mounted assertions go red.
+   */
+  const inflowInScope = (row: Record<string, unknown>) => v(row, C.metric) === 'Inflow';
+  const monthOf = (raw: unknown) => {
+    const m = String(raw ?? '').slice(0, 7);
+    return /^\d{4}-\d{2}$/.test(m) ? m : null;
+  };
+  const aggForecastData = fc.buildAggregateForecastRows(
+    derived!, 'inflow', rows, C.date, C.value, inflowInScope, monthOf);
+  check('PREMISE: the production row builder produced rows',
+    aggForecastData.length > 0, `${aggForecastData.length}`);
+  check('PREMISE: with both a historical and a forecast half',
+    aggForecastData.some((r: any) => r.Type === 'Historical')
+      && aggForecastData.some((r: any) => r.Type === 'Forecast'),
+    'one half is missing - the chart would draw only one series');
 
   const stdChartData = aggForecastData.map(r => ({
     ...r, date: r[C.date], timestamp: new Date(r[C.date] + '-01').getTime(),

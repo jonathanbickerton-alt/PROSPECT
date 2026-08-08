@@ -307,11 +307,15 @@ const TRAPS: Trap[] = [
     mutate: s => {
       const i = s.indexOf('const showResolvedAggregate = useCallback');
       if (i === -1) return s;
-      const j = s.indexOf('    setForecastData([', i);
+      // Anchored on the CALL, not on an indentation-sensitive prefix. The
+      // first version matched '    setForecastData([' which is a substring of
+      // the six-space Base-branch clear a few lines earlier, so it cut from
+      // there and removed more than its name claims.
+      const j = s.indexOf('    setForecastData(buildAggregateForecastRows(', i);
       if (j === -1) return s;
-      const k = s.indexOf('  }, [resolveForecast, stdScenario', j);
+      const k = s.indexOf('    ));', j);
       if (k === -1) return s;
-      return s.slice(0, j) + s.slice(k);
+      return s.slice(0, j) + s.slice(k + '    ));'.length);
     } },
   // Trap 29: the aggregation predicate stops asking whether the dimension is
   // MAPPED. Every dimension defaults to 'All (Aggregated)', so an unmapped one
@@ -342,8 +346,26 @@ const TRAPS: Trap[] = [
   // only one side - the exact drift the first version of this code had.
   { id: '32 the scope test becomes a near-copy again', why: 'a private scope predicate drifts from the shared one',
     file: APP, spec: WALKFIX,
-    mutate: s => s.replace('      if (!rowInScope(row, scopeCols, scopeFilter, ALL_DIMS)) continue;',
-                           '      if (false) continue;') },
+    // Re-anchored: the scope test became a predicate passed to the shared row
+    // builder, so the old inline-continue form no longer exists. The harness
+    // reported INCONCLUSIVE rather than a false catch, which is what that
+    // state is for.
+    mutate: s => s.replace('        && rowInScope(row, scopeCols, scopeFilter, ALL_DIMS),',
+                           '        && true,') },
+  // Trap 33 replants Session J's EXACT defect - the app resolves the derived
+  // forecast and never gets it to the panel - and points it at the MOUNTED
+  // spec. Trap 28 plants the same defect but is caught by a structural
+  // source check; a verification pass showed that with trap 28's mutation
+  // planted, every mounted assertion in step1-panel stayed GREEN, because the
+  // spec built its own rows and passed them in as a prop.
+  //
+  // That is the difference this trap exists to hold: 'the panel renders when
+  // given rows' and 'the app gives it rows' are different claims, and only the
+  // second is what the walk failed on twice.
+  { id: '33 the app resolves a forecast the panel never receives', why: 'the placeholder persists after a successful run - Session J, exactly',
+    file: ENGINE, spec: PANEL,
+    mutate: s => s.replace('  return [...histRows, ...fcRows];',
+                           '  return [];') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
