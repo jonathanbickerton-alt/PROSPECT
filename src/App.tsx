@@ -2027,6 +2027,10 @@ export default function App() {
   /** The aggregate a just-finished scoped run should display, or null. */
   const [pendingAggregateKey, setPendingAggregateKey] = useState<string | null>(null);
 
+  /** A finished scoped run to report in the completion panel, or null. */
+  const [bulkCompletedRun, setBulkCompletedRun] = useState<
+    { grain: 'leaves'; generated: number; failed: number; skipped: SkippedCohort[] } | null>(null);
+
   /** Step 1 coverage statements. Distinct from `error`: these report what was
    *  built, not that something failed. */
   const [notice, setNotice] = useState('');
@@ -2165,6 +2169,20 @@ export default function App() {
           // it as a ninth store-writing site, which is the correct complaint:
           // a reader that looks like a writer is one refactor from being one.
           setPendingAggregateKey(aggKey);
+
+          // AND RAISE THE COMPLETION PANEL. Session G's early return sits
+          // above setTriggerBulkCheck, so an aggregate generate has raised no
+          // post-generation flow since 7578038 - the decline was deliberate
+          // and stated, this side effect was neither. The coverage statement,
+          // the grain-named counters and the named skipped leaves all live in
+          // that panel, so a user generating from Step 1 was told nothing
+          // about what their run had covered.
+          //
+          // It opens straight at 'complete': the work is already done, so a
+          // confirm step would be offering to do it again. G's retirement
+          // semantics are untouched - only the prompt is restored.
+          setBulkCompletedRun({ grain: 'leaves', generated: res.generated, failed: res.failed,
+                                skipped: res.skipped });
         })
         .catch(() => {
           // Silence here would contradict this branch's own argument: an
@@ -4271,6 +4289,11 @@ export default function App() {
               {t('home')}
             </button>
             <button
+              // LABEL aligned to TARGET, not the reverse. This is the only
+              // site that sets 'overall', so repointing the target would make
+              // the Overall Forecast view - and the Generate Missing door on
+              // it - unreachable. Step 1 already has six routes in and needs
+              // no nav item; this destination had none that named it.
               onClick={() => setActiveView('overall')}
               className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                 activeView === 'overall'
@@ -4278,7 +4301,7 @@ export default function App() {
                   : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
-              {t('standard_forecast')}
+              {t('nav_overall_forecast')}
             </button>
             <button
               onClick={() => setActiveView('compare')}
@@ -4612,8 +4635,12 @@ export default function App() {
       )}
       {/* Bulk Generate Modal — shown after a single-combo forecast is generated */}
       <BulkGenerateModal
-        isOpen={showBulkGeneratePrompt}
-        onClose={() => setShowBulkGeneratePrompt(false)}
+        // Two ways in: the standing prompt (confirm-first), and a finished
+        // scoped run reporting itself (complete-only). The second is what makes
+        // the coverage statement reachable from Step 1.
+        isOpen={showBulkGeneratePrompt || !!bulkCompletedRun}
+        onClose={() => { setShowBulkGeneratePrompt(false); setBulkCompletedRun(null); }}
+        initialSummary={bulkCompletedRun}
         sourceCohort={bulkSourceCohort}
         missingCount={missingStandardCohorts.length}
         params={{

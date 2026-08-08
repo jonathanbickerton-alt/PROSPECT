@@ -5642,6 +5642,54 @@ Do not fix site 1 alone. A local fix there would give the retirement rule a
 fourth notion of what `'All'` means and leave the other two untouched — which is
 how there came to be three.
 
+### `arpuOf`'s `?? 0` breaks absence-propagation — RECORDED, not fixed, 2026-08-08
+
+**Found while diagnosing section B's finding 2. Recorded only; no fix this
+session, deliberately.**
+
+`deriveAggregate`'s `arpuOf` (`src/utils/forecasting.ts:1301`) blends per month:
+
+```ts
+parts = ms.map(m => ({ arpu: pick(m)?.mean ?? 0, volume: vol(m) }))
+```
+
+The `?? 0` makes a leaf month with **no ARPU band** contribute an ARPU of zero
+while still carrying its **full volume** into the denominator. That is the
+structural form of the absence-propagation rule this codebase keeps re-learning:
+absent is not zero, and a missing input must not be silently priced at nought.
+An aggregate over such leaves reads LOW, and nothing on screen says why.
+
+**Why it is recorded rather than fixed.** It does not reproduce on any shipped
+fixture at the scope Jon reported: measured month-0 volume carried by ARPU-zero
+leaves is **0.0%** on the edge fixture, and **0 of 27** leaves carry zero revenue
+on either `TariffHierarchy` or `ProductL2_Full` at `MNC | Fixed Connectivity`. So
+the mechanism is real in the code and unexercised in the data. Changing the blend
+with no failing case to hold it would be a change no instrument can defend.
+
+**It rides with the F2-ARPU resolution once that reproduces** — same expression,
+same blend, and fixing it blind first would destroy the evidence F2 needs.
+
+### Model Advisor copy implies a fitted aggregate — RECORDED, not fixed, 2026-08-08
+
+`modelRecommendation` (`src/components/StandardForecastTab.tsx:279`) backtests
+`analyzeAndRecommendModel` against the **selection's summed history**. It never
+fits a stored model and never writes to the store — which is correct and
+consistent with Phase 3, since advising on a selection has to be grounded in that
+selection's history.
+
+**The copy is what is wrong.** "Holt Linear achieved fitted error 1.7% by
+historical backtesting", shown on an aggregate selection, reads as though the
+aggregate *was fitted* — precisely the belief Phase 3 exists to prevent, and the
+same reader who is being told elsewhere that aggregates are derived, not fitted.
+
+Wanted: the advisory says what it backtested against, and states that no
+aggregate model is fitted or stored.
+
+**Deferred to the copy batch's successor, not fixed here.** It is copy in six
+locales; landing it inside a two-mechanism fix session would put an unreviewed
+wording in front of a user mid-walk. Session I's batch is the precedent — copy
+goes through as a batch with the wording agreed first.
+
 ### The edge fixture needs a companion actuals file
 
 **Recorded 2026-08-05, not built.**

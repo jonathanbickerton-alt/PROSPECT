@@ -68,10 +68,17 @@ const LOCALES = ['en', 'de', 'es', 'fr', 'it', 'pt'] as const;
 
 // ── The modal as a coverage statement ─────────────────────────────────────
 {
+  // The expression gained a grain arm when a scoped Step 1 run began
+  // reporting itself: on that path `failed` and `skipped` are the SAME leaves,
+  // so the old sum double-counted. This check went RED rather than passing over
+  // the change, which is why it pins the intent and not just the text.
   check('MODAL: the heading is driven by what is UNCOVERED, not by run status',
-    /const uncovered = skipped\.length \+ failed;/.test(modal)
+    /const uncovered = grain === 'leaves' \? skipped\.length : skipped\.length \+ failed;/.test(modal)
       && /uncovered > 0/.test(modal),
     'the heading still reports that the run finished');
+  check('MODAL: and a leaf-grained run does not double-count its uncovered leaves',
+    /grain === 'leaves' \? skipped\.length/.test(modal),
+    'failed and skipped are the same leaves on that path — adding them counts twice');
   check('MODAL: a run with gaps and a fully-covered run say different things',
     /bulk_complete_with_gaps/.test(modal) && /bulk_complete_full_coverage/.test(modal),
     'one heading for both outcomes');

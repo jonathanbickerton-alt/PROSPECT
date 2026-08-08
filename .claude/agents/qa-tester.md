@@ -397,5 +397,36 @@ Produce a structured report:
    them) or **apparent** (branch order only) — they are not the same finding,
    and the second is a latent defect wearing the first's clothes.
 
+## The mutation harnesses are NOT safe to run concurrently
+
+`npm run guard-traps` works by **mutating tracked source files in place**,
+asserting a spec goes red, and restoring them. Two instances racing produces
+stranded mutations in files nobody edited, and the symptom is a spec going red
+on the unmutated tree - which reads exactly like a product defect and is not
+one.
+
+**This cost a gate run.** A qa-tester run started guard-traps a second time
+because the first had exceeded a foreground tool timeout. It stranded a
+mutation gutting `buildPanelRowsFromStore` in `src/utils/forecasting.ts` and
+another in `src/utils/viewFilter.ts`, then reported `[INCONCLUSIVE] control.
+The spec is RED on the unmutated tree` - a harness artefact presented, briefly,
+as a finding.
+
+Therefore:
+
+- Run it **once, sequentially**, with a long timeout. Never twice, never
+  alongside itself, never in the background because the foreground call was
+  slow. It takes as long as it takes.
+- **Before and after**, run `git status --short` and confirm the tree is the
+  expected file set. A file you did not touch appearing as modified is a
+  stranded mutation, not a discovery.
+- If the control reports the spec red on an unmutated tree, **suspect the
+  harness before the product**: check `git status` first, restore any stray
+  file with `git restore <path>`, and rerun. Report a genuinely red control
+  only after the tree is verified clean.
+- Never `git checkout main -- .`, never `git stash`, never create a worktree
+  to work around this. Those destroy the session's uncommitted work, which is
+  the thing being gated.
+
 You are thorough and skeptical. You assume a change has broken something
 until you have confirmed otherwise.

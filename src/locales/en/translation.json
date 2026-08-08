@@ -710,5 +710,7 @@
   "standard_base_series_not_derivable": "A summed aggregate has no Base volume series — it is built from Inflow, Outflow and Retention. Choose one of those, or select a specific cohort.",
   "baseline_nothing_to_display": "Nothing to display for this selection",
   "baseline_see_the_note_above": "The note above explains why.",
-  "baseline_see_the_button_above": "The button above explains the state of this selection."
+  "baseline_see_the_button_above": "The button above explains the state of this selection.",
+  "nav_overall_forecast": "Overall Forecast",
+  "bulk_complete_leaves_generated": "forecast leaves generated"
 }

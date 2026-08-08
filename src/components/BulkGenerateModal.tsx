@@ -43,6 +43,22 @@ export interface BulkGenerateModalProps {
    *   failed    — combos skipped due to insufficient data
    */
   onConfirm: (opts: { name: string; comment: string; autoModel: boolean; autoConfidence: boolean }) => Promise<{ generated: number; failed: number; skipped: SkippedCohort[] }>;
+  /**
+   * A run that ALREADY happened, to be shown straight in the completion panel.
+   *
+   * Step 1's aggregate generate-missing does its own scoped run and then has
+   * something to report - counts, skipped leaves, and the retirement statement.
+   * Before this it had nowhere to report it: the completion panel is reachable
+   * only by confirming a run from inside this modal, so a user who generated
+   * from Step 1 never saw a coverage statement about what they had just done.
+   *
+   * When present the modal opens at 'complete' with this summary and never
+   * shows the confirm step - there is nothing to confirm, the work is done.
+   */
+  initialSummary?: { generated: number; failed: number; skipped: SkippedCohort[];
+    /** 'leaves' when a scoped Step 1 run reports itself: generated counts
+     *  forecast LEAVES, and `failed` names the same leaves `skipped` does. */
+    grain?: 'series' | 'leaves' } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -68,21 +84,35 @@ export function BulkGenerateModal({
   currentModel,
   generationProgress,
   onConfirm,
+  initialSummary = null,
 }: BulkGenerateModalProps) {
   const { t } = useTranslation();
-  const [phase, setPhase] = useState<Phase>('confirm');
-  const [summary, setSummary] = useState<{ generated: number; failed: number; skipped: SkippedCohort[] } | null>(null);
+  const [phase, setPhase] = useState<Phase>(initialSummary ? 'complete' : 'confirm');
+  const [summary, setSummary] = useState<{ generated: number; failed: number; skipped: SkippedCohort[]; grain?: 'series' | 'leaves' } | null>(initialSummary);
   const [runName, setRunName] = useState('');
   const [runComment, setRunComment] = useState('');
   const [autoModel, setAutoModel] = useState(true);
   const [autoConfidence, setAutoConfidence] = useState(true);
 
+  // ABOVE the early return, deliberately. `if (!isOpen) return null` is a
+  // conditional return, so a hook below it renders a different number of hooks
+  // on the closed and open passes - the shape guard-trap 7 exists for.
+  //
+  // Why it is needed at all: this component stays mounted while closed, so
+  // useState's initialiser runs once and a SECOND finished run would arrive
+  // with the first run's summary still in state. Sync on the prop instead.
+  React.useEffect(() => {
+    if (initialSummary) { setSummary(initialSummary); setPhase('complete'); }
+  }, [initialSummary]);
+
   if (!isOpen) return null;
 
   // Reset when re-opened
   const handleClose = () => {
-    setPhase('confirm');
-    setSummary(null);
+    // Back to whichever phase this instance opens at, not blindly 'confirm':
+    // a report-only open has nothing to confirm.
+    setPhase(initialSummary ? 'complete' : 'confirm');
+    setSummary(initialSummary);
     setRunName('');
     setRunComment('');
     setAutoModel(true);
@@ -318,6 +348,7 @@ export function BulkGenerateModal({
         {/* ── Phase: Complete ── */}
         {phase === 'complete' && summary && (
           <BulkCompletePanel
+            grain={summary.grain ?? 'series'}
             generated={summary.generated}
             failed={summary.failed}
             skipped={summary.skipped}
@@ -371,11 +402,13 @@ function BulkGeneratingPanel({ progress }: { progress?: { current: number; total
 
 
 function BulkCompletePanel({
+  grain,
   generated,
   failed,
   skipped,
   onClose,
 }: {
+  grain: 'series' | 'leaves';
   generated: number;
   failed: number;
   skipped: SkippedCohort[];
@@ -385,7 +418,10 @@ function BulkCompletePanel({
   // Everything the run could not cover, across BOTH populations. The heading
   // reads this rather than the run status: a run can finish cleanly and still
   // leave gaps, and that is the case the old heading hid.
-  const uncovered = skipped.length + failed;
+  // A SCOPED run's `failed` and `skipped` are the SAME leaves - the worker
+  // increments ibroFailed in the branch that pushes to skipped - so adding
+  // them double-counts. Only a whole-book run reports two populations.
+  const uncovered = grain === 'leaves' ? skipped.length : skipped.length + failed;
   // A skipped leaf is not a failure - the run did what it was asked. It IS a
   // coverage gap, and the panel stays amber rather than green because any
   // aggregate summed from these leaves is understated by exactly their
@@ -429,7 +465,9 @@ function BulkCompletePanel({
                   emphasis did not have to be the price. */}
               <span>
                 <strong className="text-emerald-800">{generated}</strong>
-                <span className="text-emerald-700"> {t('bulk_complete_series_generated')}</span>
+                <span className="text-emerald-700"> {grain === 'leaves'
+                  ? t('bulk_complete_leaves_generated')
+                  : t('bulk_complete_series_generated')}</span>
               </span>
             </div>
 
@@ -474,7 +512,7 @@ function BulkCompletePanel({
                 "could not be forecast", and each names its own grain. The
                 reason wording comes from SKIP_REASON_KEY in both places, so
                 there is one enum behind the whole panel. */}
-            {failed > 0 && (
+            {grain !== 'leaves' && failed > 0 && (
               <div className="flex items-center gap-3 bg-amber-50 rounded-lg px-4 py-2.5">
                 <AlertTriangle size={15} className="text-amber-500 shrink-0" />
                 <span>

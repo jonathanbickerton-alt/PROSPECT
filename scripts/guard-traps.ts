@@ -47,6 +47,8 @@ const COVCOPY = 'scripts/coverage-copy-spec.ts';
 const WALKFIX = 'scripts/walk-fixes-spec.ts';
 const PANEL = 'scripts/step1-panel-spec.tsx';
 const STEP3 = 'scripts/step3-transition-spec.tsx';
+const BULKDONE = 'scripts/bulk-completion-spec.tsx';
+const NAVSPEC = 'scripts/nav-target-spec.ts';
 const SFT = 'src/components/StandardForecastTab.tsx';
 const MODAL = 'src/components/BulkGenerateModal.tsx';
 const APP = 'src/App.tsx';
@@ -404,6 +406,27 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace('  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {',
       '  const __trap38 = () => { setForecastData([]); };' + nl +
       '  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {') },
+  // Trap 39 REPLANTS Session G's severance: the scoped run finishes and raises
+  // nothing, so the coverage statement, the grain-named counters, the named
+  // skipped leaves and G's own retirement notice all become unreachable from
+  // Step 1 again. This is the defect the walk found, in one line.
+  { id: "39 the aggregate run reports nothing again", why: 'the coverage statement is unreachable from Step 1',
+    file: APP, spec: BULKDONE,
+    mutate: s => s.replace(
+      "          setBulkCompletedRun({ grain: 'leaves', generated: res.generated, failed: res.failed,",
+      '          void 0 && ({ generated: res.generated, failed: res.failed,') },
+  // Trap 40: the leaf-grain marker is dropped, so a scoped run's counts are
+  // labelled 'chart series' and its uncovered total double-counts - failed and
+  // skipped are the SAME leaves on that path. The spec found this in the fix
+  // itself before it shipped.
+  { id: '40 the scoped run loses its grain', why: 'leaves counted as chart series and uncovered double-counted',
+    file: MODAL, spec: BULKDONE,
+    mutate: s => s.replace("  const uncovered = grain === 'leaves' ? skipped.length : skipped.length + failed;",
+                           '  const uncovered = skipped.length + failed;') },
+  // Trap 41: the nav label and its target diverge again.
+  { id: '41 the nav label stops naming its destination', why: 'the item says Standard Forecast and goes to Overall',
+    file: APP, spec: NAVSPEC,
+    mutate: s => s.replace("              {t('nav_overall_forecast')}", "              {t('standard_forecast')}") },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -414,7 +437,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');
