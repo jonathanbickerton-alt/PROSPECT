@@ -45,6 +45,7 @@ const GENMISSING = 'scripts/generate-missing-spec.ts';
 const CHARTSCOPE = 'scripts/chart-scope-spec.ts';
 const COVCOPY = 'scripts/coverage-copy-spec.ts';
 const WALKFIX = 'scripts/walk-fixes-spec.ts';
+const PANEL = 'scripts/step1-panel-spec.tsx';
 const SFT = 'src/components/StandardForecastTab.tsx';
 const MODAL = 'src/components/BulkGenerateModal.tsx';
 const APP = 'src/App.tsx';
@@ -323,6 +324,12 @@ const TRAPS: Trap[] = [
       .replace('    (!!wiProductCol  && productValue === ', '    ((true) && productValue === ')
       .replace('    (!!wiChannelCol  && channelValue === ', '    ((true) && channelValue === ')
       .replace('    (!!wiTariffL1Col && tariffValue  === ', '    ((true) && tariffValue  === ') },
+  // Trap 30: the invitation argues with the explanation again. "Ready to
+  // forecast" under a notice saying nothing can be shown reads as though
+  // nothing had been tried.
+  { id: '30 the placeholder contradicts the notice above it', why: 'an invitation sits under an explanation of why it cannot work',
+    file: SFT, spec: PANEL,
+    mutate: s => s.replace('              ) : notice ? (', '              ) : false ? (') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -333,7 +340,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

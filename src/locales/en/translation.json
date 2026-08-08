@@ -707,5 +707,7 @@
   "standard_scope_blocked": "{{count}} cohorts have too little history to forecast",
   "standard_scope_blocked_by_unfittable": "The {{count}} remaining cohorts in this scope have too little history to forecast. The aggregate is summed from the rest.",
   "standard_hint_unfittable": "{{count}} of them have too little history and are left out of the total.",
-  "standard_base_series_not_derivable": "A summed aggregate has no Base volume series — it is built from Inflow, Outflow and Retention. Choose one of those, or select a specific cohort."
+  "standard_base_series_not_derivable": "A summed aggregate has no Base volume series — it is built from Inflow, Outflow and Retention. Choose one of those, or select a specific cohort.",
+  "baseline_nothing_to_display": "Nothing to display for this selection",
+  "baseline_see_the_note_above": "The note above explains why."
 }

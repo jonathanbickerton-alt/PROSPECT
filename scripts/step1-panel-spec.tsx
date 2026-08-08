@@ -267,6 +267,33 @@ async function main() {
       'the blocked state was lost while scoping the machine off leaves');
   }
 
+  // ── A NOTICE AND AN INVITATION MUST NOT ARGUE ──────────────────────────
+  // Raised by the gate: a notice explaining why nothing can be shown, sitting
+  // above "Ready to forecast", reads as though nothing had been tried. The
+  // notice is the explanation; the invitation stands down rather than
+  // contradicting the sentence directly above it.
+  {
+    const c = await render({ forecastData: [], stdChartData: [],
+      notice: i18n.t('standard_base_series_not_derivable') });
+    const txt = c.textContent || '';
+    check('NOTICE PAIRING: the notice itself is shown',
+      txt.includes('no Base volume series'), 'the notice did not render at all');
+    check('NOTICE PAIRING: "Ready to forecast" stands down under a notice',
+      !txt.includes(PLACEHOLDER),
+      'the invitation contradicts the explanation directly above it');
+    check('NOTICE PAIRING: and something neutral takes its place',
+      txt.includes(i18n.t('baseline_nothing_to_display')),
+      'the panel area is now blank, which says less than the placeholder did');
+  }
+  // Control on the same mechanism: with NO notice the invitation returns.
+  // Without this, deleting the placeholder entirely would pass the check above.
+  {
+    const c = await render({ forecastData: [], stdChartData: [], notice: '' });
+    check('NOTICE PAIRING CONTROL: with no notice the invitation is back',
+      (c.textContent || '').includes(PLACEHOLDER),
+      'the placeholder was removed rather than conditioned');
+  }
+
   console.log(`step1-panel spec: ${pass} passed, ${fails.length} failed`);
   fails.forEach(f => console.log('  FAIL ' + f));
   process.exit(fails.length ? 1 : 0);
