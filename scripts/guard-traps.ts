@@ -298,21 +298,16 @@ const TRAPS: Trap[] = [
       '      // worker pool - clears the flag, so no caller has to remember to.' + nl +
       '      setIsGeneratingMissing(false);' + nl + '    }',
       '    }') },
-  // Trap 28: the panel gate wins again. Removing setForecastData leaves the
-  // store correct and the screen showing 'Ready to forecast' - the exact
-  // failure Jon's second walk hit, which the previous spec could not see
-  // because it asserted on state rather than on a mounted component.
-  { id: '28 the derived forecast never reaches the panel', why: 'the placeholder persists after a successful run',
-    file: APP, spec: WALKFIX,
-    mutate: s => {
-      const i = s.indexOf('const showResolvedAggregate = useCallback');
-      if (i === -1) return s;
-      const j = s.indexOf('    setForecastData([', i);
-      if (j === -1) return s;
-      const k = s.indexOf('  }, [resolveForecast, stdScenario', j);
-      if (k === -1) return s;
-      return s.slice(0, j) + s.slice(k);
-    } },
+  // TRAP 28 RETIRED — the write it planted no longer exists.
+  //
+  // It reverted showResolvedAggregate to not populating forecastData. The
+  // panel now DERIVES from the store, so that function writes no panel state
+  // at all and the defect cannot be expressed there. Trap 34 replaces it with
+  // the cut that IS still expressible: severing the derivation.
+  //
+  // Recorded rather than deleted, because a trap vanishing from a numbered
+  // list looks the same as a trap someone quietly dropped.
+
   // Trap 29: the aggregation predicate stops asking whether the dimension is
   // MAPPED. Every dimension defaults to 'All (Aggregated)', so an unmapped one
   // makes a genuine leaf look aggregated - and a fitted leaf then reads
@@ -329,21 +324,60 @@ const TRAPS: Trap[] = [
   // nothing had been tried.
   { id: '30 the placeholder contradicts the notice above it', why: 'an invitation sits under an explanation of why it cannot work',
     file: SFT, spec: PANEL,
-    mutate: s => s.replace('              ) : notice ? (', '              ) : false ? (') },
-  // Trap 31: the Base branch stops clearing the panel, so the previous
-  // selection's chart and table stay on screen under a notice about a
-  // different one. Found by the gate, not by the spec that shipped with it.
-  { id: '31 a notice left over another selection’s numbers', why: 'the previous selection stays rendered under an absence notice',
-    file: APP, spec: PANEL,
-    mutate: s => s.replace('      setForecastData([]);' + nl + '      setBaseForecast(null);' + nl +
-                           "      setNotice(t('standard_base_series_not_derivable'));",
-                           "      setNotice(t('standard_base_series_not_derivable'));") },
+    // Re-anchored: the condition widened to cover the covered/blocked/never
+    // states as well as a notice, so the old exact-text anchor stopped
+    // matching. INCONCLUSIVE rather than a false catch, as designed.
+    mutate: s => s.replace("              ) : (notice || aggregateState.kind === 'covered'",
+                           '              ) : (false') },
+  // TRAP 31 RETIRED — same reason as 28.
+  //
+  // It removed the Base branch's forecastData clear. With the panel derived,
+  // a null band yields no rows and there is nothing to clear, so the stale
+  // panel it guarded against is structurally impossible rather than merely
+  // guarded. spec:step1-panel asserts that property directly.
+
   // Trap 32: the shared scope helper is replaced by a near-copy that trims
   // only one side - the exact drift the first version of this code had.
   { id: '32 the scope test becomes a near-copy again', why: 'a private scope predicate drifts from the shared one',
     file: APP, spec: WALKFIX,
-    mutate: s => s.replace('      if (!rowInScope(row, scopeCols, scopeFilter, ALL_DIMS)) continue;',
-                           '      if (false) continue;') },
+    // Re-anchored: the scope test became a predicate passed to the shared row
+    // builder, so the old inline-continue form no longer exists. The harness
+    // reported INCONCLUSIVE rather than a false catch, which is what that
+    // state is for.
+    mutate: s => s.replace('        && rowInScope(row, scopeCols, scopeFilter, ALL_DIMS),',
+                           '        && true,') },
+  // Trap 33 replants Session J's EXACT defect - the app resolves the derived
+  // forecast and never gets it to the panel - and points it at the MOUNTED
+  // spec. Trap 28 plants the same defect but is caught by a structural
+  // source check; a verification pass showed that with trap 28's mutation
+  // planted, every mounted assertion in step1-panel stayed GREEN, because the
+  // spec built its own rows and passed them in as a prop.
+  //
+  // That is the difference this trap exists to hold: 'the panel renders when
+  // given rows' and 'the app gives it rows' are different claims, and only the
+  // second is what the walk failed on twice.
+  { id: '33 the app resolves a forecast the panel never receives', why: 'the placeholder persists after a successful run - Session J, exactly',
+    file: ENGINE, spec: PANEL,
+    mutate: s => s.replace('  const stamped = [...histRows, ...fcRows];',
+                           '  const stamped: Record<string, unknown>[] = [];') },
+  // Trap 34 severs the STORE DERIVATION: the panel stops asking the seam what
+  // exists for the current selection. This is walk C-17 exactly - a restored
+  // session whose forecasts are in the store and nowhere on Step 1. It is a
+  // different cut from trap 33: 33 breaks the row BUILDING, this breaks the
+  // RESOLVING, and only the second reproduces the restore defect.
+  { id: '34 the panel stops deriving from the store', why: 'a restored session shows no forecast on Step 1',
+    file: ENGINE, spec: PANEL,
+    mutate: s => s.replace('  const { forecast } = resolve(key);' + nl + '  if (!forecast) return [];',
+                           '  return [];') },
+  // Trap 35: a consumer is left reading the old written state. This is the
+  // shape the gate found by hand - the window-offset effect kept reading
+  // forecastData after everything else moved, so it silently stopped firing
+  // for aggregate and restored views. Nothing failed, because the diff shrank
+  // the effect's reach without touching a line of it.
+  { id: '35 a panel consumer left on the old written state', why: 'the chart stops centring on the transition for derived views',
+    file: APP, spec: WALKFIX,
+    mutate: s => s.replace("    if (stdPanelRows.length > 0 && activeView === 'standard') {",
+                           "    if (forecastData.length > 0 && activeView === 'standard') {") },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

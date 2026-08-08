@@ -5001,6 +5001,117 @@ to a session whose scope is generation. Recorded here so the accident is known
 and the identity is not removed by someone who does not know it is holding this
 up.
 
+### A restored session never rendered in Step 1 — DESIGN GAP, 2026-08-08
+
+Walk C step 17. After a session restore, forecasts existed and drew in Actuals
+Review, while Step 1 showed "Ready to forecast" and its button read "All cohorts
+in scope already forecast". The store held the forecasts; Step 1 could neither
+show nor regenerate any.
+
+**Mechanism, verified not assumed.** The Step 1 result panel gates on
+`forecastData.length > 0`. `forecastData` is written only by paths that
+GENERATE. Session restore rehydrates `forecastStore` and writes no such state,
+so the gate never opened.
+
+**Classification: DESIGN GAP, not a regression.** `git log -S` puts the
+`forecastData.length > 0` gate in the **initial commit**, and session restore
+(`restoredStore`) in a later one. Every restore implementation in history was
+checked for a `setForecastData` within 80 lines: none has one. **A restored
+session has never rendered in Step 1.** Section C simply reached it first —
+Sessions J and K did not introduce it, though Session K's fix is in the same
+family and is why the shape was recognisable.
+
+**The fix is a deletion, not an addition.** Session K made the aggregate path a
+SECOND writer of `forecastData`. Restore would have been a third, and the next
+path a fourth. That is the pattern this codebase has now paid for four times: a
+requirement that lives at call sites rather than inside the thing itself.
+
+So the panel **derives**. `stdPanelRows` asks the seam what exists for the
+current selection and builds rows from it; the panel gates on that. Nothing
+writes panel state any more — `showResolvedAggregate` stopped, and restore never
+needed to start. **The question "which paths must remember to populate the
+panel" no longer exists**, which is the only durable answer to a defect that has
+now recurred at three different call sites.
+
+**COMPARE MODE IS THE ONE EXCEPTION, and it is real rather than a workaround.**
+Compare-categories fits ad-hoc per-category series that are never stored under a
+cohort key, so there is nothing in the store to derive them from. Those rows
+stay written, and the mode is already a distinct render branch.
+
+**A latent bug closed on the way:** written panel state persisted across
+selection changes until the next generate, so the panel could show one
+selection's numbers under another's label. A derived panel cannot.
+
+**Subsidiary, same screen:**
+
+- The placeholder invited "configure and click Generate Forecast" while the
+  adjacent button said everything was already forecast. It now stands down for
+  `covered`, `blocked` and `never` as well as for a notice — the same
+  contradiction shape Session K fixed for the notice case, in the state the walk
+  reached first.
+- The disabled button kept `bg-[#e60000]` at 40% opacity — a coverage statement
+  on a faded action colour, which reads as "the thing to click, but not now"
+  when the message is "there is nothing to click, and here is why". Session J
+  moved coverage statements off red surfaces; the button now uses a slate
+  surface in those states.
+- **`unfittableLeaves` RESETS on restore, deliberately.** Restore replaces
+  `data`, so the reset effect fires. The visible consequence: after a restore
+  the two short-history leaves count as fittable-missing again, the button
+  offers them, and a run re-proves them unfittable. That is the correct trade —
+  unfittability is a property of the data, and persisting the set into the save
+  file would carry a claim about a fit forward past the moment it was measured,
+  which is what provenance discipline exists to prevent.
+
+**Two consequences of deriving, found by the gate and recorded rather than
+fixed.**
+
+**1. The legacy multi-combo branch now agrees with the rest of the app.** When a
+hierarchy dimension is unmapped while its selector sits at
+`'All (Aggregated)'`, `generateStandardForecast` takes a legacy branch that
+writes `forecastData` as a **sum of per-combo Holt-Winters fits**, and separately
+stores **one `calculateBaseForecast` fit on the combined series** (that call sits
+outside `combos.forEach`). Those are different procedures.
+
+With the panel derived, Step 1 now shows the STORE's combined fit rather than
+the sum-of-fits. That is a **convergence, not a regression**: `forecastStore` is
+what the seam reads and what Actuals Review scores against, so Step 1 previously
+displayed a figure no other screen in the app agreed with for this path.
+
+Measured on the trimmed fixture, 5 real segment series: sum-of-combos
+`31570.16` against single-fit-on-combined `31570.15` — 0.00003%. **The
+confidence BANDS were not compared**, and they depend on differently-computed
+residual variance in each approach, so they are the more likely place for a
+visible difference. Stated as a limit rather than claimed equivalent.
+
+**2. A latent divergence that no shipped fixture can exercise.** The old written
+path filtered rows to the target metric; the derived path builds from the IBRO
+series and drops months where all metrics are zero. On a **regular grid** — every
+metric present for every month a cohort has data — these select identical months,
+which is why the manual path's derived output is byte-identical to its written
+output on both shipped fixtures (verified across two leaves and two scenarios).
+
+They would diverge on an **irregular** grid: a month where the target metric's
+row is absent but other metrics exist would be dropped by the old path and kept
+as zero by the new one. Both shipped fixtures were checked programmatically and
+contain zero such combinations, so this is untested rather than working.
+
+**Cosmetic, verified invisible:** derived historical rows omit the explicit
+`Optimistic: null` / `Pessimistic: null` keys and the spurious `_parsedDate`
+column the old rows carried. `downloadExcel` uses `json_to_sheet`, which unions
+keys across rows, so no column is lost from the sheet.
+
+**Guarded by `spec:step1-panel`,** which restores a store inside the test and
+drives the production resolver end to end — store to rendered pixel — because a
+spec that builds its own rows proves things about the component and nothing
+about the app. Trap 34 severs the derivation and is confirmed turning it red on
+three mounted assertions.
+
+**Traps 28 and 31 were RETIRED, with reasons recorded rather than deleted.** The
+writes they planted no longer exist: with the panel derived,
+`showResolvedAggregate` writes no panel state and a null band yields no rows, so
+both defects are structurally impossible rather than merely guarded. A trap
+vanishing from a numbered list looks the same as a trap someone quietly dropped.
+
 ### Surface-not-store at PANEL level — the gate that swallowed a fix, 2026-08-07
 
 Session J shipped "the user story ends with the forecast visible", specced it,

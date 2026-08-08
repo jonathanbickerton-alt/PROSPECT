@@ -1949,6 +1949,97 @@ export function isAllBearing(key: string): boolean {
  * only test `missing.length === 0`, which is the degenerate case the button
  * states exist to keep apart.
  */
+/**
+ * The Step 1 chart rows for a DERIVED aggregate: historical actuals in scope,
+ * then the derived forecast's months.
+ *
+ * Pure, exported, and called by the App rather than inlined in it — for a
+ * reason discovered by a verification pass rather than by design. While it
+ * lived inside `showResolvedAggregate`'s closure, the mounted panel spec could
+ * not reach it, so the spec built its own equivalent rows and passed them in as
+ * a prop. That spec therefore proved the COMPONENT renders correctly given good
+ * rows, and proved nothing about whether the APP produces them — a mutation
+ * that stopped the App populating them left every mounted assertion green.
+ *
+ * Two different claims: "the panel renders when given rows" and "the app gives
+ * it rows". Only the second is what Jon's walk failed on. Extracting this makes
+ * the second checkable by the same mounted assertion.
+ *
+ * Shape matches what the manual generate path produces, because `stdChartData`
+ * and the Step 1 preview table both read that shape.
+ */
+export function buildAggregateForecastRows(
+  forecast: BaseForecast,
+  band: 'inflow' | 'outflow' | 'retention',
+  rows: readonly Record<string, unknown>[],
+  dateCol: string,
+  valueCol: string,
+  inScope: (row: Record<string, unknown>) => boolean,
+  monthOf: (raw: unknown) => string | null,
+  /** Stamped onto every row, matching the manual path so the export keeps its
+   *  provenance columns when the panel is derived rather than written. */
+  trace?: { preHorizonUncertainty: number; postHorizonExpansionRate: number },
+): Record<string, unknown>[] {
+  const hist = new Map<string, Record<string, unknown>>();
+  for (const row of rows) {
+    if (!inScope(row)) continue;
+    const month = monthOf(row[dateCol]);
+    if (!month) continue;
+    const val = Number(row[valueCol]) || 0;
+    const prev = hist.get(month);
+    if (prev) (prev['Mean (Base)'] as number) += val;
+    else hist.set(month, { ...row, [dateCol]: month, 'Mean (Base)': val, Type: 'Historical' });
+  }
+  for (const r of hist.values()) {
+    r['Mean (Base)'] = Number((r['Mean (Base)'] as number).toFixed(2));
+  }
+  const histRows = [...hist.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(e => e[1]);
+
+  const fcRows = forecast.months.map(m => ({
+    [dateCol]: m.month,
+    'Mean (Base)': (m as any)[band].mean,
+    Optimistic: (m as any)[band].optimistic,
+    Pessimistic: (m as any)[band].pessimistic,
+    Type: 'Forecast',
+  }));
+  const stamped = [...histRows, ...fcRows];
+  if (trace) {
+    for (const r of stamped) {
+      r['Pre-Horizon Uncertainty %'] = trace.preHorizonUncertainty;
+      r['Post-Horizon Expansion Rate %'] = trace.postHorizonExpansionRate;
+    }
+  }
+  return stamped;
+}
+
+/**
+ * The Step 1 panel's rows for a key, resolved from the store and built.
+ *
+ * Resolve-then-build in one exported place so a spec can drive the WHOLE path
+ * — store to rows — rather than the second half of it. The mounted panel spec
+ * previously built its own rows, which made it a proof about the component and
+ * no proof at all about the app; this is the other half of closing that.
+ *
+ * Returns [] when the seam has nothing for the key, which is what the panel
+ * gate reads as "no forecast for this selection".
+ */
+export function buildPanelRowsFromStore(
+  resolve: (key: string) => { forecast: BaseForecast | null },
+  key: string,
+  band: 'inflow' | 'outflow' | 'retention' | null,
+  rows: readonly Record<string, unknown>[],
+  dateCol: string,
+  valueCol: string,
+  inScope: (row: Record<string, unknown>) => boolean,
+  monthOf: (raw: unknown) => string | null,
+  trace?: { preHorizonUncertainty: number; postHorizonExpansionRate: number },
+): Record<string, unknown>[] {
+  if (!band) return [];
+  const { forecast } = resolve(key);
+  if (!forecast) return [];
+  return buildAggregateForecastRows(forecast, band, rows, dateCol, valueCol, inScope, monthOf, trace);
+}
+
 export function missingLeavesForKey(
   key: string,
   leafMap: Map<string, string[]>,

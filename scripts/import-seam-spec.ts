@@ -89,8 +89,8 @@ const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails
     // function body below rather than taken on trust.
     // Added by the walk fixes: after a scoped generate the aggregate is
     // resolved and shown. Seam-routed, and verified as such below.
-    showResolvedAggregate: { count: 2, seam: true,
-      why: 'two sites: one sets the `forecast` destructured from resolveForecast(); the other sets NULL to clear the panel when the selected scenario has no derivable band - a clear is not a write of an unvetted forecast' },
+    showResolvedAggregate: { count: 1, seam: true,
+      why: 'sets the `forecast` destructured from resolveForecast(). The second site - a NULL clear - went away when the panel became derived: with nothing written there is nothing to clear' },
     handleStep2FilterChange: { count: 1, seam: true,
       why: 'sets the `forecast` destructured from resolveForecast() one line above' },
     handleStep3FilterChange: { count: 1, seam: true,
@@ -159,7 +159,7 @@ const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails
   // The count is pinned so that ADDING a site is a deliberate act. A new call
   // site that happens to match an accepted shape would otherwise slip in
   // unreviewed — matching a shape is not the same as having been thought about.
-  const EXPECTED_SITES = 13;
+  const EXPECTED_SITES = 12;
   check(`ENUMERATION: the call-site count is still ${EXPECTED_SITES}`,
     sites.length === EXPECTED_SITES,
     `found ${sites.length} — if this is intentional, classify the new site and update the count`);

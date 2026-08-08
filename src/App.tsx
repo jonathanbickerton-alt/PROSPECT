@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, isAllBearing, missingLeavesForKey, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort, Provenance, SkipReason } from './types/forecast';
@@ -1732,6 +1732,16 @@ export default function App() {
    * A new upload is a new set of facts. Leaves proved unfittable against the
    * old file say nothing about this one, and carrying them over would suppress
    * generation for cohorts that may now have history.
+   *
+   * SESSION RESTORE RESETS THIS TOO, deliberately: restore replaces `data`, so
+   * this effect fires. The consequence is worth stating because it is visible
+   * on screen — after a restore the two short-history leaves in the edge
+   * fixture count as fittable-MISSING again, so the button offers them and a
+   * run re-proves them unfittable. That is the correct trade. Unfittability is
+   * a property of the data, the restored file's data is what was just loaded,
+   * and the alternative — persisting the set into the save file — would carry a
+   * claim about a fit forward past the moment it was measured, which is what
+   * provenance discipline exists to prevent.
    */
   useEffect(() => {
     setUnfittableLeaves(new Set());
@@ -2060,68 +2070,16 @@ export default function App() {
     //
     // The rows are built in the same shape the manual path produces, because
     // stdChartData and the data-preview table both read that shape.
-    const band = stdScenario === 'Inflow' ? 'inflow'
-      : stdScenario === 'Outflow' ? 'outflow'
-      : stdScenario === 'Retention' ? 'retention' : null;
-    if (!band) {
-      // A derived aggregate has no Base VOLUME band - BaseForecastMonth carries
-      // inflow, outflow and retention only. Saying so beats plotting one of the
-      // other three under a Base label.
-      //
-      // The panel is CLEARED as well as explained. Returning with only a notice
-      // left the previous selection's chart and table rendered underneath it -
-      // the panel gate reads forecastData and knows nothing about the notice -
-      // so the screen showed one cohort's numbers under a sentence about
-      // another. That is a worse version of the defect this session opened on.
-      setForecastData([]);
-      setBaseForecast(null);
+    // No forecastData write here any more. The panel DERIVES from the store
+    // via stdPanelRows, so setting the context forecast is the whole job -
+    // and the every-writer-must-also-populate-the-panel requirement that this
+    // function was created to satisfy no longer exists for anyone.
+    if (stdScenario === 'Base') {
+      // Still worth saying: a stored forecast carries no Base VOLUME band, so
+      // the panel will be empty and the reason is not obvious from an absence.
       setNotice(t('standard_base_series_not_derivable'));
-      return;
     }
-
-    const scopeCols = { segment: wiSegmentCol, product: wiProductCol,
-      productL2: wiProductL2Col, channel: wiChannelCol, channelL2: wiChannelL2Col,
-      tariffL1: wiTariffL1Col, tariffL2: wiTariffL2Col };
-    const sf = stdSelectionFilter;
-    const scopeFilter = { segment: sf.segment === 'All' ? null : sf.segment,
-      product: sf.product.l1, productL2: sf.product.l2,
-      channel: sf.channel.l1, channelL2: sf.channel.l2,
-      tariffL1: sf.tariff?.l1 ?? null, tariffL2: sf.tariff?.l2 ?? null };
-    const histRows = new Map<number, any>();
-    const targetMetric = stdScenario === 'Inflow' ? wiInflowVal
-      : stdScenario === 'Outflow' ? wiOutflowVal : wiRetentionVal;
-    for (const row of data) {
-      if (!wiDateCol || String(row[wiMetricCol]) !== targetMetric) continue;
-      const d = new Date(row[wiDateCol]); if (!isValid(d)) continue;
-      // rowInScope, not a hand-rolled compare. The first version of this
-      // reimplemented the same seven-field wildcard test that cohortScope.ts
-      // already exports and that ForecastVsActualsTab already calls - and it
-      // had drifted on the first read, trimming the row side but not the scope
-      // side. A near-copy of a shared predicate is this codebase's most
-      // repeated failure, and it does not become safe for being short.
-      if (!rowInScope(row, scopeCols, scopeFilter, ALL_DIMS)) continue;
-      const t = new Date(format(d, 'yyyy-MM') + '-01').getTime();
-      const val = Number(row[wiValueCol]) || 0;
-      const prev = histRows.get(t);
-      if (prev) prev['Mean (Base)'] += val;
-      else histRows.set(t, { ...row, [wiDateCol]: format(d, 'yyyy-MM'),
-        'Mean (Base)': val, Type: 'Historical' });
-    }
-    for (const r of histRows.values()) r['Mean (Base)'] = Number(r['Mean (Base)'].toFixed(2));
-
-    const fcRows = forecast.months.map(m => ({
-      [wiDateCol]: m.month,
-      'Mean (Base)': (m as any)[band].mean,
-      Optimistic: (m as any)[band].optimistic,
-      Pessimistic: (m as any)[band].pessimistic,
-      Type: 'Forecast',
-    }));
-    setForecastData([...[...histRows.entries()].sort((a, b) => a[0] - b[0]).map(e => e[1]),
-                     ...fcRows]);
-  }, [resolveForecast, stdScenario, data, wiDateCol, wiMetricCol, wiValueCol,
-      wiInflowVal, wiOutflowVal, wiRetentionVal, wiSegmentCol, wiProductCol,
-      wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col,
-      stdSelectionFilter, t]);
+  }, [resolveForecast, stdScenario, t]);
 
   // Runs after the generated leaves have landed in the store, which is the
   // whole reason this is an effect and not a line in the .then above.
@@ -3393,9 +3351,83 @@ export default function App() {
   };
 
   // Default window offset to center the transition between historical and forecast
+
+
+  // whatIfData effect deleted 2026-07-31: whatIfData had no writer left.
+
+  /**
+   * THE ONE RESOLVER the Step 1 panel shows. Derived from the store, never
+   * written to.
+   *
+   * The panel used to gate on `forecastData`, a piece of state written only by
+   * paths that GENERATE. Session restore rehydrates the store and writes no
+   * such state, so a restored session had forecasts everywhere else in the app
+   * and an empty Step 1 - the store held them, and Step 1 could neither show
+   * nor regenerate any. The panel gate is in the initial commit and restore
+   * came later, so this never worked: a design gap section C reached first,
+   * not a regression.
+   *
+   * Session K fixed the same shape for the aggregate path by making it a second
+   * writer. Restore would have been a third. That is the pattern this codebase
+   * has now paid for four times - a requirement that lives at call sites rather
+   * than in the thing itself - so the panel DERIVES instead, and the question
+   * "which paths must remember to populate it" stops existing. A future path
+   * that puts a forecast in the store shows up here for free.
+   *
+   * COMPARE MODE IS THE ONE EXCEPTION, and it is a real one rather than a
+   * workaround. Compare-categories fits ad-hoc per-category series that are
+   * never stored under a cohort key, so there is nothing in the store to derive
+   * them from. Those rows stay written, and the mode is already a distinct
+   * render branch.
+   */
+  const stdPanelRows = useMemo<any[]>(() => {
+    // Ad-hoc multi-series rows, not store-backed. See above.
+    if (compareCategories.length > 0) return forecastData;
+    if (!wiDateCol || !wiValueCol || !data.length) return [];
+
+    const band = stdScenario === 'Inflow' ? 'inflow'
+      : stdScenario === 'Outflow' ? 'outflow'
+      : stdScenario === 'Retention' ? 'retention' : null;
+    // A stored leaf fit carries no Base VOLUME band either - BaseForecastMonth
+    // has inflow, outflow and retention only - so Base has nothing to show
+    // from the store rather than nothing to show for aggregates specifically.
+    if (!band) return [];
+
+    const scopeCols = { segment: wiSegmentCol, product: wiProductCol,
+      productL2: wiProductL2Col, channel: wiChannelCol, channelL2: wiChannelL2Col,
+      tariffL1: wiTariffL1Col, tariffL2: wiTariffL2Col };
+    const sf = stdSelectionFilter;
+    const scopeFilter = { segment: sf.segment === 'All' ? null : sf.segment,
+      product: sf.product.l1, productL2: sf.product.l2,
+      channel: sf.channel.l1, channelL2: sf.channel.l2,
+      tariffL1: sf.tariff?.l1 ?? null, tariffL2: sf.tariff?.l2 ?? null };
+    const targetMetric = stdScenario === 'Inflow' ? wiInflowVal
+      : stdScenario === 'Outflow' ? wiOutflowVal : wiRetentionVal;
+
+    return buildPanelRowsFromStore(
+      resolveForecast, filterToKey(stdSelectionFilter), band,
+      data, wiDateCol, wiValueCol,
+      row => String(row[wiMetricCol]) === targetMetric
+        && rowInScope(row, scopeCols, scopeFilter, ALL_DIMS),
+      raw => { const d = new Date(raw as any); return isValid(d) ? format(d, 'yyyy-MM') : null; },
+      { preHorizonUncertainty, postHorizonExpansionRate },
+    );
+  }, [compareCategories, forecastData, resolveForecast, stdSelectionFilter, stdScenario,
+      data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
+      wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
+      wiTariffL1Col, wiTariffL2Col, preHorizonUncertainty, postHorizonExpansionRate]);
+
+  // Reads the DERIVED rows, and sits after them because of it.
+  //
+  // It used to read the `forecastData` state, which was fine while every Step
+  // 1 view came from a write. This session made aggregate and restored views
+  // derive instead, and the effect silently stopped firing for exactly those -
+  // the chart still drew, it just no longer centred on the history/forecast
+  // transition. The diff shrank this effect's reach without touching a line of
+  // it, which is why nothing failed: found by the gate, not by review.
   useEffect(() => {
-    if (forecastData.length > 0 && activeView === 'standard') {
-      const sorted = [...forecastData].sort((a, b) => {
+    if (stdPanelRows.length > 0 && activeView === 'standard') {
+      const sorted = [...stdPanelRows].sort((a, b) => {
         const da = new Date(a[wiDateCol]);
         const db = new Date(b[wiDateCol]);
         return da.getTime() - db.getTime();
@@ -3413,15 +3445,13 @@ export default function App() {
         setWindowOffset(defaultOffset);
       }
     }
-  }, [forecastData, activeView, windowSize, wiDateCol]);
-
-  // whatIfData effect deleted 2026-07-31: whatIfData had no writer left.
+  }, [stdPanelRows, activeView, windowSize, wiDateCol]);
 
   const stdChartData = useMemo(() => {
-    if (!forecastData.length) return [];
+    if (!stdPanelRows.length) return [];
     
     // Sort all data by date first
-    const sortedData = [...forecastData].sort((a, b) => {
+    const sortedData = [...stdPanelRows].sort((a, b) => {
       const da = new Date(a[wiDateCol]);
       const db = new Date(b[wiDateCol]);
       return da.getTime() - db.getTime();
@@ -3450,7 +3480,7 @@ export default function App() {
         Pessimistic: row.Type === 'Forecast' ? row['Pessimistic'] : null,
       };
     });
-  }, [forecastData, wiDateCol, compareCategories]);
+  }, [stdPanelRows, wiDateCol, compareCategories]);
 
   // wiChartData deleted 2026-07-31: derived from whatIfData and never read.
 
@@ -3843,12 +3873,15 @@ export default function App() {
   }, [data, wiDateCol, wiMetricCol, wiValueCol, wiSegmentCol, wiProductCol, wiInflowVal, wiOutflowVal, wiBaseVal, wiRetentionVal, genLength, genInflowUplift, genInflowLag, genRetentionUplift, genRetentionLag, genArpuUplift, genMarketEvents, genPreHorizonUncertainty, genPostHorizonExpansionRate]);
 
   const generateCohortForecast = (cohort: any, manualParams?: any) => {
-    const forecastData = computeCohortForecastData(cohort, manualParams);
-    if (forecastData) {
+    // Renamed off `forecastData`: it shadowed the Step 1 panel state, which
+    // made a consumer-completeness check unable to tell a real reader of that
+    // state from this unrelated local. One name, one meaning.
+    const cohortRows = computeCohortForecastData(cohort, manualParams);
+    if (cohortRows) {
       {
         setSavedForecasts(prev => ({
           ...prev,
-          [cohort.id]: forecastData
+          [cohort.id]: cohortRows
         }));
       }
     }
@@ -4407,7 +4440,7 @@ export default function App() {
             generateResult={stdGenerateResult}
             notice={notice}
             error={error}
-            forecastData={forecastData}
+            forecastData={stdPanelRows}
             compareCategories={compareCategories}
             windowSize={windowSize}
             setWindowSize={setWindowSize}
