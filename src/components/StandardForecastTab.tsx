@@ -1052,7 +1052,18 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
               onClick={generateStandardForecast}
               disabled={aggregateState.kind === 'covered' || aggregateState.kind === 'never'
                         || aggregateState.kind === 'blocked'}
-              className="w-full bg-[#e60000] hover:bg-[#cc0000] text-white font-medium py-2.5 px-4 rounded-lg transition-colors shadow-sm mt-4 disabled:opacity-40 disabled:cursor-not-allowed"
+              className={`w-full font-medium py-2.5 px-4 rounded-lg transition-colors shadow-sm mt-4 ${
+                aggregateState.kind === 'covered' || aggregateState.kind === 'blocked'
+                  || aggregateState.kind === 'never'
+                  /* A coverage statement does not belong on the action colour.
+                     Faded red still reads as the primary action, greyed out -
+                     "this is the thing to click, but not now" - when the message
+                     is "there is nothing to click, and here is why". Session J
+                     moved coverage off red surfaces; the disabled button kept
+                     the convention only by accident of opacity. */
+                  ? 'bg-slate-100 text-slate-500 border border-slate-200 cursor-not-allowed'
+                  : 'bg-[#e60000] hover:bg-[#cc0000] text-white'
+              }`}
             >
               {aggregateState.kind === 'generate'
                 ? (aggregateState.missing === 1
@@ -1513,7 +1524,9 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   <p className="text-sm text-slate-500 mb-1">{t('baseline_the_current_cohort_filters_return_no_rows_in')}</p>
                   <p className="text-xs text-slate-400 mt-2">{t('baseline_adjust_the_dimension_filters_often_the_l2_or')}</p>
                 </>
-              ) : notice ? (
+              ) : (notice || aggregateState.kind === 'covered'
+                    || aggregateState.kind === 'blocked'
+                    || aggregateState.kind === 'never') ? (
                 /* A notice has just explained why there is nothing to show.
                    "Ready to forecast" underneath it reads as though nothing
                    had been tried, which contradicts the sentence directly
@@ -1521,7 +1534,9 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                    stands down rather than arguing with it. */
                 <>
                   <h3 className="text-lg font-semibold text-slate-800 mb-2">{t('baseline_nothing_to_display')}</h3>
-                  <p className="text-sm text-slate-500">{t('baseline_see_the_note_above')}</p>
+                  <p className="text-sm text-slate-500">{notice
+                    ? t('baseline_see_the_note_above')
+                    : t('baseline_see_the_button_above')}</p>
                 </>
               ) : (
                 <>

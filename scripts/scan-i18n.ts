@@ -23,7 +23,15 @@ const NEVER = new Set(['Inflow', 'Outflow', 'Retention', 'Base', 'ARPU', 'IBRO',
   // TERMBASE §1 tight compounds built on a never-translate term
   'ARPU Column', 'Inflow Identifier', 'Outflow Identifier', 'Base Identifier', 'Retention Identifier',
   'ARPU Uplift %', 'Inflow Uplift %', 'Retention Uplift %', 'Inflow Lag (Months)', 'Retention Lag (Months)',
-  'Pricing Events — ARPU Override', 'ARPU Δ', 'Base Δ', 'Inflow Δ', 'Outflow Δ', 'Retention Δ', 'ARPU (+/−)']);
+  'Pricing Events — ARPU Override', 'ARPU Δ', 'Base Δ', 'Inflow Δ', 'Outflow Δ', 'Retention Δ', 'ARPU (+/−)',
+  // EXPORT COLUMN IDENTIFIERS, not copy. These are the exact spreadsheet
+  // column names the manual generate path writes, and the derived panel must
+  // produce byte-identical ones or a restored session's export has different
+  // headings from a generated one's. Translating them would break that
+  // alignment, which is the opposite of what keying is for. They read as copy
+  // to the scanner only because the derived builder assigns them by member
+  // access rather than as object-literal keys.
+  'Pre-Horizon Uncertainty %', 'Post-Horizon Expansion Rate %']);
 
 type Hit = { file: string; line: number; kind: string; text: string; note?: string; container?: number };
 const hits: Hit[] = [];

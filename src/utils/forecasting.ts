@@ -1976,6 +1976,9 @@ export function buildAggregateForecastRows(
   valueCol: string,
   inScope: (row: Record<string, unknown>) => boolean,
   monthOf: (raw: unknown) => string | null,
+  /** Stamped onto every row, matching the manual path so the export keeps its
+   *  provenance columns when the panel is derived rather than written. */
+  trace?: { preHorizonUncertainty: number; postHorizonExpansionRate: number },
 ): Record<string, unknown>[] {
   const hist = new Map<string, Record<string, unknown>>();
   for (const row of rows) {
@@ -1999,7 +2002,42 @@ export function buildAggregateForecastRows(
     Pessimistic: (m as any)[band].pessimistic,
     Type: 'Forecast',
   }));
-  return [...histRows, ...fcRows];
+  const stamped = [...histRows, ...fcRows];
+  if (trace) {
+    for (const r of stamped) {
+      r['Pre-Horizon Uncertainty %'] = trace.preHorizonUncertainty;
+      r['Post-Horizon Expansion Rate %'] = trace.postHorizonExpansionRate;
+    }
+  }
+  return stamped;
+}
+
+/**
+ * The Step 1 panel's rows for a key, resolved from the store and built.
+ *
+ * Resolve-then-build in one exported place so a spec can drive the WHOLE path
+ * — store to rows — rather than the second half of it. The mounted panel spec
+ * previously built its own rows, which made it a proof about the component and
+ * no proof at all about the app; this is the other half of closing that.
+ *
+ * Returns [] when the seam has nothing for the key, which is what the panel
+ * gate reads as "no forecast for this selection".
+ */
+export function buildPanelRowsFromStore(
+  resolve: (key: string) => { forecast: BaseForecast | null },
+  key: string,
+  band: 'inflow' | 'outflow' | 'retention' | null,
+  rows: readonly Record<string, unknown>[],
+  dateCol: string,
+  valueCol: string,
+  inScope: (row: Record<string, unknown>) => boolean,
+  monthOf: (raw: unknown) => string | null,
+  trace?: { preHorizonUncertainty: number; postHorizonExpansionRate: number },
+): Record<string, unknown>[] {
+  if (!band) return [];
+  const { forecast } = resolve(key);
+  if (!forecast) return [];
+  return buildAggregateForecastRows(forecast, band, rows, dateCol, valueCol, inScope, monthOf, trace);
 }
 
 export function missingLeavesForKey(

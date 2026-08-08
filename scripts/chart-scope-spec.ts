@@ -131,16 +131,42 @@ check('BEFORE: the narrow scope is non-empty — the gap is a disagreement, not 
   const app = fs.readFileSync('src/App.tsx', 'utf8');
   const start = app.indexOf('const stdChartData = useMemo');
   check('VOLUME ANCHOR: stdChartData was found', start !== -1);
-  const body = start === -1 ? '' : app.slice(start, app.indexOf('}, [forecastData', start));
+  // Bounded on the CURRENT deps line. The previous bound was '}, [forecastData'
+  // which stopped existing when the memo began reading stdPanelRows, so the
+  // slice ran to the end of the file and matched every column name in it.
+  const bodyEnd = app.indexOf('}, [stdPanelRows', start);
+  check('VOLUME ANCHOR: the memo body could be bounded', bodyEnd > start,
+    'the deps line moved - this window is unbounded and every check on it is meaningless');
+  const body = start === -1 || bodyEnd < 0 ? '' : app.slice(start, bodyEnd);
 
-  // It must NOT rebuild from raw data with its own dimension filter — that is
-  // the shape that drifted. It reads forecastData, which the fit already scoped.
-  check('VOLUME: the series is derived from forecastData, not from raw data',
-    /forecastData/.test(body) && !/wiSegmentCol/.test(body),
+  // THE PREMISE CHANGED, and these checks went red rather than passing over it.
+  //
+  // stdChartData used to read `forecastData`, which the fit had already scoped -
+  // so the volume series could not drift because it never did its own scoping.
+  // The Step 1 panel now DERIVES from the store (walk C-17: a restored session
+  // showed nothing because only generate paths wrote that state), so the volume
+  // series reads `stdPanelRows`.
+  //
+  // That is stronger, not weaker, and the checks say why: stdPanelRows scopes
+  // its history with the SHARED rowInScope against the current selection - the
+  // same predicate the ARPU chart uses. Both series now scope through one rule
+  // instead of two, which is what the original defect asked for.
+  check('VOLUME: the series reads the derived panel rows, not raw data',
+    /stdPanelRows/.test(body) && !/wiSegmentCol/.test(body),
     'stdChartData grew its own dimension filter — it can now drift like the ARPU one did');
-  check('VOLUME: and it applies no dimension filter of its own',
+  check('VOLUME: and it still applies no dimension filter of its own',
     !/wiProductL2Col|wiTariffL1Col|segmentValue|productValue|channelValue/.test(body),
     'a second scoping rule has appeared where there was none');
+
+  const memo = app.indexOf('const stdPanelRows = useMemo');
+  check('VOLUME ANCHOR: the panel resolver was found', memo !== -1);
+  const memoBody = memo === -1 ? '' : app.slice(memo, app.indexOf('postHorizonExpansionRate]);', memo));
+  check('VOLUME: the resolver scopes history with the SHARED predicate',
+    /rowInScope\(row, scopeCols, scopeFilter, ALL_DIMS\)/.test(memoBody),
+    'the volume history is scoped by a private rule again — the ARPU defect, moved');
+  check('VOLUME: and by the same seven dimensions the fit uses',
+    /ALL_DIMS/.test(memoBody),
+    'the panel history is scoped more loosely than the forecast beside it');
 
   // And the fit really does filter on all seven, which is what makes the
   // volume series safe. If this ever stops being true, the volume series

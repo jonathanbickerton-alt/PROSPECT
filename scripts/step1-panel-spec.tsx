@@ -207,24 +207,35 @@ async function main() {
   // Without this, "no placeholder" would pass for a component that rendered
   // nothing at all — which is exactly the failure mode this spec exists for.
   {
-    const c = await render({ forecastData: [], stdChartData: [] });
+    const c = await render({ forecastData: [], stdChartData: [],
+      aggregateState: { kind: 'leaf', missing: 0, total: 0, unfittable: 0 } });
     const txt = c.textContent || '';
-    check('CONTROL: with no forecastData the placeholder RENDERS',
+    check('CONTROL: with no rows and a LEAF selection the placeholder RENDERS',
       txt.includes(PLACEHOLDER),
       'the placeholder is unreachable — every absence check below is vacuous');
     check('CONTROL: and the component rendered something substantial',
       txt.length > 200, `${txt.length} chars`);
   }
 
-  // ── THE DEFECT: baseForecast set, forecastData not ──────────────────────
-  // This is the state Session J left the app in. It must FAIL to show the
-  // panel — pinned so the difference between the two states is visible here
-  // rather than only on Jon's screen.
+  // ── THE NEW INVARIANT: the panel follows the STORE ─────────────────────
+  // The old pin here asserted that a derived forecast alone did not open the
+  // panel - true of the written-state design, and deliberately false now. It
+  // failed rather than passing blind, which is why it was a separate check.
+  //
+  // What replaces it: a store with nothing for the key yields no rows, so the
+  // panel stays shut for the right reason rather than for a missing write.
   {
-    const c = await render({ forecastData: [], stdChartData: [] });
-    check('THE DEFECT REPRODUCES: a derived forecast alone does not open the panel',
+    const emptyStore = new Map<string, any>();
+    const none = fc.buildPanelRowsFromStore(
+      (k: string) => fc.resolveFromStore(emptyStore, leafMap, k),
+      AGG, 'inflow', rows, C.date, C.value, inflowInScope, monthOf);
+    check('STORE-DRIVEN: an empty store yields no panel rows', none.length === 0,
+      `${none.length}`);
+    const c = await render({ forecastData: none, stdChartData: none,
+      aggregateState: { kind: 'leaf', missing: 74, total: 74, unfittable: 0 } });
+    check('STORE-DRIVEN: and the panel stays shut',
       (c.textContent || '').includes(PLACEHOLDER),
-      'the gate no longer depends on forecastData — this pin is stale, re-read it');
+      'the panel opened with nothing to show');
   }
 
   // ── THE FIX: forecastData populated from the derived aggregate ──────────
@@ -297,8 +308,9 @@ async function main() {
   // Control on the same mechanism: with NO notice the invitation returns.
   // Without this, deleting the placeholder entirely would pass the check above.
   {
-    const c = await render({ forecastData: [], stdChartData: [], notice: '' });
-    check('NOTICE PAIRING CONTROL: with no notice the invitation is back',
+    const c = await render({ forecastData: [], stdChartData: [], notice: '',
+      aggregateState: { kind: 'leaf', missing: 0, total: 0, unfittable: 0 } });
+    check('NOTICE PAIRING CONTROL: with no notice and a leaf selection, the invitation is back',
       (c.textContent || '').includes(PLACEHOLDER),
       'the placeholder was removed rather than conditioned');
   }
@@ -324,18 +336,22 @@ async function main() {
       curves.length > 0,
       'this case cannot render a chart at all, so the check below proves nothing');
   }
-  // And the App-side guarantee: the branch that raises this notice clears the
-  // panel state, so the combination above cannot arise from it.
+  // The App-side guarantee, restated for the derived design: the Base scenario
+  // has no band, so the resolver returns NO rows and there is nothing to clear.
+  // The previous version asserted that the Base branch called setForecastData([])
+  // - true of the written design, and now unnecessary rather than merely
+  // unchecked. Deleting a check because the code changed is how coverage rots,
+  // so it is replaced by the property that makes the clear redundant.
   {
+    const noBand = fc.buildPanelRowsFromStore(
+      (k: string) => fc.resolveFromStore(store, leafMap, k),
+      AGG, null, rows, C.date, C.value, inflowInScope, monthOf);
+    check('BASE: a null band yields no rows, so no stale panel can survive it',
+      noBand.length === 0, `${noBand.length}`);
     const app = fs.readFileSync('src/App.tsx', 'utf8');
-    const i = app.indexOf("standard_base_series_not_derivable");
-    const before = i === -1 ? '' : app.slice(Math.max(0, i - 400), i);
-    check('STALE PANEL: the Base branch clears forecastData before noticing',
-      /setForecastData\(\[\]\)/.test(before),
-      'the previous selection stays on screen under the notice');
-    check('STALE PANEL: and clears the context forecast with it',
-      /setBaseForecast\(null\)/.test(before),
-      'the context still holds a forecast the panel is no longer showing');
+    check('BASE: the App still says why the panel is empty for Base',
+      /standard_base_series_not_derivable/.test(app),
+      'an empty panel with no explanation');
   }
 
   // ── WALK STEP 10: the not-in-data state, mounted ───────────────────────
@@ -360,6 +376,65 @@ async function main() {
     check('STEP 10: its text differs from the blocked text',
       i18n.t('standard_scope_not_in_data') !== i18n.t('standard_scope_blocked', { count: 2 }),
       'not-in-data and blocked render identically - the distinction is invisible');
+  }
+
+  // ── WALK C-17: A RESTORED SESSION MUST RENDER IN STEP 1 ────────────────
+  // The defect: after a session restore, forecasts existed and drew in Actuals
+  // Review while Step 1 showed "Ready to forecast" and the button read "already
+  // forecast" - the store held them and Step 1 could neither show nor
+  // regenerate any.
+  //
+  // Restore rehydrates the STORE and writes no panel state. It was never going
+  // to: the panel gate is in the initial commit and restore came later, so a
+  // restored session has never rendered here. Session K made the aggregate path
+  // a second writer; restore would have been a third. The panel now DERIVES, so
+  // there is no writer list to join.
+  //
+  // This drives the WHOLE path - restored store to rendered pixel - through the
+  // production resolver, because a spec that builds its own rows proves nothing
+  // about whether the app produces them. That lesson cost a walk.
+  {
+    // A store exactly as restore leaves it: leaf forecasts rehydrated, and NO
+    // panel state written anywhere.
+    const restoredStore = new Map(store);
+    check('C-17 PREMISE: the restored store holds forecasts',
+      restoredStore.size === 72, `${restoredStore.size}`);
+
+    const restoredRows = fc.buildPanelRowsFromStore(
+      (k: string) => fc.resolveFromStore(restoredStore, leafMap, k),
+      AGG, 'inflow', rows, C.date, C.value, inflowInScope, monthOf,
+      { preHorizonUncertainty: 1, postHorizonExpansionRate: 1.5 });
+    check('C-17: the resolver yields panel rows from a restored store alone',
+      restoredRows.length > 0,
+      'nothing written, nothing derived - the panel stays shut, which IS the defect');
+
+    const c = await render({ forecastData: restoredRows,
+      stdChartData: restoredRows.map((r: any) => ({
+        ...r, date: r[C.date], timestamp: new Date(r[C.date] + '-01').getTime(),
+        Historical: r.Type === 'Historical' ? r['Mean (Base)'] : null,
+        'Mean (Base)': r.Type === 'Forecast' ? r['Mean (Base)'] : null,
+        Optimistic: r.Type === 'Forecast' ? r.Optimistic : null,
+        Pessimistic: r.Type === 'Forecast' ? r.Pessimistic : null,
+      })),
+      aggregateState: { kind: 'covered', missing: 0, total: 72, unfittable: 0 } });
+    const txt = c.textContent || '';
+    check('C-17: the placeholder is GONE after a restore', !txt.includes(PLACEHOLDER),
+      'a restored session still shows "Ready to forecast" - the walk defect, unfixed');
+    check('C-17: the panel mounted instead', txt.length > 200, `${txt.length} chars`);
+    // The placeholder check above stands down for a covered selection, so on
+    // its own it would pass for an empty panel. This is the discriminating one.
+    check('C-17: and the empty-state text is NOT shown',
+      !txt.includes(i18n.t('baseline_nothing_to_display')),
+      'the panel is empty - a restored session still shows nothing on Step 1');
+    const curves = [...c.querySelectorAll('.recharts-line-curve')]
+      .filter(p => (p.getAttribute('d') ?? '').length > 10);
+    check('C-17: and the chart has real geometry', curves.length > 0,
+      `${curves.length} curves with a path`);
+    // The trace columns the export carries must survive derivation, or a
+    // restored session exports less than a generated one did.
+    check('C-17: derived rows keep the export trace columns',
+      restoredRows.every((r: any) => r['Pre-Horizon Uncertainty %'] !== undefined),
+      'the export loses provenance columns when the panel is derived');
   }
 
   console.log(`step1-panel spec: ${pass} passed, ${fails.length} failed`);

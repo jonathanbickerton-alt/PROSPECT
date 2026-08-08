@@ -343,9 +343,19 @@ function stateOf(store: Map<string, BaseForecast>, unfittable: ReadonlySet<strin
   check('PANEL: the rows carry the Type field the chart splits on',
     /Type: 'Historical'/.test(bbody) && /Type: 'Forecast'/.test(bbody),
     'stdChartData cannot tell history from forecast');
-  check('PANEL: the App calls the shared builder rather than inlining rows',
-    /buildAggregateForecastRows\(/.test(body),
-    'the row building grew back inside the closure, out of the mounted spec reach');
+  // The call moved from showResolvedAggregate to the stdPanelRows memo when
+  // the panel stopped being written and started being derived. This check went
+  // RED rather than passing over a body that no longer calls it.
+  const memoStart = app.indexOf('const stdPanelRows = useMemo');
+  check('PANEL ANCHOR: the panel resolver was found', memoStart !== -1,
+    'renamed - this guard is blind');
+  const memoBody = memoStart === -1 ? '' : app.slice(memoStart, app.indexOf('postHorizonExpansionRate]);', memoStart));
+  check('PANEL: the panel derives through the shared resolver, not inline rows',
+    /buildPanelRowsFromStore\(/.test(memoBody),
+    'the row building grew back inside a closure, out of the mounted spec reach');
+  check('PANEL: and it asks the SEAM what exists for the selection',
+    /resolveForecast/.test(memoBody),
+    'the panel reads something other than the store - a restored session goes blank again');
   // A derived aggregate has no Base VOLUME band, so the Base scenario cannot be
   // plotted from one. Saying so beats plotting a different band under its name.
   check('PANEL: the Base scenario is declined rather than substituted',
