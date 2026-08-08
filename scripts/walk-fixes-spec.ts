@@ -393,6 +393,73 @@ function stateOf(store: Map<string, BaseForecast>, unfittable: ReadonlySet<strin
     'the panel gate changed - re-read what opens it before trusting these checks');
 }
 
+// ── THE forecastData WRITER ENUMERATION ───────────────────────────────────
+// Session L made the panel DERIVE, so `forecastData` should now matter only in
+// compare mode. It does not follow that the writes went away: there are still
+// seven, and four of them no longer reach the panel at all. They are harmless
+// today and they are exactly the shape that stops being harmless — a future
+// convenience write would join a list nobody is counting.
+//
+// Pinned by SITE and by COUNT, the same shape as the setBaseForecast
+// enumeration: an eighth site fails here rather than passing silently. The four
+// dead writes are NOT deleted by this spec; removing them is a behaviour change
+// to compare-mode entry/exit and to onSelectCohort, backlogged separately.
+{
+  const app = fs.readFileSync('src/App.tsx', 'utf8');
+  const lines = app.split(String.fromCharCode(10));
+  const isComment = (l: string) => /^\s*(\/\/|\*|\/\*)/.test(l);
+  const sites: { line: number; text: string }[] = [];
+  lines.forEach((l, i) => {
+    if (l.includes('setForecastData(') && !isComment(l)
+        && !/const \[forecastData/.test(l)) sites.push({ line: i + 1, text: l.trim() });
+  });
+  check('WRITERS: setForecastData sites were found at all', sites.length > 0,
+    'the matcher is broken, not the code');
+
+  const fnOf = (line: number): string => {
+    for (let i = line - 1; i >= 0; i--) {
+      const m = lines[i].match(/^  const ([A-Za-z0-9_]+)\s*=\s*(useCallback|async|\(|function)/);
+      if (m) return m[1];
+    }
+    return '<top-level>';
+  };
+
+  /** One row per enclosing function, with a reason true of it. */
+  const WRITERS: Record<string, { count: number; why: string }> = {
+    handleFileUpload: { count: 1,
+      why: 'clears on a new upload - legitimate, and the only write that is not a panel feed' },
+    onSelectCohort: { count: 1,
+      why: 'DEAD for the panel: writes savedForecasts rows, which stdPanelRows never reads outside compare mode' },
+    generateStandardForecast: { count: 5,
+      why: '3 compare-mode branches (the permitted writers) + the legacy multi-combo branch and the single-cohort manual generate, both DEAD for the panel since it derives' },
+  };
+
+  const byFn = new Map<string, number>();
+  for (const st of sites) byFn.set(fnOf(st.line), (byFn.get(fnOf(st.line)) ?? 0) + 1);
+
+  const unaccounted = sites.filter(st => !(fnOf(st.line) in WRITERS));
+  check('WRITERS: every setForecastData site is accounted for BY SITE',
+    unaccounted.length === 0,
+    unaccounted.map(st => `App.tsx:${st.line} in ${fnOf(st.line)}`).join(' ; ') || 'n/a');
+
+  const EXPECTED_WRITERS = 7;
+  check(`WRITERS: the site count is still ${EXPECTED_WRITERS}`,
+    sites.length === EXPECTED_WRITERS,
+    `found ${sites.length} - classify the new site before changing this number`);
+
+  for (const [fn, spec] of Object.entries(WRITERS)) {
+    check(`WRITERS: ${fn} still has exactly ${spec.count} site(s)`,
+      (byFn.get(fn) ?? 0) === spec.count,
+      `found ${byFn.get(fn) ?? 0} - reason on file: ${spec.why}`);
+  }
+
+  // The claim that makes four of them dead. If the panel ever stops deriving,
+  // this enumeration's reasons become false and the count is the least of it.
+  check('WRITERS: the panel still reads forecastData ONLY in compare mode',
+    /if \(compareCategories\.length > 0\) return forecastData;/.test(app),
+    'the panel reads written state again - every "DEAD" reason above is now wrong');
+}
+
 // ── THE MACHINE'S SCOPE: aggregates only, and only MAPPED ones ────────────
 // Every Step 1 dimension defaults to 'All (Aggregated)', so an UNMAPPED
 // dimension left at its default made every selection look aggregated - and a

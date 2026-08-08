@@ -46,12 +46,14 @@ const CHARTSCOPE = 'scripts/chart-scope-spec.ts';
 const COVCOPY = 'scripts/coverage-copy-spec.ts';
 const WALKFIX = 'scripts/walk-fixes-spec.ts';
 const PANEL = 'scripts/step1-panel-spec.tsx';
+const STEP3 = 'scripts/step3-transition-spec.tsx';
 const SFT = 'src/components/StandardForecastTab.tsx';
 const MODAL = 'src/components/BulkGenerateModal.tsx';
 const APP = 'src/App.tsx';
+const VIEWFILTER = 'src/utils/viewFilter.ts';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
-const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL];
+const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -378,6 +380,30 @@ const TRAPS: Trap[] = [
     file: APP, spec: WALKFIX,
     mutate: s => s.replace("    if (stdPanelRows.length > 0 && activeView === 'standard') {",
                            "    if (forecastData.length > 0 && activeView === 'standard') {") },
+  // Trap 36 is the F1 tripwire's own guard. It severs the tab-switch effect's
+  // resolve, which is the transition the four navigation sequences exist to
+  // watch - Actuals Review then gates on a null context forecast and shows the
+  // never-generated message with forecasts sitting in the store.
+  { id: '36 the tab-switch effect stops resolving for Step 3', why: 'Actuals Review shows never-generated with a populated store',
+    // Retargeted to the extracted function so the MOUNTED sequences kill it,
+    // not merely a structural source check.
+    file: VIEWFILTER, spec: STEP3,
+    mutate: s => s.replace("  if (view === 'vsactuals') return { owns: true, forecast: resolve(filterToKey(step3Filter)).forecast };",
+                           "  if (view === 'vsactuals') return { owns: true, forecast: null };") },
+  // Trap 37: the filter/key conversion drifts. The spec drives the production
+  // helpers, so breaking the round trip breaks the sequences - which is the
+  // point of extracting them rather than transcribing them into the spec.
+  { id: '37 the ViewFilter round trip drifts', why: 'a restored cohort resolves to a key nothing matches',
+    file: VIEWFILTER, spec: STEP3,
+    mutate: s => s.replace("    product: { l1: c.product === 'All' ? null : c.product,",
+                           '    product: { l1: null,') },
+  // Trap 38: an eighth forecastData writer appears. The panel derives, so a
+  // convenience write would do nothing visible and pass unnoticed.
+  { id: '38 an unclassified forecastData writer appears', why: 'the writer list stops being counted',
+    file: APP, spec: WALKFIX,
+    mutate: s => s.replace('  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {',
+      '  const __trap38 = () => { setForecastData([]); };' + nl +
+      '  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -388,7 +414,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

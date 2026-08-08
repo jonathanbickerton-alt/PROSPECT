@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
+import { filterToKey, cohortToFilter, forecastForView } from './utils/viewFilter';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort, Provenance, SkipReason } from './types/forecast';
 import { provenanceModel, provenanceParams } from './types/forecast';
 import { ForecastProvider } from './context/ForecastContext';
@@ -1519,17 +1520,8 @@ export default function App() {
     return flags && flags.length > 0 ? new Set(flags.map(f => f.month)) : undefined;
   };
 
-  /** Build a forecast key from a ViewFilter object */
-  const filterToKey = (f: ViewFilter) =>
-    makeForecastKey(
-      f.segment,
-      f.product.l1 || 'All',
-      f.product.l2,
-      f.channel.l1 || 'All',
-      f.channel.l2,
-      f.tariff?.l1,
-      f.tariff?.l2,
-    );
+  // Delegates. Extracted to utils/viewFilter so a spec can drive a navigation
+  // SEQUENCE without transcribing the conversion into itself.
 
   /**
    * Populated cohort keys AND the leaves behind each one.
@@ -1599,12 +1591,7 @@ export default function App() {
   }, [forecastStore, populatedCohorts]);
 
   /** Build a ViewFilter from a CohortKey (for syncing tab filter bars after generation) */
-  const cohortToFilter = (c: { segment: string; product: string; productL2?: string; channel: string; channelL2?: string; tariffL1?: string; tariffL2?: string }): ViewFilter => ({
-    segment: c.segment,
-    product: { l1: c.product === 'All' ? null : c.product, l2: c.productL2 && c.productL2 !== 'All' ? c.productL2 : null },
-    channel: { l1: c.channel === 'All' ? null : c.channel, l2: c.channelL2 && c.channelL2 !== 'All' ? c.channelL2 : null },
-    tariff: { l1: c.tariffL1 && c.tariffL1 !== 'All' ? c.tariffL1 : null, l2: c.tariffL2 && c.tariffL2 !== 'All' ? c.tariffL2 : null },
-  });
+  // Delegates — see utils/viewFilter.
 
   /**
    * Step 1's own selection, as a ViewFilter.
@@ -1871,11 +1858,10 @@ export default function App() {
     // Same correction on the tab-restore path: a miss used to leave whichever
     // cohort was last loaded in place, so switching tabs could show Step 3 a
     // forecast belonging to Step 2's filter.
-    if (activeView === 'whatif') {
-      setBaseForecast(resolveForecast(filterToKey(step2Filter)).forecast);
-    } else if (activeView === 'vsactuals') {
-      setBaseForecast(resolveForecast(filterToKey(step3Filter)).forecast);
-    }
+    // Delegates to forecastForView so the Step 3 tripwire can DRIVE this
+    // transition instead of modelling it - see utils/viewFilter.
+    const r = forecastForView(activeView, step2Filter, step3Filter, resolveForecast as any);
+    if (r.owns) setBaseForecast(r.forecast as any);
   }, [activeView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
