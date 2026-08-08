@@ -350,6 +350,31 @@ function stateOf(store: Map<string, BaseForecast>, unfittable: ReadonlySet<strin
   check('PANEL ANCHOR: the panel resolver was found', memoStart !== -1,
     'renamed - this guard is blind');
   const memoBody = memoStart === -1 ? '' : app.slice(memoStart, app.indexOf('postHorizonExpansionRate]);', memoStart));
+  // EVERY consumer of the panel rows must read the DERIVED ones. The
+  // window-offset effect was left reading the old `forecastData` state, so it
+  // silently stopped firing for aggregate and restored views - the chart drew
+  // but no longer centred on the history/forecast transition. Nothing failed,
+  // because the diff shrank the effect's reach without touching a line of it.
+  // Found by the gate; this is the check that would have found it.
+  {
+    // Comments mentioning the old state are prose, not consumers; and the
+    // bulk path has its own unrelated local of the same name.
+    const isComment = (l: string) => /^\s*(\/\/|\*|\/\*)/.test(l);
+    const readers = app.split(String.fromCharCode(10)).map((l, k) => ({ l, i: k + 1 }))
+      .filter(x => x.l.includes('forecastData') && !isComment(x.l)
+        && !/setForecastData|forecastData:|forecastData=\{|const forecastData/.test(x.l));
+    // Only the compare-mode branch and the memo's own dep may still read the
+    // raw state. Anything else is a consumer that missed the switch.
+    const stray = readers.filter(x => !/compareCategories\.length > 0/.test(x.l)
+      && !/^\s*\}, \[compareCategories, forecastData,/.test(x.l));
+    check('PANEL: no consumer still reads the raw written state',
+      stray.length === 0,
+      stray.map(x => `App.tsx:${x.i} ${x.l.trim().slice(0, 70)}`).join(' ; ') || 'n/a');
+    check('PANEL: the window-offset effect reads the derived rows',
+      /if \(stdPanelRows\.length > 0 && activeView === 'standard'\)/.test(app),
+      'the chart no longer centres on the transition for derived views');
+  }
+
   check('PANEL: the panel derives through the shared resolver, not inline rows',
     /buildPanelRowsFromStore\(/.test(memoBody),
     'the row building grew back inside a closure, out of the mounted spec reach');

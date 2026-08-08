@@ -369,6 +369,15 @@ const TRAPS: Trap[] = [
     file: ENGINE, spec: PANEL,
     mutate: s => s.replace('  const { forecast } = resolve(key);' + nl + '  if (!forecast) return [];',
                            '  return [];') },
+  // Trap 35: a consumer is left reading the old written state. This is the
+  // shape the gate found by hand - the window-offset effect kept reading
+  // forecastData after everything else moved, so it silently stopped firing
+  // for aggregate and restored views. Nothing failed, because the diff shrank
+  // the effect's reach without touching a line of it.
+  { id: '35 a panel consumer left on the old written state', why: 'the chart stops centring on the transition for derived views',
+    file: APP, spec: WALKFIX,
+    mutate: s => s.replace("    if (stdPanelRows.length > 0 && activeView === 'standard') {",
+                           "    if (forecastData.length > 0 && activeView === 'standard') {") },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

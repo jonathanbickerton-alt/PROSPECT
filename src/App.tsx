@@ -3351,27 +3351,7 @@ export default function App() {
   };
 
   // Default window offset to center the transition between historical and forecast
-  useEffect(() => {
-    if (forecastData.length > 0 && activeView === 'standard') {
-      const sorted = [...forecastData].sort((a, b) => {
-        const da = new Date(a[wiDateCol]);
-        const db = new Date(b[wiDateCol]);
-        return da.getTime() - db.getTime();
-      });
-      let lastHistoricalIdx = -1;
-      for (let i = sorted.length - 1; i >= 0; i--) {
-        if (sorted[i].Type === 'Historical') {
-          lastHistoricalIdx = i;
-          break;
-        }
-      }
-      
-      if (lastHistoricalIdx !== -1) {
-        const defaultOffset = Math.max(0, Math.min(sorted.length - windowSize, lastHistoricalIdx - Math.floor(windowSize / 2)));
-        setWindowOffset(defaultOffset);
-      }
-    }
-  }, [forecastData, activeView, windowSize, wiDateCol]);
+
 
   // whatIfData effect deleted 2026-07-31: whatIfData had no writer left.
 
@@ -3436,6 +3416,36 @@ export default function App() {
       data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
       wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
       wiTariffL1Col, wiTariffL2Col, preHorizonUncertainty, postHorizonExpansionRate]);
+
+  // Reads the DERIVED rows, and sits after them because of it.
+  //
+  // It used to read the `forecastData` state, which was fine while every Step
+  // 1 view came from a write. This session made aggregate and restored views
+  // derive instead, and the effect silently stopped firing for exactly those -
+  // the chart still drew, it just no longer centred on the history/forecast
+  // transition. The diff shrank this effect's reach without touching a line of
+  // it, which is why nothing failed: found by the gate, not by review.
+  useEffect(() => {
+    if (stdPanelRows.length > 0 && activeView === 'standard') {
+      const sorted = [...stdPanelRows].sort((a, b) => {
+        const da = new Date(a[wiDateCol]);
+        const db = new Date(b[wiDateCol]);
+        return da.getTime() - db.getTime();
+      });
+      let lastHistoricalIdx = -1;
+      for (let i = sorted.length - 1; i >= 0; i--) {
+        if (sorted[i].Type === 'Historical') {
+          lastHistoricalIdx = i;
+          break;
+        }
+      }
+      
+      if (lastHistoricalIdx !== -1) {
+        const defaultOffset = Math.max(0, Math.min(sorted.length - windowSize, lastHistoricalIdx - Math.floor(windowSize / 2)));
+        setWindowOffset(defaultOffset);
+      }
+    }
+  }, [stdPanelRows, activeView, windowSize, wiDateCol]);
 
   const stdChartData = useMemo(() => {
     if (!stdPanelRows.length) return [];
@@ -3863,12 +3873,15 @@ export default function App() {
   }, [data, wiDateCol, wiMetricCol, wiValueCol, wiSegmentCol, wiProductCol, wiInflowVal, wiOutflowVal, wiBaseVal, wiRetentionVal, genLength, genInflowUplift, genInflowLag, genRetentionUplift, genRetentionLag, genArpuUplift, genMarketEvents, genPreHorizonUncertainty, genPostHorizonExpansionRate]);
 
   const generateCohortForecast = (cohort: any, manualParams?: any) => {
-    const forecastData = computeCohortForecastData(cohort, manualParams);
-    if (forecastData) {
+    // Renamed off `forecastData`: it shadowed the Step 1 panel state, which
+    // made a consumer-completeness check unable to tell a real reader of that
+    // state from this unrelated local. One name, one meaning.
+    const cohortRows = computeCohortForecastData(cohort, manualParams);
+    if (cohortRows) {
       {
         setSavedForecasts(prev => ({
           ...prev,
-          [cohort.id]: forecastData
+          [cohort.id]: cohortRows
         }));
       }
     }
