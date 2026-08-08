@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, isAllBearing, missingLeavesForKey, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, isAllBearing, missingLeavesForKey, buildAggregateForecastRows, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort, Provenance, SkipReason } from './types/forecast';
@@ -2087,37 +2087,14 @@ export default function App() {
       product: sf.product.l1, productL2: sf.product.l2,
       channel: sf.channel.l1, channelL2: sf.channel.l2,
       tariffL1: sf.tariff?.l1 ?? null, tariffL2: sf.tariff?.l2 ?? null };
-    const histRows = new Map<number, any>();
     const targetMetric = stdScenario === 'Inflow' ? wiInflowVal
       : stdScenario === 'Outflow' ? wiOutflowVal : wiRetentionVal;
-    for (const row of data) {
-      if (!wiDateCol || String(row[wiMetricCol]) !== targetMetric) continue;
-      const d = new Date(row[wiDateCol]); if (!isValid(d)) continue;
-      // rowInScope, not a hand-rolled compare. The first version of this
-      // reimplemented the same seven-field wildcard test that cohortScope.ts
-      // already exports and that ForecastVsActualsTab already calls - and it
-      // had drifted on the first read, trimming the row side but not the scope
-      // side. A near-copy of a shared predicate is this codebase's most
-      // repeated failure, and it does not become safe for being short.
-      if (!rowInScope(row, scopeCols, scopeFilter, ALL_DIMS)) continue;
-      const t = new Date(format(d, 'yyyy-MM') + '-01').getTime();
-      const val = Number(row[wiValueCol]) || 0;
-      const prev = histRows.get(t);
-      if (prev) prev['Mean (Base)'] += val;
-      else histRows.set(t, { ...row, [wiDateCol]: format(d, 'yyyy-MM'),
-        'Mean (Base)': val, Type: 'Historical' });
-    }
-    for (const r of histRows.values()) r['Mean (Base)'] = Number(r['Mean (Base)'].toFixed(2));
-
-    const fcRows = forecast.months.map(m => ({
-      [wiDateCol]: m.month,
-      'Mean (Base)': (m as any)[band].mean,
-      Optimistic: (m as any)[band].optimistic,
-      Pessimistic: (m as any)[band].pessimistic,
-      Type: 'Forecast',
-    }));
-    setForecastData([...[...histRows.entries()].sort((a, b) => a[0] - b[0]).map(e => e[1]),
-                     ...fcRows]);
+    setForecastData(buildAggregateForecastRows(
+      forecast, band, data, wiDateCol, wiValueCol,
+      row => String(row[wiMetricCol]) === targetMetric
+        && rowInScope(row, scopeCols, scopeFilter, ALL_DIMS),
+      raw => { const d = new Date(raw as any); return isValid(d) ? format(d, 'yyyy-MM') : null; },
+    ));
   }, [resolveForecast, stdScenario, data, wiDateCol, wiMetricCol, wiValueCol,
       wiInflowVal, wiOutflowVal, wiRetentionVal, wiSegmentCol, wiProductCol,
       wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col,

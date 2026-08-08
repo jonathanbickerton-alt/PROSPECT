@@ -331,9 +331,21 @@ function stateOf(store: Map<string, BaseForecast>, unfittable: ReadonlySet<strin
   check('PANEL: the historical scope uses the SHARED predicate, not a copy',
     /rowInScope\(row, scopeCols, scopeFilter, ALL_DIMS\)/.test(body),
     'a private scope test has grown back - it drifted from the shared one last time');
+  // The rows moved into buildAggregateForecastRows when the mounted spec
+  // needed to drive production code rather than a copy. This check went RED
+  // rather than passing over a body that no longer built them - which is what
+  // the anchor is for.
+  const engine = fs.readFileSync('src/utils/forecasting.ts', 'utf8');
+  const bi = engine.indexOf('export function buildAggregateForecastRows');
+  check('PANEL ANCHOR: the row builder was found', bi !== -1,
+    'renamed - this guard is blind, fix it');
+  const bbody = bi === -1 ? '' : engine.slice(bi, engine.indexOf('export function missingLeavesForKey', bi));
   check('PANEL: the rows carry the Type field the chart splits on',
-    /Type: 'Historical'/.test(body) && /Type: 'Forecast'/.test(body),
+    /Type: 'Historical'/.test(bbody) && /Type: 'Forecast'/.test(bbody),
     'stdChartData cannot tell history from forecast');
+  check('PANEL: the App calls the shared builder rather than inlining rows',
+    /buildAggregateForecastRows\(/.test(body),
+    'the row building grew back inside the closure, out of the mounted spec reach');
   // A derived aggregate has no Base VOLUME band, so the Base scenario cannot be
   // plotted from one. Saying so beats plotting a different band under its name.
   check('PANEL: the Base scenario is declined rather than substituted',
