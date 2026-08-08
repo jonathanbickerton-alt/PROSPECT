@@ -32,6 +32,7 @@
  * IS reachable — otherwise "no placeholder" would pass for a component that
  * failed to render at all.
  */
+import * as fs from 'fs';
 import { JSDOM } from 'jsdom';
 
 const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>',
@@ -292,6 +293,41 @@ async function main() {
     check('NOTICE PAIRING CONTROL: with no notice the invitation is back',
       (c.textContent || '').includes(PLACEHOLDER),
       'the placeholder was removed rather than conditioned');
+  }
+
+  // ── A NOTICE MUST NOT SIT OVER SOMEONE ELSE'S NUMBERS ──────────────────
+  // Found by the gate. The Base-scenario branch returned with only a notice,
+  // leaving the PREVIOUS selection's chart and table rendered underneath it -
+  // the panel gate reads forecastData and knows nothing about the notice. The
+  // screen then showed one cohort's numbers under a sentence about another,
+  // which is a worse version of the defect this session opened on.
+  //
+  // The check is on the pairing, not on the branch: a notice explaining an
+  // absence must never coexist with a mounted result panel.
+  {
+    const c = await render({ forecastData: aggForecastData, stdChartData,
+      notice: i18n.t('standard_base_series_not_derivable') });
+    const txt = c.textContent || '';
+    check('STALE PANEL: the notice renders', txt.includes('no Base volume series'));
+    // If the App ever hands both at once again, this is what the user sees.
+    const curves = [...c.querySelectorAll('.recharts-line-curve')]
+      .filter(p => (p.getAttribute('d') ?? '').length > 10);
+    check('STALE PANEL: a mounted chart under an absence notice is visible here',
+      curves.length > 0,
+      'this case cannot render a chart at all, so the check below proves nothing');
+  }
+  // And the App-side guarantee: the branch that raises this notice clears the
+  // panel state, so the combination above cannot arise from it.
+  {
+    const app = fs.readFileSync('src/App.tsx', 'utf8');
+    const i = app.indexOf("standard_base_series_not_derivable");
+    const before = i === -1 ? '' : app.slice(Math.max(0, i - 400), i);
+    check('STALE PANEL: the Base branch clears forecastData before noticing',
+      /setForecastData\(\[\]\)/.test(before),
+      'the previous selection stays on screen under the notice');
+    check('STALE PANEL: and clears the context forecast with it',
+      /setBaseForecast\(null\)/.test(before),
+      'the context still holds a forecast the panel is no longer showing');
   }
 
   console.log(`step1-panel spec: ${pass} passed, ${fails.length} failed`);

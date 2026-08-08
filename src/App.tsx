@@ -5,6 +5,7 @@ import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, isAllBearing, missingLeavesForKey, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
+import { rowInScope, ALL_DIMS } from './utils/cohortScope';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort, Provenance, SkipReason } from './types/forecast';
 import { provenanceModel, provenanceParams } from './types/forecast';
 import { ForecastProvider } from './context/ForecastContext';
@@ -2066,26 +2067,39 @@ export default function App() {
       // A derived aggregate has no Base VOLUME band - BaseForecastMonth carries
       // inflow, outflow and retention only. Saying so beats plotting one of the
       // other three under a Base label.
+      //
+      // The panel is CLEARED as well as explained. Returning with only a notice
+      // left the previous selection's chart and table rendered underneath it -
+      // the panel gate reads forecastData and knows nothing about the notice -
+      // so the screen showed one cohort's numbers under a sentence about
+      // another. That is a worse version of the defect this session opened on.
+      setForecastData([]);
+      setBaseForecast(null);
       setNotice(t('standard_base_series_not_derivable'));
       return;
     }
 
+    const scopeCols = { segment: wiSegmentCol, product: wiProductCol,
+      productL2: wiProductL2Col, channel: wiChannelCol, channelL2: wiChannelL2Col,
+      tariffL1: wiTariffL1Col, tariffL2: wiTariffL2Col };
+    const sf = stdSelectionFilter;
+    const scopeFilter = { segment: sf.segment === 'All' ? null : sf.segment,
+      product: sf.product.l1, productL2: sf.product.l2,
+      channel: sf.channel.l1, channelL2: sf.channel.l2,
+      tariffL1: sf.tariff?.l1 ?? null, tariffL2: sf.tariff?.l2 ?? null };
     const histRows = new Map<number, any>();
     const targetMetric = stdScenario === 'Inflow' ? wiInflowVal
       : stdScenario === 'Outflow' ? wiOutflowVal : wiRetentionVal;
-    const scope = filterToKey(stdSelectionFilter).split('|');
     for (const row of data) {
       if (!wiDateCol || String(row[wiMetricCol]) !== targetMetric) continue;
       const d = new Date(row[wiDateCol]); if (!isValid(d)) continue;
-      // Same scope the fit uses: a part of 'All' matches anything.
-      const parts = [wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol,
-                     wiChannelL2Col, wiTariffL1Col, wiTariffL2Col];
-      let inScope = true;
-      for (let i = 0; i < 7; i++) {
-        if (scope[i] === 'All' || !parts[i]) continue;
-        if (String(row[parts[i]!] ?? '').trim() !== scope[i]) { inScope = false; break; }
-      }
-      if (!inScope) continue;
+      // rowInScope, not a hand-rolled compare. The first version of this
+      // reimplemented the same seven-field wildcard test that cohortScope.ts
+      // already exports and that ForecastVsActualsTab already calls - and it
+      // had drifted on the first read, trimming the row side but not the scope
+      // side. A near-copy of a shared predicate is this codebase's most
+      // repeated failure, and it does not become safe for being short.
+      if (!rowInScope(row, scopeCols, scopeFilter, ALL_DIMS)) continue;
       const t = new Date(format(d, 'yyyy-MM') + '-01').getTime();
       const val = Number(row[wiValueCol]) || 0;
       const prev = histRows.get(t);

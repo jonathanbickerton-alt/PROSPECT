@@ -328,6 +328,9 @@ function stateOf(store: Map<string, BaseForecast>, unfittable: ReadonlySet<strin
     'the panel gate stays shut and the placeholder persists - the exact walk failure');
   check('PANEL: it still sets baseForecast too',
     /setBaseForecast\(forecast\)/.test(body), 'the context lost its forecast');
+  check('PANEL: the historical scope uses the SHARED predicate, not a copy',
+    /rowInScope\(row, scopeCols, scopeFilter, ALL_DIMS\)/.test(body),
+    'a private scope test has grown back - it drifted from the shared one last time');
   check('PANEL: the rows carry the Type field the chart splits on',
     /Type: 'Historical'/.test(body) && /Type: 'Forecast'/.test(body),
     'stdChartData cannot tell history from forecast');

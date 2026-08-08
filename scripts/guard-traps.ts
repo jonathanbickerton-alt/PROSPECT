@@ -330,6 +330,20 @@ const TRAPS: Trap[] = [
   { id: '30 the placeholder contradicts the notice above it', why: 'an invitation sits under an explanation of why it cannot work',
     file: SFT, spec: PANEL,
     mutate: s => s.replace('              ) : notice ? (', '              ) : false ? (') },
+  // Trap 31: the Base branch stops clearing the panel, so the previous
+  // selection's chart and table stay on screen under a notice about a
+  // different one. Found by the gate, not by the spec that shipped with it.
+  { id: '31 a notice left over another selection’s numbers', why: 'the previous selection stays rendered under an absence notice',
+    file: APP, spec: PANEL,
+    mutate: s => s.replace('      setForecastData([]);' + nl + '      setBaseForecast(null);' + nl +
+                           "      setNotice(t('standard_base_series_not_derivable'));",
+                           "      setNotice(t('standard_base_series_not_derivable'));") },
+  // Trap 32: the shared scope helper is replaced by a near-copy that trims
+  // only one side - the exact drift the first version of this code had.
+  { id: '32 the scope test becomes a near-copy again', why: 'a private scope predicate drifts from the shared one',
+    file: APP, spec: WALKFIX,
+    mutate: s => s.replace('      if (!rowInScope(row, scopeCols, scopeFilter, ALL_DIMS)) continue;',
+                           '      if (false) continue;') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
