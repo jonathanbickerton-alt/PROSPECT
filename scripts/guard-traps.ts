@@ -45,6 +45,7 @@ const GENMISSING = 'scripts/generate-missing-spec.ts';
 const CHARTSCOPE = 'scripts/chart-scope-spec.ts';
 const COVCOPY = 'scripts/coverage-copy-spec.ts';
 const WALKFIX = 'scripts/walk-fixes-spec.ts';
+const PANEL = 'scripts/step1-panel-spec.tsx';
 const SFT = 'src/components/StandardForecastTab.tsx';
 const MODAL = 'src/components/BulkGenerateModal.tsx';
 const APP = 'src/App.tsx';
@@ -297,6 +298,52 @@ const TRAPS: Trap[] = [
       '      // worker pool - clears the flag, so no caller has to remember to.' + nl +
       '      setIsGeneratingMissing(false);' + nl + '    }',
       '    }') },
+  // Trap 28: the panel gate wins again. Removing setForecastData leaves the
+  // store correct and the screen showing 'Ready to forecast' - the exact
+  // failure Jon's second walk hit, which the previous spec could not see
+  // because it asserted on state rather than on a mounted component.
+  { id: '28 the derived forecast never reaches the panel', why: 'the placeholder persists after a successful run',
+    file: APP, spec: WALKFIX,
+    mutate: s => {
+      const i = s.indexOf('const showResolvedAggregate = useCallback');
+      if (i === -1) return s;
+      const j = s.indexOf('    setForecastData([', i);
+      if (j === -1) return s;
+      const k = s.indexOf('  }, [resolveForecast, stdScenario', j);
+      if (k === -1) return s;
+      return s.slice(0, j) + s.slice(k);
+    } },
+  // Trap 29: the aggregation predicate stops asking whether the dimension is
+  // MAPPED. Every dimension defaults to 'All (Aggregated)', so an unmapped one
+  // makes a genuine leaf look aggregated - and a fitted leaf then reads
+  // 'covered' and cannot be regenerated.
+  { id: '29 the state machine swallows leaf selections again', why: 'a fitted leaf becomes un-regenerable',
+    file: APP, spec: WALKFIX,
+    mutate: s => s
+      .replace('    (!!wiSegmentCol  && segmentValue === ', '    ((true) && segmentValue === ')
+      .replace('    (!!wiProductCol  && productValue === ', '    ((true) && productValue === ')
+      .replace('    (!!wiChannelCol  && channelValue === ', '    ((true) && channelValue === ')
+      .replace('    (!!wiTariffL1Col && tariffValue  === ', '    ((true) && tariffValue  === ') },
+  // Trap 30: the invitation argues with the explanation again. "Ready to
+  // forecast" under a notice saying nothing can be shown reads as though
+  // nothing had been tried.
+  { id: '30 the placeholder contradicts the notice above it', why: 'an invitation sits under an explanation of why it cannot work',
+    file: SFT, spec: PANEL,
+    mutate: s => s.replace('              ) : notice ? (', '              ) : false ? (') },
+  // Trap 31: the Base branch stops clearing the panel, so the previous
+  // selection's chart and table stay on screen under a notice about a
+  // different one. Found by the gate, not by the spec that shipped with it.
+  { id: '31 a notice left over another selection’s numbers', why: 'the previous selection stays rendered under an absence notice',
+    file: APP, spec: PANEL,
+    mutate: s => s.replace('      setForecastData([]);' + nl + '      setBaseForecast(null);' + nl +
+                           "      setNotice(t('standard_base_series_not_derivable'));",
+                           "      setNotice(t('standard_base_series_not_derivable'));") },
+  // Trap 32: the shared scope helper is replaced by a near-copy that trims
+  // only one side - the exact drift the first version of this code had.
+  { id: '32 the scope test becomes a near-copy again', why: 'a private scope predicate drifts from the shared one',
+    file: APP, spec: WALKFIX,
+    mutate: s => s.replace('      if (!rowInScope(row, scopeCols, scopeFilter, ALL_DIMS)) continue;',
+                           '      if (false) continue;') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -307,7 +354,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

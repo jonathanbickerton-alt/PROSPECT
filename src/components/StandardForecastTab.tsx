@@ -1513,6 +1513,16 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   <p className="text-sm text-slate-500 mb-1">{t('baseline_the_current_cohort_filters_return_no_rows_in')}</p>
                   <p className="text-xs text-slate-400 mt-2">{t('baseline_adjust_the_dimension_filters_often_the_l2_or')}</p>
                 </>
+              ) : notice ? (
+                /* A notice has just explained why there is nothing to show.
+                   "Ready to forecast" underneath it reads as though nothing
+                   had been tried, which contradicts the sentence directly
+                   above - the notice IS the explanation, so the invitation
+                   stands down rather than arguing with it. */
+                <>
+                  <h3 className="text-lg font-semibold text-slate-800 mb-2">{t('baseline_nothing_to_display')}</h3>
+                  <p className="text-sm text-slate-500">{t('baseline_see_the_note_above')}</p>
+                </>
               ) : (
                 <>
                   <h3 className="text-lg font-semibold text-slate-800 mb-2">{t('baseline_ready_to_forecast')}</h3>

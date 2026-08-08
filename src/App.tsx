@@ -5,6 +5,7 @@ import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, isAllBearing, missingLeavesForKey, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
+import { rowInScope, ALL_DIMS } from './utils/cohortScope';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort, Provenance, SkipReason } from './types/forecast';
 import { provenanceModel, provenanceParams } from './types/forecast';
 import { ForecastProvider } from './context/ForecastContext';
@@ -1650,11 +1651,39 @@ export default function App() {
    */
   const [unfittableLeaves, setUnfittableLeaves] = useState<ReadonlySet<string>>(new Set());
 
+  /**
+   * Does the Step 1 selection aggregate over a dimension that is actually MAPPED?
+   *
+   * TWO corrections in one, and they were two copies of the same predicate -
+   * one in the button's state machine, one in the generate handler. Copies that
+   * must agree about what the button offers and what the click does; this is
+   * now the single source both read.
+   *
+   * MAPPED is the load-bearing word. Every one of these four defaults to
+   * 'All (Aggregated)', so an unmapped dimension left at its default made every
+   * selection look aggregated - and a genuine leaf then fell into the
+   * All-selection state machine, where a fully-fitted scope reads `covered` and
+   * DISABLES the button. A leaf whose forecast already exists became
+   * un-regenerable, which is not what the four states were designed for: they
+   * describe filling an aggregate's missing leaves, and a leaf selection keeps
+   * the manual Generate Forecast, regeneration included.
+   *
+   * An 'All' in an unmapped dimension is not an aggregate - it is a dimension
+   * this dataset does not have. That is the same marker-meaning distinction the
+   * legacy import site and the retirement rule already turn on, now in a fourth
+   * place, which is why EXPECTED.md queues a single mapped-dimension source of
+   * truth to the DQ phase rather than a fifth private answer.
+   */
+  const stdAggregatesMappedDim = useMemo(() => (
+    (!!wiSegmentCol  && segmentValue === 'All (Aggregated)') ||
+    (!!wiProductCol  && productValue === 'All (Aggregated)') ||
+    (!!wiChannelCol  && channelValue === 'All (Aggregated)') ||
+    (!!wiTariffL1Col && tariffValue  === 'All (Aggregated)')
+  ), [wiSegmentCol, wiProductCol, wiChannelCol, wiTariffL1Col,
+      segmentValue, productValue, channelValue, tariffValue]);
+
   const stdAggregateState = useMemo(() => {
-    const anyAggregated =
-      segmentValue === 'All (Aggregated)' || productValue === 'All (Aggregated)' ||
-      channelValue === 'All (Aggregated)' || tariffValue === 'All (Aggregated)';
-    if (!anyAggregated) return { kind: 'leaf' as const, missing: 0, total: 0, unfittable: 0 };
+    if (!stdAggregatesMappedDim) return { kind: 'leaf' as const, missing: 0, total: 0, unfittable: 0 };
     const { enumerated, missing, leaves, unfittable } = missingLeavesForKey(
       filterToKey(stdSelectionFilter), populatedCohorts.leafMap, forecastStore, unfittableLeaves,
     );
@@ -1673,7 +1702,7 @@ export default function App() {
                unfittable: unfittable.length };
     }
     return { kind: 'covered' as const, missing: 0, total: leaves.length, unfittable: 0 };
-  }, [segmentValue, productValue, channelValue, tariffValue, stdSelectionFilter,
+  }, [stdAggregatesMappedDim, stdSelectionFilter,
       populatedCohorts, forecastStore, unfittableLeaves]);
 
   /**
@@ -2018,7 +2047,81 @@ export default function App() {
     if (!forecast) return;
     setBaseForecast(forecast);
     setForecastUpdatedAt(format(new Date(), 'dd MMM yyyy, HH:mm'));
-  }, [resolveForecast]);
+
+    // AND `forecastData`, which is what the panel actually gates on.
+    //
+    // Setting baseForecast alone left Jon looking at "Ready to forecast" after
+    // a successful 72-leaf run. StandardForecastTab renders the whole result
+    // panel behind `forecastData.length > 0`, so the component the spec
+    // asserted on was never mounted - the store was right and the surface was
+    // never reached. Surface-not-store, one level up from where this codebase
+    // has met it before: not a wrong value in a rendered component, a correct
+    // value in a component that does not render.
+    //
+    // The rows are built in the same shape the manual path produces, because
+    // stdChartData and the data-preview table both read that shape.
+    const band = stdScenario === 'Inflow' ? 'inflow'
+      : stdScenario === 'Outflow' ? 'outflow'
+      : stdScenario === 'Retention' ? 'retention' : null;
+    if (!band) {
+      // A derived aggregate has no Base VOLUME band - BaseForecastMonth carries
+      // inflow, outflow and retention only. Saying so beats plotting one of the
+      // other three under a Base label.
+      //
+      // The panel is CLEARED as well as explained. Returning with only a notice
+      // left the previous selection's chart and table rendered underneath it -
+      // the panel gate reads forecastData and knows nothing about the notice -
+      // so the screen showed one cohort's numbers under a sentence about
+      // another. That is a worse version of the defect this session opened on.
+      setForecastData([]);
+      setBaseForecast(null);
+      setNotice(t('standard_base_series_not_derivable'));
+      return;
+    }
+
+    const scopeCols = { segment: wiSegmentCol, product: wiProductCol,
+      productL2: wiProductL2Col, channel: wiChannelCol, channelL2: wiChannelL2Col,
+      tariffL1: wiTariffL1Col, tariffL2: wiTariffL2Col };
+    const sf = stdSelectionFilter;
+    const scopeFilter = { segment: sf.segment === 'All' ? null : sf.segment,
+      product: sf.product.l1, productL2: sf.product.l2,
+      channel: sf.channel.l1, channelL2: sf.channel.l2,
+      tariffL1: sf.tariff?.l1 ?? null, tariffL2: sf.tariff?.l2 ?? null };
+    const histRows = new Map<number, any>();
+    const targetMetric = stdScenario === 'Inflow' ? wiInflowVal
+      : stdScenario === 'Outflow' ? wiOutflowVal : wiRetentionVal;
+    for (const row of data) {
+      if (!wiDateCol || String(row[wiMetricCol]) !== targetMetric) continue;
+      const d = new Date(row[wiDateCol]); if (!isValid(d)) continue;
+      // rowInScope, not a hand-rolled compare. The first version of this
+      // reimplemented the same seven-field wildcard test that cohortScope.ts
+      // already exports and that ForecastVsActualsTab already calls - and it
+      // had drifted on the first read, trimming the row side but not the scope
+      // side. A near-copy of a shared predicate is this codebase's most
+      // repeated failure, and it does not become safe for being short.
+      if (!rowInScope(row, scopeCols, scopeFilter, ALL_DIMS)) continue;
+      const t = new Date(format(d, 'yyyy-MM') + '-01').getTime();
+      const val = Number(row[wiValueCol]) || 0;
+      const prev = histRows.get(t);
+      if (prev) prev['Mean (Base)'] += val;
+      else histRows.set(t, { ...row, [wiDateCol]: format(d, 'yyyy-MM'),
+        'Mean (Base)': val, Type: 'Historical' });
+    }
+    for (const r of histRows.values()) r['Mean (Base)'] = Number(r['Mean (Base)'].toFixed(2));
+
+    const fcRows = forecast.months.map(m => ({
+      [wiDateCol]: m.month,
+      'Mean (Base)': (m as any)[band].mean,
+      Optimistic: (m as any)[band].optimistic,
+      Pessimistic: (m as any)[band].pessimistic,
+      Type: 'Forecast',
+    }));
+    setForecastData([...[...histRows.entries()].sort((a, b) => a[0] - b[0]).map(e => e[1]),
+                     ...fcRows]);
+  }, [resolveForecast, stdScenario, data, wiDateCol, wiMetricCol, wiValueCol,
+      wiInflowVal, wiOutflowVal, wiRetentionVal, wiSegmentCol, wiProductCol,
+      wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col,
+      stdSelectionFilter, t]);
 
   // Runs after the generated leaves have landed in the store, which is the
   // whole reason this is an effect and not a line in the .then above.
@@ -2069,10 +2172,7 @@ export default function App() {
     // Already-fitted leaves are left alone. Regenerating them would silently
     // overwrite work the user has, and reusing them is the whole point of
     // deriving.
-    const anyAggregated =
-      segmentValue === 'All (Aggregated)' || productValue === 'All (Aggregated)' ||
-      channelValue === 'All (Aggregated)' || tariffValue === 'All (Aggregated)';
-    if (anyAggregated) {
+    if (stdAggregatesMappedDim) {
       const aggKey = filterToKey(stdSelectionFilter);
       const { enumerated, missing, leaves, unfittable } = missingLeavesForKey(
         aggKey, populatedCohorts.leafMap, forecastStore, unfittableLeaves,
