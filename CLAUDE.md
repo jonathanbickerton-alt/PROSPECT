@@ -105,6 +105,34 @@ Every session report is **also** written to
 in a chat transcript is not retrievable by anyone who was not in the session,
 and is lost at compaction.
 
+### What triggers a report: CHANGED STATE, not the size of the task
+
+**Any session that changes repo state ends by writing a report file.** Changing
+state means committing, merging, moving HEAD, or mutating any file — tracked or
+not. There is no size threshold and no category of change too small to record.
+
+**An inline chat summary is sufficient only for a strictly read-only session** —
+a question answered, a file inspected, a measurement taken and nothing written.
+The moment anything is written, so is a report.
+
+**This rule exists because a merge went unrecorded.** Two branches were
+fast-forwarded onto main, verified against the gated tree, and the whole suite
+re-run on the result — and none of it produced a file, because the task read as
+mechanical rather than report-shaped. The work was sound; the record was
+retrievable only from a transcript. That is the exact failure the convention
+above exists to prevent, and it went straight past it, because "session report"
+sounds like something a *session* produces and not something a *merge* produces.
+
+A short task gets a short report. Length is scaled to what happened; the file's
+existence is not negotiable. Provenance is cheapest at the moment the state
+changed and most expensive to reconstruct later — a retrospective record can
+only report what someone still remembers measuring.
+
+**Reports about state changes state their own limits.** If a report is written
+after the fact, say so and say that nothing was re-run to produce it. If it is
+written before the commit it describes, say that rather than implying a hash it
+cannot contain.
+
 `HHMM` is 24-hour local time at generation. It is in the filename so reports
 sort chronologically by name alone — filesystem timestamps do not survive
 copying, archiving, or a fresh clone, and several reports a day is normal.

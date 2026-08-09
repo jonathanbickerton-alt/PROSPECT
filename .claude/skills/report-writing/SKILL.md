@@ -1,6 +1,6 @@
 ---
 name: report-writing
-description: Use when writing any session report, gate report, diagnosis, or verification report to reports/ — anything that will be uploaded to the advisor chat or read by someone who was not in the session. Covers the filename convention, the FOR ADVISOR block, and the command that sources the timestamp. Trigger on "write the report", "report per convention", "standard report format", or whenever a session is being closed out.
+description: Use when writing any session report, gate report, diagnosis, or verification report to reports/ — anything that will be uploaded to the advisor chat or read by someone who was not in the session. Covers the filename convention, the FOR ADVISOR block, and the command that sources the timestamp. Trigger on "write the report", "report per convention", "standard report format", or whenever a session is being closed out. ALSO TRIGGER ON ANY TASK THAT CHANGES REPO STATE, whether or not a report was asked for: merge, commit, push, rebase, cherry-pick, revert, tag, branch, "land it", "merge X into main", renaming or deleting files, editing config or agent definitions, or any run that mutates a tracked file — every one of those ends by writing a report file, however mechanical the task looked. Only a strictly read-only session (a question answered, nothing written) may end with an inline summary alone.
 ---
 
 # Writing a report
