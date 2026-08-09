@@ -50,6 +50,7 @@ const STEP3 = 'scripts/step3-transition-spec.tsx';
 const BULKDONE = 'scripts/bulk-completion-spec.tsx';
 const NAVSPEC = 'scripts/nav-target-spec.ts';
 const SFT = 'src/components/StandardForecastTab.tsx';
+const STEP1SEL = 'scripts/step1-selection-spec.tsx';
 const MODAL = 'src/components/BulkGenerateModal.tsx';
 const APP = 'src/App.tsx';
 const VIEWFILTER = 'src/utils/viewFilter.ts';
@@ -448,6 +449,37 @@ const TRAPS: Trap[] = [
   // that offered 144 where the truth is 0: 36 keys x 4 scenarios, 34 of the keys
   // All-bearing. Every one failed on every run and nothing recorded them, so the
   // count never moved. Session J's no-exit loop, on the surface J never touched.
+  // Trap 45: KEEP-LAST, replanted inside the function the pairing spec drives.
+  // The helper stops resolving the selection it was handed and reuses whatever
+  // key it resolved first — which is precisely what Step 1 did before
+  // 2026-08-09, and precisely why its chart drew a Corporate history of ~17.3
+  // beside a 33.69 forecast belonging to one Mobile Voice / Direct leaf.
+  //
+  // Planted HERE rather than in App's effect on purpose: a trap that severed
+  // the effect would be caught by the wiring half only, and the claim worth
+  // guarding is the one the mounted pairing assertion makes — that both halves
+  // of the chart describe the same population.
+  { id: '45 Step 1 keeps the last forecast while its selection moves',
+    why: 'the ARPU chart draws one scope history beside another scope forecast',
+    file: VIEWFILTER, spec: STEP1SEL,
+    mutate: s => s.replace(
+      '  const key = filterToKey(selection);',
+      '  const key = (forecastForStep1Selection as any).__last ?? filterToKey(selection);'
+      + nl + '  (forecastForStep1Selection as any).__last = key;') },
+  // Trap 46: the RETURN door reopens. Coming back to Step 1 stops re-resolving,
+  // so a forecast Step 2 or Step 3 assigned for its own filter stays on screen
+  // beside Step 1's history — the two-population defect through the second door
+  // the gate found after the first fix looked complete.
+  { id: '46 returning to Step 1 stops re-resolving',
+    why: 'Step 2 assigns a forecast and Step 1 keeps showing it under its own dropdowns',
+    file: VIEWFILTER, spec: STEP1SEL,
+    // Aimed at the SENTINEL, after a first version aimed at a `returning` flag
+    // stayed green — the flag turned out to be dead code, and the trap is what
+    // proved it. Leaving Step 1 now records the key instead of AWAY, so a
+    // return with an unchanged selection looks like standing still.
+    mutate: s => s.replace(
+      "  if (view !== 'standard') return { resolve: false, next: STEP1_AWAY };",
+      "  if (view !== 'standard') return { resolve: false, next: key };") },
   { id: '44 the Overall door counts aggregates as missing again',
     why: 'a fully-fitted book is offered 144 generations that can never succeed',
     file: APP, spec: PANEL,
@@ -481,7 +513,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

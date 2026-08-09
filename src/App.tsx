@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
-import { filterToKey, cohortToFilter, forecastForView, describeScope } from './utils/viewFilter';
+import { filterToKey, cohortToFilter, forecastForView, forecastForStep1Selection, step1ResolveDecision, describeScope } from './utils/viewFilter';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort, Provenance, SkipReason } from './types/forecast';
 import { provenanceModel, provenanceParams } from './types/forecast';
 import { ForecastProvider } from './context/ForecastContext';
@@ -2149,6 +2149,60 @@ export default function App() {
       setNotice(t('standard_base_series_not_derivable'));
     }
   }, [resolveForecast, stdScenario, t]);
+
+  /**
+   * STEP 1 RESOLVES ITS SELECTION, exactly as Steps 2 and 3 do.
+   *
+   * Keep-last is retired (Jon, 2026-08-09, option 1 of three — see EXPECTED.md).
+   * Step 1 used to hold whatever forecast was last generated while its dropdowns
+   * moved underneath it, so `arpuChartData` drew history for the SELECTION and a
+   * forecast for something else: measured at Segment=Corporate, history 17.05-
+   * 17.83 against a forecast of 33.69, which was a single Mobile Voice / Direct
+   * leaf. One chart, two populations.
+   *
+   * Verbatim the shape `handleStep2FilterChange` and `handleStep3FilterChange`
+   * use — resolve through the seam, and assign the RESULT, null included. The
+   * null is the point: `showResolvedAggregate` returns early on a miss, which
+   * retains the previous cohort's numbers under a changed label, and that is the
+   * `if (bf !== undefined)` with no else that Steps 2 and 3 already corrected.
+   */
+  const showStep1Selection = useCallback((selection: ViewFilter) => {
+    // Delegates to the pure helper so the pairing spec DRIVES this transition
+    // instead of modelling it — see utils/viewFilter, and the same reasoning
+    // that put forecastForView there for Step 3.
+    const { forecast } = forecastForStep1Selection(selection, resolveForecast);
+    setBaseForecast(forecast as BaseForecast | null);
+    setAdjustedForecast(null);
+  }, [resolveForecast]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const stdSelectionKey = useMemo(() => filterToKey(stdSelectionFilter), [stdSelectionFilter]);
+  const lastStdSelectionKey = useRef<string | null>(null);
+
+  /**
+   * TWO TRANSITIONS RESOLVE: the selection changing, and Step 1 being entered.
+   *
+   * The ref makes this a transition rather than a state. `null` means Step 1 has
+   * never been observed — the first observation records and does NOT resolve, so
+   * a mount, or a session import that lands here, keeps the forecast the restore
+   * just put in place. AWAY means the user left and came back.
+   *
+   * Entering is a trigger because Step 2 and Step 3 REASSIGN baseForecast for
+   * their own filters, and `forecastForView` returns `owns: false` for
+   * 'standard' — nothing restores Step 1 on the way back. Without this arm, a
+   * user who visited Step 2 and returned would find Step 1's dropdowns reading
+   * one cohort and its chart drawing another's forecast: the two-population
+   * defect this session exists to kill, reached by a different door. Found by
+   * the gate, not by the walk.
+   */
+  useEffect(() => {
+    // The DECISION is step1ResolveDecision, in utils/viewFilter, so a spec can
+    // DRIVE it rather than re-implement it here. What remains in this effect is
+    // only the part that has to live in a component: read the ref, write it
+    // back, and call the resolver.
+    const d = step1ResolveDecision(lastStdSelectionKey.current, activeView, stdSelectionKey);
+    lastStdSelectionKey.current = d.next;
+    if (d.resolve) showStep1Selection(stdSelectionFilter);
+  }, [stdSelectionKey, stdSelectionFilter, activeView, showStep1Selection]);
 
   // Runs after the generated leaves have landed in the store, which is the
   // whole reason this is an effect and not a line in the .then above.

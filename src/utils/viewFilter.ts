@@ -95,6 +95,72 @@ export function cohortToFilter(c: CohortLike): ViewFilter {
  * Returns null for views that do not own a forecast, which is not the same as
  * 'nothing resolved': the caller must not treat those alike.
  */
+/**
+ * What Step 1 should show for a selection — the transition, as a function.
+ *
+ * Keep-last was retired on 2026-08-09 (Jon, option 1 of three): a Step 1
+ * selection change now resolves through the seam exactly as Steps 2 and 3 do,
+ * and the RESULT is what gets shown, **null included**.
+ *
+ * The null is the whole decision. Returning early on a miss is what keep-last
+ * did, and it left the previous cohort's numbers on screen under a changed
+ * label — measured at Segment=Corporate as a history of 17.05-17.83 drawn
+ * beside a forecast of 33.69 belonging to one Mobile Voice / Direct leaf.
+ *
+ * Extracted rather than inlined for the reason `forecastForView` was, one
+ * function below: a transition that lives only inside a component effect can be
+ * modelled by a spec but not DRIVEN by one, and a spec that models the
+ * transition it is checking will agree with itself no matter what the app does.
+ * Both App and the pairing spec call this, so the guard-trap that replants
+ * keep-last has something a mounted assertion can actually feel.
+ */
+/** Step 1 has been visited and left. Not a key: every real key has seven parts. */
+export const STEP1_AWAY = ' away';
+
+/**
+ * WHETHER Step 1 should re-resolve, given where it was and where it is.
+ *
+ * The companion to `forecastForStep1Selection`, which answers *what* to show.
+ * Extracted for the same reason and after the same lesson: the first version of
+ * this lived only inside App's effect, so the spec re-implemented the protocol
+ * in order to test it — and a spec that re-implements the rule it is checking
+ * measures its own copy. The gate said so plainly, which is why this is now a
+ * function both callers share.
+ *
+ * Three ref states, and each earns its place:
+ *   null      never observed — record and resolve NOTHING, so a mount or a
+ *             session import keeps the forecast the restore just put there
+ *   a key     been here — resolve only when the selection actually changed
+ *   AWAY      left and came back — resolve even if the selection is unchanged,
+ *             because Steps 2 and 3 reassign baseForecast for their own filters
+ *             and `forecastForView` returns owns:false for 'standard'
+ */
+export function step1ResolveDecision(
+  prev: string | null,
+  view: string,
+  key: string,
+): { resolve: boolean; next: string } {
+  if (view !== 'standard') return { resolve: false, next: STEP1_AWAY };
+  if (prev === null) return { resolve: false, next: key };
+  // No `returning` flag, deliberately. The first version carried one and it was
+  // DEAD: AWAY can never equal a real key, so the equality below already fails
+  // on a return and the flag changed nothing. Guard-trap 46 found it by staying
+  // green on a mutation that should have hurt — which is the whole reason the
+  // traps exist. The sentinel alone is what makes a return resolve, so the
+  // sentinel is what trap 46 now attacks.
+  if (prev === key) return { resolve: false, next: prev };
+  return { resolve: true, next: key };
+}
+
+export function forecastForStep1Selection(
+  selection: ViewFilter,
+  resolve: (key: string) => { forecast: unknown | null; reason?: unknown },
+): { key: string; forecast: unknown | null; reason: unknown } {
+  const key = filterToKey(selection);
+  const r = resolve(key);
+  return { key, forecast: r.forecast, reason: r.reason ?? null };
+}
+
 export function forecastForView(
   view: string,
   step2Filter: ViewFilter,

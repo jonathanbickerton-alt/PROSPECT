@@ -102,6 +102,14 @@ const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails
       why: 'sets the `forecast` destructured from resolveForecast(). The second site - a NULL clear - went away when the panel became derived: with nothing written there is nothing to clear' },
     handleStep2FilterChange: { count: 1, seam: true,
       why: 'sets the `forecast` destructured from resolveForecast() one line above' },
+    // ADDED 2026-08-09 when Step 1 stopped keeping the last forecast. Same
+    // shape as the two filter-change handlers around it, deliberately: Step 1
+    // now resolves its selection through the seam like Steps 2 and 3, and
+    // assigns the result INCLUDING null. The null is the classification that
+    // matters — a site that returned early on a miss would keep the previous
+    // cohort's numbers under a changed label, which is the defect being fixed.
+    showStep1Selection: { count: 1, seam: true,
+      why: 'sets the `forecast` returned by forecastForStep1Selection(selection, resolveForecast) — the seam reached through the extracted transition helper, null included, no early return on a miss' },
     handleStep3FilterChange: { count: 1, seam: true,
       why: 'sets the `forecast` destructured from resolveForecast() one line above' },
     handleImportSaveFile: { count: 2, seam: false,
@@ -154,9 +162,34 @@ const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails
   for (const fn of Object.keys(ACCOUNTED).filter(f => ACCOUNTED[f].seam)) {
     const start = app.indexOf(`const ${fn} = useCallback`);
     const body = start === -1 ? '' : app.slice(start, app.indexOf('}, [resolveForecast]', start));
-    check(`ENUMERATION: ${fn} really does call the seam`,
-      start !== -1 && /resolveForecast\(/.test(body),
+    // Either shape counts as reaching the seam, and only these two: calling
+    // resolveForecast directly, or HANDING it to the extracted transition
+    // helper. The second was added on 2026-08-09 and is verified at the
+    // delegate as well, below — a site that merely passes something named
+    // `resolveForecast` somewhere proves nothing on its own.
+    check(`ENUMERATION: ${fn} really does reach the seam`,
+      start !== -1 && (/resolveForecast\(/.test(body)
+        || /forecastForStep1Selection\([^)]*resolveForecast\)/.test(body)),
       'the reason on file claims a seam call this function does not make');
+  }
+
+  // THE DELEGATE, verified where it lives. showStep1Selection's reason on file
+  // claims the seam is reached through forecastForStep1Selection; that claim is
+  // only worth as much as the helper's own body.
+  {
+    const vf = fs.readFileSync('src/utils/viewFilter.ts', 'utf8');
+    const start = vf.indexOf('export function forecastForStep1Selection');
+    const body = start === -1 ? '' : vf.slice(start, vf.indexOf('export function forecastForView', start));
+    check('ENUMERATION: the Step 1 transition helper exists', start !== -1,
+      'showStep1Selection delegates to something that is not there');
+    check('ENUMERATION: and it resolves the SELECTION key through its resolve arg',
+      /const key = filterToKey\(selection\)/.test(body) && /resolve\(key\)/.test(body),
+      'the helper does not resolve the key it was given');
+    // The decision itself: the result is returned, miss included. A helper that
+    // returned early on a miss would BE keep-last, one level down.
+    check('ENUMERATION: and it returns the miss rather than swallowing it',
+      /forecast: r\.forecast/.test(body) && !/if \(!r\.forecast\) return/.test(body),
+      'keep-last has moved into the helper');
   }
 
   const acmStart = app.indexOf('const acceptChallengerModel = useCallback');
@@ -168,7 +201,12 @@ const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails
   // The count is pinned so that ADDING a site is a deliberate act. A new call
   // site that happens to match an accepted shape would otherwise slip in
   // unreviewed — matching a shape is not the same as having been thought about.
-  const EXPECTED_SITES = 11;
+  // 11 -> 12 on 2026-08-09: `showStep1Selection`, when Step 1 stopped keeping
+  // the last forecast and began resolving its selection like Steps 2 and 3.
+  // Raised only after the new site was classified in ACCOUNTED above — the
+  // count exists to make adding a site deliberate, so bumping it first and
+  // classifying afterwards would invert the whole point of the pin.
+  const EXPECTED_SITES = 12;
   check(`ENUMERATION: the call-site count is still ${EXPECTED_SITES}`,
     sites.length === EXPECTED_SITES,
     `found ${sites.length} — if this is intentional, classify the new site and update the count`);

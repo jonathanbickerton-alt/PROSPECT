@@ -5794,10 +5794,77 @@ Guard-trap 44 reinstates the cross-product enumeration. `spec:step1-panel` mount
 the Overall door in all four states; `spec:generate-missing` pins the definition
 with an anti-vacuity control proving the old and new populations differ.
 
-### OPEN, HELD FOR A DECISION — Step 1's chart shows two populations, 2026-08-09
+### SETTLED — Step 1 resolves its selection; keep-last is retired, 2026-08-09
 
-**Mechanism demonstrated. NOT fixed: the fix touches the Step 1 keep-last
-wrinkle, which the Phase 3 design pass left untouched deliberately.**
+**Reserved decision RESOLVED by Jon, 2026-08-09. Option 1 of three.** The
+diagnosis is the entry below this one, which is now closed by this fix and kept
+for its measurements.
+
+**The decision.** A Step 1 selection change re-resolves `baseForecast` through
+the seam for the NEW selection — fitted verbatim, aggregate derived, miss null —
+exactly as `handleStep2FilterChange` and `handleStep3FilterChange` already did.
+Step 1 no longer keeps the last generated forecast while its dropdowns move.
+
+**The null is the decision, not a detail.** Returning early on a miss is what
+keep-last *was*: the previous cohort's numbers surviving under a changed label.
+`showResolvedAggregate` still returns early on a miss and that is correct for
+*it* — it is handed a key it has just generated into. The selection path may not.
+
+**One resolver.** The transition is `forecastForStep1Selection`
+(`src/utils/viewFilter.ts`), which calls the caller's `resolve` on
+`filterToKey(selection)` and returns the result. It is extracted for the same
+reason `forecastForView` was, one function below it: a transition living only
+inside a component effect can be *modelled* by a spec but never *driven* by one,
+and a spec that models the transition it checks agrees with itself whatever the
+app does. Guard-trap 45 replants keep-last inside that helper and
+`spec:step1-selection` goes red on the pairing assertion.
+
+**The two options NOT taken. Neither should be re-proposed without new evidence:**
+
+1. **Honest-caption keep-last** — keep the last forecast, and caption the chart
+   with whose forecast it is when that differs from the selection. Rejected: it
+   preserves a workflow at the cost of making every reader check a label before
+   trusting a line, and the mismatch is not confined to this chart. Everything
+   reading `baseForecast` on Step 1 inherited it.
+2. **Render nothing on mismatch** — drop the forecast half whenever
+   `baseForecast`'s key is not the selection's. Rejected as the safest and least
+   informative: it never draws a wrong line and never draws a right one either,
+   where resolving the selection produces the correct forecast in most cases.
+
+**Consequence, verified:** at Segment=Corporate with everything else aggregated,
+the chart now shows **17.38** against a last actual of **17.34** — continuous.
+The 33.69 leaf cannot appear, because the forecast half resolves the selection's
+own key. The MNC | Fixed Connectivity sighting is predicted unreproducible under
+this fix; its formal closure still awaits Jon's fixture if he supplies one.
+
+**The GENERATED panel is unchanged.** Generated leaves remain listed and
+reappear on reselection — retiring keep-last means the forecast is not *shown*
+for a selection that does not own it, never that generated work is lost.
+
+**A SECOND DOOR, found by the gate rather than the walk.** Fixing only the
+"dropdowns move" trigger left the identical symptom reachable another way:
+Steps 2 and 3 REASSIGN `baseForecast` for their own filters, and
+`forecastForView` returns `owns: false` for `'standard'` — so nothing restored
+Step 1 on the way back. A user who visited Step 2 and returned without touching
+Step 1's dropdowns found its dropdowns reading one cohort and its chart drawing
+another's forecast. Two populations again, same chart, different door.
+
+So **entering Step 1 is also a trigger.** The effect's ref holds three states:
+`null` (never observed — record, resolve nothing, so a mount or a session
+import keeps what the restore put there), a key (been here, resolve only on a
+change), and an AWAY sentinel (left and returned — resolve even when the
+selection is unchanged, because something else owned `baseForecast` meanwhile).
+
+Worth recording because the first fix looked complete and passed its own spec.
+The spec covered the trigger it was written for, and said so in its own header;
+the gate read that disclosure and went looking at the other one.
+
+### CLOSED by the entry above — Step 1's chart showed two populations, 2026-08-09
+
+**Mechanism demonstrated, and FIXED on 2026-08-09 — see the SETTLED entry
+above.** Retained for its measurements: they are what the fix is checked
+against, and a closed entry that deletes its own evidence leaves the next
+reader unable to tell whether the fix was ever justified.
 
 Edge fixture, Step 1, Segment=Corporate with everything else aggregated, Value
 (ARPU), blended view:
