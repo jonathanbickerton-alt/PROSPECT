@@ -6,26 +6,23 @@
 Generated: 2026-08-09 22:16 +0100 (UTC 2026-08-09 21:16)
 Verified against: HEAD 01cfa18, branch main, tree CLEAN. NO CODE CHANGED.
 DOES NOT REPRODUCE AT HEAD. Both classes on ONE store, Corporate|Fixed
-  Connectivity: last ACTUAL aggregate Base 2026-06 = 3984, first FORECAST
-  2026-07 = 4009 — 0.6%, continuous, climbing 515 over 24 months. Jon saw a
-  near-zero intercept, ~1.8K/month, ~40K. Not this store.
+  Connectivity: last ACTUAL Base 2026-06 = 3984, first FORECAST 2026-07 = 4009 —
+  0.6%, continuous, +515 over 24 months. Jon saw ~0 intercept, ~40K. Not this.
 MECHANISM IDENTIFIED ANYWAY. FvA multiChartData:2172 rolls a stock per leaf —
   b = seedBaseVolume || 0, then b = max(0, b + prevIn - prevOut) — and SUMS leaf
   seeds (:2260); :2316 is the same recursion for a leaf. Seeded right it is
   continuous; seeded 0 it is the reported shape: slope = in - out, intercept 0.
 THE SWITCH IS DATA, PER LEAF: worker.ts:514 seeds from that leaf's last
-  Base-METRIC reading, or 0 if it has none. A subset of unseeded leaves
-  under-seeds the aggregate sum. ALL SIX SHIPPED FIXTURES CARRY Base rows, so
-  the shape cannot come from shipped data at HEAD — Jon's screens came from
-  another fixture, an older HEAD, or leaves missing Base rows inside a file.
+  Base-METRIC reading, or 0 if it has none, so unseeded leaves under-seed the
+  sum. ALL SIX SHIPPED FIXTURES CARRY Base rows — the shape cannot come from
+  shipped data at HEAD, so the screens came from another fixture, an older HEAD,
+  or leaves missing Base rows inside a file.
 TWO PREMISE CORRECTIONS, measured. (1) OPTION (b) AS WRITTEN IS NOT AVAILABLE:
   leaf fits carry NO Base mean series — month.base is null on leaves and on
-  deriveAggregate — nothing to sum. (2) The aggregate path is not unseeded by
-  design; it already sums leaf seeds.
+  deriveAggregate. (2) The aggregate path already sums leaf seeds by design.
 GIT: the recursion predates the dead-chartData deletion (present at 432837d) and
   survived in multiChartData, the LIVE memo. Not introduced since.
-K's LIMITATION STANDS: Step 1 shows an empty panel for Base-on-aggregate while
-  Step 3 draws a line — the surfaces disagree even when that line is right.
+K's LIMITATION STANDS: Step 1 shows an empty panel while Step 3 draws a line.
 NO FIX, NO SPEC, NO TRAP: a spec would assert a shape I cannot produce and a
   trap would replant a defect the data cannot express.
 Decisions needed: (a) honest absence vs (b-corrected) seed-or-decline, set out
