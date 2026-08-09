@@ -1693,6 +1693,73 @@ export default function App() {
       populatedCohorts, forecastStore, unfittableLeaves]);
 
   /**
+   * THE OVERALL DOOR'S STATE — the same function, at the root scope.
+   *
+   * Not a parallel definition of "missing": literally `missingLeavesForKey`, the
+   * one Session J introduced (a51ec8e), called with the all-'All' key. The
+   * Overall door IS the Step 1 door with the widest possible scope, so it gets
+   * the same four states from the same call and cannot drift from it.
+   *
+   * WHAT THIS REPLACED, and why it was a defect rather than a different opinion.
+   * The door previously read `missingStandardCohorts`, whose definition is
+   * has-no-forecast over the FULL cohort cross-product (`ec3c79a`, 2026-07-30).
+   * That population includes All-bearing combinations and multiplies every key
+   * by four scenario rows. Measured on the edge fixture with all 72 fittable
+   * leaves already fitted, it offered 144 "combinations": 36 distinct keys x 4
+   * scenarios, of which 34 keys were AGGREGATES and 2 were the known-unfittable
+   * leaves. The 34 were the aggregates whose entire leaf population is those two
+   * short leaves, so nothing under them could ever resolve.
+   *
+   * Every one of those 144 failed on every run, nothing recorded them as known
+   * unfittable, and the count never moved — Session J's no-exit loop exactly,
+   * on the one surface J did not touch (a51ec8e changed App.tsx and
+   * StandardForecastTab.tsx; OverallForecastTab.tsx is not in that diff).
+   *
+   * Aggregates are not missing. They derive at read time, and offering to
+   * generate one is offering work the engine is right to decline.
+   */
+  const overallDoorState = useMemo(() => {
+    const rootKey = makeForecastKey('All', 'All', 'All', 'All', 'All', 'All', 'All');
+    const { enumerated, missing, leaves, unfittable } = missingLeavesForKey(
+      rootKey, populatedCohorts.leafMap, forecastStore, unfittableLeaves,
+    );
+    if (!enumerated) return { kind: 'never' as const, missing: 0, total: 0, unfittable: 0, keys: [] as string[] };
+    if (missing.length > 0) {
+      return { kind: 'generate' as const, missing: missing.length, total: leaves.length,
+               unfittable: unfittable.length, keys: missing };
+    }
+    // The two zero states are not one state. A book whose remaining leaves
+    // cannot be fitted is BLOCKED, not covered, and saying "covered" would be
+    // the old lie relocated.
+    if (unfittable.length > 0) {
+      return { kind: 'blocked' as const, missing: 0, total: leaves.length,
+               unfittable: unfittable.length, keys: [] as string[] };
+    }
+    return { kind: 'covered' as const, missing: 0, total: leaves.length, unfittable: 0, keys: [] as string[] };
+  }, [populatedCohorts, forecastStore, unfittableLeaves, makeForecastKey]);
+
+  /** The canonical missing set, leaf grain. Every count and every door reads this. */
+  const missingFittableLeafKeys = useMemo(
+    () => new Set(overallDoorState.keys), [overallDoorState]);
+
+  /**
+   * How many aggregate views this book covers by DERIVATION rather than by a fit.
+   *
+   * Stated so the Overall view has something true to say where it used to report
+   * aggregates as failures. Derivation is how aggregates are supposed to work;
+   * a surface that calls it "could not be forecast" is describing the design as
+   * a fault.
+   */
+  const derivedAggregateCount = useMemo(() => {
+    let n = 0;
+    for (const [key, leafKeys] of populatedCohorts.leafMap.entries()) {
+      if (!isAllBearing(key)) continue;
+      if (leafKeys.some(k => forecastStore.has(k))) n++;
+    }
+    return n;
+  }, [populatedCohorts, forecastStore]);
+
+  /**
    * Transient generation feedback is cleared when the SELECTION changes.
    *
    * "Not enough valid data points" is true of the cohort it was raised for and
@@ -3727,9 +3794,21 @@ export default function App() {
   // Anything that needs "the missing cohorts" or "how many are missing" reads
   // THIS. Do not re-derive membership from allCohorts: cohortHasData is what
   // keeps tariff's collinearity with product/channel from inflating the count.
+  // REDEFINED 2026-08-09 to the one definition: fittable-and-not-fitted, at leaf
+  // grain. It was `!c.hasForecast` over the whole cross-product, which is
+  // has-no-forecast at series grain WITH aggregates included — see
+  // `overallDoorState` above for what that measured on the edge fixture.
+  //
+  // These are ROWS, and there are four scenario rows per key, so `.length` is
+  // four times the number of missing leaves. Nothing may take a COUNT from here:
+  // counts come from `missingFittableLeafKeys`, which is the grain the user is
+  // being told about. The rows exist only so the Overall table can mark which
+  // of its rows are missing.
   const missingStandardCohorts = useMemo(
-    () => allCohorts.filter(c => !c.hasForecast && c.forecastType === 'Standard Forecast' && cohortHasData(c)),
-    [allCohorts, cohortHasData],
+    () => allCohorts.filter(c => c.forecastType === 'Standard Forecast'
+      && missingFittableLeafKeys.has(makeForecastKey(
+        c.segment, c.product, c.productL2, c.channel, c.channelL2, c.tariffL1, c.tariffL2))),
+    [allCohorts, missingFittableLeafKeys, makeForecastKey],
   );
 
   // The ONLY way a standing trigger should raise the bulk-generate prompt.
@@ -3747,8 +3826,8 @@ export default function App() {
   // would still be counting the cohort that was just generated.
   const openBulkPrompt = useCallback((source: typeof bulkSourceCohort) => {
     setBulkSourceCohort(source);
-    if (missingStandardCohorts.length > 0) setShowBulkGeneratePrompt(true);
-  }, [missingStandardCohorts]);
+    if (missingFittableLeafKeys.size > 0) setShowBulkGeneratePrompt(true);
+  }, [missingFittableLeafKeys]);
 
   const computeCohortForecastData = useCallback((cohort: any, manualParams?: any, cohortDataMap?: CohortDataMap) => {
     // NOTE: the What-If branch was deleted here on 2026-07-31. It was
@@ -3943,11 +4022,18 @@ export default function App() {
         wiTariffL2Col,
       );
 
-      // Enumerate only cohorts that actually exist in the data — see the canonical
-      // missingStandardCohorts memo defined above, which every missing-count
-      // consumer now shares. Keeps every data-spanning aggregate (derived in the
-      // worker by summing its constituent leaves), drops only genuinely-empty
-      // combinations, and never keys off the user's tariff selection.
+      // NO CALLER REACHES THE LAST BRANCH AS OF 2026-08-09. Every call site now
+      // passes either restrictToLeafKeys (both bulk doors, since they are both
+      // scoped leaf runs) or cohortIds (ManageBulkDrawer's re-apply), so
+      // `targets = missingStandardCohorts` does not execute.
+      //
+      // Left in place rather than deleted, and SAID rather than left to be
+      // rediscovered. This repo has three recorded cases of dead code being
+      // read as live and sized as a defect — the comment that used to sit here
+      // described the fallback as the shared canonical path, which would send
+      // the next reader to the wrong place. If a future caller wants the
+      // unrestricted form, note the memo below it is now leaf-grain rows: four
+      // scenario rows per key, and never an aggregate.
       const targets = options?.restrictToLeafKeys
         // A scoped leaf run fits IBRO leaves only. The "Standard" cohort
         // population is a separate enumeration with its own 5-part identity and
@@ -4202,7 +4288,7 @@ export default function App() {
   // without a forecast and show the bulk-generate prompt if so.
   useEffect(() => {
     if (triggerBulkCheck === 0) return;
-    if (missingStandardCohorts.length > 0) {
+    if (missingFittableLeafKeys.size > 0) {
       setShowBulkGeneratePrompt(true);
     }
   }, [triggerBulkCheck]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -4563,6 +4649,8 @@ export default function App() {
             setSavedForecasts={setSavedForecasts}
             savedForecasts={savedForecasts}
             missingCohorts={missingStandardCohorts}
+            doorState={overallDoorState}
+            derivedAggregateCount={derivedAggregateCount}
             onGenerateMissing={() => openBulkPrompt(null)}
             setGeneratingCohort={setGeneratingCohort}
             setViewingCohort={setViewingCohort}
@@ -4633,7 +4721,10 @@ export default function App() {
         // A scoped run says how many leaves ITS selection is missing; reading
         // the whole book's figure here would name a number this run will not
         // touch.
-        missingCount={pendingScopedRun ? pendingScopedRun.leafKeys.length : missingStandardCohorts.length}
+        // LEAF GRAIN on both arms. The row array has four scenario rows per
+        // key, so its length is four times the number of missing leaves -
+        // the inflation that turned 36 keys into "144 combinations".
+        missingCount={pendingScopedRun ? pendingScopedRun.leafKeys.length : missingFittableLeafKeys.size}
         // SETTINGS TRUTH. These are the `gen*` values the bulk generator
         // actually falls back to, not the Step 1 sidebar values this once
         // passed. Before 2026-08-08 the panel displayed preHorizonUncertainty
@@ -4695,7 +4786,17 @@ export default function App() {
               // by the panel, because only the caller knows which run it made.
               return { ...res, grain: 'leaves' as const };
             }
-            return { ...await generateAllMissingForecasts(opts), grain: 'series' as const };
+            // THE WHOLE-BOOK DOOR IS ALSO A SCOPED LEAF RUN. Both doors now
+            // fit leaves and only leaves, so there is one run shape and one
+            // grain, and the completion panel can never sum across two.
+            const res = await generateAllMissingForecasts({
+              ...opts, restrictToLeafKeys: new Set(missingFittableLeafKeys),
+            });
+            const skippedKeys = res.skipped.map(sk => sk.fKey);
+            if (skippedKeys.length) {
+              setUnfittableLeaves(prev => new Set([...prev, ...skippedKeys]));
+            }
+            return { ...res, grain: 'leaves' as const };
           } finally {
             setIsGeneratingMissing(false);
           }

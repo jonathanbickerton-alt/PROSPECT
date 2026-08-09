@@ -468,6 +468,133 @@ async function main() {
       'the button is styled disabled but still clickable');
   }
 
+  // ── THE OVERALL DOOR, MOUNTED ───────────────────────────────────────────
+  //
+  // The four-state machine is Step 1's, driven by the same `missingLeavesForKey`
+  // call at the root scope. Until 2026-08-09 this door had no state machine at
+  // all: it was enabled whenever a has-no-forecast cross-product count was
+  // non-zero, which on a fully-fitted edge fixture meant 144 — 36 keys x 4
+  // scenario rows, 34 of the keys aggregates. It offered them forever.
+  //
+  // Mounted rather than reasoned about, because the defect was never in the
+  // definition alone: it was that the SURFACE offered what the engine declines.
+  {
+    const overallMod: any = await import('../src/components/OverallForecastTab');
+    const OverallTab = overallMod.OverallForecastTab ?? overallMod.default;
+
+    const renderOverall = async (doorState: any, derivedAggregateCount = 0) => {
+      const host = document.getElementById('root')!;
+      host.replaceChildren();
+      const container = document.createElement('div');
+      host.appendChild(container);
+      const root = createRoot(container);
+      await act(async () => {
+        root.render(React.createElement(OverallTab as any, {
+          allCohorts: [], overallSegmentFilter: 'All', setOverallSegmentFilter: noop,
+          overallProductFilter: 'All', setOverallProductFilter: noop,
+          overallChannelFilter: 'All', setOverallChannelFilter: noop,
+          overallTypeFilter: 'All', setOverallTypeFilter: noop,
+          overallStatusFilter: 'All', setOverallStatusFilter: noop,
+          onOpenExportModal: noop, setSavedForecasts: noop, savedForecasts: {},
+          missingCohorts: [], doorState, derivedAggregateCount,
+          onGenerateMissing: noop, setGeneratingCohort: noop, setViewingCohort: noop,
+          isGeneratingMissing: false, generationProgress: { current: 0, total: 0 },
+        }));
+      });
+      await act(async () => { await new Promise(r => setTimeout(r, 20)); });
+      const btn = [...container.querySelectorAll('button')]
+        .find(b => /generate|blocked|covered|nothing/i.test(b.textContent || ''));
+      return { container, btn, txt: container.textContent || '' };
+    };
+
+    // THE STATE JON HIT: every fittable leaf fitted, two known unfittable.
+    {
+      const { btn, txt } = await renderOverall(
+        { kind: 'blocked', missing: 0, total: 74, unfittable: 2 });
+      check('OVERALL MOUNT: a blocked book does NOT invite a generate',
+        !!btn && (btn as HTMLButtonElement).disabled,
+        'the door still offers work that cannot be done — the no-exit loop');
+      check('OVERALL MOUNT: and it says WHY it is blocked',
+        txt.includes(i18n.t('overall_blocked_by_unfittable', { count: 2 })),
+        'blocked with no reason is the state the walk found');
+      check('OVERALL MOUNT: it does not claim the book is covered',
+        !txt.includes(i18n.t('overall_all_leaves_covered')),
+        'blocked and covered are not the same zero');
+      check('OVERALL MOUNT: and it names no 144',
+        !/\b144\b/.test(txt), 'the cross-product count is back');
+    }
+
+    // POSITIVE CONTROL: the button must be reachable when there IS work, or
+    // "disabled when blocked" would pass for a permanently dead button.
+    {
+      const { btn, txt } = await renderOverall(
+        { kind: 'generate', missing: 74, total: 74, unfittable: 0 });
+      check('OVERALL CONTROL: with real work the door IS enabled',
+        !!btn && !(btn as HTMLButtonElement).disabled,
+        'the door never opens — the blocked check above is vacuous');
+      check('OVERALL CONTROL: and it names the count AND the grain',
+        txt.includes(i18n.t('overall_generate_n_leaves', { count: 74 })),
+        'a count with no grain is what "144 combinations" was');
+    }
+
+    // COVERED is its own state, and must not read as blocked.
+    {
+      const { btn, txt } = await renderOverall(
+        { kind: 'covered', missing: 0, total: 74, unfittable: 0 });
+      check('OVERALL MOUNT: a covered book says covered, and offers nothing',
+        !!btn && (btn as HTMLButtonElement).disabled
+          && txt.includes(i18n.t('overall_all_leaves_covered')),
+        'the two zero states collapsed again');
+    }
+
+    // DERIVATION IS NOT FAILURE. The view used to report aggregates as
+    // "could not be forecast"; it must now describe them truthfully or not
+    // at all.
+    {
+      const { txt } = await renderOverall(
+        { kind: 'covered', missing: 0, total: 74, unfittable: 0 }, 34);
+      check('OVERALL MOUNT: aggregates are described as DERIVING, not failing',
+        txt.includes(i18n.t('overall_aggregates_derive', { count: 34 })),
+        'the aggregate statement is missing');
+      check('OVERALL MOUNT: and nothing calls derivation a failure',
+        !/could not be forecast/i.test(txt),
+        'derivation is being reported as a failure again');
+    }
+  }
+
+  // ── THE WIRING HALF, and it does not overlap the mount ──────────────────
+  // The mounted checks above prove the door RENDERS each state correctly, given
+  // a state. They cannot see where that state comes from: this spec supplies it
+  // as a prop. The definition lives in App.tsx, so it is read there.
+  {
+    const fsMod = await import('fs');
+    const app = fsMod.readFileSync('src/App.tsx', 'utf8');
+    const stripped = app.replace(/\/\/[^\n]*/g, '');
+
+    check('OVERALL WIRING: the door derives its state from missingLeavesForKey',
+      /const overallDoorState = useMemo\(/.test(stripped)
+        && /missingLeavesForKey\(\s*rootKey/.test(stripped),
+      'the Overall door has its own notion of missing again');
+    check('OVERALL WIRING: at the ROOT scope, all dimensions aggregated',
+      /const rootKey = makeForecastKey\('All', 'All', 'All', 'All', 'All', 'All', 'All'\)/.test(stripped),
+      'the door is scoped to something other than the whole book');
+    // THE DEFECT ITSELF: has-no-forecast over the cross-product.
+    check('OVERALL WIRING: the missing set is NOT has-no-forecast over all cohorts',
+      !/allCohorts\.filter\(c => !c\.hasForecast/.test(stripped),
+      'aggregates and scenario rows are back in the missing set');
+    check('OVERALL WIRING: the canonical rows are filtered by the leaf-grain set',
+      /missingFittableLeafKeys\.has\(makeForecastKey\(/.test(stripped),
+      'the row list no longer inherits the one definition');
+    // COUNTS come from the leaf set, never the row array — the row array holds
+    // four scenario rows per key and reading its length is the 36 -> 144 step.
+    check('OVERALL WIRING: counts read the leaf set, not the row array',
+      /missingCount=\{pendingScopedRun \? pendingScopedRun\.leafKeys\.length : missingFittableLeafKeys\.size\}/.test(stripped),
+      'a count is being taken from four-rows-per-key again');
+    check('OVERALL WIRING: the door is handed its state',
+      /doorState=\{overallDoorState\}/.test(stripped),
+      'the tab is computing or guessing its own state');
+  }
+
   console.log(`step1-panel spec: ${pass} passed, ${fails.length} failed`);
   fails.forEach(f => console.log('  FAIL ' + f));
   process.exit(fails.length ? 1 : 0);

@@ -414,9 +414,15 @@ as a finding.
 
 Therefore:
 
-- Run it **once, sequentially**, with a long timeout. Never twice, never
-  alongside itself, never in the background because the foreground call was
-  slow. It takes as long as it takes.
+- Run it **once**, with a long timeout. **The prohibition is on a SECOND
+  instance, not on backgrounding.** Amended 2026-08-09: the rule first said
+  "never in the background", and two consecutive gates backgrounded it anyway
+  because the run exceeds the 120s foreground timeout and the harness moves it
+  there. Both were correct to — they ran one instance and waited. A rule that
+  forbids the only workable way to run the thing gets ignored, and an ignored
+  rule stops protecting the part that matters. So: background it if you must,
+  then **wait for that instance to finish**. Never start another because the
+  first is slow.
 - **Before and after**, run `git status --short` and confirm the tree is the
   expected file set. A file you did not touch appearing as modified is a
   stranded mutation, not a discovery.

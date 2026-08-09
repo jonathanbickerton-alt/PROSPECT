@@ -717,5 +717,20 @@
   "bulk_generate_scoped_subtitle": "Settings below apply to every leaf in this run",
   "bulk_scope_all_cohorts": "all cohorts",
   "bulk_confirm_generate_leaves": "Generate {{count}} leaves",
-  "bulk_confirm_generate_forecasts": "Generate {{count}} forecasts"
+  "bulk_confirm_generate_forecasts": "Generate {{count}} forecasts",
+  "bulk_settings_applied_to_n_leaves": "Settings applied to all {{count}} remaining leaves",
+  "bulk_use_model_for_all_leaves": "Use {{model}} for every leaf",
+  "bulk_progress_leaves_complete": "{{p0}} of {{p1}} forecast leaves complete",
+  "bulk_keep_just_this_forecast": "Keep just this forecast",
+  "bulk_cancel": "Cancel",
+  "bulk_post_gen_saved_title": "Your forecast is saved",
+  "bulk_post_gen_offer": "{{count}} more forecast leaves have no forecast yet — generate them too?",
+  "bulk_n_leaves_have_no_forecast": "{{count}} forecast leaves have no forecast yet",
+  "bulk_only_current_selection_hint": "To forecast only the selection you are viewing, use Generate Forecast in Step 1.",
+  "overall_generate_n_leaves": "Generate {{count}} missing leaves",
+  "overall_blocked_by_unfittable": "Blocked: {{count}} leaves cannot be fitted",
+  "overall_blocked_reason": "The {{count}} remaining leaves have too little history to forecast. Every aggregate above them is summed from the rest.",
+  "overall_all_leaves_covered": "All leaves covered",
+  "overall_nothing_to_forecast": "Nothing to forecast",
+  "overall_aggregates_derive": "{{count}} aggregate views derive from their leaves — they are never fitted, and are not missing."
 }

@@ -5747,6 +5747,94 @@ and nothing is ever written under an All-bearing key. Only the entry moved.
 cohort. A confirm panel that named a single model or z-score for a run that
 picks per cohort would be a second version of the same lie.
 
+### SETTLED — ONE definition of missing, and it reaches every door, 2026-08-09
+
+**Fixed. Found on Jon's B-11 re-run, with screenshots.**
+
+The Overall Forecast door read `missingStandardCohorts`: has-no-forecast over the
+whole cohort cross-product (`ec3c79a`, 2026-07-30). That population includes
+**All-bearing keys** and emits **four scenario rows per key**.
+
+**Measured on the edge fixture, every fittable leaf already fitted:** the door
+offered **144** — 36 distinct keys × 4 scenarios, of which **34 keys were
+aggregates and 2 were the known-unfittable leaves**. The 34 were exactly those
+aggregates whose entire leaf population is the two short leaves, so nothing
+under them could ever resolve. Every one failed on every run, nothing recorded
+them, and the count never moved. Confirming produced "146 cohorts still have no
+forecast" — 144 series **plus** 2 leaves, double-counting the leaves already
+inside the 144 and summing across two grains into one word.
+
+**Classification: pre-existing definition on a surface Session J did not touch.**
+J (`a51ec8e`, 2026-08-07) introduced fittable-and-not-fitted via
+`missingLeavesForKey` and applied it at two sites, both Step 1.
+`OverallForecastTab.tsx` is not in that diff. So this is J's no-exit loop, on the
+one surface J never reached — not a regression of J's fix.
+
+**The rule, now enforced:**
+
+- `missingLeavesForKey` at the **root scope** is the Overall door's state. Not a
+  parallel definition — literally the same function Step 1 calls, so the two
+  cannot drift.
+- **An aggregate never appears in a missing set.** Aggregates are not missing;
+  they derive at read time. Offering to generate one offers work the engine is
+  right to decline.
+- **Counts come from the leaf-grain set, never from the row array.** The row
+  array holds four scenario rows per key; reading its length is the 36 → 144
+  step. It survives only so the Overall table can mark which rows are missing.
+- **Both doors are now scoped leaf runs**, so there is one run shape and one
+  grain and the completion panel cannot sum across two.
+- **The four button states apply here too.** With 0 fittable-missing and 2
+  known-unfittable the door renders **blocked, with the reason** — not an
+  invitation to generate 144.
+- **Derivation is never described as failure.** The view states
+  "N aggregate views derive from their leaves"; it may not say aggregates
+  "could not be forecast". Coverage annotates, it does not gate.
+
+Guard-trap 44 reinstates the cross-product enumeration. `spec:step1-panel` mounts
+the Overall door in all four states; `spec:generate-missing` pins the definition
+with an anti-vacuity control proving the old and new populations differ.
+
+### OPEN, HELD FOR A DECISION — Step 1's chart shows two populations, 2026-08-09
+
+**Mechanism demonstrated. NOT fixed: the fix touches the Step 1 keep-last
+wrinkle, which the Phase 3 design pass left untouched deliberately.**
+
+Edge fixture, Step 1, Segment=Corporate with everything else aggregated, Value
+(ARPU), blended view:
+
+```
+history half  (follows the seven dropdowns)          17.05 - 17.83
+forecast half (whatever baseForecast happens to hold)      33.69
+the selection's OWN derived forecast, for comparison       17.38
+```
+
+The history half of `arpuChartData` recomputes from raw rows matching the
+**dropdown values**. The forecast half is simply `baseForecast.months`. Step 2
+and Step 3 re-resolve `baseForecast` through the seam on every filter change
+(`handleStep2FilterChange`, `handleStep3FilterChange`); **Step 1 has no
+equivalent** — no `handleStep1FilterChange` exists. So Step 1's dropdowns move
+and its forecast does not.
+
+**The leaf is identified:** `Corporate|Mobile Voice|High Value|Direct|Call Centre
+/ Tele-sales|RED XL|SIM-only`, month-0 ARPU **33.69** — a Corporate·Mobile
+Voice·Direct leaf, which is what the GENERATED panel named as the last manual
+generate, and which sits exactly in the observed 33–36 band.
+
+**The competing hypothesis is excluded.** It is not a different aggregate's
+blend: the selection's own derived aggregate reads **17.38** against a last
+historical month of **17.34** — continuous, no discontinuity at all. The defect
+is that the chart is not showing that forecast.
+
+**The earlier MNC|Fixed Connectivity sighting is consistent with this and not
+proven to be it.** History 28–42 with a forecast near 24.5 could not be
+reproduced from the store at that scope — which is what this mechanism predicts,
+because under it the forecast half was never that scope's forecast. Consistent,
+and still unproven without Jon's fixture.
+
+**Why it is held rather than fixed:** the only fix is for a Step 1 selection
+change to re-resolve `baseForecast` through the seam, exactly as Steps 2 and 3
+do. That is a change to keep-last, which is a reserved decision.
+
 ### The edge fixture needs a companion actuals file
 
 **Recorded 2026-08-05, not built.**

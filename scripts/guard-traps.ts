@@ -442,6 +442,18 @@ const TRAPS: Trap[] = [
   // Trap 43: the confirm panel is fed the Step 1 sidebar values again, so it
   // displays numbers the run will not apply. This one shipped for real and was
   // invisible because the auto-per-cohort defaults hide both figures.
+  // Trap 44: the Overall door's missing set goes back to has-no-forecast over
+  // the whole cohort cross-product — aggregates included, four scenario rows per
+  // key. Measured on the edge fixture with every fittable leaf already fitted,
+  // that offered 144 where the truth is 0: 36 keys x 4 scenarios, 34 of the keys
+  // All-bearing. Every one failed on every run and nothing recorded them, so the
+  // count never moved. Session J's no-exit loop, on the surface J never touched.
+  { id: '44 the Overall door counts aggregates as missing again',
+    why: 'a fully-fitted book is offered 144 generations that can never succeed',
+    file: APP, spec: PANEL,
+    mutate: s => s.replace(
+      '    () => allCohorts.filter(c => c.forecastType === \'Standard Forecast\'',
+      '    () => allCohorts.filter(c => !c.hasForecast && c.forecastType === \'Standard Forecast\' && true') },
   { id: '43 the confirm panel displays settings the run will not use',
     why: 'it shows the sidebar z-score while the run applies the generator\'s',
     file: APP, spec: BULKDONE,

@@ -194,11 +194,27 @@ export function BulkGenerateModal({
                       </h2>
                       <p className="text-xs text-slate-500 mt-0.5">{t('bulk_generate_scoped_subtitle')}</p>
                     </>
+                  ) : sourceCohort ? (
+                    /* POST-GENERATION ENTRY. The user has just generated one
+                       forecast and it is already saved. Leading with "Apply to
+                       all remaining combinations?" made the saved work look
+                       provisional — as though the answer decided its fate.
+                       So the header states what is already true, and the offer
+                       is secondary. */
+                    <>
+                      <h2 className="text-base font-bold text-slate-900">{t('bulk_post_gen_saved_title')}</h2>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {t('bulk_post_gen_offer', { count: missingCount })}
+                      </p>
+                    </>
                   ) : (
                     <>
                       <h2 className="text-base font-bold text-slate-900">{t('bulk_apply_to_all_remaining_combinations')}</h2>
+                      {/* Names the grain. It read "N combinations", which is what
+                          the pre-2026-08-09 count actually was — cohort rows,
+                          four per key, aggregates included. */}
                       <p className="text-xs text-slate-500 mt-0.5">
-                        {missingCount} combination{missingCount !== 1 ? 's' : ''} {missingCount !== 1 ? t('bulk_don_t') : t('bulk_doesn_t')} {t('bulk_have_a_forecast_yet')}
+                        {t('bulk_n_leaves_have_no_forecast', { count: missingCount })}
                       </p>
                     </>
                   )}
@@ -264,7 +280,7 @@ export function BulkGenerateModal({
               <div className="space-y-2">
                 {([
                   { auto: true,  label: t('bulk_auto_select_best_model_per_cohort'), desc: t('bulk_analyses_each_cohort_s_history_independently') },
-                  { auto: false, label: `Use ${currentModel} for all cohorts`, desc: null },
+                  { auto: false, label: t('bulk_use_model_for_all_leaves', { model: currentModel }), desc: null },
                 ] as const).map(opt => (
                   <label key={String(opt.auto)} className={`flex items-start gap-3 cursor-pointer rounded-lg px-3 py-2 border transition-colors ${autoModel === opt.auto ? 'bg-[#e60000]/5 border-[#e60000]/20' : 'border-slate-100 hover:border-slate-200'}`}>
                     <input
@@ -309,9 +325,13 @@ export function BulkGenerateModal({
             {/* Parameters preview */}
             <div className="mx-6 mb-5 border border-slate-100 rounded-xl overflow-hidden">
               <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100">
+                {/* One interpolated string, not three concatenated nodes. The
+                    key ended in "all", the count followed with no separator and
+                    " remaining" was hardcoded English, so under this element's
+                    `uppercase` it rendered as ALL144 REMAINING. It also named no
+                    grain. Both are fixed by making it one sentence. */}
                 <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                  
-                  {t('bulk_settings_to_be_applied_to_all')}{missingCount} remaining
+                  {t('bulk_settings_applied_to_n_leaves', { count: missingCount })}
                 </p>
               </div>
               <div className="divide-y divide-slate-50">
@@ -364,12 +384,29 @@ export function BulkGenerateModal({
 
             </div>{/* end scrollable body */}
 
+            {/* THE THIRD INTENT, signposted rather than duplicated. Forecasting
+                only the current selection is Step 1's own generate button; a
+                second control here would be a second way to do one thing, and
+                the two would drift. Saying where it lives costs one line. */}
+            <p className="px-6 pb-3 text-[11px] text-slate-400 leading-relaxed">
+              {t('bulk_only_current_selection_hint')}
+            </p>
+
             {/* Actions */}
             <div className="flex items-center justify-end gap-3 px-6 py-4 bg-slate-50 border-t border-slate-100 shrink-0">
+              {/* THE DECLINE STATES ITS EFFECT, and the effect differs by door.
+                  Reached AFTER a single generate (sourceCohort set), declining
+                  KEEPS that forecast — "Skip for now" implied the work might be
+                  lost. Reached from Step 1 or Overall, nothing has been made
+                  yet, so declining is simply Cancel.
+                  The third intent — forecast only the current selection — is
+                  signposted below and never duplicated here: it already exists
+                  as Step 1's own generate button, and a second control for it
+                  would be a second way to do one thing. */}
               <button
                 onClick={handleClose}
                 className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
-              >{t('bulk_skip_for_now')}</button>
+              >{sourceCohort ? t('bulk_keep_just_this_forecast') : t('bulk_cancel')}</button>
               <button
                 onClick={handleConfirm}
                 className="px-5 py-2 bg-[#e60000] hover:bg-[#cc0000] text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
@@ -431,7 +468,7 @@ function BulkGeneratingPanel({ progress }: { progress?: { current: number; total
         {showBar ? (
           <>
             <p className="text-sm text-slate-500 mb-3">
-              {progress!.current} of {progress!.total} cohorts complete
+              {t('bulk_progress_leaves_complete', { p0: progress!.current, p1: progress!.total })}
             </p>
             <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
               <div

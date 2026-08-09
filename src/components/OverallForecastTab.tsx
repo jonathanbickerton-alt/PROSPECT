@@ -38,7 +38,13 @@ interface OverallForecastTabProps {
    *  re-derive this locally: an earlier local copy omitted the forecastType
    *  guard, and the status filter below omitted the data guard, so the table and
    *  the button disagreed on screen about how many cohorts were missing. */
+  /** ROWS only, for marking the table. Four scenario rows per key — never counted. */
   missingCohorts: Cohort[];
+  /** The door's state, from the one `missingLeavesForKey` call at the root scope. */
+  doorState: { kind: 'generate' | 'blocked' | 'covered' | 'never';
+               missing: number; total: number; unfittable: number };
+  /** Aggregate views this book covers BY DERIVATION. Not failures; not missing. */
+  derivedAggregateCount: number;
   /** Raises the bulk-generate prompt, which drives the canonical generation
    *  path. This button previously ran its own loop straight into savedForecasts,
    *  never writing forecastStore — so nothing it generated was visible to the
@@ -68,6 +74,8 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
   setSavedForecasts,
   savedForecasts,
   missingCohorts,
+  doorState,
+  derivedAggregateCount,
   onGenerateMissing,
   setGeneratingCohort,
   setViewingCohort,
@@ -82,6 +90,17 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-2xl font-bold text-slate-900">{t('overall_overall_forecast_view')}</h2>
         </div>
+        {/* WHAT THE AGGREGATES ARE DOING, stated truthfully.
+            This view used to report aggregate keys inside its missing count and
+            then, after a run, as "could not be forecast". Both described the
+            design as a fault: aggregates are never fitted, they derive from
+            their leaves at read time, and that is coverage — not failure.
+            Coverage annotates; it does not gate. Nothing here disables anything. */}
+        {derivedAggregateCount > 0 && (
+          <p className="text-sm text-slate-500 -mt-1 mb-2">
+            {t('overall_aggregates_derive', { count: derivedAggregateCount })}
+          </p>
+        )}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
@@ -153,12 +172,30 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
               }}
               className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
             >{t('overall_clear_all')}</button>
-            <button 
+            {/* THE FOUR STATES, same machine as Step 1's button and driven by
+                the same `missingLeavesForKey` call, here at the root scope.
+                `doorState.missing` is a LEAF count: the row array beside it has
+                four scenario rows per key and must never be counted. */}
+            <button
               onClick={onGenerateMissing}
-              disabled={isGeneratingMissing || missingCohorts.length === 0}
-              className="px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors shadow-sm bg-[#e60000] hover:bg-[#cc0000] disabled:bg-slate-400 disabled:hover:bg-slate-400 disabled:cursor-not-allowed"
+              disabled={isGeneratingMissing || doorState.kind !== 'generate'}
+              title={doorState.kind === 'blocked'
+                ? t('overall_blocked_reason', { count: doorState.unfittable })
+                : undefined}
+              /* disabled:opacity-40, which is now 14 of the 15 disabled primary
+                 buttons in src/. This button was the fifteenth. It was aligned
+                 deliberately in faa202c to ManageBulkDrawer's slate-400, and
+                 ManageBulkDrawer has since moved to opacity-40 — so the target
+                 moved, the button did not regress. Changed here because this
+                 diff rewrites when it is disabled, and it is now disabled in
+                 three states of four rather than one edge case. */
+              className="px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors shadow-sm bg-[#e60000] hover:bg-[#cc0000] disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {isGeneratingMissing ? t('overall_generating') : t('overall_generate_missing')}
+              {isGeneratingMissing ? t('overall_generating')
+                : doorState.kind === 'generate' ? t('overall_generate_n_leaves', { count: doorState.missing })
+                : doorState.kind === 'blocked'  ? t('overall_blocked_by_unfittable', { count: doorState.unfittable })
+                : doorState.kind === 'covered'  ? t('overall_all_leaves_covered')
+                : t('overall_nothing_to_forecast')}
             </button>
           </div>
         </div>

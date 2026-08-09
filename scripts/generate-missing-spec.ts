@@ -124,6 +124,12 @@ const { leafMap } = buildRollUpIndex(enumerated);
 // what happened on the first run of this spec.
 const AGG = makeForecastKey('All', 'All', 'All', 'All', 'All', 'All', 'All');
 
+// Module scope so the Overall-door block at the end of this file reuses the
+// same REAL fit — those checks are about the definition of missing, and a
+// hand-built store would be the spec feeding itself its own premise.
+const store = new Map<string, BaseForecast>();
+const skipped: string[] = [];
+
 {
   const empty = new Map<string, BaseForecast>();
   const first = missingLeavesForKey(AGG, leafMap, empty);
@@ -136,9 +142,7 @@ const AGG = makeForecastKey('All', 'All', 'All', 'All', 'All', 'All', 'All');
     !first.leaves.includes(AGG),
     'the aggregate is enrolled as its own leaf — it would be fitted');
 
-  // Fit them, exactly as a scoped run does.
-  const store = new Map<string, BaseForecast>();
-  const skipped: string[] = [];
+  // Fit them, exactly as a scoped run does. (Declared at module scope above.)
   for (const k of first.missing) {
     const bf = fitLeafKey(k);
     if (bf) store.set(k, bf); else skipped.push(k);
@@ -334,6 +338,58 @@ const AGG = makeForecastKey('All', 'All', 'All', 'All', 'All', 'All', 'All');
   check('UNMAPPED: deriveAggregate of ONE leaf returns that leaf unchanged',
     !!one && one.months[0].inflow.mean === 100 && one.months[0].arpu.mean === 10,
     'single-leaf derivation is no longer an identity — read the header of this file');
+}
+
+// ── ONE DEFINITION OF MISSING, AND IT REACHES THE OVERALL DOOR ────────────
+//
+// The Overall door read a different definition until 2026-08-09: has-no-forecast
+// over the whole cohort cross-product (`ec3c79a`), which includes All-bearing
+// keys and multiplies each key by four scenario rows. Session J's
+// fittable-and-not-fitted definition (`a51ec8e`) reached Step 1 only —
+// OverallForecastTab.tsx is not in that diff.
+//
+// These checks are on the DEFINITION, at the root scope the Overall door uses.
+{
+  const rootKey = makeForecastKey('All', 'All', 'All', 'All', 'All', 'All', 'All');
+
+  // Post-fit: every fittable leaf fitted, the two short ones known unfittable.
+  const fitted = new Map(store);
+  const known = new Set(skipped);
+  const post = missingLeavesForKey(rootKey, leafMap, fitted, known);
+
+  check('OVERALL: post-fit the door has NOTHING to offer', post.missing.length === 0,
+    `${post.missing.length} offered — this is the no-exit loop`);
+  check('OVERALL: and it is BLOCKED, not covered — the two zero states differ',
+    post.unfittable.length === 2,
+    `${post.unfittable.length} known-unfittable`);
+
+  // THE POPULATION ITSELF. Not one aggregate, at any point in the lifecycle.
+  const pre = missingLeavesForKey(rootKey, leafMap, new Map(), new Set());
+  const aggInPre = pre.missing.filter((k: string) => isAllBearing(k));
+  check('OVERALL: an aggregate NEVER appears in a missing set, even pre-fit',
+    aggInPre.length === 0,
+    `${aggInPre.length} All-bearing keys offered for generation — they derive, they are not missing`);
+  check('OVERALL: pre-fit the door offers exactly the fittable leaves',
+    pre.missing.length === 74, `${pre.missing.length}`);
+
+  // ANTI-VACUITY. The two definitions must actually differ, or every check
+  // above would pass against the defect as well. This reconstructs the OLD
+  // population — has-no-forecast, aggregates included — and shows it is not
+  // empty where the new one is. Measured, not asserted: 34 aggregates whose
+  // whole leaf population is the two short leaves, which is why nothing under
+  // them ever resolved and the count never moved.
+  const oldPopulation = [...leafMap.keys()].filter(k => {
+    const hit = fitted.get(k);
+    if (hit && !isRetiredAggregateFit(k, hit)) return false;
+    return !(leafMap.get(k) ?? []).some((lk: string) => fitted.has(lk));
+  });
+  const oldAggs = oldPopulation.filter(k => isAllBearing(k));
+  check('OVERALL CONTROL: the OLD definition really did offer aggregates',
+    oldAggs.length > 0,
+    'the two definitions agree — these checks prove nothing');
+  check('OVERALL CONTROL: and it offered them with nothing left to generate',
+    oldPopulation.length > post.missing.length,
+    `old ${oldPopulation.length} vs new ${post.missing.length}`);
 }
 
 console.log(`generate-missing spec: ${pass} passed, ${fails.length} failed`);
