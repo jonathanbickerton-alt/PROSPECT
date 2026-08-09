@@ -5794,6 +5794,106 @@ Guard-trap 44 reinstates the cross-product enumeration. `spec:step1-panel` mount
 the Overall door in all four states; `spec:generate-missing` pins the definition
 with an anti-vacuity control proving the old and new populations differ.
 
+### SETTLED — the Step 2/3 unlock derives from the store, 2026-08-09
+
+**Found on Jon's B-11 walk: 72 leaves generated on the edge fixture, Step 2 still
+locked.** Neither suspect in the brief was the cause, and the predicate is worth
+quoting because both guesses were reasonable and both were wrong:
+
+```ts
+const hasLegacyBaseline = Object.keys(savedForecasts).length > 0;   // the gate
+<StepIndicator hasBaseline={hasLegacyBaseline} ... />
+```
+
+It read **neither `forecastData` nor `baseForecast`**. It read `savedForecasts` —
+the pre-bottom-up 5-part store — which is identical at `d4a7f8a`, `ec77b34` and
+`c161a42` (verified by `git show <c>:src/App.tsx`). So Session L's derivation
+change and the keep-last retirement are both **exonerated**.
+
+**Only the STANDARD chart-series path writes `savedForecasts`.** Bulk leaf
+generation writes `forecastStore` and nothing else, because `restrictToLeafKeys`
+sets `targets = []`. Hence, by source trace at each commit:
+
+| commit | Step 1 scoped generate | Overall whole-book generate |
+|---|---|---|
+| `d4a7f8a` (pre-L) | locked — `restrictToLeafKeys` since Session H | **unlocked** |
+| `ec77b34` (post-L) | locked | **unlocked** |
+| `c161a42` | locked | **locked** |
+
+**Two separate ages of defect.** Step 1's scoped door has *never* unlocked Step 2
+— older than Session L, and the case Jon hit. The Overall door regressed at
+**`76c7c53`**, which made both doors scoped leaf runs; that was the right fix for
+the missing-count defect and it removed the last writer of `savedForecasts`
+during bulk generation. Introduced there, by me, in the immediately preceding
+session.
+
+**Jon's testimony is corroborated, not merely accepted.** There is no save
+control after Step 1; the predicate is named for the *legacy store*, not for a
+saved baseline; it dates from the initial commit; and EXPECTED.md already records
+`savedForecasts` as the older half of a two-store relationship that "wants a
+mapper pass, not a third point fix". No designed saved-baseline concept exists to
+protect, so the gate was redefined rather than escalated.
+
+**The rule now.** `hasAnyUsableForecast(store, hasLegacy)` — Step 2 and 3 unlock
+when the forecast store holds at least one entry that is not a retired aggregate
+fit, with the legacy store still admissible as a second clause for
+pre-bottom-up sessions. Derived from store CONTENTS, never from which path
+populated anything.
+
+- **A retired aggregate fit does not count.** The seam refuses to return one, so
+  a store holding only those can serve no view, and unlocking on it would have
+  the indicator claim coverage the reader cannot reach.
+- **State-not-navigation.** The store survives a selection change, a tab move and
+  a restore, so the gate cannot flicker. A restored session with forecasts
+  arrives UNLOCKED. Asserted as transitions, not as one mount.
+
+**The copy was describing a save that has never existed** — "The forecast will
+appear here once generated. Save it to unlock Step 2." Replaced by an additive
+key naming the true rule. The old key is left in the locale files rather than
+edited, so a locale carrying a translated version of the wrong sentence is not
+silently repurposed into asserting the right one under a translation nobody
+re-checked. Audited: it was the only save-a-forecast reference on that surface.
+
+Guard-trap 47 severs the store derivation; `spec:step2-unlock` goes red on the
+mounted assertion and on all four navigation transitions.
+
+**One duplicate predicate was collapsed rather than left beside the new one.**
+`noForecastReason` read `forecastStore.size > 0 || hasLegacyBaseline`, which
+disagrees with the gate in exactly the retired-aggregate-fit case — size is
+non-zero, the seam serves nothing, and the filter bar would offer a
+widen-the-filter hint where the honest answer is the Step 1 link. It now reads
+the same `hasAnyForecast`. Introducing a canonical predicate and leaving a
+hand-rolled twin beside it is how the two-store relationship got to three
+findings.
+
+### OPEN, NEEDS A DECISION — a new upload does not clear the old forecasts
+
+**Demonstrated by the gate on 2026-08-09, and NOT caused by the unlock fix.**
+
+`handleFileUpload` never clears `forecastStore`, `savedForecasts` or
+`baseForecast`. Driven with the real functions: a store holding a genuine fit
+from an *old* cohort, against a `leafMap` built from *newly uploaded* data,
+gives `hasAnyUsableForecast(store, false) === true` while
+`resolveFromStore(store, newLeafMap, newCohortKey)` returns
+`{ forecast: null, reason: 'insufficient-history' }`. **Step 2 reads unlocked for
+data that has no forecasts.**
+
+**Pre-existing, and the unlock fix did not widen it.** The old gate read
+`savedForecasts`, which `handleFileUpload` also never clears, so the same stale
+unlock was already reachable for any cohort generated earlier in the session.
+What changed is which store leaks across an upload, not whether one does.
+
+**Why it is recorded rather than fixed here.** The obvious fix — clear the
+stores on upload — destroys a user's generated work the moment they load another
+file, and there is no warning and no undo. Whether that is right is a product
+decision, not a correctness one, and it is adjacent to but outside the gate this
+session was asked to fix. The alternative — scoping the gate to the current
+dataset's own leaves — is a different and larger change.
+
+**Options, when it is taken up:** clear the stores on upload (with a warning);
+scope the gate to leaves present in the loaded data; or keep both and let the
+user choose which dataset's forecasts are live.
+
 ### SETTLED — Step 1 resolves its selection; keep-last is retired, 2026-08-09
 
 **Reserved decision RESOLVED by Jon, 2026-08-09. Option 1 of three.** The

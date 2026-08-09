@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
 import { filterToKey, cohortToFilter, forecastForView, forecastForStep1Selection, step1ResolveDecision, describeScope } from './utils/viewFilter';
@@ -4348,6 +4348,45 @@ export default function App() {
   }, [triggerBulkCheck]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hasLegacyBaseline = Object.keys(savedForecasts).length > 0;
+
+  /**
+   * HAS THIS SESSION PRODUCED A FORECAST? The Step 2/3 unlock.
+   *
+   * Derived from the STORE, which is the corollary of surface-not-store this
+   * codebase already applies elsewhere: a gate reads what exists, not what some
+   * transient path happened to populate. `forecastStore` survives a selection
+   * change, a tab move and a session restore, so the gate cannot re-lock on
+   * navigation — a restored session with forecasts arrives unlocked.
+   *
+   * WHAT IT REPLACED. The gate was `hasLegacyBaseline` alone: a non-empty
+   * `savedForecasts`, the pre-bottom-up 5-part store, which only the STANDARD
+   * chart-series generation path writes. Bulk leaf generation writes
+   * `forecastStore` and nothing else, so:
+   *
+   *   - Step 1's scoped aggregate generate has NEVER unlocked Step 2. It has
+   *     passed `restrictToLeafKeys` since Session H, and that sets `targets =
+   *     []`, so no Standard cohort is ever enrolled. True at d4a7f8a, at
+   *     ec77b34, and at c161a42.
+   *   - The Overall whole-book door DID unlock it, until 76c7c53. That commit
+   *     made both doors scoped leaf runs — correct for the missing-count defect
+   *     it fixed, and it removed the only remaining writer of `savedForecasts`
+   *     during bulk generation. Introduced there, by me.
+   *
+   * Jon's testimony is that generation has always been the unlock and no save
+   * action has ever existed. Nothing contradicts it: there is no save control,
+   * `hasLegacyBaseline` is named for the legacy store rather than for a saved
+   * baseline, and EXPECTED.md already records `savedForecasts` as the older half
+   * of a two-store relationship it wants replaced, not as a designed gate.
+   *
+   * A retired aggregate fit does not count. The seam refuses to return one, so
+   * a store holding only those can produce no forecast for any view, and
+   * unlocking on it would be the indicator claiming coverage the reader cannot
+   * reach.
+   */
+  const hasAnyForecast = useMemo(
+    () => hasAnyUsableForecast(forecastStore, hasLegacyBaseline),
+    [forecastStore, hasLegacyBaseline],
+  );
   const activeStep: 1 | 2 | 3 | null =
     activeView === 'standard' ? 1 :
     activeView === 'whatif' ? 2 :
@@ -4443,7 +4482,7 @@ export default function App() {
         {/* Step indicator row — always visible so users can see the journey */}
         <StepIndicator
           activeStep={activeStep}
-          hasBaseline={hasLegacyBaseline}
+          hasBaseline={hasAnyForecast}
           hasData={data.length > 0}
           onStepClick={(step) => {
             if (step === 1) setActiveView('standard');
@@ -4473,8 +4512,16 @@ export default function App() {
                'insufficient-history' for a key whose leaves all failed to fit,
                which is indistinguishable from "no forecasts exist yet" unless
                the store is consulted first. */
+            /* The SAME predicate as the step indicator's gate, not a second
+               hand-rolled variant. This read `forecastStore.size > 0 ||
+               hasLegacyBaseline`, which disagrees with the gate in exactly the
+               retired-aggregate-fit case: size is non-zero, the seam serves
+               nothing, and the bar would offer a widen-the-filter hint where
+               the honest answer is the Step 1 link. Two nearly-identical
+               predicates in one file is the drift this codebase keeps
+               recording, so there is now one. */
             noForecastReason={
-              (forecastStore.size > 0 || hasLegacyBaseline)
+              hasAnyForecast
                 ? resolveForecast(filterToKey(activeView === 'whatif' ? step2Filter : step3Filter)).reason
                 : null
             }

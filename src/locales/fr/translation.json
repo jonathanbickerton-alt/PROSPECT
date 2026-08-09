@@ -723,5 +723,6 @@
   "overall_blocked_reason": "The {{count}} remaining leaves have too little history to forecast. Every aggregate above them is summed from the rest.",
   "overall_all_leaves_covered": "All leaves covered",
   "overall_nothing_to_forecast": "Nothing to forecast",
-  "overall_aggregates_derive": "{{count}} aggregate views derive from their leaves — they are never fitted, and are not missing."
+  "overall_aggregates_derive": "{{count}} aggregate views derive from their leaves — they are never fitted, and are not missing.",
+  "baseline_forecast_appears_once_generated": "The forecast will appear here once generated. Generating one unlocks Step 2."
 }

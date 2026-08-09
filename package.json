@@ -40,7 +40,8 @@
     "spec:step3-transition": "tsx scripts/step3-transition-spec.tsx",
     "spec:bulk-completion": "tsx scripts/bulk-completion-spec.tsx",
     "spec:nav-target": "tsx scripts/nav-target-spec.ts",
-    "spec:step1-selection": "tsx scripts/step1-selection-spec.tsx"
+    "spec:step1-selection": "tsx scripts/step1-selection-spec.tsx",
+    "spec:step2-unlock": "tsx scripts/step2-unlock-spec.tsx"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

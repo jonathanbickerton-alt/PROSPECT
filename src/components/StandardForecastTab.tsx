@@ -1543,7 +1543,14 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   <h3 className="text-lg font-semibold text-slate-800 mb-2">{t('baseline_ready_to_forecast')}</h3>
                   <p className="text-sm text-slate-500 mb-1">{t('baseline_configure_the_data_mapping_and_dimension_filt')}</p>
                   <p className="text-sm font-semibold text-[#e60000] mb-4">{t('common_generate_forecast')}</p>
-                  <p className="text-xs text-slate-400">{t('baseline_the_forecast_will_appear_here_once_generated')}</p>
+                  {/* "Save it to unlock Step 2" described a save action that
+                      does not exist and never has — there is no save control
+                      after Step 1, and generating is the unlock. The old key is
+                      left in the locale files rather than edited, so a locale
+                      carrying a translated version of the wrong sentence is not
+                      silently repurposed into asserting the right one under a
+                      translation nobody re-checked. */}
+                  <p className="text-xs text-slate-400">{t('baseline_forecast_appears_once_generated')}</p>
                 </>
               )}
             </div>

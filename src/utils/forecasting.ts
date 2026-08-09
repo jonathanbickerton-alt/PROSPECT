@@ -1888,6 +1888,39 @@ export function makeForecastKey(
  * roll-up at most once - instead of a cleanup step a later edit can drop.
  */
 /**
+ * HAS ANYTHING FORECASTABLE BEEN PRODUCED? The Step 2/3 unlock predicate.
+ *
+ * Derived from STORE CONTENTS, which is the corollary of surface-not-store: a
+ * gate reads what exists, not what some transient path happened to populate,
+ * and not which door produced it. The store survives a selection change, a tab
+ * move and a session restore, so a gate built on it cannot re-lock on
+ * navigation.
+ *
+ * A RETIRED AGGREGATE FIT DOES NOT COUNT. The seam refuses to return one, so a
+ * store holding only those can produce no forecast for any view; unlocking on
+ * it would have the step indicator claim coverage the reader cannot reach.
+ *
+ * `hasLegacy` keeps the older 5-part `savedForecasts` store admissible, because
+ * a session saved before bottom-up has real forecasts there and nowhere else.
+ * It is the second clause, not the first, which is the inversion this fixes:
+ * the gate used to read ONLY that store, and bulk leaf generation never writes
+ * it.
+ *
+ * Pure and exported so the step-indicator spec can DRIVE the gate rather than
+ * re-implement it — the same reason `forecastForView` and
+ * `forecastForStep1Selection` live where they do.
+ */
+export function hasAnyUsableForecast(
+  store: Map<string, { provenance?: unknown }> | ReadonlyMap<string, any>,
+  hasLegacy: boolean,
+): boolean {
+  for (const [key, bf] of store as Map<string, any>) {
+    if (!isRetiredAggregateFit(key, bf)) return true;
+  }
+  return hasLegacy;
+}
+
+/**
  * Should a stored forecast be IGNORED by the seam?
  *
  * True for a FITTED forecast stored under an All-bearing key - a fit-on-aggregate
