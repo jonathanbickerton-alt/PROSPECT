@@ -333,3 +333,42 @@ Therefore:
 - Never `git checkout main -- .`, never `git stash`, never create a worktree
   to work around this. Those destroy the session's uncommitted work, which is
   the thing being gated.
+
+## Running a spec is evidence FOR WHAT THE SPEC MOUNTS, and nothing wider
+
+When a gate asks you to exercise a surface end-to-end and a spec already does
+something similar, satisfying the request by running that spec is often the
+right answer. **Say so plainly, and say what it does not reach.**
+
+The pattern worth knowing: a spec that mounts a COMPONENT with props proves the
+component behaves, and proves nothing about the parent that supplies them. The
+parent half is usually covered by source-pattern checks, which are a weaker
+instrument — they confirm a line exists, not that clicking anything runs it. A
+gate that reports "both doors driven end-to-end" without separating those two
+is claiming coverage the run does not have.
+
+So: name the boundary between what was mounted and what was read. "I ran
+spec:X, which mounts the modal and clicks its real button; the App-side wiring
+is verified only by regex against App.tsx, and no live click on App's own button
+was performed" is a good gate line. "Both doors verified" is not.
+
+The same rule covers anything you could not exercise at all. **A check you could
+not run is not a check that passed** — declare it and let the reader decide
+whether it needs closing, rather than folding it silently into the verdict.
+
+## Scratch scripts, and the one place the rule bends
+
+Scratch scripts belong in the scratchpad directory. There is a real exception
+and it has a known shape: a script that imports the app's own modules needs Node
+to resolve `node_modules`, which a scratchpad outside the repo tree cannot do.
+
+If you hit that, you may place a temporary file inside the repo — but then you
+own it completely:
+
+- give it an obviously temporary name (`scripts/_tmp_*.ts`);
+- delete it in the same session, before you report;
+- run `git status --short` afterwards and confirm the tree is what it was;
+- and **disclose it in the report** — an undisclosed file in a gate's own diff
+  is indistinguishable from clutter the gate was supposed to catch.
+
+Anything that does not need repo module resolution still goes to the scratchpad.

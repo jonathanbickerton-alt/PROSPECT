@@ -45,6 +45,31 @@ export function filterToKey(f: ViewFilter): string {
   );
 }
 
+/**
+ * A selection named the way the user chose it, for the bulk confirm header.
+ *
+ * Only narrowed dimensions appear. 'All' is the ABSENCE of a constraint, not a
+ * value worth reading back: "Corporate" is what the user picked, "Corporate /
+ * All / All / All / All / All" is what the key happens to look like. When
+ * nothing is narrowed the scope is everything, and `allLabel` says so rather
+ * than the caller rendering an empty header.
+ *
+ * The two encodings BOTH mean aggregated and must both be dropped: `segment`
+ * carries the literal string 'All', while the L1/L2 pairs carry null. A filter
+ * that discarded only one of them would name a scope the run does not have.
+ *
+ * Pure and exported deliberately. It lived inline in App as a useCallback and a
+ * gate could only READ it — "traced against the two known encodings" was the
+ * weakest evidence in that report. A label the user is asked to confirm a
+ * 74-leaf run against should be exercisable, so now it is.
+ */
+export function describeScope(f: ViewFilter, allLabel: string): string {
+  const parts = [f.segment, f.product.l1, f.product.l2, f.channel.l1,
+                 f.channel.l2, f.tariff?.l1, f.tariff?.l2]
+    .filter((v): v is string => !!v && v !== 'All');
+  return parts.length ? parts.join(' / ') : allLabel;
+}
+
 /** The inverse: a stored cohort as a ViewFilter, 'All' becoming null. */
 export function cohortToFilter(c: CohortLike): ViewFilter {
   return {

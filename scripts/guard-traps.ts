@@ -410,11 +410,43 @@ const TRAPS: Trap[] = [
   // nothing, so the coverage statement, the grain-named counters, the named
   // skipped leaves and G's own retirement notice all become unreachable from
   // Step 1 again. This is the defect the walk found, in one line.
-  { id: "39 the aggregate run reports nothing again", why: 'the coverage statement is unreachable from Step 1',
+  // Trap 39 REPLACED 2026-08-08. It used to replant Session G's severance
+  // against `setBulkCompletedRun`, which no longer exists: the pivot removed
+  // the open-at-COMPLETE path entirely, so the old mutation had no target and
+  // would have gone [MISSED] for want of a thing to break rather than for want
+  // of a check. What replaces it guards the decision that superseded it.
+  //
+  // SKIP STRAIGHT TO THE RUN: Step 1's button generates on click, as it did
+  // before the pivot, instead of opening the confirm. The user gets no sight of
+  // the settings and no chance to decline — which is the whole of what the
+  // pivot bought.
+  { id: '39 Step 1 generates on click, without confirmation',
+    why: 'a 74-leaf run starts before the user has seen a single setting',
     file: APP, spec: BULKDONE,
+    // Anchored on the call's OPENING, not the whole statement. The full line
+    // carries the scope label, which changed once already this session and took
+    // the anchor with it — an [INCONCLUSIVE] trap protects nothing, and it fails
+    // quietly in the direction of looking fine.
     mutate: s => s.replace(
-      "          setBulkCompletedRun({ grain: 'leaves', generated: res.generated, failed: res.failed,",
-      '          void 0 && ({ generated: res.generated, failed: res.failed,') },
+      '      setPendingScopedRun({ aggKey,',
+      '      void generateAllMissingForecasts({ restrictToLeafKeys: new Set(missing) }); const _planted = ({ aggKey,') },
+  // Trap 42: the reset-on-open is made conditional on there being no leftover
+  // summary — which is exactly the shape of the defect the pivot was built
+  // over, where a finished run's phase and numbers outlived the close and the
+  // next open rendered stale results with no settings step.
+  { id: '42 a finished run survives the close and reopens as results',
+    why: 'the next open shows the last run\'s numbers instead of a confirm',
+    file: MODAL, spec: BULKDONE,
+    mutate: s => s.replace('    if (!isOpen) return;',
+                           '    if (!isOpen || summary) return;') },
+  // Trap 43: the confirm panel is fed the Step 1 sidebar values again, so it
+  // displays numbers the run will not apply. This one shipped for real and was
+  // invisible because the auto-per-cohort defaults hide both figures.
+  { id: '43 the confirm panel displays settings the run will not use',
+    why: 'it shows the sidebar z-score while the run applies the generator\'s',
+    file: APP, spec: BULKDONE,
+    mutate: s => s.replace('          preHorizonUncertainty: genPreHorizonUncertainty,',
+                           '          preHorizonUncertainty,') },
   // Trap 40: the leaf-grain marker is dropped, so a scoped run's counts are
   // labelled 'chart series' and its uncovered total double-counts - failed and
   // skipped are the SAME leaves on that path. The spec found this in the fix

@@ -1,37 +1,35 @@
 /**
- * THE COMPLETION PANEL IS REACHABLE FROM A STEP 1 AGGREGATE GENERATE.
+ * NO MULTI-LEAF RUN STARTS BEFORE THE USER HAS CONFIRMED ITS SETTINGS.
  *
  *   npm run spec:bulk-completion
  *
- * Session G's aggregate decline (7578038) put an early return above
- * `setTriggerBulkCheck`, so an aggregate generate raised no post-generation flow
- * at all. G's decline was deliberate and stated; this side effect was neither.
- * Everything the user needs to hear about a scoped run — the coverage statement,
- * the grain-named counters, the named skipped leaves, and Session G's own
- * retirement notice — lives in that panel, so a Step 1 generate reported nothing
- * about what it had covered.
+ * The product decision, taken 2026-08-08 after the previous build was walked:
+ * both doors into bulk generation — Step 1's scoped "Generate N missing" and
+ * Overall Forecast's whole-book "Generate Missing" — open the SAME modal at the
+ * SAME confirm step, and the run begins only when the user says so.
  *
- * The panel now opens directly at 'complete' for a finished scoped run. There is
- * nothing to confirm: the work is already done, and a confirm step would be
- * offering to do it again.
+ * This supersedes the open-at-COMPLETE entry. That version let a Step 1
+ * aggregate generate run on click and reported afterwards, which put the
+ * coverage statement back within reach but never let the user see, let alone
+ * change, the settings the run would use.
  *
- * TWO HALVES, AND NEITHER COVERS THE OTHER. The mounted checks prove that GIVEN
- * a finished run the panel reports it correctly. The WIRING checks at the bottom
- * prove the app actually produces that run. Trap 39 replants Session G's
- * severance and is caught by the wiring half alone - the mounted half stays
- * green, because this spec hands the modal its summary as a prop.
+ * WHAT THIS SPEC IS FOR. "The confirm panel appears" is the weaker half of the
+ * claim and the easier one to satisfy — a modal that renders a confirm step and
+ * generates anyway would pass it. So the load-bearing check is that the panel
+ * APPEARS AND WAITS: onConfirm is not called until the button is clicked, with
+ * a positive control that clicking it DOES run, or "never ran" would pass for a
+ * dead button.
  *
- * That is stated rather than left implicit: Session M found the same split in
- * the Step 3 tripwire and fixed it by extracting the function under test. Here
- * the App side is state plumbing inside a promise callback with nothing pure to
- * extract, so the wiring guard is the honest instrument - and a reader must not
- * assume the mount is watching it.
+ * PRODUCTION-FED. The summary is not hand-written: leaves are fitted with the
+ * real `calculateBaseForecast`, the unfittable ones fall out of that fit rather
+ * than being declared, and the retirement population is identified by the real
+ * `isRetiredAggregateFit`. A spec may not feed itself the artefact under test.
  *
- * PRODUCTION-FED. The summary is not hand-written here: the leaves are fitted
- * with the real `calculateBaseForecast`, the unfittable ones fall out of that
- * fit rather than being declared, and the retirement population is identified by
- * the real `isRetiredAggregateFit`. A spec may not feed itself the artefact
- * under test.
+ * TWO HALVES, AND NEITHER COVERS THE OTHER. The mounted checks drive the real
+ * component. The WIRING checks at the bottom read App.tsx, because the entry
+ * decision — which door sets what state — is state plumbing inside a promise
+ * callback with nothing pure to extract. A reader must not assume the mount is
+ * watching the wiring, or the wiring the mount.
  */
 import { JSDOM } from 'jsdom';
 
@@ -109,6 +107,7 @@ async function main() {
   }
   // This is the shape generateAllMissingForecasts resolves with.
   const summary = { grain: 'leaves' as const, generated: store.size, failed: skipped.length, skipped };
+  const SCOPED_TOTAL = summary.generated + summary.failed;
 
   check('PREMISE: the run produced a real summary', summary.generated === 72 && summary.failed === 2,
     `${summary.generated} generated, ${summary.failed} skipped`);
@@ -116,6 +115,9 @@ async function main() {
     skipped.every(s => s.reason === 'insufficient-history'),
     skipped.map(s => s.reason).join(','));
 
+  // `spy` records every onConfirm call, so the spec can assert on what the
+  // modal DID and not only on what it rendered.
+  const spy = { calls: 0, lastOpts: null as any };
   async function render(over: any = {}) {
     const host = document.getElementById('root')!;
     host.replaceChildren();
@@ -125,42 +127,160 @@ async function main() {
     await (act as any)(async () => {
       root.render(React.createElement(Modal as any, {
         isOpen: true, onClose: noop, sourceCohort: null, missingCount: 0,
-        params: { preHorizonUncertainty: 1, postHorizonExpansionRate: 1.5,
+        params: { preHorizonUncertainty: 2, postHorizonExpansionRate: 5,
                   confidenceHorizon: 3, forecastLength: 24 },
         currentModel: 'Holt Linear',
-        onConfirm: async () => ({ generated: 0, failed: 0, skipped: [] }),
+        onConfirm: async (opts: any) => { spy.calls++; spy.lastOpts = opts;
+                                          return { generated: 0, failed: 0, skipped: [] }; },
         ...over,
       }));
     });
     await (act as any)(async () => { await new Promise(r => setTimeout(r, 20)); });
     return container;
   }
+  const findButton = (c: Element, re: RegExp) =>
+    [...c.querySelectorAll('button')].find(b => re.test(b.textContent || '')) ?? null;
+  const click = async (el: Element | null) => {
+    await (act as any)(async () => {
+      el?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 20));
+    });
+  };
 
-  // ── THE FIX: a finished scoped run opens straight at the coverage panel ──
+  // ── DOOR 1: STEP 1's SCOPED RUN ─────────────────────────────────────────
   {
-    const c = await render({ initialSummary: summary });
+    spy.calls = 0;
+    const c = await render({
+      scope: { label: 'Corporate' }, missingCount: SCOPED_TOTAL,
+      onConfirm: async (opts: any) => { spy.calls++; spy.lastOpts = opts; return summary; },
+    });
     const txt = c.textContent || '';
-    check('MOUNTS: the completion panel is on screen for a finished scoped run',
-      txt.includes(i18n.t('bulk_complete_with_gaps', { count: summary.failed })),
-      'the coverage statement did not render');
-    check('MOUNTS: it did NOT open at the confirm step',
-      !txt.includes(i18n.t('bulk_apply_to_all_remaining_combinations')),
-      'the user is asked to confirm work that is already done');
-    check('COUNTERS: the generated counter names its grain (chart series)',
-      txt.includes('forecast leaves generated'), 'a grainless count');
-    check('COUNTERS: the uncovered counter names its grain (forecast leaves)',
-      txt.includes('forecast leaves') || txt.includes('forecast leaf'),
-      'a grainless count');
-    check('NAMED: every skipped leaf is named, not just counted',
-      skipped.every(s => txt.includes(s.fKey.split('|').join(' · '))),
+
+    check('SCOPED: the modal opens at CONFIRM, not at results',
+      txt.includes(i18n.t('bulk_generate_scoped_subtitle')),
+      'a scoped run opened somewhere other than the settings step');
+    check('SCOPED: the header NAMES the scope and the count',
+      txt.includes('Corporate') && txt.includes(String(SCOPED_TOTAL)),
+      'the user is asked to confirm a run whose extent is not stated');
+    check('SCOPED: the coverage statement is NOT shown yet',
+      !txt.includes('forecast leaves generated'),
+      'results for a run that has not been authorised');
+
+    // THE LOAD-BEARING CHECK. Rendering a confirm step is not the same as
+    // waiting at one, and only one of those is the decision.
+    check('SCOPED: NOTHING HAS RUN — the modal is waiting, not reporting',
+      spy.calls === 0, `onConfirm was called ${spy.calls} time(s) before any click`);
+
+    // POSITIVE CONTROL: the button must actually work, or "never ran" above
+    // would pass for a modal whose confirm does nothing at all.
+    const btn = findButton(c, /Generate/i);
+    check('SCOPED CONTROL: a confirm button is present to wait on', !!btn,
+      'nothing to click — the wait check would be vacuous');
+    await click(btn);
+    check('SCOPED CONTROL: and clicking it DOES start the run',
+      spy.calls === 1, `onConfirm called ${spy.calls} times after one click`);
+    check('SCOPED: the run carries the settings the panel showed',
+      !!spy.lastOpts && spy.lastOpts.autoModel === true && spy.lastOpts.autoConfidence === true,
+      'the confirmed settings did not reach the run');
+
+    // ── and only NOW the coverage panel, through the normal phase flow ──
+    const done = c.textContent || '';
+    check('SCOPED: the coverage statement arrives after the run, via CONFIRM',
+      done.includes(i18n.t('bulk_complete_with_gaps', { count: summary.skipped.length })),
+      'the completion panel is unreachable through the confirm flow');
+    check('SCOPED: the generated counter names the LEAF grain',
+      done.includes('forecast leaves generated'), 'a grainless or wrong-grain count');
+    check('SCOPED: every skipped leaf is named, not just counted',
+      skipped.every(sk => done.includes(sk.fKey.split('|').join(' · '))),
       'the count is there and the names are not');
-    check('NAMED: each carries its reason', txt.includes(i18n.t('skip_reason_insufficient_history')),
+    check('SCOPED: each carries its reason',
+      done.includes(i18n.t('skip_reason_insufficient_history')),
       'a named leaf with no reason beside it');
+
+    // GRAIN ARITHMETIC, read off the rendered panel rather than re-derived.
+    // On the leaves grain `failed` and `skipped` are the SAME leaves, so the
+    // uncovered figure must be skipped.length and never the sum.
+    check('SCOPED GRAIN: uncovered counts each leaf ONCE',
+      !done.includes(i18n.t('bulk_complete_with_gaps', { count: summary.skipped.length + summary.failed })),
+      `double-counted: ${summary.skipped.length} skipped and ${summary.failed} failed are one population`);
+  }
+
+  // ── DOOR 2: THE WHOLE-BOOK RUN ──────────────────────────────────────────
+  // Same modal, same lifecycle, different grain. Driven through the real
+  // component so the two doors cannot drift into two behaviours.
+  {
+    spy.calls = 0;
+    const seriesSummary = { grain: 'series' as const, generated: 10, failed: 3, skipped };
+    const c = await render({
+      scope: null, missingCount: 13,
+      onConfirm: async (o: any) => { spy.calls++; spy.lastOpts = o; return seriesSummary; },
+    });
+    const txt = c.textContent || '';
+    check('WHOLE-BOOK: this door also opens at CONFIRM',
+      txt.includes(i18n.t('bulk_apply_to_all_remaining_combinations')),
+      'the two doors have different lifecycles again');
+    check('WHOLE-BOOK: and it too waits', spy.calls === 0,
+      `onConfirm was called ${spy.calls} time(s) before any click`);
+    await click(findButton(c, /Generate/i));
+    check('WHOLE-BOOK CONTROL: clicking runs it', spy.calls === 1, `${spy.calls}`);
+    const done = c.textContent || '';
+    check('WHOLE-BOOK GRAIN: uncovered ADDS failed to skipped here',
+      done.includes(i18n.t('bulk_complete_with_gaps', { count: skipped.length + 3 })),
+      'the series grain lost its two distinct populations');
+    check('WHOLE-BOOK GRAIN: and the counter does not claim leaves',
+      !done.includes('forecast leaves generated'),
+      'a whole-book run reported in the leaf grain');
+  }
+
+  // ── STATE-NOT-TRANSITION: run → Done → reopen ───────────────────────────
+  // A mount-at-CONFIRM check does not cover a RETURN to confirm. The defect
+  // this pivot was built over was exactly that: the modal stays mounted while
+  // closed, so a finished run's phase and numbers outlived the close and the
+  // NEXT open rendered stale results with no settings step.
+  {
+    spy.calls = 0;
+    const host = document.getElementById('root')!;
+    host.replaceChildren();
+    const container = document.createElement('div');
+    host.appendChild(container);
+    const root = createRoot(container);
+    const props = (isOpen: boolean) => ({
+      isOpen, onClose: noop, sourceCohort: null, missingCount: SCOPED_TOTAL,
+      scope: { label: 'Corporate' },
+      params: { preHorizonUncertainty: 2, postHorizonExpansionRate: 5,
+                confidenceHorizon: 3, forecastLength: 24 },
+      currentModel: 'Holt Linear',
+      onConfirm: async (o: any) => { spy.calls++; spy.lastOpts = o; return summary; },
+    });
+    const paint = async (isOpen: boolean) => {
+      await (act as any)(async () => { root.render(React.createElement(Modal as any, props(isOpen))); });
+      await (act as any)(async () => { await new Promise(r => setTimeout(r, 20)); });
+    };
+
+    await paint(true);
+    await click(findButton(container, /Generate/i));
+    check('TRANSITION PREMISE: the run completed and the panel is showing',
+      (container.textContent || '').includes('forecast leaves generated'),
+      'the transition test never reached a completed run');
+
+    await click(findButton(container, new RegExp(i18n.t('bulk_done'), 'i')));  // Done
+    await paint(false);                                                        // parent closes
+    await paint(true);                                                         // REOPEN
+
+    const re = container.textContent || '';
+    check('TRANSITION: reopening lands on CONFIRM, not on the last run',
+      re.includes(i18n.t('bulk_generate_scoped_subtitle')),
+      'the modal reopened at results — the residue defect is back');
+    check('TRANSITION: and carries NO residue of the previous run',
+      !re.includes('forecast leaves generated')
+        && !skipped.some(sk => re.includes(sk.fKey.split('|').join(' · '))),
+      "the previous run's numbers survived the close");
+    check('TRANSITION: reopening did not re-run anything', spy.calls === 1,
+      `onConfirm has been called ${spy.calls} times`);
   }
 
   // ── SESSION G's RETIREMENT NOTICE, on a store that has retired entries ──
   {
-    // Identify the population with the REAL predicate, not by assertion.
     const retiring = new Map(store);
     const aggKey = fc.makeForecastKey([...store.keys()][0].split('|')[0],
       'All', 'All', 'All', 'All', 'All', 'All');
@@ -170,46 +290,81 @@ async function main() {
     check('RETIRED PREMISE: the store contains a retired All-bearing fitted entry',
       retired.length === 1, `${retired.length}`);
 
-    const c = await render({ initialSummary: summary });
+    const c = await render({ scope: { label: 'Corporate' }, missingCount: SCOPED_TOTAL,
+                             onConfirm: async () => summary });
+    await click(findButton(c, /Generate/i));
     check('RETIRED: the retirement statement renders in the completion panel',
       (c.textContent || '').includes(i18n.t('bulk_complete_retired')),
-      'Session G\'s on-screen statement is unreachable again');
+      "Session G's on-screen statement is unreachable again");
   }
 
-  // ── POSITIVE CONTROL ────────────────────────────────────────────────────
-  // Without a summary the modal must open at CONFIRM. Otherwise "opened at
-  // complete" would pass for a modal that always does, proving nothing.
-  {
-    const c = await render({ initialSummary: null, missingCount: 5 });
-    const txt = c.textContent || '';
-    check('CONTROL: with no finished run the modal opens at CONFIRM',
-      txt.includes(i18n.t('bulk_apply_to_all_remaining_combinations')),
-      'the confirm step is unreachable — the check above is vacuous');
-    check('CONTROL: and the coverage statement is NOT shown',
-      !txt.includes('forecast leaves generated'),
-      'a completion statement on a run that has not happened');
-  }
-
-  // ── THE WIRING: the aggregate branch must actually raise it ─────────────
+  // ── THE WIRING: the entry decision, read at its source ──────────────────
   {
     const app = fs.readFileSync('src/App.tsx', 'utf8');
-    const i = app.indexOf('generateAllMissingForecasts({ restrictToLeafKeys');
-    const after = i === -1 ? '' : app.slice(i, i + 2600).replace(/\/\/[^\n]*/g, '');
-    check('WIRING: the scoped run raises the completion panel',
-      /setBulkCompletedRun\(\{/.test(after),
-      'the run finishes and reports nothing — the severance is back');
-    check('WIRING: the modal opens on it as well as on the standing prompt',
-      /isOpen=\{showBulkGeneratePrompt \|\| !!bulkCompletedRun\}/.test(app),
-      'the second door is not wired');
-    check('WIRING: G\'s early return is untouched — retirement semantics stay',
-      /if \(stdAggregatesMappedDim\) \{/.test(app),
-      'the decline was restructured; this fix was only meant to restore the prompt');
+    const stripped = app.replace(/\/\/[^\n]*/g, '');
+    const i = stripped.indexOf('if (stdAggregatesMappedDim) {');
+    const branch = i === -1 ? '' : stripped.slice(i, i + 3000);
+
+    check('WIRING: Step 1 OPENS THE CONFIRM rather than running',
+      /setPendingScopedRun\(\{/.test(branch) && /setShowBulkGeneratePrompt\(true\)/.test(branch),
+      'the scoped door no longer raises the confirm panel');
+    check('WIRING: and it starts NO run of its own on click',
+      !/generateAllMissingForecasts\(/.test(branch),
+      'the branch generates before the user has confirmed — the pivot is undone');
+    check('WIRING: the confirm runs the SCOPED call through the one generator',
+      /restrictToLeafKeys: new Set\(pendingScopedRun\.leafKeys\)/.test(stripped),
+      'the confirmed run is not the scoped run, or is a second fitting path');
+    check('WIRING: the modal has ONE open condition — always the confirm',
+      /isOpen=\{showBulkGeneratePrompt\}/.test(stripped) && !/initialSummary/.test(stripped),
+      'a second entry path can still bypass the confirm step');
+    check("WIRING: G's early return is untouched — retirement semantics stay",
+      /if \(stdAggregatesMappedDim\) \{/.test(stripped),
+      'the decline was restructured; only the door was meant to move');
+    check("WIRING: the panel is shown the settings the RUN uses, not the sidebar's",
+      /preHorizonUncertainty: genPreHorizonUncertainty/.test(stripped)
+        && /postHorizonExpansionRate: genPostHorizonExpansionRate/.test(stripped),
+      'the confirm panel displays numbers the run will not apply');
+  }
+
+  // ── THE SCOPE LABEL, DRIVEN ─────────────────────────────────────────────
+  // The header names the scope the user is confirming a 74-leaf run against,
+  // so the label is load-bearing text and not decoration. It was inline in App
+  // until a gate could only read it; it is exported and pure now, so these run
+  // the real function on the real encodings instead of arguing about them.
+  {
+    const vf: any = await import('../src/utils/viewFilter');
+    const ALL = 'all cohorts';
+    const mk = (o: any = {}) => ({ segment: 'All', product: { l1: null, l2: null },
+      channel: { l1: null, l2: null }, tariff: { l1: null, l2: null }, ...o });
+
+    check('LABEL: a narrowed segment names itself',
+      vf.describeScope(mk({ segment: 'Corporate' }), ALL) === 'Corporate',
+      vf.describeScope(mk({ segment: 'Corporate' }), ALL));
+    check('LABEL: several narrowed dimensions are all named',
+      vf.describeScope(mk({ segment: 'Corporate', product: { l1: 'Mobile Voice', l2: null } }), ALL)
+        === 'Corporate / Mobile Voice',
+      vf.describeScope(mk({ segment: 'Corporate', product: { l1: 'Mobile Voice', l2: null } }), ALL));
+    // BOTH aggregated encodings must be dropped, and they are different:
+    // segment carries the literal 'All', the L1/L2 pairs carry null. Dropping
+    // only one would name a scope the run does not have.
+    check("LABEL: the 'All' encoding is not read back as a value",
+      !vf.describeScope(mk({ segment: 'All', product: { l1: 'Mobile Voice', l2: null } }), ALL).includes('All'),
+      vf.describeScope(mk({ segment: 'All', product: { l1: 'Mobile Voice', l2: null } }), ALL));
+    check('LABEL: the null encoding is dropped too',
+      vf.describeScope(mk({ segment: 'Corporate' }), ALL) === 'Corporate',
+      'a null dimension leaked into the label');
+    check('LABEL: nothing narrowed says so rather than rendering empty',
+      vf.describeScope(mk(), ALL) === ALL, vf.describeScope(mk(), ALL));
+    check('LABEL: a missing tariff pair does not throw',
+      vf.describeScope({ segment: 'Corporate', product: { l1: null, l2: null },
+                         channel: { l1: null, l2: null } } as any, ALL) === 'Corporate',
+      'an older filter shape crashes the confirm header');
   }
 
   // THE INVARIANT THE LEAVES GRAIN RESTS ON, PINNED WHERE IT IS RELIED UPON.
   // `uncovered` may drop `failed` on the leaves path ONLY because every
   // `ibroFailed++` in the worker is paired with a `skipped.push` for the same
-  // leaf - which holds only because classifySkip NEVER returns null for a falsy
+  // leaf — which holds only because classifySkip NEVER returns null for a falsy
   // forecast. That reason lives in forecasting.ts, not in the modal. If it ever
   // stops holding, the count silently UNDER-reports and nothing here would see
   // it, so the invariant is exercised rather than trusted.

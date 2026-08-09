@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
-import { filterToKey, cohortToFilter, forecastForView } from './utils/viewFilter';
+import { filterToKey, cohortToFilter, forecastForView, describeScope } from './utils/viewFilter';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort, Provenance, SkipReason } from './types/forecast';
 import { provenanceModel, provenanceParams } from './types/forecast';
 import { ForecastProvider } from './context/ForecastContext';
@@ -2027,9 +2027,21 @@ export default function App() {
   /** The aggregate a just-finished scoped run should display, or null. */
   const [pendingAggregateKey, setPendingAggregateKey] = useState<string | null>(null);
 
-  /** A finished scoped run to report in the completion panel, or null. */
-  const [bulkCompletedRun, setBulkCompletedRun] = useState<
-    { grain: 'leaves'; generated: number; failed: number; skipped: SkippedCohort[] } | null>(null);
+  /**
+   * A scoped run WAITING FOR CONFIRMATION - not one that already happened.
+   *
+   * This replaced `bulkCompletedRun` on 2026-08-08. That state carried a
+   * FINISHED run into the modal so it could open straight at its completion
+   * panel; the pivot is that no multi-leaf run starts before the user has seen
+   * the settings it will use, so what travels now is the intent to run.
+   *
+   * `leafKeys` is resolved at click time, from the selection the user is
+   * looking at. Carrying the keys rather than re-deriving them at confirm
+   * means the run cannot silently widen if the selection changes underneath an
+   * open modal.
+   */
+  const [pendingScopedRun, setPendingScopedRun] = useState<
+    { aggKey: string; label: string; leafKeys: string[] } | null>(null);
 
   /** Step 1 coverage statements. Distinct from `error`: these report what was
    *  built, not that something failed. */
@@ -2142,54 +2154,26 @@ export default function App() {
           : t('standard_all_leaves_present', { count: leaves.length }));
         return;
       }
-      // Scoped run through the ONE generator. Not a second leaf-fitting path.
+      // NOTHING IS GENERATED HERE. This branch used to call
+      // generateAllMissingForecasts directly and report afterwards; it now
+      // opens the confirm panel scoped to `missing` and lets the modal's normal
+      // confirm -> generating -> complete flow do the work.
       //
-      // The result is USED, not discarded. Step 1 has no progress panel and the
-      // app has no toast, so a `void` call here would leave the user with no
-      // account of what happened - and the leaves that could not be fitted are
-      // exactly the ones worth saying out loud. A skipped cohort the user can
-      // see is a coverage statement; a silent one misrepresents what was built.
+      // The decision (2026-08-08, after Jon walked the shipped flow): no
+      // multi-leaf run starts before the user has seen and confirmed the
+      // settings it will use. A run of 35 leaves that begins on one click is
+      // not a faster version of the same thing - the user cannot decline it,
+      // and until it finishes they cannot tell what it decided on their behalf.
+      //
+      // The engine is untouched: the confirm still calls the ONE generator with
+      // restrictToLeafKeys, exactly as this line did. What moved is the door.
+      //
+      // The single-cohort manual generate below is deliberately NOT routed
+      // through here. Its settings are inline and adjacent - already visible,
+      // already adjustable - so a modal would add a step and no information.
       setStdGenerateResult(null);
-      generateAllMissingForecasts({ restrictToLeafKeys: new Set(missing) })
-        .then(res => {
-          const skippedKeys = res.skipped.map(sk => sk.fKey);
-          setStdGenerateResult({ generated: res.generated, skipped: skippedKeys });
-          // A leaf this run could not fit is now KNOWN unfittable. Recording it
-          // is what stops the button offering the same generate forever.
-          if (skippedKeys.length) {
-            setUnfittableLeaves(prev => new Set([...prev, ...skippedKeys]));
-          }
-          // THE USER STORY ENDS WITH THE FORECAST VISIBLE. Generating and then
-          // showing a placeholder leaves the user to guess whether it worked.
-          //
-          // Handed to an effect rather than resolved here, because the store
-          // this run just wrote has not committed yet. The first version read
-          // it by passing an identity updater to setForecastStore - a state
-          // setter used as a getter. It worked, and the mirror control counted
-          // it as a ninth store-writing site, which is the correct complaint:
-          // a reader that looks like a writer is one refactor from being one.
-          setPendingAggregateKey(aggKey);
-
-          // AND RAISE THE COMPLETION PANEL. Session G's early return sits
-          // above setTriggerBulkCheck, so an aggregate generate has raised no
-          // post-generation flow since 7578038 - the decline was deliberate
-          // and stated, this side effect was neither. The coverage statement,
-          // the grain-named counters and the named skipped leaves all live in
-          // that panel, so a user generating from Step 1 was told nothing
-          // about what their run had covered.
-          //
-          // It opens straight at 'complete': the work is already done, so a
-          // confirm step would be offering to do it again. G's retirement
-          // semantics are untouched - only the prompt is restored.
-          setBulkCompletedRun({ grain: 'leaves', generated: res.generated, failed: res.failed,
-                                skipped: res.skipped });
-        })
-        .catch(() => {
-          // Silence here would contradict this branch's own argument: an
-          // outcome the user cannot see misrepresents what was produced.
-          setStdGenerateResult(null);
-          setError(t('standard_generate_failed'));
-        });
+      setPendingScopedRun({ aggKey, label: describeScope(stdSelectionFilter, t('bulk_scope_all_cohorts')), leafKeys: missing });
+      setShowBulkGeneratePrompt(true);
       return;
     }
 
@@ -4635,19 +4619,38 @@ export default function App() {
       )}
       {/* Bulk Generate Modal — shown after a single-combo forecast is generated */}
       <BulkGenerateModal
-        // Two ways in: the standing prompt (confirm-first), and a finished
-        // scoped run reporting itself (complete-only). The second is what makes
-        // the coverage statement reachable from Step 1.
-        isOpen={showBulkGeneratePrompt || !!bulkCompletedRun}
-        onClose={() => { setShowBulkGeneratePrompt(false); setBulkCompletedRun(null); }}
-        initialSummary={bulkCompletedRun}
+        // ONE way in, and it is always the confirm. Both doors - Step 1's
+        // scoped "Generate N missing" and Overall Forecast's whole-book
+        // "Generate Missing" - now share a single lifecycle: confirm, then
+        // generating, then the coverage panel. The difference between them is
+        // what `scope` says and what the confirm runs, never whether the user
+        // is shown the settings first.
+        isOpen={showBulkGeneratePrompt}
+        onClose={() => { setShowBulkGeneratePrompt(false); setPendingScopedRun(null); }}
+        scope={pendingScopedRun ? { label: pendingScopedRun.label } : null}
         sourceCohort={bulkSourceCohort}
-        missingCount={missingStandardCohorts.length}
+        // The count the header promises must be the count the run will attempt.
+        // A scoped run says how many leaves ITS selection is missing; reading
+        // the whole book's figure here would name a number this run will not
+        // touch.
+        missingCount={pendingScopedRun ? pendingScopedRun.leafKeys.length : missingStandardCohorts.length}
+        // SETTINGS TRUTH. These are the `gen*` values the bulk generator
+        // actually falls back to, not the Step 1 sidebar values this once
+        // passed. Before 2026-08-08 the panel displayed preHorizonUncertainty
+        // (1.0) and postHorizonExpansionRate (1.0) while every bulk run applied
+        // genPreHorizonUncertainty (2.0) and genPostHorizonExpansionRate (5.0),
+        // because onConfirm sends no numbers and the generator defaults to its
+        // own. The auto-per-cohort options are on by default and hide both
+        // numbers, which is why a panel that misreported them went unnoticed.
+        //
+        // The display was corrected to the applied values, NOT the applied
+        // values to the display: making the run honour 1.0/1.0 would change
+        // every forecast it produces, and this session moves no figure.
         params={{
-          preHorizonUncertainty,
-          postHorizonExpansionRate,
+          preHorizonUncertainty: genPreHorizonUncertainty,
+          postHorizonExpansionRate: genPostHorizonExpansionRate,
           confidenceHorizon,
-          forecastLength: stdForecastLength,
+          forecastLength: genLength,
         }}
         currentModel={selectedForecastModel}
         generationProgress={generationProgress}
@@ -4663,7 +4666,36 @@ export default function App() {
           // did not go through here, and Generate Missing was disabled for the
           // rest of Jon's walk.
           try {
-            return await generateAllMissingForecasts(opts);
+            // THE SCOPED ARM. Step 1's door confirms here, and the run it
+            // starts is the same scoped call the button used to make on click:
+            // the ONE generator, restricted to the leaves resolved when the
+            // user clicked. No second fitting path, then or now.
+            if (pendingScopedRun) {
+              const res = await generateAllMissingForecasts({
+                ...opts, restrictToLeafKeys: new Set(pendingScopedRun.leafKeys),
+              });
+              const skippedKeys = res.skipped.map(sk => sk.fKey);
+              setStdGenerateResult({ generated: res.generated, skipped: skippedKeys });
+              // A leaf this run could not fit is now KNOWN unfittable.
+              // Recording it is what stops the button offering the same
+              // generate forever.
+              if (skippedKeys.length) {
+                setUnfittableLeaves(prev => new Set([...prev, ...skippedKeys]));
+              }
+              // THE USER STORY ENDS WITH THE FORECAST VISIBLE. Handed to an
+              // effect rather than resolved here, because the store this run
+              // just wrote has not committed yet. Reading it back through an
+              // identity updater to setForecastStore would be a state setter
+              // used as a getter - a reader that looks like a writer is one
+              // refactor from being one, and the mirror control counts it.
+              setPendingAggregateKey(pendingScopedRun.aggKey);
+              // GRAIN. A scoped run counts forecast LEAVES, and its `failed`
+              // names the same leaves `skipped` does - so the completion panel
+              // must not add them. Carried on the result rather than inferred
+              // by the panel, because only the caller knows which run it made.
+              return { ...res, grain: 'leaves' as const };
+            }
+            return { ...await generateAllMissingForecasts(opts), grain: 'series' as const };
           } finally {
             setIsGeneratingMissing(false);
           }

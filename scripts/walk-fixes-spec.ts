@@ -246,14 +246,27 @@ function stateOf(store: Map<string, BaseForecast>, unfittable: ReadonlySet<strin
 
   // Wiring: the App must actually do this, not merely be able to.
   const app = fs.readFileSync('src/App.tsx', 'utf8');
-  const start = app.indexOf('generateAllMissingForecasts({ restrictToLeafKeys');
+  // ANCHORED TO THE CONFIRMED RUN, not to the button. The scoped run moved out
+  // of the Step 1 branch and into the modal's onConfirm on 2026-08-08: the
+  // button now opens a confirm panel, and the run starts when the user accepts.
+  // Everything below is unchanged in substance — the same call, the same
+  // hand-off, the same unfittable bookkeeping — so these were re-anchored
+  // rather than relaxed. They went RED at the move, which is the point of
+  // pinning a site: a check that searched the whole file instead would have
+  // stayed green and told nobody the run had changed hands.
+  const start = app.indexOf('restrictToLeafKeys: new Set(pendingScopedRun.leafKeys)');
   const after = app.slice(start, start + 2200).replace(/\/\/[^\n]*/g, '');
+  check('VISIBLE WIRING: the confirmed scoped run is reachable at its new site',
+    start !== -1, 'the scoped run is gone — every check below it is blind');
   // The run HANDS OFF rather than resolving inline, because the store it just
   // wrote has not committed when the .then fires. The first version read it by
   // passing an identity updater to setForecastStore — a state setter used as a
   // getter, which the mirror control correctly counted as a store write.
   check('VISIBLE WIRING: the scoped run hands the aggregate to the render effect',
-    /setPendingAggregateKey\(aggKey\)/.test(after),
+    // The key is carried on the pending run now rather than closed over by the
+    // branch, because the confirm happens after the click and the selection
+    // could have moved. Same hand-off, sourced from the run being confirmed.
+    /setPendingAggregateKey\(pendingScopedRun\.aggKey\)/.test(after),
     'the run finishes without asking for anything to be shown');
   check('VISIBLE WIRING: and does NOT abuse the store setter to read state',
     !/setForecastStore\(/.test(after),

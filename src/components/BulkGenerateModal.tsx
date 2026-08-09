@@ -42,23 +42,23 @@ export interface BulkGenerateModalProps {
    *   generated — forecasts successfully written
    *   failed    — combos skipped due to insufficient data
    */
-  onConfirm: (opts: { name: string; comment: string; autoModel: boolean; autoConfidence: boolean }) => Promise<{ generated: number; failed: number; skipped: SkippedCohort[] }>;
+  onConfirm: (opts: { name: string; comment: string; autoModel: boolean; autoConfidence: boolean }) => Promise<{
+    generated: number; failed: number; skipped: SkippedCohort[];
+    /** 'leaves' when a SCOPED run reports itself: `generated` counts forecast
+     *  LEAVES, and `failed` names the same leaves `skipped` does - so the
+     *  completion panel must not add them. 'series' (the default) is the
+     *  whole-book run, where they are different populations. */
+    grain?: 'series' | 'leaves';
+  }>;
   /**
-   * A run that ALREADY happened, to be shown straight in the completion panel.
+   * A pre-scoped run: Step 1's "Generate N missing" names a selection, and the
+   * confirm panel must say which one. Null for the whole-book door.
    *
-   * Step 1's aggregate generate-missing does its own scoped run and then has
-   * something to report - counts, skipped leaves, and the retirement statement.
-   * Before this it had nowhere to report it: the completion panel is reachable
-   * only by confirming a run from inside this modal, so a user who generated
-   * from Step 1 never saw a coverage statement about what they had just done.
-   *
-   * When present the modal opens at 'complete' with this summary and never
-   * shows the confirm step - there is nothing to confirm, the work is done.
+   * The modal does NOT run anything itself either way - it confirms, then calls
+   * onConfirm. Scoping changes what the run covers and what the header claims,
+   * never whether the user gets to see settings first.
    */
-  initialSummary?: { generated: number; failed: number; skipped: SkippedCohort[];
-    /** 'leaves' when a scoped Step 1 run reports itself: generated counts
-     *  forecast LEAVES, and `failed` names the same leaves `skipped` does. */
-    grain?: 'series' | 'leaves' } | null;
+  scope?: { label: string } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -84,39 +84,62 @@ export function BulkGenerateModal({
   currentModel,
   generationProgress,
   onConfirm,
-  initialSummary = null,
+  scope = null,
 }: BulkGenerateModalProps) {
   const { t } = useTranslation();
-  const [phase, setPhase] = useState<Phase>(initialSummary ? 'complete' : 'confirm');
-  const [summary, setSummary] = useState<{ generated: number; failed: number; skipped: SkippedCohort[]; grain?: 'series' | 'leaves' } | null>(initialSummary);
+  const [phase, setPhase] = useState<Phase>('confirm');
+  const [summary, setSummary] = useState<{ generated: number; failed: number; skipped: SkippedCohort[]; grain?: 'series' | 'leaves' } | null>(null);
   const [runName, setRunName] = useState('');
   const [runComment, setRunComment] = useState('');
   const [autoModel, setAutoModel] = useState(true);
   const [autoConfidence, setAutoConfidence] = useState(true);
 
-  // ABOVE the early return, deliberately. `if (!isOpen) return null` is a
-  // conditional return, so a hook below it renders a different number of hooks
-  // on the closed and open passes - the shape guard-trap 7 exists for.
+  // RESET ON OPEN, not merely on close. ABOVE the early return, deliberately:
+  // `if (!isOpen) return null` is a conditional return, so a hook below it
+  // renders a different number of hooks on the closed and open passes - the
+  // shape guard-trap 7 exists for.
   //
-  // Why it is needed at all: this component stays mounted while closed, so
-  // useState's initialiser runs once and a SECOND finished run would arrive
-  // with the first run's summary still in state. Sync on the prop instead.
-  React.useEffect(() => {
-    if (initialSummary) { setSummary(initialSummary); setPhase('complete'); }
-  }, [initialSummary]);
-
-  if (!isOpen) return null;
-
-  // Reset when re-opened
-  const handleClose = () => {
-    // Back to whichever phase this instance opens at, not blindly 'confirm':
-    // a report-only open has nothing to confirm.
-    setPhase(initialSummary ? 'complete' : 'confirm');
-    setSummary(initialSummary);
+  // This component STAYS MOUNTED while closed, so every piece of state here
+  // outlives a close. Resetting only in handleClose makes freshness depend on
+  // the user having left through that particular door; resetting on open makes
+  // it depend on nothing at all.
+  //
+  // It is not hypothetical. The previous version restored phase from the prop
+  // it was CLOSING with (`initialSummary ? 'complete' : 'confirm'`), so after a
+  // run the modal sat at 'complete' holding the finished summary and the next
+  // open - from either door - rendered results with stale numbers and no
+  // settings step. That is the defect this pivot is built on top of, and this
+  // reset is what structurally removes it rather than re-routing it.
+  // useLayoutEffect, not useEffect, and that is not a micro-optimisation: a
+  // reset that runs AFTER paint renders one frame of the previous run's results
+  // before correcting itself. "The modal flashed and landed on results" is the
+  // exact report this pivot came from, and a post-paint reset would have
+  // reproduced a milder version of it.
+  //
+  // THE ONLY RESET. handleClose deliberately does not duplicate it. Two resets
+  // read as belt-and-braces and are worse than one: neither is load-bearing on
+  // its own, so removing either leaves every test green and the guarantee
+  // resting on the other — which is how a thing comes to be safe for a reason
+  // that lives outside it. Guard-trap 42 disables this one and the transition
+  // spec goes red, which is only true because there is nothing else to fall
+  // back on.
+  React.useLayoutEffect(() => {
+    if (!isOpen) return;
+    setPhase('confirm');
+    setSummary(null);
     setRunName('');
     setRunComment('');
     setAutoModel(true);
     setAutoConfidence(true);
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  // Closes, and resets NOTHING. The reset lives on open, once, above — see the
+  // note there for why duplicating it here would weaken rather than strengthen
+  // the guarantee. This also means freshness no longer depends on the user
+  // having left through this particular door.
+  const handleClose = () => {
     onClose();
   };
 
@@ -156,11 +179,29 @@ export function BulkGenerateModal({
                 <div className="w-10 h-10 rounded-xl bg-[#e60000]/10 flex items-center justify-center shrink-0">
                   <Zap size={20} className="text-[#e60000]" />
                 </div>
+                {/* The header NAMES THE SCOPE when there is one. A scoped run
+                    and a whole-book run offer the same button and the same
+                    settings, and differ entirely in what they will touch - so
+                    the one place that can distinguish them for the user is the
+                    sentence directly above the confirm. "Apply to all remaining
+                    combinations?" over a 35-leaf Corporate run is not a
+                    softer version of the truth, it is a different claim. */}
                 <div>
-                  <h2 className="text-base font-bold text-slate-900">{t('bulk_apply_to_all_remaining_combinations')}</h2>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {missingCount} combination{missingCount !== 1 ? 's' : ''} {missingCount !== 1 ? t('bulk_don_t') : t('bulk_doesn_t')} {t('bulk_have_a_forecast_yet')}
-                  </p>
+                  {scope ? (
+                    <>
+                      <h2 className="text-base font-bold text-slate-900">
+                        {t('bulk_generate_scoped_title', { p0: missingCount, p1: scope.label })}
+                      </h2>
+                      <p className="text-xs text-slate-500 mt-0.5">{t('bulk_generate_scoped_subtitle')}</p>
+                    </>
+                  ) : (
+                    <>
+                      <h2 className="text-base font-bold text-slate-900">{t('bulk_apply_to_all_remaining_combinations')}</h2>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {missingCount} combination{missingCount !== 1 ? 's' : ''} {missingCount !== 1 ? t('bulk_don_t') : t('bulk_doesn_t')} {t('bulk_have_a_forecast_yet')}
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
               <button onClick={handleClose} className="text-slate-400 hover:text-slate-600 transition-colors p-1">
@@ -334,7 +375,15 @@ export function BulkGenerateModal({
                 className="px-5 py-2 bg-[#e60000] hover:bg-[#cc0000] text-white rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
               >
                 <Zap size={14} />
-                Generate {missingCount} Forecast{missingCount !== 1 ? 's' : ''}
+                {/* Names the grain it will produce, and goes through t() like
+                    everything else in this panel. It was hardcoded English
+                    reading "Generate N Forecasts" - wrong on both counts once
+                    Step 1's door arrives here, because a scoped run produces
+                    forecast LEAVES and "forecasts" invites the reader to count
+                    them as the chart series they are not. */}
+                {scope
+                  ? t('bulk_confirm_generate_leaves', { count: missingCount })
+                  : t('bulk_confirm_generate_forecasts', { count: missingCount })}
               </button>
             </div>
           </>

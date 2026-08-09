@@ -5690,6 +5690,63 @@ locales; landing it inside a two-mechanism fix session would put an unreviewed
 wording in front of a user mid-walk. Session I's batch is the precedent — copy
 goes through as a batch with the wording agreed first.
 
+### SETTLED — no multi-leaf run starts without a confirmed settings step
+
+**Decided 2026-08-08 by Jon, after experiencing the shipped flow. This
+supersedes the open-at-COMPLETE entry built the same day.** Recorded here
+because the superseded design was itself deliberate and documented: without the
+supersession stated, the next reader finds two arguments in the repo and no way
+to tell which one is current.
+
+**The rule.** Any run that fits more than one leaf opens `BulkGenerateModal` at
+its **CONFIRM** phase — settings visible and adjustable — and begins only when
+the user confirms. Both doors do this: Step 1's scoped "Generate N missing" and
+Overall Forecast's whole-book "Generate Missing". They share one lifecycle,
+confirm → generating → complete, and differ only in what the run covers and what
+the header claims.
+
+**Explicitly EXCLUDED: the single-cohort manual generate.** Its settings are
+inline and adjacent — already visible, already adjustable — so routing it
+through a modal would add a step and no information. It is unchanged.
+
+**What was superseded, and why it was not simply wrong.** The earlier entry let
+a Step 1 aggregate generate run on click and then open the modal directly at its
+completion panel, on the argument that the work was already done so a confirm
+step would be offering to do it again. That argument is sound about the
+*completion panel* and silent about the *decision*: it treats the run as settled
+before the user has seen what settings it will use. Walking it is what showed
+the difference — the modal appeared to flash past and land on results.
+
+**The engine-level decision is untouched.** Generate-missing still scopes the
+existing generator through `restrictToLeafKeys`. There is no second fitting path,
+and nothing is ever written under an All-bearing key. Only the entry moved.
+
+**Two defects were found underneath the pivot, both fixed with it:**
+
+1. **Residue across opens.** `BulkGenerateModal` stays mounted while closed, and
+   `handleClose` restored `phase` from the `initialSummary` it was *closing*
+   with. After a Step 1 run the modal sat at `'complete'` holding that run's
+   summary, so the next open — from **either** door — rendered stale results
+   with no settings step. The reset now happens **on open**, in a
+   `useLayoutEffect` (a post-paint reset would render one frame of the previous
+   run's results, which is a milder version of the reported symptom), and
+   `handleClose` deliberately does **not** duplicate it: two resets would leave
+   neither load-bearing. Guard-trap 42.
+
+2. **The confirm panel displayed settings the run would not apply.** The modal
+   was passed `preHorizonUncertainty` / `postHorizonExpansionRate` — the Step 1
+   *single-cohort sidebar* values (1.0 / 1.0) — while every bulk run fell back to
+   `genPreHorizonUncertainty` / `genPostHorizonExpansionRate` (2.0 / 5.0),
+   because `onConfirm` sends no numbers. It was invisible because the
+   auto-per-cohort options default on and replace both figures with
+   "Auto-configured per cohort". **The display was corrected to the applied
+   values, not the applied values to the display**: making runs honour 1.0/1.0
+   would change every forecast they produce. Guard-trap 43.
+
+**The auto-per-cohort options are real** and are honoured by the generator per
+cohort. A confirm panel that named a single model or z-score for a run that
+picks per cohort would be a second version of the same lie.
+
 ### The edge fixture needs a companion actuals file
 
 **Recorded 2026-08-05, not built.**
