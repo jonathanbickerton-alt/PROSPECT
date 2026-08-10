@@ -11,27 +11,22 @@ OVER-DECLINE CONFIRMED, and it is the ORIGINAL ARTEFACT'S CAUSE. All three
   column. deriveAggregate takes asOf from the union of its leaves' months, so
   empty arrays make asOf NULL and NO leaf passes the as-of gate — suspect (b),
   sharper than expected: at runtime there is no as-of month at all.
-BEFORE seed-or-decline that summed the seed to 0 while flows accumulated — the
-  seedless 40K climb, on a save whose leaves all carry real seeds. AFTER it the
-  same condition surfaced as an honest decline. Right behaviour, wrong input.
+BEFORE seed-or-decline that summed the seed to 0 while flows accumulated (the
+  40K climb); AFTER it, the same condition became an honest decline. Wrong input.
 WHY THREE SESSIONS MISSED IT: every probe built its store by FITTING, which
   populates historicalMonths as a side effect. Restore reads a file instead.
 FIXED: parseStoredMonths(), one shared reader, all three sites. On the REAL save
-  Corporate|Fixed Connectivity resolves seedBaseKnown=true with a 123,699-scale
-  opening stock — continuous, not origin-start.
+  Corporate|Fixed Connectivity resolves known, 123,699-scale, continuous.
 FIRST BEHAVIOURAL COVER HERE: spec:restore-base drives Jon's actual file and
-  REPRODUCES the artefact — same store, months discarded, seed collapses to 0,
-  with a contrast check proving months alone are the difference. Trap 51 replants
-  the discard; the spec SKIPS loudly if the save is absent.
-UNIT B CLOSED: Step 1's notice reads canShowBaseForecast. Can-show says the PANEL
-  has no band (true, about the panel); declined gives the opening-stock reason.
-  Both directions asserted. K SUPERSEDED. Two specs pinned the old flat notice,
-  went red at the change, and were re-pinned — the pins working.
+  REPRODUCES the artefact — months discarded, seed collapses to 0, with a contrast
+  proving months alone differ. Trap 51 replants it; the spec SKIPS if no save.
+UNIT B CLOSED: Step 1's notice reads canShowBaseForecast — can-show says the
+  PANEL has no band, declined gives the opening-stock reason, both asserted.
+  K SUPERSEDED. Two specs pinned the old notice, went red, were re-pinned.
 RE-MEASURED: 74/72/2; MAPEs 13.8845/13.4315/14.3888/13.0192. Unmoved. GATE: 30
   specs, guard-traps 49/49, traps 3/3, lint and build clean, parity 0.
-QUEUED FOR JON, not pre-empted: if genuine unknown-seed cases appear in real data,
-  the choice between honest absence, a labelled "cumulative net adds" series, and
-  alternative seeding is yours.
+QUEUED FOR JON, not pre-empted: if genuine unknown-seed cases appear in real
+  data, absence vs a labelled "cumulative net adds" series vs reseeding is yours.
 State: both parts complete, pushed. Verification recipe below.
 ```
 
