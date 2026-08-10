@@ -901,6 +901,37 @@ export function canShowBaseForecast(bf: { seedBaseKnown?: boolean } | null | und
  * two-store problem.
  */
 /**
+ * Restore a fit's historical months from a save row.
+ *
+ * The three import sites used to set `historicalMonths: []` and drop the saved
+ * `Historical_Months` column entirely. That is not cosmetic: `deriveAggregate`
+ * computes its as-of month as the last month in the union of its leaves'
+ * historical months, so an empty array on every leaf makes `asOf` NULL, and then
+ * **no leaf passes the as-of gate**.
+ *
+ * Before seed-or-decline that meant the aggregate's seed summed to 0 while its
+ * flows accumulated normally — the seedless integral, on a restored session
+ * whose leaves all carried real seeds. It is the artefact Jon reported, and
+ * three sessions failed to reproduce it because every probe built its store by
+ * FITTING (which populates historicalMonths) rather than by RESTORING.
+ *
+ * After seed-or-decline the same condition surfaced honestly as a decline, which
+ * is the fix working — but it is still an over-decline, because the data was
+ * never missing. It was being thrown away one layer earlier.
+ *
+ * Exported so all three sites share one reader: the format is the export's own
+ * `join(', ')`, and three hand-rolled splits is how this codebase got its
+ * two-store problem.
+ */
+export function parseStoredMonths(cell: unknown): string[] {
+  if (cell === null || cell === undefined || cell === '') return [];
+  return String(cell)
+    .split(',')
+    .map(m => m.trim())
+    .filter(m => /^\d{4}-\d{2}$/.test(m));
+}
+
+/**
  * Restore the seed's known-ness from a save row.
  *
  * PREFERS the explicit `Seed_Base_Known` column; falls back to inspecting the

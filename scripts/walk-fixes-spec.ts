@@ -394,10 +394,20 @@ function stateOf(store: Map<string, BaseForecast>, unfittable: ReadonlySet<strin
   check('PANEL: and it asks the SEAM what exists for the selection',
     /resolveForecast/.test(memoBody),
     'the panel reads something other than the store - a restored session goes blank again');
-  // A derived aggregate has no Base VOLUME band, so the Base scenario cannot be
-  // plotted from one. Saying so beats plotting a different band under its name.
+  // A stored forecast carries no Base VOLUME band, so the Base scenario cannot
+  // be plotted from the panel. Saying so beats plotting a different band under
+  // its name — the substance this has always checked.
+  //
+  // RE-PINNED 2026-08-10 (Unit B). The notice used to be one flat claim that a
+  // summed aggregate HAS no Base series. That stopped being true when the seed
+  // became explicit: Base is reconstructed from an opening stock plus flows, so
+  // an all-seeded aggregate can produce one and Step 3 draws it. The notice is
+  // now two branches off the shared predicate, so this pins BOTH — the check
+  // went red at the change rather than passing over it, which is the point of
+  // pinning a string.
   check('PANEL: the Base scenario is declined rather than substituted',
-    /standard_base_series_not_derivable/.test(body),
+    /standard_base_panel_has_no_band/.test(body)
+      && /standard_base_no_opening_stock/.test(body),
     'a Base selection would plot inflow, outflow or retention under a Base label');
 
   const tab = fs.readFileSync('src/components/StandardForecastTab.tsx', 'utf8');

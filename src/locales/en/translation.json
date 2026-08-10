@@ -733,5 +733,7 @@
   "overall_all_leaves_covered": "All leaves covered",
   "overall_nothing_to_forecast": "Nothing to forecast",
   "overall_aggregates_derive": "{{count}} aggregate views derive from their leaves — they are never fitted, and are not missing.",
-  "baseline_forecast_appears_once_generated": "The forecast will appear here once generated. Generating one unlocks Step 2."
+  "baseline_forecast_appears_once_generated": "The forecast will appear here once generated. Generating one unlocks Step 2.",
+  "standard_base_panel_has_no_band": "Base volume is reconstructed from the opening stock and the forecast flows, so this panel has no band to show. The Base line is on the Actuals Review chart.",
+  "standard_base_no_opening_stock": "This selection has no known opening base stock, so a Base series cannot be reconstructed for it. Inflow, Outflow and Retention are unaffected."
 }

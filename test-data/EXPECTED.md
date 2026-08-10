@@ -5794,6 +5794,48 @@ Guard-trap 44 reinstates the cross-product enumeration. `spec:step1-panel` mount
 the Overall door in all four states; `spec:generate-missing` pins the definition
 with an anti-vacuity control proving the old and new populations differ.
 
+### SETTLED — the restore keeps its historical months; Unit B closed, 2026-08-10
+
+**The over-decline, and the original artefact's actual cause.** All three import
+sites set `historicalMonths: []`, discarding the save's own `Historical_Months`
+column. `deriveAggregate` takes its as-of month from the union of its leaves'
+historical months, so empty arrays make `asOf` **null** and then **no leaf passes
+the as-of gate**.
+
+- **Before seed-or-decline** that summed the aggregate seed to **0** while the
+  flows accumulated — the seedless integral Jon reported, on a save whose leaves
+  all carry real seeds.
+- **After seed-or-decline** the same condition surfaced as an honest decline.
+  Correct behaviour, wrong input: an **OVER-DECLINE**.
+
+**Why three sessions could not reproduce it.** Every probe built its store by
+FITTING, which populates `historicalMonths` as a side effect. The restore path
+does not fit — it reads a file — and that difference was invisible to a probe
+that modelled restore instead of driving it. The lesson is the recorded one:
+a spec that models the path it checks agrees with itself.
+
+**Fixed** by `parseStoredMonths()`, one shared reader for all three sites,
+parsing the export's own `join(', ')` format. Measured on Jon's 07 Aug save:
+`Corporate|Fixed Connectivity` now resolves with `seedBaseKnown: true` and an
+opening stock of **123,699-scale**, continuous rather than origin-start.
+
+**`spec:restore-base` is the first BEHAVIOURAL cover in this family** — it drives
+the real save through the real readers, and reproduces the artefact causally by
+rebuilding the same store with months discarded, showing the seed collapse to 0.
+Guard-trap 51 replants the discard. The spec SKIPS loudly if the save is absent
+from the machine, because a spec that silently passes without its subject is
+worse than no spec.
+
+**UNIT B CLOSED.** Step 1's Base notice reads `canShowBaseForecast`, the same
+predicate Step 3 uses. Where Base can be reconstructed it says the panel has no
+band to render (true, and about the panel) instead of asserting the series cannot
+exist; where the predicate declines, both surfaces give the opening-stock reason.
+**K's Base-on-aggregate limitation is superseded**: a summed aggregate with
+all-present-seeded leaves *does* have a Base series, reconstructed at read time.
+
+The old flat claim (`standard_base_series_not_derivable`) is no longer rendered;
+the key stays in the locale files, unreferenced, per the additive convention.
+
 ### SETTLED — the base seed expresses absence; zero never impersonates it, 2026-08-10
 
 **(b-corrected) seed-or-decline, decided by Jon 2026-08-09, implemented 2026-08-10.**

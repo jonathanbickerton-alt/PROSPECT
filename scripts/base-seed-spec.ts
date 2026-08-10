@@ -256,6 +256,38 @@ function roll(bfs: BaseForecast[]): Map<string, number> {
     'a leaf selection draws Base from an unknown stock');
 }
 
+// ── UNIT B: BOTH SURFACES ANSWER FROM ONE PREDICATE, BOTH DIRECTIONS ─────
+// Step 1's notice used to assert flatly that a summed aggregate HAS no Base
+// volume series. That stopped being true when the seed became explicit: Base is
+// reconstructed from an opening stock plus flows, so an all-seeded aggregate can
+// produce one — and Step 3 draws it. Two surfaces disagreeing about one fact is
+// what this closes.
+{
+  const app2 = fs.readFileSync('src/App.tsx', 'utf8').replace(/\/\/[^\n]*/g, '');
+  const en = JSON.parse(fs.readFileSync('src/locales/en/translation.json', 'utf8'));
+
+  check('UNIT B: Step 1 reads the SHARED predicate, not its own rule',
+    /canShowBaseForecast\(forecast\)/.test(app2),
+    'Step 1 decides for itself again — the surfaces can drift');
+  // BOTH DIRECTIONS. A predicate read in one direction only would let Step 1
+  // keep claiming impossibility whenever it declined.
+  check('UNIT B (can-show): Step 1 stops claiming the series cannot exist',
+    /standard_base_panel_has_no_band/.test(app2)
+      && !/no Base volume series/i.test(String(en['standard_base_panel_has_no_band'] ?? '')),
+    'the impossibility claim survived where Step 3 can reconstruct');
+  check('UNIT B (declined): and states the OPENING STOCK reason when it cannot',
+    /standard_base_no_opening_stock/.test(app2)
+      && /opening base stock/i.test(String(en['standard_base_no_opening_stock'] ?? '')),
+    'the decline is unexplained, or explained differently from Step 3');
+  check('UNIT B: the two notices are genuinely different messages',
+    String(en['standard_base_panel_has_no_band']) !== String(en['standard_base_no_opening_stock']),
+    'both branches say the same thing — the predicate changes nothing on screen');
+  // The old flat claim must no longer be reachable from the Base branch.
+  check('UNIT B: the old impossibility notice is no longer rendered',
+    !/standard_base_series_not_derivable/.test(app2),
+    'Step 1 still asserts a summed aggregate has no Base series');
+}
+
 console.log(`base-seed spec: ${pass} passed, ${fails.length} failed`);
 fails.forEach(f => console.log('  FAIL ' + f));
 process.exit(fails.length ? 1 : 0);

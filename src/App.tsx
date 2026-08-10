@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
 import { filterToKey, cohortToFilter, forecastForView, forecastForStep1Selection, step1ResolveDecision, describeScope } from './utils/viewFilter';
@@ -812,7 +812,7 @@ export default function App() {
                 },
                 seedBaseVolume:        Number(first.Seed_Base_Volume       ?? 0),
                 seedBaseKnown:         restoreSeedKnown(first),
-                historicalMonths:      [],
+                historicalMonths:      parseStoredMonths(first.Historical_Months),
                 lastHistoricalInflow:  Number(first.Last_Historical_Inflow  ?? 0),
                 lastHistoricalOutflow: Number(first.Last_Historical_Outflow ?? 0),
                 // Provenance discriminant. A file with no Provenance column
@@ -917,7 +917,7 @@ export default function App() {
                 },
                 seedBaseVolume:        Number(first.Seed_Base_Volume       ?? 0),
                 seedBaseKnown:         restoreSeedKnown(first),
-                historicalMonths:      [],
+                historicalMonths:      parseStoredMonths(first.Historical_Months),
                 lastHistoricalInflow:  Number(first.Last_Historical_Inflow ?? 0),
                 lastHistoricalOutflow: Number(first.Last_Historical_Outflow ?? 0),
                 // Provenance discriminant. A file with no Provenance column
@@ -1120,7 +1120,7 @@ export default function App() {
               },
               seedBaseVolume:        Number(first.Seed_Base_Volume       ?? 0),
                 seedBaseKnown:         restoreSeedKnown(first),
-              historicalMonths:      [],
+              historicalMonths:      parseStoredMonths(first.Historical_Months),
               lastHistoricalInflow:  Number(first.Last_Historical_Inflow ?? 0),
               lastHistoricalOutflow: Number(first.Last_Historical_Outflow ?? 0),
               // Provenance discriminant. A file with no Provenance column
@@ -2151,9 +2151,21 @@ export default function App() {
     // and the every-writer-must-also-populate-the-panel requirement that this
     // function was created to satisfy no longer exists for anyone.
     if (stdScenario === 'Base') {
-      // Still worth saying: a stored forecast carries no Base VOLUME band, so
-      // the panel will be empty and the reason is not obvious from an absence.
-      setNotice(t('standard_base_series_not_derivable'));
+      // UNIT B: Step 1 reads the SAME predicate Step 3 does.
+      //
+      // It used to assert flatly that "a summed aggregate has no Base volume
+      // series" — an impossibility claim that stopped being true when the seed
+      // became explicit. Base is reconstructed from an opening stock plus the
+      // forecast flows, so an aggregate whose leaves are all present-and-seeded
+      // CAN produce one, and Step 3 now draws it. Step 1 saying otherwise for
+      // the same selection is two surfaces disagreeing about one fact.
+      //
+      // So: where the predicate can show Base, say the panel has no band to
+      // render (true, and about the panel) rather than that the series cannot
+      // exist. Where it declines, say so — the same reason, on both surfaces.
+      setNotice(canShowBaseForecast(forecast)
+        ? t('standard_base_panel_has_no_band')
+        : t('standard_base_no_opening_stock'));
     }
   }, [resolveForecast, stdScenario, t]);
 

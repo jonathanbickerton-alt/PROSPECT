@@ -52,6 +52,7 @@ const NAVSPEC = 'scripts/nav-target-spec.ts';
 const SFT = 'src/components/StandardForecastTab.tsx';
 const STEP1SEL = 'scripts/step1-selection-spec.tsx';
 const BASESEED = 'scripts/base-seed-spec.ts';
+const RESTOREBASE = 'scripts/restore-base-spec.ts';
 const STEP2UNLOCK = 'scripts/step2-unlock-spec.tsx';
 const MODAL = 'src/components/BulkGenerateModal.tsx';
 const APP = 'src/App.tsx';
@@ -519,6 +520,19 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '      if (!canShowBaseForecast(derivedForRow)) return null;',
       '      if (false) return null;') },
+  // Trap 51: the restore drops the saved Historical_Months again. THE ONLY
+  // BEHAVIOURAL trap in the seed family — traps 48/49/50 plant conditions no
+  // shipped data reaches, but this one reproduces the exact artefact Jon saw on
+  // his own save. Empty months make deriveAggregate's asOf null, so no leaf
+  // passes the as-of gate: before seed-or-decline that summed the seed to 0 and
+  // drew the seedless integral; after it, the aggregate declines. Same cause,
+  // both symptoms.
+  { id: '51 a restored session drops its saved historical months',
+    why: 'asOf goes null, no leaf passes the gate, and a fully-seeded save loses its Base',
+    file: APP, spec: RESTOREBASE,
+    mutate: s => s.replace(
+      'historicalMonths:      parseStoredMonths(first.Historical_Months),',
+      'historicalMonths:      [],') },
   { id: '44 the Overall door counts aggregates as missing again',
     why: 'a fully-fitted book is offered 144 generations that can never succeed',
     file: APP, spec: PANEL,
@@ -552,7 +566,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

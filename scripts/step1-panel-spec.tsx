@@ -349,9 +349,16 @@ async function main() {
     check('BASE: a null band yields no rows, so no stale panel can survive it',
       noBand.length === 0, `${noBand.length}`);
     const app = fs.readFileSync('src/App.tsx', 'utf8');
+    // Re-pinned for Unit B: one flat impossibility claim became two branches
+    // off the shared predicate, so BOTH must be present. An empty panel with no
+    // explanation is the failure either way.
     check('BASE: the App still says why the panel is empty for Base',
-      /standard_base_series_not_derivable/.test(app),
+      /standard_base_panel_has_no_band/.test(app)
+        && /standard_base_no_opening_stock/.test(app),
       'an empty panel with no explanation');
+    check('BASE: and it no longer claims the series cannot exist at all',
+      !/standard_base_series_not_derivable/.test(app.replace(/\/\/[^\n]*/g, '')),
+      'Step 1 still asserts a summed aggregate has no Base series');
   }
 
   // ── WALK STEP 10: the not-in-data state, mounted ───────────────────────
