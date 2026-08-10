@@ -5794,6 +5794,78 @@ Guard-trap 44 reinstates the cross-product enumeration. `spec:step1-panel` mount
 the Overall door in all four states; `spec:generate-missing` pins the definition
 with an anti-vacuity control proving the old and new populations differ.
 
+### SETTLED — the base seed expresses absence; zero never impersonates it, 2026-08-10
+
+**(b-corrected) seed-or-decline, decided by Jon 2026-08-09, implemented 2026-08-10.**
+Diagnosis across three reports (2026-08-09-2216, 2026-08-10-0923, 2026-08-10-0940).
+
+**The rule.** Base volume is never fitted and never stored per month — it is
+reconstructed by rolling an opening stock forward through the forecast flows. So
+a seed that is *unknown* must not be rendered as zero: that produces a seedless
+integral, a line from the origin climbing at inflow-minus-outflow, which reads
+as a forecast and is an artefact.
+
+- `BaseForecast.seedBaseKnown: boolean` carries the absence. **A flag, not a
+  nullable seed** — nullable was tried first, on the argument that the compiler
+  would enumerate the consumers, and **it does not**: every read is
+  `seedBaseVolume || 0`, which accepts `null` silently, so the type change
+  produced zero errors while still forcing NaN-risk edits into Step 2's adjusted
+  base pool. The defect's own idiom defeats that tool. A *required* flag inverts
+  it usefully — the compiler enumerates every **construction** site (there are
+  exactly five: three import/restore, `calculateBaseForecast`'s return,
+  `deriveAggregate`'s return) while readers of the number are untouched and
+  cannot break.
+- **Leaf fits:** seed from the last Base-metric reading; no Base rows → absent.
+- **`deriveAggregate`: ALL-OR-ABSENT.** Any contributing leaf that fails the
+  as-of gate, or carries no seed, makes the derived seed absent. Never a partial
+  sum. Where every leaf is present-and-seeded the sum proceeds exactly as before.
+- **The seed's asymmetry with the flows is deliberate.** Flows are rates, so a
+  leaf contributing nothing genuinely adds zero. The seed is a stock: a leaf
+  excluded from the seed but included in the flows hands the aggregate an
+  opening balance missing that leaf's customers while still counting its joiners
+  and leavers.
+- **The save round trip preserves absence, via its own column.** An unseeded
+  forecast stores `seedBaseVolume: 0` for arithmetic safety, and
+  `storedSeedKnown(0)` is correctly TRUE — zero IS a real opening stock for a
+  genuinely empty cohort. So **absence cannot be recovered from the number**, and
+  the export needed `Seed_Base_Known` beside it; `restoreSeedKnown()` prefers
+  that column and falls back to the value for pre-column saves.
+  **The gate found this, and the specs did not**: the round-trip checks
+  unit-tested the reader on literal inputs while nothing drove the writer, so a
+  save/reload silently turned "unknown" into "known, and empty" — the fabricated
+  zero this change exists to stop, reappearing across the one path it had not
+  covered. The spec now drives the writer.
+- **`canShowBaseForecast()` is the one predicate** for "can this selection show
+  a Base forecast". Step 3's chart reads it and declines by returning no map, so
+  `base_baseline` is never set and the series is simply not drawn.
+
+**Two `|| 0` reads deliberately KEPT, with reasons:** the base-ARPU weighting in
+`deriveAggregate` and its counterpart in the chart are **weights**, not stocks
+rolled forward and drawn. Weight zero is exactly exclusion from a weighted mean,
+which is honest; nothing there reaches a chart as a series.
+
+**Option (a) REJECTED** — drawing nothing for every derived aggregate discards
+output that is correct whenever the leaves are seeded, which on all six shipped
+fixtures is always.
+
+**Original option (b) UNAVAILABLE — do not re-propose.** There is no leaf Base
+mean series to sum: `month.base` is null on leaf fits and on `deriveAggregate`'s
+output. Base is reconstructed, never fitted.
+
+**K's Base-on-aggregate limitation is superseded in principle** — a derived
+aggregate with all-present-seeded leaves *can* reconstruct Base. **Step 1's
+panel is NOT yet wired to it (Unit B HELD)**, so the two surfaces still differ
+until that lands; see the report.
+
+**The decline cases are exercised on CONSTRUCTED stores, labelled as such.** No
+shipped fixture and no saved session reaches the absent-seed path: every fixture
+carries Base rows, and the 07 Aug save's 541 cohorts all end on the same month.
+The specs therefore prove the rule's *logic*, not its occurrence.
+
+**BACKLOG — a ragged-history edge-fixture variant** (some leaves ending earlier
+than others) would make the as-of gate reachable from real data and upgrade
+guard-traps 48/49 from logical to behavioural. Fixture owner's task.
+
 ### SETTLED — the Step 2/3 unlock derives from the store, 2026-08-09
 
 **Found on Jon's B-11 walk: 72 leaves generated on the edge fixture, Step 2 still

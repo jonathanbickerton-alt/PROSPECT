@@ -870,6 +870,64 @@ export interface AggregatedIBRORow {
  *   function is then byte-identical to before this parameter existed.
  */
 /**
+ * CAN THIS SELECTION SHOW A BASE FORECAST? The one predicate both surfaces read.
+ *
+ * Base volume is never fitted and never stored per month — it is reconstructed
+ * by rolling an opening stock forward through the forecast flows. So the
+ * question is entirely "do we have a real opening stock", and it has one
+ * answer, in one place.
+ *
+ * READ TODAY BY STEP 3 ONLY — both its Base chart series and its Base SCORE,
+ * which is the reader that feeds overallScore and the CSV export. STEP 1 IS NOT
+ * YET WIRED TO IT (Unit B held, 2026-08-10), so the two surfaces still differ
+ * for Base-on-aggregate: Step 1 shows an empty panel where Step 3 can now
+ * legitimately reconstruct a line. Do not read this docstring as a claim that
+ * Step 1 already declines correctly — it does not, and EXPECTED.md records it.
+ */
+export function canShowBaseForecast(bf: { seedBaseKnown?: boolean } | null | undefined): boolean {
+  return !!bf && bf.seedBaseKnown === true;
+}
+
+/**
+ * Was a stored seed a REAL reading, or a blank cell?
+ *
+ * `Number('')` is 0 and `Number(undefined)` is NaN, so the obvious
+ * `Number(cell ?? 0)` turns a BLANK cell — a cohort that never had an opening
+ * stock — into a real zero, which is the exact impersonation the seed flag
+ * exists to stop. A saved absence must come back as an absence.
+ *
+ * Exported so the three import sites share one reader rather than hand-rolling
+ * the check; three copies of one predicate is how this codebase got its
+ * two-store problem.
+ */
+/**
+ * Restore the seed's known-ness from a save row.
+ *
+ * PREFERS the explicit `Seed_Base_Known` column; falls back to inspecting the
+ * value for saves written before that column existed. The fallback is why the
+ * column had to be added at all: an unseeded forecast stores `seedBaseVolume: 0`
+ * for arithmetic safety, and `storedSeedKnown(0)` is correctly TRUE — zero is a
+ * real opening stock for a genuinely empty cohort. So absence cannot be
+ * recovered from the number alone, and a round trip silently converted
+ * "unknown" into "known, and empty" — the fabricated zero this whole change
+ * exists to stop, reappearing across export/import.
+ *
+ * Found by the gate, not by the specs: the ROUND TRIP checks unit-tested the
+ * reader on literal inputs and never drove the writer.
+ */
+export function restoreSeedKnown(row: Record<string, unknown>): boolean {
+  const explicit = row.Seed_Base_Known;
+  if (explicit !== undefined && explicit !== null && explicit !== '') {
+    return explicit === true || String(explicit).toLowerCase() === 'true';
+  }
+  return storedSeedKnown(row.Seed_Base_Volume);
+}
+
+export function storedSeedKnown(cell: unknown): boolean {
+  return cell !== null && cell !== undefined && cell !== '' && Number.isFinite(Number(cell));
+}
+
+/**
  * Classify why a cohort produced no forecast — or that it did.
  *
  * This exists as a function, not as an inline ternary at the worker's `else`,
@@ -900,7 +958,8 @@ export function classifySkip(
 export function calculateBaseForecast(
   aggregatedData: AggregatedIBRORow[],
   cohort: CohortKey,
-  seedBaseVolume: number,
+  /** NULL when the cohort has no Base-metric readings — absent, not zero. */
+  seedBaseVolume: number | null,
   forecastMonths: number,
   preHorizonUncertainty: number,
   postHorizonExpansionRate: number,
@@ -1056,7 +1115,11 @@ export function calculateBaseForecast(
 
   return {
     cohort,
-    seedBaseVolume,
+    seedBaseVolume: seedBaseVolume ?? 0,
+    // KNOWN only when the caller had a real reading. `?? 0` above keeps the
+    // stored number arithmetic-safe for every existing reader; the flag is what
+    // carries the absence, so no consumer can be handed a NaN.
+    seedBaseKnown: seedBaseVolume !== null && seedBaseVolume !== undefined,
     historicalMonths,
     months,
     lastHistoricalInflow: sorted[sorted.length - 1].inflow,
@@ -1238,6 +1301,22 @@ export function deriveAggregate(
   // coverage. It does not shift the month and it is not silently dropped.
   let seedBaseVolume = 0, lastHistoricalInflow = 0, lastHistoricalOutflow = 0;
   let withForecast = 0;
+  // THE SEED IS ALL-OR-ABSENT, and its asymmetry with the flows is the point.
+  //
+  // Flows are RATES: a leaf contributing no inflow genuinely adds nothing, so
+  // zero is the truth. The seed is a STOCK. A leaf excluded from the seed but
+  // included in the flows hands the aggregate an opening balance missing that
+  // leaf's customers while still counting its joiners and leavers — the
+  // aggregate is under-seeded in exact proportion to how many leaves fall
+  // short, and with enough of them the seed tends to zero while the flows keep
+  // accumulating. That is the seedless integral: a line from the origin
+  // climbing at inflow-minus-outflow.
+  //
+  // On uniform-history data every leaf passes the gate and this sums exactly as
+  // before, which is why the defect never showed on the edge fixture. No
+  // cleverness about partial inclusion: a partial stock is not a smaller truth,
+  // it is a wrong number that looks like a forecast.
+  let seedBaseKnown = leaves.length > 0;
   for (const lf of leaves) {
     const present = asOf !== null && lf.historicalMonths.includes(asOf);
     if (present) {
@@ -1245,6 +1324,11 @@ export function deriveAggregate(
       lastHistoricalInflow  += lf.lastHistoricalInflow  || 0;
       lastHistoricalOutflow += lf.lastHistoricalOutflow || 0;
       withForecast++;
+      if (!lf.seedBaseKnown) seedBaseKnown = false;
+    } else {
+      // In scope, absent at the as-of month: its stock is unknown, so the
+      // aggregate's is too.
+      seedBaseKnown = false;
     }
   }
 
@@ -1352,6 +1436,7 @@ export function deriveAggregate(
   return {
     cohort,
     seedBaseVolume,
+    seedBaseKnown,
     historicalMonths,
     months,
     lastHistoricalInflow,

@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
 import { filterToKey, cohortToFilter, forecastForView, forecastForStep1Selection, step1ResolveDecision, describeScope } from './utils/viewFilter';
@@ -476,6 +476,10 @@ export default function App() {
         Provenance:  bf.provenance.kind,
         Leaf_Count:  bf.provenance.kind === 'derived' ? bf.provenance.leafCount : '',
         Seed_Base_Volume:      bf.seedBaseVolume,
+        // Absence needs its own column: an unseeded forecast stores 0 for
+        // arithmetic safety, and 0 is a legitimate opening stock, so the
+        // number alone cannot carry the distinction across a save.
+        Seed_Base_Known:       bf.seedBaseKnown,
         Historical_Months:     [...new Set(bf.historicalMonths)].join(', '),
         Last_Historical_Inflow:  bf.lastHistoricalInflow,
         Last_Historical_Outflow: bf.lastHistoricalOutflow,
@@ -807,6 +811,7 @@ export default function App() {
                   scenario:  String(first.Scenario   ?? 'Standard Forecast'),
                 },
                 seedBaseVolume:        Number(first.Seed_Base_Volume       ?? 0),
+                seedBaseKnown:         restoreSeedKnown(first),
                 historicalMonths:      [],
                 lastHistoricalInflow:  Number(first.Last_Historical_Inflow  ?? 0),
                 lastHistoricalOutflow: Number(first.Last_Historical_Outflow ?? 0),
@@ -911,6 +916,7 @@ export default function App() {
                   scenario:  String(first.Scenario   ?? 'Standard Forecast'),
                 },
                 seedBaseVolume:        Number(first.Seed_Base_Volume       ?? 0),
+                seedBaseKnown:         restoreSeedKnown(first),
                 historicalMonths:      [],
                 lastHistoricalInflow:  Number(first.Last_Historical_Inflow ?? 0),
                 lastHistoricalOutflow: Number(first.Last_Historical_Outflow ?? 0),
@@ -1113,6 +1119,7 @@ export default function App() {
                 scenario: String(first.Scenario ?? 'Standard Forecast'),
               },
               seedBaseVolume:        Number(first.Seed_Base_Volume       ?? 0),
+                seedBaseKnown:         restoreSeedKnown(first),
               historicalMonths:      [],
               lastHistoricalInflow:  Number(first.Last_Historical_Inflow ?? 0),
               lastHistoricalOutflow: Number(first.Last_Historical_Outflow ?? 0),
@@ -2761,7 +2768,9 @@ export default function App() {
           const t = r._parsedDate.getTime();
           baseReadings.set(t, (baseReadings.get(t) || 0) + (Number(r[wiValueCol]) || 0));
         });
-        const seedBase = baseReadings.size > 0 ? (baseReadings.get(Math.max(...baseReadings.keys())) || 0) : 0;
+        // NULL, not 0 — see the worker's copy of this. Absent stock is not empty stock.
+    const seedBase: number | null = baseReadings.size > 0
+      ? (baseReadings.get(Math.max(...baseReadings.keys())) ?? null) : null;
         const stdCohortObj = {
           segment:   segmentValue === 'All (Aggregated)' ? 'All' : segmentValue,
           product:   productValue === 'All (Aggregated)' ? 'All' : productValue,
@@ -2948,7 +2957,9 @@ export default function App() {
         const t = r._parsedDate.getTime();
         baseReadings.set(t, (baseReadings.get(t) || 0) + (Number(r[wiValueCol]) || 0));
       });
-      const seedBase = baseReadings.size > 0 ? (baseReadings.get(Math.max(...baseReadings.keys())) || 0) : 0;
+      // NULL, not 0 — see the worker's copy of this. Absent stock is not empty stock.
+    const seedBase: number | null = baseReadings.size > 0
+      ? (baseReadings.get(Math.max(...baseReadings.keys())) ?? null) : null;
 
       const stdCohortObj2 = {
         segment:   segmentValue === 'All (Aggregated)' ? 'All' : segmentValue,

@@ -511,9 +511,12 @@ export function runForecastJob(input: WorkerInMessage): WorkerOutMessage {
           baseReadings.set(t, (baseReadings.get(t) || 0) + (Number(r[wiValueCol]) || 0));
         }
       }
-      const seedBase = baseReadings.size > 0
-        ? (baseReadings.get(Math.max(...baseReadings.keys())) ?? 0)
-        : 0;
+// NULL, not 0: a cohort with no Base readings has no opening stock, and
+      // rolling an unknown forward from zero is the seedless-integral defect.
+      // calculateBaseForecast turns this into seedBaseKnown=false.
+      const seedBase: number | null = baseReadings.size > 0
+        ? (baseReadings.get(Math.max(...baseReadings.keys())) ?? null)
+        : null;
 
       // P10 — flagged one-off months for this cohort (fKey matches
       // makeForecastKey's format, no scenario component).

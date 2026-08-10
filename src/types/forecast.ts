@@ -258,6 +258,27 @@ export interface BaseForecast {
   cohort: CohortKey;
   /** The last known actual base volume — used as the seed for derived base stock */
   seedBaseVolume: number;
+  /**
+   * Is `seedBaseVolume` a REAL opening stock, or a stand-in for one we do not have?
+   *
+   * False means absent, and absent is not zero. A cohort with no Base-metric
+   * readings has no opening stock; a derived aggregate whose leaves are not all
+   * present-and-seeded has no defensible one either. Rolling either forward from
+   * 0 produces a seedless integral — a line starting at the origin and climbing
+   * at inflow-minus-outflow, which reads as a forecast and is an artefact.
+   *
+   * A FLAG rather than making seedBaseVolume nullable, and the reason is
+   * specific. Nullable was tried first, for the usual argument that the compiler
+   * then enumerates the consumers — and it does not: every read is
+   * `seedBaseVolume || 0`, which accepts null silently, so the type change
+   * produced zero errors while still forcing NaN-risk edits into Step 2's
+   * adjusted base pool. The defect's own idiom defeats the tool.
+   *
+   * Required, not optional, so the compiler enumerates every CONSTRUCTION site
+   * instead — which is the half that must be got right — while readers of the
+   * number are untouched and cannot break. See EXPECTED.md, seed-or-decline.
+   */
+  seedBaseKnown: boolean;
   /** Months of historical actuals used to fit the model (yyyy-MM) */
   historicalMonths: string[];
   /** Ordered forecast months produced by the model */

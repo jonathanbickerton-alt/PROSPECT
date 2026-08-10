@@ -51,6 +51,7 @@ const BULKDONE = 'scripts/bulk-completion-spec.tsx';
 const NAVSPEC = 'scripts/nav-target-spec.ts';
 const SFT = 'src/components/StandardForecastTab.tsx';
 const STEP1SEL = 'scripts/step1-selection-spec.tsx';
+const BASESEED = 'scripts/base-seed-spec.ts';
 const STEP2UNLOCK = 'scripts/step2-unlock-spec.tsx';
 const MODAL = 'src/components/BulkGenerateModal.tsx';
 const APP = 'src/App.tsx';
@@ -491,6 +492,33 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '  for (const [key, bf] of store as Map<string, any>) {',
       '  for (const [key, bf] of new Map<string, any>()) {') },
+  // Trap 48: the PARTIAL SUM returns. deriveAggregate stops tracking whether
+  // every contributing leaf is present-and-seeded, so an aggregate missing one
+  // leaf's opening stock reports a known seed and the chart rolls it forward —
+  // under-seeded in exact proportion to how many leaves fall short.
+  { id: '48 the aggregate seed goes back to a partial sum',
+    why: 'an opening balance missing a leaf is passed off as the aggregate stock',
+    file: ENGINE, spec: BASESEED,
+    mutate: s => s.replace('      if (!lf.seedBaseKnown) seedBaseKnown = false;',
+                           '      void lf;') },
+  // Trap 49: the chart stops declining, so an unknown stock is rolled forward
+  // from zero again — the seedless integral, a line from the origin climbing at
+  // inflow-minus-outflow and reading as a forecast.
+  { id: '49 the Base chart draws from an unknown opening stock',
+    why: 'the seedless integral returns: origin start, net-adds slope',
+    file: FVA_TAB, spec: BASESEED,
+    mutate: s => s.replace(
+      '      if (!canShowBaseForecast({ seedBaseKnown: fcSeedKnown })) return null;',
+      '      if (false) return null;') },
+  // Trap 50: the SCORER stops declining, so a Base KPI is computed from a
+  // fabricated zero-seeded stock and exported. Worse than trap 49's chart line
+  // because the number leaves the screen.
+  { id: '50 the Base SCORE is computed from an unknown opening stock',
+    why: 'baseScore and overallScore are scored off a fabricated stock, and exported',
+    file: FVA_TAB, spec: BASESEED,
+    mutate: s => s.replace(
+      '      if (!canShowBaseForecast(derivedForRow)) return null;',
+      '      if (false) return null;') },
   { id: '44 the Overall door counts aggregates as missing again',
     why: 'a fully-fitted book is offered 144 generations that can never succeed',
     file: APP, spec: PANEL,
@@ -524,7 +552,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

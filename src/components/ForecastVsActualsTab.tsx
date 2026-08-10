@@ -19,7 +19,8 @@ import type { CohortDims } from './CohortDimCheckboxes';
 import { rowInScope, cohortInScope, dimsFromGrouping, ALL_DIMS, L1_ONLY } from '../utils/cohortScope';
 // The ONE key builder. This file previously hand-rolled a 5-part key here,
 // which is the instance-3 defect.
-import { makeForecastKey, deriveAggregate } from '../utils/forecasting';
+import {
+  canShowBaseForecast, makeForecastKey, deriveAggregate } from '../utils/forecasting';
 
 // ---------------------------------------------------------------------------
 // Props — all IBRO column mappings come from App; forecast data from context
@@ -936,6 +937,16 @@ export function buildCohortAccuracy(
     // rather than from a second inline summation of the same leaves.
     const cohortBaseBandMap = (() => {
       if (!derivedForRow) return null;
+      // THE SCORER DECLINES TOO, and this is the read that matters most.
+      //
+      // Found by the gate. The chart's decline was wired and this was not, and
+      // it is the worse of the two: it feeds baseScore -> overallScore -> the
+      // rendered score cell AND the CSV export. A chart line that should not be
+      // there is visible and arguable; a KPI scored against a fabricated
+      // zero-seeded stock is a number someone writes down.
+      //
+      // Same predicate as the chart, deliberately — one rule, both readers.
+      if (!canShowBaseForecast(derivedForRow)) return null;
       let meanB = derivedForRow.seedBaseVolume;
       let optB  = derivedForRow.seedBaseVolume;
       let pessB = derivedForRow.seedBaseVolume;
@@ -2118,11 +2129,15 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     };
     let specificFcMonthMap: Map<string, FcMonthEx> | null = null;
     let fcSeedBase = 0, fcLastIn = 0, fcLastOut = 0;
+    // Does the seed represent a REAL opening stock? False means the Base
+    // series is not drawn at all — see fcBaseMap below.
+    let fcSeedKnown = false;
     let _matchFcs: BaseForecast[] = [];
 
     if (specificForecast) {
       specificFcMonthMap = new Map(specificForecast.months.map(m => [m.month, m as FcMonthEx]));
       fcSeedBase = specificForecast.seedBaseVolume;
+      fcSeedKnown = specificForecast.seedBaseKnown;
       fcLastIn   = specificForecast.lastHistoricalInflow;
       fcLastOut  = specificForecast.lastHistoricalOutflow;
     } else {
@@ -2258,6 +2273,10 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
           }
           specificFcMonthMap = synMap;
           fcSeedBase = matchFcs.reduce((s, bf) => s + (bf.seedBaseVolume || 0), 0);
+          // ALL-OR-ABSENT, matching deriveAggregate. One unseeded leaf and the
+          // aggregate's opening stock is missing that leaf's customers while
+          // still counting its joiners and leavers.
+          fcSeedKnown = matchFcs.length > 0 && matchFcs.every(bf => bf.seedBaseKnown);
           fcLastIn   = matchFcs.reduce((s, bf) => s + bf.lastHistoricalInflow, 0);
           fcLastOut  = matchFcs.reduce((s, bf) => s + bf.lastHistoricalOutflow, 0);
         }
@@ -2316,6 +2335,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     // Running base from forecast for base_baseline
     const fcBaseMap = (() => {
       if (!specificFcMonthMap) return null;
+      // THE DECLINE. Without a real opening stock this recursion produces a line
+      // from the origin climbing at inflow-minus-outflow — an artefact that
+      // reads as a forecast. Absence propagates instead: no map, so
+      // `base_baseline` is never set and the series simply is not drawn.
+      if (!canShowBaseForecast({ seedBaseKnown: fcSeedKnown })) return null;
       const months = [...specificFcMonthMap.values()].sort((a, b) => a.month.localeCompare(b.month));
       const map = new Map<string, number>();
       let b = fcSeedBase, prevIn = fcLastIn, prevOut = fcLastOut;
