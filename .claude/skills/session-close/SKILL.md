@@ -57,12 +57,37 @@ or marked CLOSED/RESOLVED where it stands.
 Record what was *not* fixed too: residual risk, deliberate scope limits, and
 anything left OPEN with its mechanism.
 
-## 4. The report
+## 4. Commit and push — BEFORE the report
+
+**Jon's decision, 2026-08-10, superseding "pushing is Jon's action."**
+
+At a **stability point** — gate green, no capability change half-applied, the
+tree a state a user could be handed — commit and push, then write the report.
+Not the other way round.
+
+A stability point is **not** necessarily branch-end or arc-end. A multi-session
+arc with open capability gaps reaches one whenever a gated, self-consistent
+increment lands: Unit A done with Unit B explicitly held is a stability point.
+
+```bash
+git add -A && git commit -F -   # message NAMES the capability change
+git push origin main
+git log origin/main..main --oneline | wc -l   # must print 0
+```
+
+If the session is stopping **unstable**, do not commit: revert clean, state the
+blocker, and say so (the budget rule). Every session ends at a pushed stability
+point or at a clean revert — there is no third state, and "finished but sitting
+in the working tree" is not a resting place.
+
+Then record the outcome on the FOR ADVISOR `Repo:` line.
+
+## 5. The report
 
 Use the **report-writing** skill. It covers the filename, the timestamp command,
-and the FOR ADVISOR block.
+and the FOR ADVISOR block — including the mandatory `Repo:` line.
 
-## 5. Merge
+## 6. Merge
 
 ```bash
 git checkout main
@@ -75,7 +100,7 @@ apostrophes that break shell quoting, and a failed merge mid-session is noise.
 Verify the tree first — clean, single worktree, identical to the branch HEAD —
 especially if any gate agent disclosed mutating files.
 
-## 6. Record-the-merge commit
+## 7. Record-the-merge commit
 
 A separate commit after the merge carrying the session report:
 
@@ -83,7 +108,7 @@ A separate commit after the merge carrying the session report:
 Record the Session <X> merge<, and where the walk resumes>
 ```
 
-## 7. FINAL STEP — the working-agreement document
+## 8. FINAL STEP — the working-agreement document
 
 Update **"PROSPECT — Development History & Working Agreement"**:
 

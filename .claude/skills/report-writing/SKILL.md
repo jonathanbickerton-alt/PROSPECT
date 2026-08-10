@@ -68,9 +68,16 @@ lines inside the fence.** It contains only:
    - `Verified against: HEAD <hash>, branch <b>, tree CLEAN` for a read-only
      verification or diagnosis that certifies nothing.
    Either way it names **the commit the report's numbers were measured against**.
-3. Findings — **one line each**.
-4. Decisions needed from Jon or the advisor — **one line each**.
-5. Current merge/hold state, as a single line.
+3. `Repo: committed <hash>, pushed (origin in sync)` — **mandatory**, or
+   `Repo: reverted clean at <hash>` when the session stopped unstable. There is
+   no third form, because there is no third state: a session ends either at a
+   pushed stability point or at a clean revert (Jon, 2026-08-10; see CLAUDE.md,
+   "Commit and push at every stability point"). If you are about to write
+   `NOT YET COMMITTED at write time`, stop — commit and push first, then write
+   the report. That phrase is the failure this line exists to end.
+4. Findings — **one line each**.
+5. Decisions needed from Jon or the advisor — **one line each**.
+6. Current merge/hold state, as a single line.
 
 Everything else follows below the block.
 
@@ -93,6 +100,7 @@ their instrument, never quoted from an earlier report.
 - [ ] FOR ADVISOR first, fenced, ≤25 lines
 - [ ] `Generated:` line carries offset **and** UTC
 - [ ] Hash line names what the numbers were measured against
+- [ ] `Repo:` line present — committed **and pushed**, or reverted clean
 - [ ] Findings and decisions one line each
 - [ ] Merge/hold state stated
 - [ ] Report committed

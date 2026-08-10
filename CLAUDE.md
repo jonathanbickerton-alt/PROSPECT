@@ -133,6 +133,38 @@ after the fact, say so and say that nothing was re-run to produce it. If it is
 written before the commit it describes, say that rather than implying a hash it
 cannot contain.
 
+### COMMIT AND PUSH AT EVERY STABILITY POINT
+
+**Jon's decision, 2026-08-10. This supersedes "pushing is Jon's action."**
+
+A **stability point** is: the gate is green, no capability change is half-applied,
+and the working tree is a state a user could be handed. It is **not** necessarily
+branch-end or arc-end — a multi-session arc with open capability gaps reaches
+stability whenever a gated, self-consistent increment lands. Unit A of a two-unit
+brief, with Unit B explicitly held, is a stability point.
+
+**At every stability point the session commits and pushes BEFORE writing its
+report.** The commit message names the capability change. A report must never
+certify an uncommitted tree at a stability point.
+
+**A session that stops UNSTABLE follows the budget rule**: revert clean, commit
+nothing, state the blocker. So every session ends in one of exactly two states —
+a pushed stability point, or a clean revert. There is no third state, and
+"finished but sitting in the working tree" is not a resting place.
+
+**Why this exists.** Three consecutive reports carried
+`NOT YET COMMITTED at write time`, which is a report certifying something that
+does not yet exist and cannot be retrieved by anyone who was not in the session.
+Over the same period, unpushed commits reached **49** before anyone noticed —
+every one of them a change no other machine could see. Both failures are the same
+failure: work that is finished in the session and invisible outside it.
+
+The FOR ADVISOR block therefore carries a mandatory `Repo:` line — see the
+report-writing skill. It reads either
+`Repo: committed <hash>, pushed (origin in sync)` or
+`Repo: reverted clean at <hash>`, and there is no third form because there is no
+third state.
+
 `HHMM` is 24-hour local time at generation. It is in the filename so reports
 sort chronologically by name alone — filesystem timestamps do not survive
 copying, archiving, or a fresh clone, and several reports a day is normal.
