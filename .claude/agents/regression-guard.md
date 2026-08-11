@@ -336,6 +336,19 @@ Therefore:
   harness before the product**: check `git status` first, restore any stray
   file with `git restore <path>`, and rerun. Report a genuinely red control
   only after the tree is verified clean.
+- **NOTHING ELSE MAY READ THE TREE WHILE IT RUNS.** Not a spec, not a batch
+  loop over every `spec:*` script, not lint, not build. Amended 2026-08-11: a
+  gate run read the rule above as prohibiting only a second *guard-traps*
+  instance and started the full spec batch alongside it. Two specs came back
+  red — `generate-missing` 42/2 and `import-seam` 34/2 — because they compiled
+  a source file mid-mutation. Both were green on isolated re-run. The agent
+  disclosed it and reasoned correctly about it, which is the only reason it did
+  not become a reported defect.
+
+  The failure is the rule's, not the reader's: it named the second-instance
+  case and left the general one to be inferred, and the general one is the
+  point. **While guard-traps is running, the tree is not in a readable state.**
+  Start it, wait for it, then run everything else.
 - Never `git checkout main -- .`, never `git stash`, never create a worktree
   to work around this. Those destroy the session's uncommitted work, which is
   the thing being gated.

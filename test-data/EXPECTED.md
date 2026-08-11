@@ -5630,6 +5630,86 @@ events (the 07 Aug save's Market_Events sheet holds the "no market events
 defined" placeholder), so this proves the round trip's logic over the real file
 format, not that an existing save exercises it. Guard-trap 52 drops `promoMix`.
 
+### SETTLED — the constrained mix ENGINE, session 1 of 2 (2026-08-11)
+
+The pure half of Alessandro's constrained mix mode: `src/utils/mixConstraint.ts`,
+pinned by `spec:mix-constraint`. **No UI. The card is session 2.**
+
+**The invariant: shares sum to `MIX_TOTAL` (100), ENFORCED AT WRITE.** Not a new
+rule — `seedMixPreserving` already normalises to 100 and has its last member
+absorb the float residual. What the engine adds is the other half of it:
+
+- **write functions** (`rebalance`, `solveForTarget`) never return a share vector
+  that fails `conformsToTotal`, on any input including hostile ones;
+- **read functions** (`blendedArpu`, `achievableTargetRange`) describe whatever
+  they are handed, conforming or not, and never refuse.
+
+Read-side tolerance is not laxity. A restored `promoMix` can legitimately fail to
+sum to 100 — a legacy save, or a preserved mix whose tier list changed shape —
+which is exactly why the card carries an amber sum indicator. **A read that
+refused to describe a non-conforming mix would blank the one display that tells
+the user their mix needs attention.**
+
+**The range is a two-line derivation, and worth being able to say.** Locked
+members contribute a fixed amount; the unlocked ones divide a fixed free budget.
+Σ share·arpu over `{s ≥ 0, Σs = budget}` is linear, so it takes its extremes at
+the vertices — all the budget on the cheapest free member, or all on the dearest.
+Everything between is reachable and nothing outside is. With no locks this
+collapses to `[min arpu, max arpu]`, which is the sanity check to reach for.
+
+**Three bands are exactly determined, and the spec proves it rather than asserts
+it** — every answer is checked against the closed form
+`sA = (needed − budget·aB) / (aA − aB)`, not against another call to the function
+under test.
+
+**Above two free members the system is UNDERDETERMINED and a rule was chosen.**
+The engine interpolates the current free shares toward the vertex the target is
+heading for. It is deterministic, continuous in the target (measured, not
+argued — a 0.001 retype moves no share more than 0.05), and degenerates to the
+unique answer at two free members. **The value axis never reaches this branch.
+The V2 tariff axis is entirely this branch, and inherits a choice rather than a
+derivation.** Recorded so the V2 design pass knows which it is.
+
+#### Two defects the spec found in the engine's first draft
+
+Both were in code that read as obviously correct, and neither would have been
+found by reading it again.
+
+- **`conserve` clamped instead of refusing.** `if (last < 0) last = 0` looks like
+  a safety check and is its inverse: it keeps one member non-negative by
+  abandoning conservation everywhere else. It returned `ok` with a mix summing to
+  **1e12**. Now returns null and the caller reports `cannot-conserve`.
+- **The residual was absorbed by the LAST member, padlocked or not.** So the
+  repair that restores the total could silently overwrite a share the user had
+  explicitly held. The absorber is now required to be unlocked, and where nothing
+  is unlocked the engine refuses rather than picking one.
+
+The second is the more instructive: it is *invariant enforcement breaking a
+different invariant*, and a spec that only checked "does the total come to 100"
+would have passed it.
+
+#### The auto-lock detail is STILL OPEN, and the engine settles nothing
+
+Whether moving a slider auto-locks it remains our addition, still with
+Alessandro, still under the do-not-build guard recorded above. **The engine is
+built neutral to it**: `rebalance` takes the lock set as an INPUT and never
+returns one. The moved member is held *for that operation* — arithmetically it
+must be — which is a different thing from a padlock that persists to the next
+interaction. `spec:mix-constraint` asserts the outcome carries no lock field,
+which is what keeps the guard honest rather than merely intended.
+
+#### Not collapsed, deliberately
+
+`autoBalanceMix` (WhatIfTab) is now **exported** so the spec pins `rebalance`
+against the real shipped function on 400 no-lock cases rather than against a copy
+of it. It is not yet delegated to `rebalance`; nor is `blendTierMix` folded into
+`blendedArpu`. Both are behaviour changes on live controls and belong with the
+card work. The spec pins the agreement in the meantime, so a drift between them
+is a red run rather than a discovery.
+
+Guard-traps **53** (clamp restored), **54** (repair over a padlock), **55**
+(diluting zero for an unknown ARPU) plant exactly these three defects.
+
 
 
 ### DQ PHASE REQUIREMENT — the retirement statement belongs on the orientation line

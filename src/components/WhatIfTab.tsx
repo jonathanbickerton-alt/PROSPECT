@@ -478,7 +478,13 @@ export function seedMixPreserving(
   return out;
 }
 
-function autoBalanceMix(prev: Record<string, number>, changedTier: string, newValue: number): Record<string, number> {
+/** Exported for the mix-constraint spec, which pins the new lock-aware
+ *  `rebalance` against THIS function on the no-locks case rather than against a
+ *  copy of it — a reference copy in a spec is how two implementations come to
+ *  drift while both look verified. Collapsing this into `rebalance` is a
+ *  behaviour change on a live control and belongs with the card work, not with
+ *  the engine session that made it possible. */
+export function autoBalanceMix(prev: Record<string, number>, changedTier: string, newValue: number): Record<string, number> {
   const clamped = Math.min(100, Math.max(0, newValue));
   const others = Object.keys(prev).filter(t => t !== changedTier);
   const otherSum = others.reduce((s, t) => s + prev[t], 0);

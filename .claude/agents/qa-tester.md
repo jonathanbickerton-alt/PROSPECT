@@ -187,6 +187,16 @@ because its absence produced a false pass.
    codebase return different field names (nested `uplifted.inflow` vs flat
    `adjustedInflow`), so a harness reading the wrong field gets
    `undefined`, coerces to 0, and prints a flawless pass.
+
+   **The same trap wearing a spec's clothes: a check that asserts a WEAKER
+   property than the one under test.** Audit the spec, not only the numbers.
+   `expect(result.ok)`, `expect(shares).toConserve(100)`, "a value was
+   returned" — each passes on a result that is well-formed and wrong. Two of
+   these were found in one session on the mix-constraint spec: one asserted a
+   solved mix summed to 100 and passed on a mix blending to 23.88 against a
+   target of 20; the other asserted the minimum-boundary solve merely
+   *resolved*, with no check on what it produced. The tell is a check whose
+   assertion does not mention the thing the function is FOR.
 4. **Verify counts and locations yourself.** When a prompt tells you there
    are four of something, or lists where they live, treat that as a claim
    to check, not a fact to confirm. Grep and count independently, then
@@ -430,6 +440,19 @@ Therefore:
   harness before the product**: check `git status` first, restore any stray
   file with `git restore <path>`, and rerun. Report a genuinely red control
   only after the tree is verified clean.
+- **NOTHING ELSE MAY READ THE TREE WHILE IT RUNS.** Not a spec, not a batch
+  loop over every `spec:*` script, not lint, not build. Amended 2026-08-11: a
+  gate run read the rule above as prohibiting only a second *guard-traps*
+  instance and started the full spec batch alongside it. Two specs came back
+  red — `generate-missing` 42/2 and `import-seam` 34/2 — because they compiled
+  a source file mid-mutation. Both were green on isolated re-run. The agent
+  disclosed it and reasoned correctly about it, which is the only reason it did
+  not become a reported defect.
+
+  The failure is the rule's, not the reader's: it named the second-instance
+  case and left the general one to be inferred, and the general one is the
+  point. **While guard-traps is running, the tree is not in a readable state.**
+  Start it, wait for it, then run everything else.
 - Never `git checkout main -- .`, never `git stash`, never create a worktree
   to work around this. Those destroy the session's uncommitted work, which is
   the thing being gated.

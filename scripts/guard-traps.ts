@@ -58,9 +58,11 @@ const STEP2UNLOCK = 'scripts/step2-unlock-spec.tsx';
 const MODAL = 'src/components/BulkGenerateModal.tsx';
 const APP = 'src/App.tsx';
 const VIEWFILTER = 'src/utils/viewFilter.ts';
+const MIXSPEC = 'scripts/mix-constraint-spec.ts';
+const MIXENGINE = 'src/utils/mixConstraint.ts';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
-const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER];
+const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -566,6 +568,40 @@ const TRAPS: Trap[] = [
   { id: '41 the nav label stops naming its destination', why: 'the item says Standard Forecast and goes to Overall',
     file: APP, spec: NAVSPEC,
     mutate: s => s.replace("              {t('nav_overall_forecast')}", "              {t('standard_forecast')}") },
+  // ── Traps 53-55: the constrained mix engine. All three plant a defect that
+  //    was ACTUALLY IN THE FIRST DRAFT of mixConstraint.ts and was found by the
+  //    spec rather than by reading, which is the only evidence worth having
+  //    that these checks do work.
+  //
+  // 53, RE-AIMED. It first targeted conserve()'s negative-residual early return
+  // and MISSED — not because the spec is weak but because no caller can reach
+  // that branch, which is why the branch is gone. Re-aimed at the live
+  // enforcement point: solveForTarget rescales the free shares to the free
+  // budget, and that rescale is the whole reason a non-conforming restored mix
+  // comes back conforming. Drop it and the read-tolerant design silently
+  // becomes a write-tolerant one.
+  { id: '53 the free-share rescale dropped', why: 'a non-conforming restored mix is written back non-conforming',
+    file: MIXENGINE, spec: MIXSPEC,
+    mutate: s => s.replace('      ? (view.shares[m] / freeSumNow) * freeBudget', '      ? view.shares[m]') },
+  // 54 makes the collapsed branch REPAIR a non-conforming mix instead of
+  // refusing it, by handing the residual to the last member. Every member is
+  // padlocked in that branch, so the repair silently overwrites a share the
+  // user explicitly held — the invariant restored at the cost of the lock.
+  { id: '54 collapsed branch repairs over a padlock', why: 'a held slider is silently rewritten to fix the total',
+    file: MIXENGINE, spec: MIXSPEC,
+    mutate: s => s.replace('      const held = conserve(view.members, { ...view.shares }, null);',
+                           '      const held = conserve(view.members, { ...view.shares }, view.members[view.members.length - 1]);') },
+  // 55 restores the diluting zero. `?? 0` for an unknown ARPU is the exact
+  // shape the seed-or-decline work spent five sessions removing elsewhere: it
+  // does not read as missing, it reads as a real and very cheap member, and it
+  // drags the achievable range down so a target that cannot be met is accepted.
+  { id: '55 diluting zero for an unknown member ARPU', why: 'an unknown ARPU reads as a real, very cheap one',
+    file: MIXENGINE, spec: MIXSPEC,
+    // Single-line anchor deliberately: the two-line form joined with `nl`
+    // could not match, because `nl` is read from a CRLF repo file while this
+    // module is LF. A multi-line anchor here is a trap that reports
+    // INCONCLUSIVE for a line-ending reason and protects nothing.
+    mutate: s => s.replace('    if (a === null) return null;', '    if (a === null) continue;') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -576,7 +612,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');
