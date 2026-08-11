@@ -11,16 +11,15 @@ ONE CONTRADICTED: c1e0af0 IS NOT A COMMIT. The @types/react mechanism is 5a35ac7
   the merge c1ef1a0 beside it is named correctly.
 ALL SEVEN SYMBOLS VERIFIED: missingLeavesForKey :2192, hasAnyUsableForecast
   :2029, canShowBaseForecast :887, parseStoredMonths :926, restoreSeedKnown :949
-  (forecasting.ts); forecastForStep1Selection viewFilter.ts:155; seedBaseKnown
-  types/forecast.ts:281.
-COUNTS VERIFIED on a fresh run: 30 spec:* suites all green; guard-traps 49/49;
-  traps 3/3; tsc clean; build clean; i18n parity 0 missing / 10 deferred.
+  (forecasting.ts); forecastForStep1Selection viewFilter:155; seedBaseKnown
+  forecast.ts:281.
+COUNTS VERIFIED fresh: 30 spec:* suites all green; guard-traps 49/49; traps 3/3;
+  tsc and build clean; i18n parity 0 missing / 10 deferred.
 BOTH RULE PLACEMENTS VERIFIED: CLAUDE.md:108 report-trigger, :136 stability;
   report-writing carries the state-changing trigger vocabulary and the Repo line
   (:71); session-close step 4 is commit-and-push BEFORE the report. 4 skills.
-PINS VERIFIED: setForecastData 7, setBaseForecast 12 (pin and site count both),
-  traps 38/48/49/50/51 present. FIXTURES EXACT: 12,112 / 77,760 x2 / 90,720 x2 /
-  12,432, twin caveat holds.
+PINS VERIFIED: setForecastData 7, setBaseForecast 12, traps 38/48-51 present.
+  FIXTURES EXACT: 12,112 / 77,760 x2 / 90,720 x2 / 12,432; twin caveat holds.
 FOUR STALE FIGURES, drift not error: HEAD is fc8b6fb, not 0d4c40c (two
   report-only commits after; origin in sync).
   bulk_* keys are 54 with 51 de-identical, not "42 of 45" — debt is larger.
