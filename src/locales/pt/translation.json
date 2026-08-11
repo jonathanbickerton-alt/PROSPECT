@@ -726,5 +726,20 @@
   "overall_aggregates_derive": "{{count}} aggregate views derive from their leaves — they are never fitted, and are not missing.",
   "baseline_forecast_appears_once_generated": "The forecast will appear here once generated. Generating one unlocks Step 2.",
   "standard_base_panel_has_no_band": "Base volume is reconstructed from the opening stock and the forecast flows, so this panel has no band to show. The Base line is on the Actuals Review chart.",
-  "standard_base_no_opening_stock": "This selection has no known opening base stock, so a Base series cannot be reconstructed for it. Inflow, Outflow and Retention are unaffected."
+  "standard_base_no_opening_stock": "This selection has no known opening base stock, so a Base series cannot be reconstructed for it. Inflow, Outflow and Retention are unaffected.",
+  "whatif_mix_target_arpu": "ARPU misto alvo",
+  "whatif_mix_target_placeholder": "qualquer",
+  "whatif_mix_target_apply": "Aplicar",
+  "whatif_mix_reachable_range": "Alcançável:",
+  "whatif_mix_hold": "Fixar",
+  "whatif_mix_hold_aria": "Fixar esta parcela enquanto as outras se reequilibram",
+  "whatif_mix_release": "Libertar esta parcela",
+  "whatif_mix_range_collapsed": "As fixações deixam um único valor misto alcançável, pelo que os cursores não podem mover-se:",
+  "whatif_mix_target_unreachable": "Alvo inalcançável.",
+  "whatif_mix_bound_above": "O valor misto mais alto que estas fixações permitem é {{bound}}, definido por {{member}}. Liberte uma fixação ou baixe o alvo.",
+  "whatif_mix_bound_below": "O valor misto mais baixo que estas fixações permitem é {{bound}}, definido por {{member}}. Liberte uma fixação ou aumente o alvo.",
+  "whatif_mix_target_blocked_other": "As fixações atuais não deixam nada livre para mover.",
+  "whatif_mix_blend_unknown": "desconhecido",
+  "whatif_mix_blend_unknown_reason": "Um escalão com parcela não tem ARPU, pelo que não há valor misto a mostrar. Não é um valor misto de zero.",
+  "whatif_mix_sum_amber_reason": "Esta combinação não soma 100%. Foi carregada exatamente como guardada e não foi ajustada por si; edite uma parcela antes de guardar."
 }

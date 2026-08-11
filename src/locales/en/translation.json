@@ -735,5 +735,20 @@
   "overall_aggregates_derive": "{{count}} aggregate views derive from their leaves — they are never fitted, and are not missing.",
   "baseline_forecast_appears_once_generated": "The forecast will appear here once generated. Generating one unlocks Step 2.",
   "standard_base_panel_has_no_band": "Base volume is reconstructed from the opening stock and the forecast flows, so this panel has no band to show. The Base line is on the Actuals Review chart.",
-  "standard_base_no_opening_stock": "This selection has no known opening base stock, so a Base series cannot be reconstructed for it. Inflow, Outflow and Retention are unaffected."
+  "standard_base_no_opening_stock": "This selection has no known opening base stock, so a Base series cannot be reconstructed for it. Inflow, Outflow and Retention are unaffected.",
+  "whatif_mix_target_arpu": "Target blended ARPU",
+  "whatif_mix_target_placeholder": "any",
+  "whatif_mix_target_apply": "Apply",
+  "whatif_mix_reachable_range": "Reachable:",
+  "whatif_mix_hold": "Hold",
+  "whatif_mix_hold_aria": "Hold this share while the others rebalance",
+  "whatif_mix_release": "Release this share",
+  "whatif_mix_range_collapsed": "The holds leave one reachable blend, so the sliders cannot move:",
+  "whatif_mix_target_unreachable": "Target not reachable.",
+  "whatif_mix_bound_above": "The highest blend these holds allow is {{bound}}, set by {{member}}. Release a hold or lower the target.",
+  "whatif_mix_bound_below": "The lowest blend these holds allow is {{bound}}, set by {{member}}. Release a hold or raise the target.",
+  "whatif_mix_target_blocked_other": "The current holds leave nothing free to move.",
+  "whatif_mix_blend_unknown": "not known",
+  "whatif_mix_blend_unknown_reason": "A tier carrying share has no ARPU, so there is no blend to show. This is not a blend of zero.",
+  "whatif_mix_sum_amber_reason": "This mix does not total 100%. It was loaded exactly as saved and has not been adjusted for you; edit a share to resolve it before saving."
 }

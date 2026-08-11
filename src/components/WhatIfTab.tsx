@@ -11,7 +11,8 @@ import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, Pr
 import { SKIP_REASON_KEY } from '../types/forecast';
 import { EventChangeConfirmModal } from './EventChangeConfirmModal';
 import type { MarketEvent } from '../utils/forecasting';
-import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMix, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta } from '../utils/forecasting';
+import { rebalance, achievableTargetRange, solveForTarget, blendedArpu, conformsToTotal } from '../utils/mixConstraint';
+import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
@@ -315,7 +316,15 @@ function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
 
   const tierArpu: Record<string, number> = {};
   p.tierData.forEach(t => { tierArpu[t.tier] = t.baseArpu; });
-  const mixBlendedArpu = blendTierMix(p.draftMix, tierArpu);
+  // THE WRITE SIDE of the blend. Before the collapse this read
+  // `tierArpu[tier] ?? 0`, so a member carrying share with an unknown ARPU
+  // contributed zero and the contaminated figure was written into the saved
+  // event's `arpu` AND its `revenue`. It is now absence, and absence here means
+  // there is no event to build: a promotion whose blended ARPU is unknown has
+  // no honest revenue. The card blocks Add/Save before reaching this, so this
+  // is the second line of defence rather than the user-facing one.
+  const mixBlendedArpu = p.mixEnabled ? blendTierMixOrNull(p.draftMix, tierArpu) : null;
+  if (p.mixEnabled && mixBlendedArpu === null) return [];
 
   const baseDate = parse(p.draft.date, 'yyyy-MM', new Date());
   const promoRebanded = p.target === 'Retention' && (p.mixEnabled || p.pricingEnabled);
@@ -329,7 +338,7 @@ function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
     // trailing-average — the exact same P4 fallback used for a plain volume
     // event — never a diluting zero.
     const baseArpu = p.mixEnabled
-      ? mixBlendedArpu
+      ? (mixBlendedArpu as number)
       : resolveEventArpuRevenue(vol, undefined, undefined, p.target, p.cohortAvgArpu).arpu;
     const finalArpu = p.pricingEnabled ? applyPricing(baseArpu) : baseArpu;
 
@@ -478,39 +487,38 @@ export function seedMixPreserving(
   return out;
 }
 
-/** Exported for the mix-constraint spec, which pins the new lock-aware
- *  `rebalance` against THIS function on the no-locks case rather than against a
- *  copy of it — a reference copy in a spec is how two implementations come to
- *  drift while both look verified. Collapsing this into `rebalance` is a
- *  behaviour change on a live control and belongs with the card work, not with
- *  the engine session that made it possible. */
+/**
+ * COLLAPSED 2026-08-11: a thin delegation to the mix engine's `rebalance` with
+ * an empty lock set. The body it replaced was the same arithmetic without
+ * locks, pinned equal to `rebalance` across 400 randomised cases by
+ * `spec:mix-constraint` before the collapse — so this is a change of ownership,
+ * not of behaviour.
+ *
+ * It keeps its own name and signature because it has TWO callers and only one
+ * of them is the promotion card: the Value tab's yield-event mix at the other
+ * call site has no padlocks and wants exactly this. The promotion card no
+ * longer goes through here at all — it calls `rebalance` directly, because it
+ * has a lock set to pass.
+ *
+ * On a blocked outcome it returns the mix UNCHANGED. `rebalance` blocks only on
+ * malformed input (a non-finite share, a member missing from the mix), and for
+ * a control with no locks the honest response to "this mix is not usable" is to
+ * leave it alone rather than to substitute a repaired one the user did not ask
+ * for.
+ */
 export function autoBalanceMix(prev: Record<string, number>, changedTier: string, newValue: number): Record<string, number> {
-  const clamped = Math.min(100, Math.max(0, newValue));
-  const others = Object.keys(prev).filter(t => t !== changedTier);
-  const otherSum = others.reduce((s, t) => s + prev[t], 0);
-  const remaining = 100 - clamped;
-
-  const next: Record<string, number> = { ...prev, [changedTier]: clamped };
-  if (otherSum === 0) {
-    const eq = remaining / others.length;
-    others.forEach((t, i) => {
-      next[t] = i === others.length - 1
-        ? remaining - eq * (others.length - 1)
-        : eq;
-    });
-  } else {
-    let allocated = 0;
-    others.forEach((t, i) => {
-      if (i === others.length - 1) {
-        next[t] = Math.max(0, remaining - allocated);
-      } else {
-        const share = Math.max(0, (prev[t] / otherSum) * remaining);
-        next[t] = share;
-        allocated += share;
-      }
-    });
-  }
-  return next;
+  // The old body would happily write a share for a tier not yet present in
+  // `prev` — it rebuilt `others` from the remaining keys and always assigned
+  // `next[changedTier]`. `rebalance` refuses that as malformed, which is right
+  // for the engine and WRONG here: it would silently drop a slider move landing
+  // in the frame between yieldTierData producing a tier and seedMixPreserving
+  // writing it into draftMix. The stage-2 gate called that reachability
+  // "apparent, not proven unreachable", which is reason enough to close it
+  // rather than reason to argue about it.
+  const members = changedTier in prev ? Object.keys(prev) : [...Object.keys(prev), changedTier];
+  const seeded = changedTier in prev ? prev : { ...prev, [changedTier]: 0 };
+  const outcome = rebalance(members, seeded, [], changedTier, newValue);
+  return outcome.kind === 'ok' ? outcome.shares : prev;
 }
 
 // ---------------------------------------------------------------------------
@@ -1385,6 +1393,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const [promoMixAxis, setPromoMixAxis] = useState<'value' | 'tariff'>('value');
   const [promoYieldArpuMode, setPromoYieldArpuMode] = useState<'historical' | 'forecast'>('historical');
   const [promoDraftMix, setPromoDraftMix] = useState<Record<string, number>>({});
+  /** Padlocked members. MANUAL ONLY — settled 2026-08-11, auto-lock is OFF, so
+   *  nothing but a padlock click ever writes to this. Moving a slider does not.
+   *  See EXPECTED.md; the engine takes locks as an input and returns none, which
+   *  is what keeps that decision reversible in the card alone. */
+  const [promoMixLocked, setPromoMixLocked] = useState<string[]>([]);
+  /** The typed target blend, as raw text. Blank is a REAL state — free sliders
+   *  with a live blend and no steering — so it cannot be modelled as 0. */
+  const [promoTargetArpu, setPromoTargetArpu] = useState<string>('');
 
   const [promoPricingEnabled, setPromoPricingEnabled] = useState(false);
   const [promoPricingMode, setPromoPricingMode] = useState<'percentage' | 'absolute'>('percentage');
@@ -1413,15 +1429,88 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoDraftMix(prev => seedMixPreserving(prev, promoTierData.map(t => t.tier)));
   }, [promoTierData.map(t => t.tier).join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /** Member ARPUs, keyed — the engine's `perMemberArpus`. Derived here once so
+   *  every engine call in this card sees the same numbers. */
+  const promoTierArpu = useMemo<Record<string, number>>(() => {
+    const m: Record<string, number> = {};
+    promoTierData.forEach(t => { m[t.tier] = t.baseArpu; });
+    return m;
+  }, [promoTierData]);
+
+  const promoMembers = useMemo(() => promoTierData.map(t => t.tier), [promoTierData]);
+
+  /** The reachable target interval given the padlocks. Recomputed, never
+   *  remembered — a remembered range is the stale-forecast class of mistake, and
+   *  this one would offer the user a target that stopped being reachable when
+   *  they last moved a slider. */
+  const promoMixRange = useMemo(
+    () => achievableTargetRange(promoMembers, promoDraftMix, promoMixLocked, promoTierArpu),
+    [promoMembers, promoDraftMix, promoMixLocked, promoTierArpu]);
+
+  /** A collapsed range locks every slider — settled semantics. The control says
+   *  so rather than offering movement that cannot happen. This is the ONLY
+   *  automatic locking in the card, and it is not auto-lock: it is the
+   *  constraints leaving one value, not an inference from an interaction. */
+  const promoRangeCollapsed = promoMixRange.kind === 'ok' && promoMixRange.range.collapsed;
+
+  /** Blank target is a real state, not zero. */
+  const promoTargetParsed = useMemo<number | null>(() => {
+    const raw = promoTargetArpu.trim();
+    if (raw === '') return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  }, [promoTargetArpu]);
+
+  /** The typed target's outcome. Null when no target is typed — which is the
+   *  free-sliders case and carries no verdict at all, as distinct from a target
+   *  that was typed and blocked. Two meanings of null, kept apart. */
+  const promoTargetOutcome = useMemo(
+    () => promoTargetParsed === null
+      ? null
+      : solveForTarget(promoMembers, promoDraftMix, promoMixLocked, promoTierArpu, promoTargetParsed),
+    [promoTargetParsed, promoMembers, promoDraftMix, promoMixLocked, promoTierArpu]);
+
   const handlePromoSliderChange = useCallback((changedTier: string, newValue: number) => {
-    setPromoDraftMix(prev => autoBalanceMix(prev, changedTier, newValue));
+    // Straight to the engine with the CURRENT locks, and no lock state written:
+    // auto-lock is OFF. A blocked outcome leaves the mix untouched rather than
+    // substituting a repaired one the user did not ask for.
+    setPromoDraftMix(prev => {
+      const out = rebalance(promoMembers, prev, promoMixLocked, changedTier, newValue);
+      return out.kind === 'ok' ? out.shares : prev;
+    });
+  }, [promoMembers, promoMixLocked]);
+
+  /** The padlock. The ONLY thing that changes lock state. */
+  const handlePromoLockToggle = useCallback((tier: string) => {
+    setPromoMixLocked(prev => prev.includes(tier) ? prev.filter(t => t !== tier) : [...prev, tier]);
   }, []);
 
-  const promoDraftBlendedArpu = useMemo(() => {
-    const tierArpu: Record<string, number> = {};
-    promoTierData.forEach(t => { tierArpu[t.tier] = t.baseArpu; });
-    return blendTierMix(promoDraftMix, tierArpu);
-  }, [promoDraftMix, promoTierData]);
+  /** Applying a typed target rewrites the unlocked shares to hit it. Only ever
+   *  called from the ok arm — an unreachable target is SHOWN, never clamped to
+   *  the nearest reachable one, because silently moving a user's number to one
+   *  they did not type is the tool stating something on their behalf. */
+  const handlePromoApplyTarget = useCallback(() => {
+    if (promoTargetOutcome?.kind !== 'ok') return;
+    setPromoDraftMix(promoTargetOutcome.shares);
+  }, [promoTargetOutcome]);
+
+  /** The live blend. Null is ABSENCE — a member carrying share whose ARPU is
+   *  unknown — and renders as such with its reason, never as 0.00. */
+  const promoDraftBlendedArpu = useMemo(
+    () => blendTierMixOrNull(promoDraftMix, promoTierArpu),
+    [promoDraftMix, promoTierArpu]);
+
+  /** READ STAYS TOLERANT. A restored mix that does not sum to 100 loads exactly
+   *  as saved and is flagged amber; it is never silently normalised. The engine
+   *  repairs on WRITE, which is a different moment and a visible one. */
+  const promoMixConforms = useMemo(
+    () => conformsToTotal(promoMembers, promoDraftMix),
+    [promoMembers, promoDraftMix]);
+
+  /** Save guard: the card cannot write a non-conforming mix, and cannot write a
+   *  mix whose blend is unknown. Both are absence, and neither is a zero. */
+  const promoMixBlocksSave = promoMixEnabled && promoTierData.length > 0 &&
+    (!promoMixConforms || promoDraftBlendedArpu === null);
 
   // Trailing 3-month cohort-average ARPU for the promo's own dimensions/target
   // (Phase 3 P4 pattern) — the fallback base when the mix arm isn't used.
@@ -1444,12 +1533,25 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoMixEnabled(false);
     setPromoPricingEnabled(false);
     setPromoPricingAmount(0);
+    // Both are DRAFT-TIME state that no MarketEvent carries, so neither can be
+    // restored from a saved event and both must be cleared here. Left behind,
+    // padlocks from the last promotion would silently constrain the next one and
+    // a stale target would flag it unreachable — the modal-lifecycle failure in
+    // a new place.
+    setPromoMixLocked([]);
+    setPromoTargetArpu('');
   }, []);
 
   // ── Add Custom Promotion event(s) ─────────────────────────────────────────
   const handleAddPromotionEvent = useCallback(() => {
     if (!newPromo.date || !newPromo.subscriberVolume) return;
     if (promoMixEnabled && promoTierData.length === 0) return;
+    // WRITE-SIDE ENFORCEMENT. The card cannot save a mix that does not sum
+    // to the total, nor one whose blend is unknown. Both are refusals, not
+    // repairs: the engine conforms shares it PRODUCES, but a mix the user
+    // has left non-conforming is theirs to resolve, and silently rewriting
+    // it on save is the tool stating something on their behalf.
+    if (promoMixBlocksSave) return;
 
     const events = buildPromoEvents({
       target: promoTarget, draft: newPromo,
@@ -2104,6 +2206,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoMixEnabled(!!event.promoMix);
     setPromoMixAxis(event.promoMixAxis ?? 'value');
     setPromoDraftMix(event.promoMix ? { ...event.promoMix } : {});
+    // Locks and target are draft-time only and no saved event carries them,
+    // so opening an edit starts from no holds and no target rather than
+    // inheriting whatever the previous draft had.
+    setPromoMixLocked([]);
+    setPromoTargetArpu('');
     setPromoPricingEnabled(event.promoPricingAmount !== undefined);
     setPromoPricingMode(event.promoPricingMode ?? 'percentage');
     setPromoPricingAmount(event.promoPricingAmount ?? 0);
@@ -2152,6 +2259,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoMixEnabled(!!first.promoMix);
     setPromoMixAxis(first.promoMixAxis ?? 'value');
     setPromoDraftMix(first.promoMix ? { ...first.promoMix } : {});
+    // Locks and target are draft-time only and no saved event carries them,
+    // so opening an edit starts from no holds and no target rather than
+    // inheriting whatever the previous draft had.
+    setPromoMixLocked([]);
+    setPromoTargetArpu('');
     setPromoPricingEnabled(first.promoPricingAmount !== undefined);
     setPromoPricingMode(first.promoPricingMode ?? 'percentage');
     setPromoPricingAmount(first.promoPricingAmount ?? 0);
@@ -4371,24 +4483,97 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                   className={`px-2.5 py-1 text-[10px] font-semibold rounded-md transition-all ${promoYieldArpuMode === 'forecast' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                                 >{t('whatif_forecast_arpu')}</button>
                               </div>
-                              <span className={`text-xs font-semibold tabular-nums ${Math.abs((Object.values(promoDraftMix) as number[]).reduce((s, v) => s + v, 0) - 100) < 0.2 ? 'text-emerald-600' : 'text-amber-500'}`}>
-                                
+                              {/* READ TOLERANCE, made visible. A restored mix that does
+                                  not sum to 100 loads exactly as saved; this is the
+                                  display that says so, and the reason it is never
+                                  silently normalised on load. Now driven by the
+                                  engine's conformsToTotal rather than a second
+                                  hand-rolled 0.2 tolerance. */}
+                              <span
+                                className={`text-xs font-semibold tabular-nums ${promoMixConforms ? 'text-emerald-600' : 'text-amber-500'}`}
+                                title={promoMixConforms ? undefined : t('whatif_mix_sum_amber_reason')}
+                              >
                                 {t('whatif_sum')}{(Object.values(promoDraftMix) as number[]).reduce((s, v) => s + v, 0).toFixed(1)}%
                               </span>
                             </div>
                           </div>
 
-                          <div className="grid gap-x-3 mb-1 pr-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider" style={{ gridTemplateColumns: 'minmax(80px,180px) 1fr 52px 90px' }}>
+                          {/* TARGET BLEND. Blank is a real state: free sliders and a
+                              live blend, with nothing steering the user. */}
+                          <div className="mb-3 p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <label className="text-[11px] font-semibold text-slate-600 whitespace-nowrap">
+                                {t('whatif_mix_target_arpu')}
+                              </label>
+                              <input
+                                type="number"
+                                step={0.01}
+                                value={promoTargetArpu}
+                                placeholder={t('whatif_mix_target_placeholder')}
+                                onChange={e => setPromoTargetArpu(e.target.value)}
+                                className="w-24 text-xs font-semibold text-slate-700 text-right tabular-nums border border-slate-200 rounded px-1.5 py-1 outline-none focus:border-[#e60000] bg-white"
+                              />
+                              <button
+                                type="button"
+                                disabled={promoTargetOutcome?.kind !== 'ok'}
+                                onClick={handlePromoApplyTarget}
+                                className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-[#e60000] text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                              >{t('whatif_mix_target_apply')}</button>
+                              {promoMixRange.kind === 'ok' && !promoRangeCollapsed && (
+                                <span className="text-[11px] text-slate-500 tabular-nums">
+                                  {t('whatif_mix_reachable_range')}{' '}
+                                  {formatNumber(promoMixRange.range.min)} – {formatNumber(promoMixRange.range.max)}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* A COLLAPSED RANGE LOCKS. Settled semantics: the control
+                                says so rather than offering movement that cannot
+                                happen. This is the constraints leaving one value, NOT
+                                auto-lock — auto-lock is OFF. */}
+                            {promoRangeCollapsed && promoMixRange.kind === 'ok' && (
+                              <div className="mt-2 text-[11px] text-slate-600">
+                                {t('whatif_mix_range_collapsed')}{' '}
+                                <span className="font-semibold tabular-nums">{formatNumber(promoMixRange.range.min)}</span>
+                              </div>
+                            )}
+
+                            {/* UNREACHABLE, SHOWN AND NEVER CLAMPED. The binding
+                                constraint is named — which member forms the wall and
+                                where the wall is. Moving the user's number to the
+                                nearest reachable one would be the tool stating
+                                something on their behalf. */}
+                            {promoTargetOutcome?.kind === 'blocked' && (
+                              <div className="mt-2 text-[11px] text-amber-600">
+                                <span className="font-semibold">{t('whatif_mix_target_unreachable')}</span>{' '}
+                                {(promoTargetOutcome.reason === 'above-max' || promoTargetOutcome.reason === 'below-min')
+                                  ? t(promoTargetOutcome.reason === 'above-max' ? 'whatif_mix_bound_above' : 'whatif_mix_bound_below',
+                                      { member: promoTargetOutcome.binding?.member ?? '',
+                                        bound: formatNumber(promoTargetOutcome.binding?.bound ?? 0) })
+                                  : t('whatif_mix_target_blocked_other')}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="grid gap-x-3 mb-1 pr-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider" style={{ gridTemplateColumns: 'minmax(80px,180px) 1fr 52px 34px 90px' }}>
                             <span>{promoMixAxis === 'tariff' ? t('whatif_tariff') : t('whatif_tier')}</span>
                             <span />
                             <span className="text-right">{t('whatif_mix_pct')}</span>
+                            <span className="text-center">{t('whatif_mix_hold')}</span>
                             <span className="text-right">{t('whatif_base_arpu')}</span>
                           </div>
                           <div className={`space-y-1.5 pr-1 ${promoTierData.length > 8 ? 'overflow-y-auto max-h-[300px]' : ''}`}>
                             {promoTierData.map(({ tier, baseArpu }) => {
                               const mixPct = promoDraftMix[tier] ?? 0;
+                              const held = promoMixLocked.includes(tier);
+                              // Immovable for one of TWO distinct reasons: the user
+                              // held it, or the constraints leave a single value. The
+                              // padlock only ever reflects the first — collapsing the
+                              // two would make the control claim the user held
+                              // something they did not.
+                              const immovable = held || promoRangeCollapsed;
                               return (
-                                <div key={tier} className="grid gap-x-3 items-center" style={{ gridTemplateColumns: 'minmax(80px,180px) 1fr 52px 90px' }}>
+                                <div key={tier} className="grid gap-x-3 items-center" style={{ gridTemplateColumns: 'minmax(80px,180px) 1fr 52px 34px 90px' }}>
                                   <span className="text-xs font-medium text-slate-700 truncate leading-none" title={tier}>{tier}</span>
                                   <input
                                     type="range"
@@ -4396,8 +4581,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                     max={100}
                                     step={0.1}
                                     value={mixPct}
+                                    disabled={immovable}
                                     onChange={e => handlePromoSliderChange(tier, Number(e.target.value))}
-                                    className="w-full accent-[#e60000] h-1.5 cursor-pointer"
+                                    className="w-full accent-[#e60000] h-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                   />
                                   <input
                                     type="number"
@@ -4405,9 +4591,23 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                     max={100}
                                     step={0.1}
                                     value={parseFloat(mixPct.toFixed(1))}
+                                    disabled={immovable}
                                     onChange={e => handlePromoSliderChange(tier, Number(e.target.value))}
-                                    className="w-full text-xs font-semibold text-slate-700 text-right tabular-nums border border-slate-200 rounded px-1 py-0.5 outline-none focus:border-[#e60000] bg-white"
+                                    className="w-full text-xs font-semibold text-slate-700 text-right tabular-nums border border-slate-200 rounded px-1 py-0.5 outline-none focus:border-[#e60000] bg-white disabled:bg-slate-50 disabled:text-slate-400"
                                   />
+                                  {/* THE PADLOCK. Manual only — clicking it is the one
+                                      thing in this card that changes lock state.
+                                      Moving a slider does not: auto-lock is OFF,
+                                      settled 2026-08-11. */}
+                                  <button
+                                    type="button"
+                                    data-testid={`promo-mix-lock-${tier}`}
+                                    aria-pressed={held}
+                                    aria-label={held ? t('whatif_mix_release') : t('whatif_mix_hold_aria')}
+                                    title={held ? t('whatif_mix_release') : t('whatif_mix_hold_aria')}
+                                    onClick={() => handlePromoLockToggle(tier)}
+                                    className={`justify-self-center px-1.5 py-0.5 text-[13px] leading-none rounded transition-colors ${held ? 'text-[#e60000]' : 'text-slate-300 hover:text-slate-500'}`}
+                                  >{held ? '\u{1F512}' : '\u{1F513}'}</button>
                                   <span className="text-xs text-slate-400 text-right tabular-nums leading-none">
                                     {formatNumber(baseArpu)}
                                   </span>
@@ -4415,7 +4615,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               );
                             })}
                           </div>
-                          <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">{t('whatif_promo_blended_arpu')}{' '}<span className="font-semibold text-slate-700">{formatNumber(promoDraftBlendedArpu)}</span>
+                          {/* ABSENCE IS NOT 0.00. A member carrying share whose ARPU
+                              is unknown means there IS no blend, and the copy states
+                              the cause. formatNumber(null) would have printed a
+                              figure that reads as a real, very cheap mix — which is
+                              exactly what the ?? 0 collapse removed. */}
+                          <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
+                            {t('whatif_promo_blended_arpu')}{' '}
+                            {promoDraftBlendedArpu === null
+                              ? <span className="font-semibold text-amber-600" title={t('whatif_mix_blend_unknown_reason')}>{t('whatif_mix_blend_unknown')}</span>
+                              : <span className="font-semibold text-slate-700">{formatNumber(promoDraftBlendedArpu)}</span>}
                           </div>
                         </div>
                       )}
@@ -4506,7 +4715,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     <div className="flex gap-2 shrink-0">
                       <button
                         onClick={editingPromoCampaign ? handleSavePromoCampaign : handleSavePromoEdit}
-                        disabled={!newPromo.date || !newPromo.subscriberVolume || (promoMixEnabled && promoTierData.length === 0)}
+                        disabled={!newPromo.date || !newPromo.subscriberVolume || (promoMixEnabled && promoTierData.length === 0) || promoMixBlocksSave}
                         className="bg-[#e60000] text-white text-sm font-semibold py-2 px-5 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         {editingPromoCampaign ? t('whatif_save_campaign') : t('whatif_save_changes')}
@@ -4519,7 +4728,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   ) : (
                     <button
                       onClick={handleAddPromotionEvent}
-                      disabled={!newPromo.date || !newPromo.subscriberVolume || (promoMixEnabled && promoTierData.length === 0)}
+                      disabled={!newPromo.date || !newPromo.subscriberVolume || (promoMixEnabled && promoTierData.length === 0) || promoMixBlocksSave}
                       className="bg-[#e60000] text-white text-sm font-semibold py-2 px-5 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
                     >{t('whatif_add_promotion')}</button>
                   )}

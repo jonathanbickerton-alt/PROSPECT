@@ -726,5 +726,20 @@
   "overall_aggregates_derive": "{{count}} aggregate views derive from their leaves — they are never fitted, and are not missing.",
   "baseline_forecast_appears_once_generated": "The forecast will appear here once generated. Generating one unlocks Step 2.",
   "standard_base_panel_has_no_band": "Base volume is reconstructed from the opening stock and the forecast flows, so this panel has no band to show. The Base line is on the Actuals Review chart.",
-  "standard_base_no_opening_stock": "This selection has no known opening base stock, so a Base series cannot be reconstructed for it. Inflow, Outflow and Retention are unaffected."
+  "standard_base_no_opening_stock": "This selection has no known opening base stock, so a Base series cannot be reconstructed for it. Inflow, Outflow and Retention are unaffected.",
+  "whatif_mix_target_arpu": "Ziel-Misch-ARPU",
+  "whatif_mix_target_placeholder": "beliebig",
+  "whatif_mix_target_apply": "Anwenden",
+  "whatif_mix_reachable_range": "Erreichbar:",
+  "whatif_mix_hold": "Halten",
+  "whatif_mix_hold_aria": "Diesen Anteil halten, während die anderen ausgleichen",
+  "whatif_mix_release": "Diesen Anteil freigeben",
+  "whatif_mix_range_collapsed": "Die Haltungen lassen nur einen erreichbaren Mischwert zu, die Regler sind daher unbeweglich:",
+  "whatif_mix_target_unreachable": "Ziel nicht erreichbar.",
+  "whatif_mix_bound_above": "Der höchste mit diesen Haltungen mögliche Mischwert ist {{bound}}, bestimmt durch {{member}}. Geben Sie eine Haltung frei oder senken Sie das Ziel.",
+  "whatif_mix_bound_below": "Der niedrigste mit diesen Haltungen mögliche Mischwert ist {{bound}}, bestimmt durch {{member}}. Geben Sie eine Haltung frei oder erhöhen Sie das Ziel.",
+  "whatif_mix_target_blocked_other": "Die aktuellen Haltungen lassen nichts Bewegliches übrig.",
+  "whatif_mix_blend_unknown": "nicht bekannt",
+  "whatif_mix_blend_unknown_reason": "Eine Stufe mit Anteil hat keinen ARPU, daher gibt es keinen Mischwert. Das ist kein Mischwert von null.",
+  "whatif_mix_sum_amber_reason": "Diese Mischung ergibt nicht 100 %. Sie wurde exakt wie gespeichert geladen und nicht für Sie angepasst; bearbeiten Sie einen Anteil, bevor Sie speichern."
 }

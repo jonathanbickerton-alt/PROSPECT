@@ -726,5 +726,20 @@
   "overall_aggregates_derive": "{{count}} aggregate views derive from their leaves — they are never fitted, and are not missing.",
   "baseline_forecast_appears_once_generated": "The forecast will appear here once generated. Generating one unlocks Step 2.",
   "standard_base_panel_has_no_band": "Base volume is reconstructed from the opening stock and the forecast flows, so this panel has no band to show. The Base line is on the Actuals Review chart.",
-  "standard_base_no_opening_stock": "This selection has no known opening base stock, so a Base series cannot be reconstructed for it. Inflow, Outflow and Retention are unaffected."
+  "standard_base_no_opening_stock": "This selection has no known opening base stock, so a Base series cannot be reconstructed for it. Inflow, Outflow and Retention are unaffected.",
+  "whatif_mix_target_arpu": "ARPU misto obiettivo",
+  "whatif_mix_target_placeholder": "qualsiasi",
+  "whatif_mix_target_apply": "Applica",
+  "whatif_mix_reachable_range": "Raggiungibile:",
+  "whatif_mix_hold": "Blocca",
+  "whatif_mix_hold_aria": "Blocca questa quota mentre le altre si riequilibrano",
+  "whatif_mix_release": "Sblocca questa quota",
+  "whatif_mix_range_collapsed": "I blocchi lasciano un solo valore misto raggiungibile, quindi i cursori non possono muoversi:",
+  "whatif_mix_target_unreachable": "Obiettivo non raggiungibile.",
+  "whatif_mix_bound_above": "Il valore misto più alto consentito da questi blocchi è {{bound}}, determinato da {{member}}. Sblocca una quota o abbassa l’obiettivo.",
+  "whatif_mix_bound_below": "Il valore misto più basso consentito da questi blocchi è {{bound}}, determinato da {{member}}. Sblocca una quota o alza l’obiettivo.",
+  "whatif_mix_target_blocked_other": "I blocchi attuali non lasciano nulla di libero da spostare.",
+  "whatif_mix_blend_unknown": "non nota",
+  "whatif_mix_blend_unknown_reason": "Un livello con quota non ha ARPU, quindi non esiste un valore misto da mostrare. Non è un valore misto pari a zero.",
+  "whatif_mix_sum_amber_reason": "Questo mix non somma 100%. È stato caricato esattamente come salvato e non è stato corretto per te; modifica una quota prima di salvare."
 }

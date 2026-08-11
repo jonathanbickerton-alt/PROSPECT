@@ -60,6 +60,16 @@ const EPS_REACH = 1e-9;
  * probe compiled under this exact tsconfig showed the boolean form failing and
  * the string form narrowing cleanly.
  */
+/**
+ * `detail` strings on every blocked outcome below are DIAGNOSTIC ONLY and are
+ * never rendered. The card branches on `reason` and renders its own keyed copy
+ * through `t()`, in all six locales; nothing puts `detail` on screen, verified
+ * by grep across `src/components/` and `src/App.tsx`.
+ *
+ * Stated because the i18n scanner flags them as must-key and a future reader
+ * would otherwise have to re-derive whether that is a real gap. It is not — but
+ * the moment one of these is rendered, it becomes one.
+ */
 export type MixBlockReason =
   /** No members. An absent mix, which is not the same claim as an empty one. */
   | 'no-members'

@@ -30,7 +30,7 @@
 import {
   MIX_TOTAL, conformsToTotal, blendedArpu, achievableTargetRange, rebalance, solveForTarget,
 } from '../src/utils/mixConstraint';
-import { blendTierMix } from '../src/utils/forecasting';
+import { blendTierMixOrNull } from '../src/utils/forecasting';
 import { autoBalanceMix } from '../src/components/WhatIfTab';
 
 let pass = 0; const fails: string[] = [];
@@ -72,16 +72,23 @@ const EVEN = { 'Low Value': 100 / 3, 'Mid Value': 100 / 3, 'High Value': 100 - (
     got !== null && !near(got, (8 + 20 + 45) / 3),
     'a mean would answer a different question and coincides only on an even mix');
 
-  // Agreement with the shipped display blend. Two blends that drift apart is
-  // the defect the module docstring names; this is where it would show.
+  // DELEGATION, not agreement. Session 1 pinned these two as equal on
+  // well-formed input while they were separate implementations; session 2
+  // collapsed blendTierMix into blendedArpu, so the check is now that the alias
+  // really does forward. Identity rather than approximate equality is the point
+  // — a re-implementation that merely agreed to 1e-9 would pass an `near` check
+  // and fail this one.
   const cases = [mix, EVEN, { 'Low Value': 100, 'Mid Value': 0, 'High Value': 0 },
                  { 'Low Value': 0, 'Mid Value': 0, 'High Value': 100 }];
   let agreed = 0;
   for (const c of cases) {
-    const a = blendedArpu(c, BAND_ARPU);
-    if (a !== null && near(a, blendTierMix(c, BAND_ARPU))) agreed++;
+    if (blendedArpu(c, BAND_ARPU) === blendTierMixOrNull(c, BAND_ARPU)) agreed++;
   }
-  check('blend: agrees with blendTierMix on all 4 well-formed cases', agreed === 4, `${agreed}/4`);
+  check('blend: blendTierMixOrNull DELEGATES — identical values on all 4 cases',
+    agreed === 4, `${agreed}/4`);
+  check('blend: and delegates its ABSENCE too, which is the behaviour that changed',
+    blendTierMixOrNull({ 'Low Value': 50, 'Ghost': 50 }, BAND_ARPU) === null,
+    'the old body returned 4 here via ?? 0 — a real, very cheap Ghost');
 
   check('blend: a single member at 100 is that member ARPU',
     near(blendedArpu({ 'High Value': 100 }, BAND_ARPU) as number, 45));
@@ -220,6 +227,15 @@ const EVEN = { 'Low Value': 100 / 3, 'Mid Value': 100 / 3, 'High Value': 100 - (
   }
   check('rebalance: matches the shipped autoBalanceMix on all 400 no-lock cases',
     compared === 400 && matched === 400, `${matched}/${compared} — the real function, not a copy`);
+
+  // A tier the mix does not yet carry. The pre-collapse body wrote it in; the
+  // engine calls that malformed and refuses, so autoBalanceMix seeds it before
+  // delegating. Found by the stage-2 gate as a difference between the old body
+  // and the new delegation, and closed rather than argued about.
+  const late = autoBalanceMix({ 'Low Value': 60, 'Mid Value': 40 }, 'High Value', 20);
+  check('rebalance: autoBalanceMix still accepts a tier not yet in the mix',
+    near(late['High Value'], 20) && near(Object.values(late).reduce((a, b) => a + b, 0), 100),
+    JSON.stringify(late));
 }
 
 // ---------------------------------------------------------------------------

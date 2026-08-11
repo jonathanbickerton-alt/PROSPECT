@@ -5710,6 +5710,78 @@ is a red run rather than a discovery.
 Guard-traps **53** (clamp restored), **54** (repair over a padlock), **55**
 (diluting zero for an unknown ARPU) plant exactly these three defects.
 
+### A THIRD hand-rolled blend exists, and is NOT collapsed — recorded 2026-08-11
+
+Session 2 collapsed the two blends the brief named: `blendTierMix` became
+`blendTierMixOrNull` delegating to `blendedArpu`, and `autoBalanceMix` became a
+delegation to `rebalance`. **A third copy of the blend formula was found while
+doing it and deliberately left alone.**
+
+`WhatIfTab.tsx`'s Value-tab draft blend computes
+`yieldTierData.reduce((sum, t) => sum + (draftMix[t.tier] ?? 0) / 100 * t.baseArpu, 0)`
+inline — the same Σ share·arpu, hand-rolled, never routed through either named
+function. It is a fourth copy waiting to happen.
+
+**Why it was not collapsed here.** It is a live control on the Value tab, and
+this session was scoped to the promotion card. Collapsing it is a behaviour
+change on a surface the session did not gate, and its absence semantics differ:
+its domain is `yieldTierData`, so every member necessarily has a `baseArpu` and
+the unknown-ARPU case that motivated the collapse cannot arise there. Recorded
+rather than silently left — the same treatment `scenarioHelper`'s third parser
+got, and for the same reason.
+
+**Watch item, unchanged:** `scenarioHelper` remains where a fourth copy of the
+three behaviour predicates would be born if mix mode ever surfaces in Scenario
+Compare. It was not wired this session.
+
+### FIXTURE — PROSPECT_Save_PromoMix_Behavioural.xlsx, 2026-08-11
+
+**The promo family's FIRST behavioural fixture.** Every promo-field check before
+it was constructed: it built an event in memory, wrote it, read it back. That
+proved the round trip's logic over the real file format and nothing about any
+save that exists — because until now **no shipped save carried a promotion event
+at all** (the 07 Aug save's `Market_Events` sheet is the "No market events
+defined" placeholder).
+
+| | |
+|---|---|
+| **Name** | `test-data/PROSPECT_Save_PromoMix_Behavioural.xlsx` |
+| **Produced by** | `scripts/build-promo-mix-fixture.mjs` — committed, deterministic |
+| **Build** | the mix-mode card session, main @ `073be25` + session-2 changes |
+| **For** | `spec:event-roundtrip`'s behavioural block |
+| **Contains** | three promotion events: mix arm; mix + pricing arm with a **zero** pricing amount; and one with **no mix arm at all** |
+
+**The mix is SOLVED BY THE ENGINE, not hand-written.** The builder calls
+`solveForTarget` with High Value **held at 40** and a typed target blend of
+**26**, giving `{Low 33.333…, Mid 26.666…, High 40}`. So the fixture records a
+state the card could actually have produced. A hand-written mix would be a guess
+about the engine's output wearing a fixture's clothes, and would go stale
+silently the first time the solver changed.
+
+**The builder self-checks before writing** — conformance, blend equals target,
+held member unmoved — and exits non-zero rather than emitting a fixture that
+fails the invariants it exists to demonstrate. A bad fixture is worse than none,
+because it gets cited as evidence.
+
+**NOT COMMITTED AS A BINARY, deliberately.** The session brief asked for the
+export to be committed under `test-data/`. `.gitignore:15` excludes
+`/test-data/*.xlsx` and no `.xlsx` is tracked anywhere in this repo; the fixture
+convention requires regeneration through a committed deterministic builder and
+forbids hand-made fixtures. The brief said "with provenance per
+fixture-handling", so the convention governs and **the builder is what was
+committed**. Same behavioural case, reproducible from a fresh clone, which a
+gitignored binary would not be.
+
+Regenerate with:
+
+```
+node scripts/build-promo-mix-fixture.mjs
+```
+
+The spec **fails loudly** when the file is absent rather than skipping — a
+behavioural case that disappears with its fixture is how a suite reports green
+while testing less than it claims.
+
 
 
 ### DQ PHASE REQUIREMENT — the retirement statement belongs on the orientation line
@@ -6377,16 +6449,31 @@ reachable; it does not propose which reachable point to pick.
 - **The flex rule is SETTLED**: explicit padlocks hold, unlocked sliders
   balance.
 
-  **One detail remains PENDING and only one: whether moving a slider
-  auto-locks it.** That is our addition, not Alessandro's, and it is with him.
-  The do-not-build guard applies to that detail alone - the padlock mechanism
-  itself is agreed and can be designed against.
+  **SETTLED 2026-08-11: auto-lock is OFF. Padlocks are manual only.** Moving a
+  slider rebalances the unlocked others and changes no lock state; the only way
+  a member becomes held is the user clicking its padlock.
 
-  It matters because it is touched-pinning returning in a smaller form: if a
-  move auto-locks, intent is again inferred from an interaction, just with a
-  visible padlock to undo it. That may well be right - it is the difference
-  between an inference the user can see and one they cannot - but it is his
-  call, not ours.
+  **PROVENANCE, stated precisely because it is easy to misread.** This is
+  **Jon's decision, taken in the session of 2026-08-11**, when the session brief
+  arrived with the auto-lock line left as an unfilled template and the build
+  stopped on it. **Alessandro was not asked and has not seen it.** It is
+  recorded as settled because Jon settled it, not because the original question
+  to Alessandro came back. If his view is later sought and differs, this entry
+  is the thing to revisit — the engine takes locks as an input and returns none,
+  so the reversal is a card change and not an engine one.
+
+  **The do-not-build guard is LIFTED** as of that decision. It had applied to
+  this detail alone; the padlock mechanism itself was always agreed.
+
+  **Why OFF is the coherent answer, recorded so the reasoning survives the
+  decision.** Auto-lock was touched-pinning returning in a smaller form: a move
+  would once again infer intent from an interaction, merely with a visible
+  padlock to undo it. The visibility is a real improvement and was the whole
+  argument for it. But the objection that retired touched-pinning was that the
+  user should *state* what is held rather than have it deduced, and auto-lock
+  does not answer that objection — it makes the deduction legible without making
+  it a statement. Manual-only padlocks mean a held member is always one the user
+  chose to hold.
 
 #### PREREQUISITE, promoted: the workbook-import promo-field drop
 

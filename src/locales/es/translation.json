@@ -726,5 +726,20 @@
   "overall_aggregates_derive": "{{count}} aggregate views derive from their leaves — they are never fitted, and are not missing.",
   "baseline_forecast_appears_once_generated": "The forecast will appear here once generated. Generating one unlocks Step 2.",
   "standard_base_panel_has_no_band": "Base volume is reconstructed from the opening stock and the forecast flows, so this panel has no band to show. The Base line is on the Actuals Review chart.",
-  "standard_base_no_opening_stock": "This selection has no known opening base stock, so a Base series cannot be reconstructed for it. Inflow, Outflow and Retention are unaffected."
+  "standard_base_no_opening_stock": "This selection has no known opening base stock, so a Base series cannot be reconstructed for it. Inflow, Outflow and Retention are unaffected.",
+  "whatif_mix_target_arpu": "ARPU mixto objetivo",
+  "whatif_mix_target_placeholder": "cualquiera",
+  "whatif_mix_target_apply": "Aplicar",
+  "whatif_mix_reachable_range": "Alcanzable:",
+  "whatif_mix_hold": "Fijar",
+  "whatif_mix_hold_aria": "Fijar esta proporción mientras las demás se reequilibran",
+  "whatif_mix_release": "Liberar esta proporción",
+  "whatif_mix_range_collapsed": "Las fijaciones dejan un único valor mixto alcanzable, por lo que los controles no pueden moverse:",
+  "whatif_mix_target_unreachable": "Objetivo no alcanzable.",
+  "whatif_mix_bound_above": "El valor mixto más alto que permiten estas fijaciones es {{bound}}, determinado por {{member}}. Libere una fijación o reduzca el objetivo.",
+  "whatif_mix_bound_below": "El valor mixto más bajo que permiten estas fijaciones es {{bound}}, determinado por {{member}}. Libere una fijación o aumente el objetivo.",
+  "whatif_mix_target_blocked_other": "Las fijaciones actuales no dejan nada libre para mover.",
+  "whatif_mix_blend_unknown": "no se conoce",
+  "whatif_mix_blend_unknown_reason": "Un nivel con proporción no tiene ARPU, por lo que no hay valor mixto que mostrar. No es un valor mixto de cero.",
+  "whatif_mix_sum_amber_reason": "Esta mezcla no suma 100 %. Se cargó exactamente como se guardó y no se ha ajustado por usted; edite una proporción antes de guardar."
 }

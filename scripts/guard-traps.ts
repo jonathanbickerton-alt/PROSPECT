@@ -60,6 +60,7 @@ const APP = 'src/App.tsx';
 const VIEWFILTER = 'src/utils/viewFilter.ts';
 const MIXSPEC = 'scripts/mix-constraint-spec.ts';
 const MIXENGINE = 'src/utils/mixConstraint.ts';
+const MIXCARD = 'scripts/mix-card-spec.tsx';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE];
@@ -602,6 +603,43 @@ const TRAPS: Trap[] = [
     // module is LF. A multi-line anchor here is a trap that reports
     // INCONCLUSIVE for a line-ending reason and protects nothing.
     mutate: s => s.replace('    if (a === null) return null;', '    if (a === null) continue;') },
+  // ── Traps 56-58: the CARD's wiring to the engine. Session 2. Each severs one
+  //    of the three things Jon's walk gates by eye, so a silent regression in
+  //    any of them is a red run rather than something noticed months later.
+  //
+  // 56 is the one the brief names: a hand-rolled rebalance put back in place of
+  // the engine call. It ignores the lock set — which is precisely what a
+  // re-implementation would forget, because the shipped autoBalanceMix never
+  // had locks to forget.
+  { id: '56 card re-implements rebalance and drops the locks', why: 'a padlocked share moves anyway',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      '      const out = rebalance(promoMembers, prev, promoMixLocked, changedTier, newValue);' + nl +
+      "      return out.kind === 'ok' ? out.shares : prev;",
+      '      return autoBalanceMix(prev, changedTier, newValue);') },
+  // 57 reintroduces auto-lock, the thing settled OFF on 2026-08-11. A spec that
+  // only checked "the mix rebalanced" would stay green through this; the
+  // negative assertion is what catches it.
+  { id: '57 auto-lock reintroduced', why: 'moving a slider silently holds it — settled OFF',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      '  const handlePromoLockToggle = useCallback((tier: string) => {',
+      '  const __trapAutoLock = 1; void __trapAutoLock;' + nl +
+      '  const handlePromoLockToggle = useCallback((tier: string) => {')
+      .replace(
+      '    setPromoDraftMix(prev => {' + nl +
+      '      const out = rebalance(promoMembers, prev, promoMixLocked, changedTier, newValue);',
+      '    setPromoMixLocked(prev => prev.includes(changedTier) ? prev : [...prev, changedTier]);' + nl +
+      '    setPromoDraftMix(prev => {' + nl +
+      '      const out = rebalance(promoMembers, prev, promoMixLocked, changedTier, newValue);') },
+  // 58 removes the write-side guard. The card would then happily save a mix that
+  // does not total 100 — the invariant enforced everywhere except the one moment
+  // it reaches a file.
+  { id: '58 write-side enforcement removed', why: 'a non-conforming mix can be saved',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      'const promoMixBlocksSave = promoMixEnabled && promoTierData.length > 0 &&',
+      'const promoMixBlocksSave = false && promoMixEnabled && promoTierData.length > 0 &&') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -612,7 +650,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

@@ -1,5 +1,7 @@
 import { addMonths, format, isValid } from 'date-fns';
 import type { BaseForecast, BaseForecastMonth, CohortKey, ForecastBand, ForecastModel, FittedParams, SkipReason, ArpuBand } from '../types/forecast';
+// One direction only: mixConstraint imports nothing, so this cannot cycle.
+import { blendedArpu } from './mixConstraint';
 
 export interface MarketEvent {
   id: string;
@@ -188,12 +190,49 @@ export function readStoredEventModifiers(row: Record<string, unknown>): StoredEv
   };
 }
 
-/** Blended ARPU for a set of mix percentages against their tier ARPUs —
- *  Σ (mix[tier] / 100 × tierArpu[tier]). Shared by the Value-mix control (Yield
- *  Events) and the Custom Promotion Card's mix arm so both derive a blended
- *  ARPU the same way. */
-export function blendTierMix(mix: Record<string, number>, tierArpu: Record<string, number>): number {
-  return Object.keys(mix).reduce((sum, tier) => sum + (mix[tier] / 100) * (tierArpu[tier] ?? 0), 0);
+/**
+ * Blended ARPU for a set of mix percentages against their tier ARPUs —
+ * Σ (mix[tier] / 100 × tierArpu[tier]). Shared by the Value-mix control (Yield
+ * Events) and the Custom Promotion Card's mix arm so both derive a blended ARPU
+ * the same way.
+ *
+ * COLLAPSED 2026-08-11: this now delegates to mixConstraint's `blendedArpu` and
+ * is a thin alias. There is one blend in the app.
+ *
+ * **The return type changed from `number` to `number | null`, and that is a
+ * real behaviour change, not a typing tidy-up.** The old body used
+ * `tierArpu[tier] ?? 0`, so a member carrying share whose ARPU was unknown
+ * contributed zero — which does not read as missing, it reads as a real and
+ * very cheap member, and it dragged the blend down silently.
+ *
+ * That mattered on BOTH sides of the read/write line, which is why it was worth
+ * the churn of a nullable return:
+ *
+ *   - the promo card's blend DISPLAY showed a number that was quietly too low;
+ *   - `buildPromoEvents` used the same value as the saved event's `arpu` and to
+ *     compute its `revenue`, so the contaminated figure was WRITTEN INTO THE
+ *     SAVED EVENT and outlived the session.
+ *
+ * Callers must now decide what absence means for them. The card renders it as
+ * absence with its reason and refuses to save; nothing may substitute a zero.
+ *
+ * **RENAMED, and the rename is the enforcement.** This tsconfig sets no
+ * `strict`, so `strictNullChecks` is off and `null` is assignable to `number`:
+ * changing the return type to `number | null` produced EXACTLY ZERO compiler
+ * errors and left both call sites silently treating absence as a number. That
+ * is the `seedBaseVolume: number | null` lesson repeating — a nullable return
+ * here is documentation, not enforcement.
+ *
+ * So the absence carrier is the NAME, which the compiler does check: every call
+ * site had to be touched to keep compiling, and a future caller cannot reach
+ * this function without reading `OrNull` first. Same move as `Seed_Base_Known`
+ * — when the type cannot hold known-ness, something else must.
+ */
+export function blendTierMixOrNull(
+  mix: Record<string, number>,
+  tierArpu: Record<string, number>,
+): number | null {
+  return blendedArpu(mix, tierArpu);
 }
 
 // ---------------------------------------------------------------------------

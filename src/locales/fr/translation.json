@@ -726,5 +726,20 @@
   "overall_aggregates_derive": "{{count}} aggregate views derive from their leaves — they are never fitted, and are not missing.",
   "baseline_forecast_appears_once_generated": "The forecast will appear here once generated. Generating one unlocks Step 2.",
   "standard_base_panel_has_no_band": "Base volume is reconstructed from the opening stock and the forecast flows, so this panel has no band to show. The Base line is on the Actuals Review chart.",
-  "standard_base_no_opening_stock": "This selection has no known opening base stock, so a Base series cannot be reconstructed for it. Inflow, Outflow and Retention are unaffected."
+  "standard_base_no_opening_stock": "This selection has no known opening base stock, so a Base series cannot be reconstructed for it. Inflow, Outflow and Retention are unaffected.",
+  "whatif_mix_target_arpu": "ARPU mixte cible",
+  "whatif_mix_target_placeholder": "indifférent",
+  "whatif_mix_target_apply": "Appliquer",
+  "whatif_mix_reachable_range": "Atteignable :",
+  "whatif_mix_hold": "Bloquer",
+  "whatif_mix_hold_aria": "Bloquer cette part pendant que les autres se rééquilibrent",
+  "whatif_mix_release": "Débloquer cette part",
+  "whatif_mix_range_collapsed": "Les blocages ne laissent qu’une seule valeur mixte atteignable, les curseurs ne peuvent donc pas bouger :",
+  "whatif_mix_target_unreachable": "Cible inatteignable.",
+  "whatif_mix_bound_above": "La valeur mixte la plus élevée permise par ces blocages est {{bound}}, fixée par {{member}}. Débloquez une part ou baissez la cible.",
+  "whatif_mix_bound_below": "La valeur mixte la plus basse permise par ces blocages est {{bound}}, fixée par {{member}}. Débloquez une part ou augmentez la cible.",
+  "whatif_mix_target_blocked_other": "Les blocages actuels ne laissent rien de libre à déplacer.",
+  "whatif_mix_blend_unknown": "inconnue",
+  "whatif_mix_blend_unknown_reason": "Un palier portant une part n’a pas d’ARPU, il n’y a donc pas de valeur mixte à afficher. Ce n’est pas une valeur mixte nulle.",
+  "whatif_mix_sum_amber_reason": "Ce mix ne totalise pas 100 %. Il a été chargé exactement tel qu’enregistré et n’a pas été ajusté pour vous ; modifiez une part avant d’enregistrer."
 }

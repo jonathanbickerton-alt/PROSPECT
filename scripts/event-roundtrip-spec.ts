@@ -215,6 +215,65 @@ function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[]
   }
 }
 
+// ---------------------------------------------------------------------------
+// BEHAVIOURAL CASE — a real exported save carrying real promotion events.
+//
+// Every check above this line is CONSTRUCTED: it builds an event in memory,
+// writes it, reads it back. That proves the round trip's logic over the real
+// file format and nothing about any save that exists. Until 2026-08-11 no
+// shipped save carried a promotion event at all, so there was nothing else it
+// could have been.
+//
+// This block drives a save produced by `scripts/build-promo-mix-fixture.mjs`,
+// whose mix was SOLVED BY THE ENGINE from a held member and a typed target —
+// so what round-trips here is a mix the card could actually have produced,
+// not one I chose because it was convenient to assert.
+// ---------------------------------------------------------------------------
+{
+  const FIX = 'test-data/PROSPECT_Save_PromoMix_Behavioural.xlsx';
+  if (!fs.existsSync(FIX)) {
+    // NOT silently skipped. A behavioural case that vanishes when its fixture is
+    // absent is how a suite comes to report green while testing less than it
+    // claims — and this fixture is gitignored like every other, so absence in a
+    // fresh clone is expected and must be loud.
+    check('BEHAVIOURAL: the promo-mix fixture is present', false,
+      `missing ${FIX} — run: node scripts/build-promo-mix-fixture.mjs`);
+  } else {
+    const wb = XLSX.read(fs.readFileSync(FIX), { cellDates: true });
+    const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(wb.Sheets['Market_Events']);
+    check('BEHAVIOURAL: the save carries three promotion events', rows.length === 3, `${rows.length}`);
+
+    const read = rows.map(r => readStoredEventModifiers(r));
+
+    check('BEHAVIOURAL: every row reads as a promotion',
+      read.filter(m => m.isPromotion).length === 3, `${read.filter(m => m.isPromotion).length}/3`);
+
+    // The mix the engine solved must survive the file unchanged.
+    const mix = read[0].promoMix;
+    check('BEHAVIOURAL: the solved mix survives the round trip', !!mix && Object.keys(mix).length === 3,
+      JSON.stringify(mix));
+    check('BEHAVIOURAL: the HELD member is still exactly where it was held',
+      !!mix && Math.abs((mix['High Value'] ?? -1) - 40) < 1e-9, String(mix?.['High Value']));
+    const sum = mix ? Object.values(mix).reduce((a, b) => a + b, 0) : NaN;
+    check('BEHAVIOURAL: and the restored mix still totals 100', Math.abs(sum - 100) < 1e-9, String(sum));
+
+    // The blend the mix was solved FOR — re-derived from the restored shares
+    // rather than read from the stored ARPU column, so this measures the mix
+    // and not the number that was written beside it.
+    const ARPUS: Record<string, number> = { 'Low Value': 8, 'Mid Value': 20, 'High Value': 45 };
+    const reblend = mix ? Object.keys(mix).reduce((s, k) => s + (mix[k] / 100) * ARPUS[k], 0) : NaN;
+    check('BEHAVIOURAL: the restored mix still blends to the target that produced it',
+      Math.abs(reblend - 26) < 1e-9, `${reblend} vs 26`);
+
+    // Absence, on a real file rather than a literal.
+    check('BEHAVIOURAL: the zero pricing amount survives as 0, not as absence',
+      read[1].promoPricingAmount === 0, String(read[1].promoPricingAmount));
+    check('BEHAVIOURAL: and the event with no mix arm reads ABSENT, not empty',
+      read[2].promoMix === undefined && read[2].promoMixAxis === undefined,
+      JSON.stringify({ mix: read[2].promoMix, axis: read[2].promoMixAxis }));
+  }
+}
+
 console.log(`event-roundtrip spec: ${pass} passed, ${fails.length} failed`);
 fails.forEach(f => console.log('  FAIL ' + f));
 process.exit(fails.length ? 1 : 0);
