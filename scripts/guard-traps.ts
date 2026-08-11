@@ -53,6 +53,7 @@ const SFT = 'src/components/StandardForecastTab.tsx';
 const STEP1SEL = 'scripts/step1-selection-spec.tsx';
 const BASESEED = 'scripts/base-seed-spec.ts';
 const RESTOREBASE = 'scripts/restore-base-spec.ts';
+const EVTROUND = 'scripts/event-roundtrip-spec.ts';
 const STEP2UNLOCK = 'scripts/step2-unlock-spec.tsx';
 const MODAL = 'src/components/BulkGenerateModal.tsx';
 const APP = 'src/App.tsx';
@@ -533,6 +534,15 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       'historicalMonths:      parseStoredMonths(first.Historical_Months),',
       'historicalMonths:      [],') },
+  // Trap 52: a promo field is dropped from the shared reader, so it stops
+  // round-tripping — the prerequisite defect for the mix-mode build, in one
+  // line. promoMix is the field chosen because it is the structured one: a
+  // half-read mix is the failure that would corrupt a constrained allocation
+  // rather than merely blank it.
+  { id: '52 a promotion field stops round-tripping',
+    why: 'a saved promotion reloads without its mix — the mix-mode prerequisite breaks',
+    file: ENGINE, spec: EVTROUND,
+    mutate: s => s.replace('    promoMix,', '    promoMix: undefined,') },
   { id: '44 the Overall door counts aggregates as missing again',
     why: 'a fully-fitted book is offered 144 generations that can never succeed',
     file: APP, spec: PANEL,
@@ -566,7 +576,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

@@ -5557,6 +5557,81 @@ its distribution is. This is accepted and expected.
 
 ## BACKLOG — requested, design pass required before build
 
+### REPRIORITISED — the promotion card's mix mode moves ahead of DQ, 2026-08-11
+
+**Jon's decision, 2026-08-11.** Alessandro's promotion-card **constrained mix
+mode** now sits ahead of the DQ import phase. **DQ retains its full inheritance
+in full** — the orientation line with the C-19 rider, the revenue-vs-price amber,
+ragged coverage, the row-zero column detection fix, the five-of-seven mapping
+panel, the mapped-dimension source of truth, and the upload-clears-no-store
+decision — and **remains before UAT**. This changes the order of two items, not
+the content of either.
+
+### SETTLED — promotion and override fields round-trip on EVERY import route
+
+**The mix-mode prerequisite, done 2026-08-11.** Promotion/override fields must
+survive a save and reload from day one, or a constrained allocation is rebuilt
+from a partial event.
+
+**The enumeration.** `MarketEvent` carries nine modifier fields beyond the base
+event: `amountType`, `percentageBasis`, `retentionLinked`, `isPromotion`,
+`promoRebanded`, `promoMixAxis`, `promoMix`, `promoPricingMode`,
+`promoPricingAmount`. The promotion card (`buildPromoEvents`) writes six of them.
+
+**The export was never the problem** — it writes all nine, with carriers already
+correct. **The app has TWO independent event-import routines**, and only one
+restored them:
+
+| route | site | promo fields |
+|---|---|---|
+| session restore | `App.tsx` ~985 | restored (added by `6c24a77`, the promotion-card work) |
+| workbook import | `App.tsx` ~2012 | **all six dropped** — the route dates from `f52b21d`, the initial commit |
+
+**Classification: pre-existing, introduced-in-effect by `6c24a77`** adding the
+fields to one side. The workbook route's own comment recorded the gap and named
+it "exactly the shape of bug adding fields to only one side would create" — and
+it then stayed open, which is the argument for a shared reader rather than a
+second correct copy.
+
+**Fixed** by `readStoredEventModifiers()` — one reader, both routes, spread in at
+each. The routes still differ where they legitimately differ (id handling, the
+Outflow sign convention); they no longer differ about what a saved event means.
+
+**Absence rules, stated per field** (checked against the Seed_Base_Known lesson
+rather than assumed):
+
+- `promoPricingAmount` — **the one field where the distinction bites.** Zero is a
+  legitimate override, so the empty-string carrier is what keeps absent distinct
+  from `0`. Verified both ways.
+- `promoMix` — blank, unparseable, **or an empty object** all read absent: "a mix
+  with no members" is not the same claim as "no mix".
+- `promoMixAxis`, `promoPricingMode` — only their enum members survive.
+- `isPromotion`, `promoRebanded` — `'Yes'` → true, anything else false. **No
+  carrier needed, and that was checked**: absent and false mean the same thing
+  here, so collapsing them loses nothing. A legacy save reads false, correctly.
+- `amountType` / `percentageBasis` / `retentionLinked` — the defaults ARE the
+  pre-2026-08-01 behaviour, so a legacy save reads exactly as it did before the
+  columns existed: absolute / baseline / linked.
+
+**A THIRD reader of the three behaviour fields exists, and is NOT this fix's.**
+`scenarioHelper.ts` parses `amountType` / `percentageBasis` / `retentionLinked`
+again (around :217-219 and :395/:407) for Scenario Comparison, which has its own
+parser by design and is never gated. It references none of the six promo fields,
+so the round trip is unaffected — but under "duplicate predicates are collapsed
+on sight" it is a third copy of three predicates, found by the gate and recorded
+rather than silently left. Collapsing it is a Scenario-Compare change, not an
+import one, so it is not done here.
+
+`spec:event-roundtrip` drives the **writer and the reader** — a real event with
+every field set, through an actual xlsx write/read, asserted field for field,
+plus absence, malformed input, ordering, and a legacy row with no promo columns
+at all. **Constructed and labelled as such**: no shipped save carries promotion
+events (the 07 Aug save's Market_Events sheet holds the "no market events
+defined" placeholder), so this proves the round trip's logic over the real file
+format, not that an existing save exercises it. Guard-trap 52 drops `promoMix`.
+
+
+
 ### DQ PHASE REQUIREMENT — the retirement statement belongs on the orientation line
 
 **Provenance: walk finding C-19 (2026-08-08).** After a session restore there is

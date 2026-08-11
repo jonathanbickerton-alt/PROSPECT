@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
 import { filterToKey, cohortToFilter, forecastForView, forecastForStep1Selection, step1ResolveDecision, describeScope } from './utils/viewFilter';
@@ -1004,20 +1004,14 @@ export default function App() {
             arpu:             Number(r.ARPU              ?? 0),
             contractLength:   Number(r.Contract_Length_Months ?? 24),
             comment:          String(r.Comment ?? ''),
-            isPromotion:      r.Is_Promotion === 'Yes',
-            promoRebanded:    r.Promo_Rebanded === 'Yes',
-            promoMixAxis:     r.Promo_Mix_Axis === 'tariff' ? 'tariff' : r.Promo_Mix_Axis === 'value' ? 'value' : undefined,
-            promoMix:         r.Promo_Mix_JSON ? (() => { try { return JSON.parse(String(r.Promo_Mix_JSON)); } catch { return undefined; } })() : undefined,
-            promoPricingMode: r.Promo_Pricing_Mode === 'absolute' ? 'absolute' : r.Promo_Pricing_Mode === 'percentage' ? 'percentage' : undefined,
-            promoPricingAmount: r.Promo_Pricing_Amount !== undefined && r.Promo_Pricing_Amount !== '' ? Number(r.Promo_Pricing_Amount) : undefined,
+            // Promo/override modifiers via the ONE shared reader — see
+            // readStoredEventModifiers. Hand-rolled here and absent entirely at
+            // the workbook route below, which is how the promo fields came to
+            // round-trip on one path only.
+            ...readStoredEventModifiers(r),
             // Sessions exported before 2026-08-01 have no Sequence column;
             // backfillSequences below assigns sheet order to those.
             sequence:         r.Sequence !== undefined && r.Sequence !== '' ? Number(r.Sequence) : undefined as any,
-            amountType:       r.Amount_Type === 'percentage' ? 'percentage' : 'absolute',
-            percentageBasis:  r.Percentage_Basis === 'adjusted' ? 'adjusted' : 'baseline',
-            // Absent means linked, which is both the default and the
-            // pre-2026-08-01 behaviour — only an explicit 'No' unlinks.
-            retentionLinked:  r.Retention_Linked === 'No' ? false : true,
           }));
           setMarketEvents(backfillSequences(restoredEvents));
         }
@@ -2034,14 +2028,12 @@ export default function App() {
               comment: String(r['Comment'] || ''),
               contractLength: Number(r['Contract_Length'] || r['Contract_Length_Months']) || 24,
               sequence: r['Sequence'] !== undefined && r['Sequence'] !== '' ? Number(r['Sequence']) : undefined as any,
-              // Kept deliberately identical to the session-restore path above.
-              // These are the app's TWO independent import routines, and the
-              // promo fields are already missing here — a pre-existing gap
-              // that is exactly the shape of bug adding fields to only one
-              // side would create. See EXPECTED.md.
-              amountType: r['Amount_Type'] === 'percentage' ? 'percentage' : 'absolute',
-              percentageBasis: r['Percentage_Basis'] === 'adjusted' ? 'adjusted' : 'baseline',
-              retentionLinked: r['Retention_Linked'] === 'No' ? false : true,
+              // THE GAP THIS FIXES. The comment that used to sit here recorded
+              // that the promo fields were missing from this route and named it
+              // a pre-existing gap — correctly, and it stayed missing. Both
+              // routines now read the SAME function, so a field added to the
+              // promo card reaches both or neither.
+              ...readStoredEventModifiers(r),
             };
           });
           setMarketEvents(backfillSequences(restoredEvents));

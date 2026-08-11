@@ -103,6 +103,91 @@ export interface MarketEvent {
   promoPricingAmount?: number;
 }
 
+/**
+ * The promo/override modifiers of a saved market event, read back from a sheet.
+ *
+ * ONE READER FOR BOTH IMPORT ROUTINES. The app has two independent event-import
+ * paths — the session restore and the workbook import — and the promo fields
+ * were restored by only the first. The workbook path dates from the initial
+ * commit (f52b21d); the promo fields arrived with the Custom Promotion Card
+ * (6c24a77) and were added to one side. That is the shape the restore-months
+ * defect had, and the shape a shared reader prevents: a field added here reaches
+ * both callers or neither.
+ *
+ * ABSENCE RULES, field by field. The export's carriers were checked against the
+ * Seed_Base_Known lesson — "if a value's default is a legitimate value, its
+ * known-ness needs its own carrier" — and they hold:
+ *
+ *   promoPricingAmount  '' -> undefined, 0 -> 0. ZERO IS A LEGITIMATE AMOUNT
+ *                       (a 0% or zero override), so the empty string is the
+ *                       carrier keeping absence distinct from it. This is the
+ *                       one field on this set where the distinction bites.
+ *   promoMixAxis        only 'value' | 'tariff' survive; anything else absent.
+ *   promoMix            parsed from JSON; blank or unparseable -> absent, and an
+ *                       empty object -> absent too, because "a mix with no
+ *                       members" is not the same claim as "no mix".
+ *   promoPricingMode    only 'percentage' | 'absolute' survive.
+ *   isPromotion,        'Yes' -> true, anything else -> false. NO carrier needed,
+ *   promoRebanded       and that was checked rather than assumed: absent and
+ *                       false mean the same thing here, so nothing is lost by
+ *                       collapsing them. A legacy save reads false, correctly.
+ *   amountType,         defaults ARE the pre-2026-08-01 behaviour, so a legacy
+ *   percentageBasis,    save reads exactly as it did before these existed:
+ *   retentionLinked     absolute / baseline / linked.
+ *
+ * Both sheets use the same column names, so one reader serves both; the routines
+ * differ only in id handling and Outflow sign, which stay at their call sites.
+ *
+ * SCOPE OF THE "ONE READER" CLAIM, stated so it is not over-read: this is one
+ * reader for the two EVENT-IMPORT routines. `scenarioHelper.ts` parses the three
+ * behaviour fields (amountType / percentageBasis / retentionLinked) again for
+ * Scenario Comparison, which has its own parser by design and is never gated.
+ * It touches none of the six promo fields, so it is unaffected by this and was
+ * out of scope here — but it is a third reader of those three, and it is
+ * recorded in EXPECTED.md rather than left for someone to find.
+ */
+export interface StoredEventModifiers {
+  amountType: 'absolute' | 'percentage';
+  percentageBasis: 'baseline' | 'adjusted';
+  retentionLinked: boolean;
+  isPromotion: boolean;
+  promoRebanded: boolean;
+  promoMixAxis?: 'value' | 'tariff';
+  promoMix?: Record<string, number>;
+  promoPricingMode?: 'percentage' | 'absolute';
+  promoPricingAmount?: number;
+}
+
+export function readStoredEventModifiers(row: Record<string, unknown>): StoredEventModifiers {
+  const axis = String(row.Promo_Mix_Axis ?? '');
+  const mode = String(row.Promo_Pricing_Mode ?? '');
+  const amt = row.Promo_Pricing_Amount;
+
+  let promoMix: Record<string, number> | undefined;
+  const mixRaw = row.Promo_Mix_JSON;
+  if (mixRaw !== undefined && mixRaw !== null && mixRaw !== '') {
+    try {
+      const parsed = JSON.parse(String(mixRaw));
+      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+        promoMix = parsed as Record<string, number>;
+      }
+    } catch { /* unparseable -> absent, never a half-read mix */ }
+  }
+
+  return {
+    amountType:      row.Amount_Type === 'percentage' ? 'percentage' : 'absolute',
+    percentageBasis: row.Percentage_Basis === 'adjusted' ? 'adjusted' : 'baseline',
+    retentionLinked: row.Retention_Linked === 'No' ? false : true,
+    isPromotion:     row.Is_Promotion === 'Yes',
+    promoRebanded:   row.Promo_Rebanded === 'Yes',
+    promoMixAxis:    axis === 'tariff' ? 'tariff' : axis === 'value' ? 'value' : undefined,
+    promoMix,
+    promoPricingMode: mode === 'absolute' ? 'absolute' : mode === 'percentage' ? 'percentage' : undefined,
+    promoPricingAmount: amt !== undefined && amt !== null && amt !== '' && Number.isFinite(Number(amt))
+      ? Number(amt) : undefined,
+  };
+}
+
 /** Blended ARPU for a set of mix percentages against their tier ARPUs —
  *  Σ (mix[tier] / 100 × tierArpu[tier]). Shared by the Value-mix control (Yield
  *  Events) and the Custom Promotion Card's mix arm so both derive a blended
