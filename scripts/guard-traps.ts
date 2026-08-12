@@ -76,6 +76,17 @@ const MIX_BLOCK = ANCHOR + nl +
   "          ? { leafCount: incumbentSrc.leafCount, models: incumbentSrc.models }" + nl +
   "          : null;";
 
+/**
+ * ANCHORS GO STALE, and the harness is right to call that INCONCLUSIVE rather
+ * than CAUGHT. Traps 60 and 61 both reported it on 2026-08-12: the negative-ARPU
+ * rider rewrote the exact lines they pinned — removing a `Math.abs` and a
+ * `neg()` wrapper — so nothing was planted and neither trap tested anything.
+ *
+ * The lesson is not "write looser anchors". A loose anchor plants a mutation
+ * somewhere other than intended and reports a catch it did not earn. It is:
+ * a change that rewrites a line under a trap must re-aim the trap in the same
+ * commit, and INCONCLUSIVE is the signal that it did not.
+ */
 type Trap = { id: string; why: string; file?: string; spec?: string; mutate: (s: string) => string };
 
 const TRAPS: Trap[] = [
@@ -658,7 +669,7 @@ const TRAPS: Trap[] = [
     file: WHATIF, spec: OVERRIDESPEC,
     mutate: s => s.replace(
       '              e.arpuOverride !== undefined' + nl +
-      '                ? Math.abs(e.arpuOverride)          // the user said so' + nl +
+      '                ? e.arpuOverride                    // the user said so, sign and all' + nl +
       '                : e.subscriberVolume > 0',
       '              e.subscriberVolume > 0') },
   // 61 removes the override from App's addMarketEvent — the DEFAULT add path,
@@ -668,8 +679,19 @@ const TRAPS: Trap[] = [
   { id: '61 the default Add path drops the override', why: 'an ordinary Add click discards the stated rate',
     file: APP, spec: OVERRIDESPEC,
     mutate: s => s.replace(
-      '      arpuOverride:     newEvent.arpuOverride === undefined ? undefined : neg(newEvent.arpuOverride),' + nl,
+      '      arpuOverride:     newEvent.arpuOverride,' + nl,
       '') },
+  // 62 restores the sign clamp. `Math.abs` here reads as defensive tidying and
+  // is a lie about what the user said: a negative ARPU override is a deliberate
+  // affordance (an acquisition credit, Jon 2026-08-12), the value is ABSOLUTE,
+  // and a minus means below zero rather than a reduction from the default. The
+  // clamp also made the events table and the forecast engine disagree about one
+  // number, since eventArpuDelta never had it.
+  { id: '62 the negative ARPU override clamped by sign', why: 'a stated -4.25 becomes +4.25 in the forecast',
+    file: WHATIF, spec: OVERRIDESPEC,
+    mutate: s => s.replace(
+      '                ? e.arpuOverride                    // the user said so, sign and all',
+      '                ? Math.abs(e.arpuOverride)') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

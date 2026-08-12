@@ -903,14 +903,19 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
           )
           .forEach(e => {
             // A STATED RATE OUTRANKS EVERY DERIVATION, and is tested for
-            // presence rather than truthiness. The chain below is all
+            // presence rather than truthiness. Taken VERBATIM: this read
+            // Math.abs() until 2026-08-12, which turned a stated -5 into +5 in
+            // the forecast while the events table showed -5 — the two
+            // disagreeing about the same number. A negative ARPU is a
+            // deliberate affordance (an acquisition credit), not an input error
+            // to be corrected. The chain below is all
             // truthiness — `Math.abs(e.revenue) > 0`, `e.arpu > 0` — which is
             // fine for figures the app derived, and wrong for one the user
             // typed: a stated 0 (a free acquisition) would fall through both
             // arms and silently become the previous month's blended ARPU.
             const derivedArpu =
               e.arpuOverride !== undefined
-                ? Math.abs(e.arpuOverride)          // the user said so
+                ? e.arpuOverride                    // the user said so, sign and all
                 : e.subscriberVolume > 0 && Math.abs(e.revenue) > 0
                 ? e.revenue / e.subscriberVolume   // revenue ÷ volume — primary source
                 : e.arpu > 0
@@ -1834,7 +1839,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         customerVolume:   neg(Math.round((newEvent.customerVolume || 0) * fraction)),
         revenue:          neg(resolved.revenue),
         arpu:             neg(resolved.arpu),
-        arpuOverride:             newEvent.arpuOverride === undefined ? undefined : neg(newEvent.arpuOverride),
+        arpuOverride:             newEvent.arpuOverride,
         name:             newEvent.name         || '',
         campaignName:     newEvent.campaignName || '',
         comment:          newEvent.comment      || '',
@@ -1896,7 +1901,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       // Restored so reopening an event shows what the USER stated, not the
       // auto-fill that would otherwise be indistinguishable from it. Tested for
       // presence, never truthiness: a stated rate of 0 must reopen as 0.
-      arpuOverride: event.arpuOverride === undefined ? undefined : abs(event.arpuOverride),
+      arpuOverride: event.arpuOverride,
       name: event.name ?? '',
       campaignName: event.campaignName ?? '',
       comment: event.comment,
@@ -1986,7 +1991,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       customerVolume: totalCust,
       revenue: totalRev,
       arpu: abs(first.arpu),
-      arpuOverride: first.arpuOverride === undefined ? undefined : abs(first.arpuOverride),
+      arpuOverride: first.arpuOverride,
       name: '',
       campaignName: campaign,
       comment: rows.find(e => e.comment)?.comment ?? '',
@@ -2023,7 +2028,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         customerVolume:   neg(newEvent.customerVolume   || 0),
         revenue:          neg(resolvedSingle.revenue),
         arpu:             neg(resolvedSingle.arpu),
-        arpuOverride:             newEvent.arpuOverride === undefined ? undefined : neg(newEvent.arpuOverride),
+        arpuOverride:             newEvent.arpuOverride,
         name: '',
         campaignName: newEvent.campaignName || '',
         comment: newEvent.comment || '',
@@ -2060,7 +2065,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           customerVolume:   neg(Math.round((newEvent.customerVolume   || 0) * fraction)),
           revenue:          neg(resolved.revenue),
           arpu:             neg(resolved.arpu),
-          arpuOverride:             newEvent.arpuOverride === undefined ? undefined : neg(newEvent.arpuOverride),
+          arpuOverride:             newEvent.arpuOverride,
           name: '',
           campaignName: newEvent.campaignName || '',
           comment: newEvent.comment || '',
@@ -2184,7 +2189,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       customerVolume:   neg(newEvent.customerVolume   ?? 0),
       revenue:          neg(resolved.revenue),
       arpu:             neg(resolved.arpu),
-      arpuOverride:             newEvent.arpuOverride === undefined ? undefined : neg(newEvent.arpuOverride),
+      arpuOverride:             newEvent.arpuOverride,
       name: newEvent.name ?? '',
       campaignName: newEvent.campaignName ?? '',
       comment: newEvent.comment ?? '',

@@ -112,6 +112,14 @@ const rows = [
     Comment: 'Editable ARPU stated as ZERO — a free acquisition, not unset',
     Arpu_Override: 0,
   }),
+  // And stated NEGATIVE — an acquisition credit. A deliberate affordance
+  // (Jon, 2026-08-12): the value is absolute, so a minus means ARPU below zero
+  // and not a reduction from the default. Nothing on the path may clamp it.
+  evtRow({
+    ID: 'promo-mix-6', Sequence: 6, Start_Month: '2027-02',
+    Comment: 'Editable ARPU stated NEGATIVE — an acquisition credit',
+    Arpu_Override: -4.25,
+  }),
 ];
 
 const wb = XLSX.utils.book_new();

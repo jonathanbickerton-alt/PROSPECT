@@ -6450,6 +6450,42 @@ App can share it, and it owns the PERCENTAGE rule too: two sites previously
 special-cased `isPct ? { arpu: 0, revenue: 0 } : …` inline, which was correct
 before the rate was editable and zeroed a stated rate afterwards.
 
+#### SETTLED — a NEGATIVE ARPU override is a deliberate affordance, 2026-08-12
+
+**Jon's decision.** An event can carry below-zero per-subscriber value — an
+acquisition credit is the worked example. **The value is ABSOLUTE: a minus means
+ARPU below zero, NOT a reduction from the default.** Nothing on the path may
+clamp, reject or re-sign it.
+
+**Two defects were found against that label and fixed**, both introduced by the
+request-1 build the day before, and both invisible until the sign was asked
+about:
+
+- **The per-view derivation read `Math.abs(e.arpuOverride)`.** A stated −4.25
+  became +4.25 in the forecast — while `eventArpuDelta` showed −4.25 in the
+  events table, because it never had the clamp. **The table and the engine
+  disagreed about one number.** `Math.abs` there reads as defensive tidying and
+  is a lie about what the user said.
+- **The Outflow sign convention was applied to the override at SEVEN sites** —
+  five writers and two edit-restores. `neg()`/`abs()` exist for QUANTITIES,
+  which are stored negative and displayed positive; a rate stated absolutely is
+  not a quantity. On an Outflow event a typed −5 stored as −5 and reopened as
+  **+5**. Inflow and Retention were unaffected, because `neg`/`abs` are the
+  identity there — which is exactly why it would not have been noticed.
+
+**The rule that falls out, and it generalises past this field:** the sign
+convention belongs to quantities. Any RATE this app stores should be written and
+read verbatim. The settled rates rule already said a rate is not a quantity and
+does not pro-rate across cohorts; it does not take a quantity's sign either.
+
+**Coverage.** `spec:event-roundtrip` carries a negative through a real xlsx
+round trip and asserts it stays distinct from unset and from a stated zero — four
+separable states now, three values and a sign. The fixture builder gained a
+negative row. `spec:override-arpu` drives the input (no `min` attribute blocks
+it), asserts a negative changes the forecast, asserts it is **not** the same
+forecast as its positive twin, and holds a source check that no sign convention
+is applied to the field anywhere. **Guard-trap 62** restores the `Math.abs`.
+
 **The lasting guard is a COUNT, not a claim.** `spec:override-arpu` asserts
 five `draftEventRate` call sites and five sites persisting `arpuOverride`, and
 guard-trap 61 removes the field from App's literal to prove that check still

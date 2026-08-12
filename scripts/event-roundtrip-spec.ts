@@ -156,6 +156,19 @@ function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[]
     zeroArpu.arpuOverride === 0 && m.arpuOverride === undefined,
     'if these collapse, every unset override becomes a zero-revenue event');
 
+  // NEGATIVE IS A DELIBERATE AFFORDANCE (Jon, 2026-08-12): an event can carry
+  // below-zero per-subscriber value — an acquisition credit. The value is
+  // ABSOLUTE, so a minus means ARPU below zero, NOT a reduction from the
+  // default. Nothing on the path may clamp it.
+  const negArpu = readStoredEventModifiers(throughXlsx([toRow({ ...EVENT, arpuOverride: -4.25 } as MarketEvent)])[0]);
+  check('NEGATIVE: a below-zero ARPU override survives the round trip intact',
+    negArpu.arpuOverride === -4.25, `${negArpu.arpuOverride}`);
+  check('NEGATIVE: it is not clamped to zero anywhere on the path',
+    negArpu.arpuOverride !== 0 && (negArpu.arpuOverride as number) < 0, `${negArpu.arpuOverride}`);
+  check('NEGATIVE: and stays distinct from both unset and a stated zero',
+    negArpu.arpuOverride === -4.25 && m.arpuOverride === undefined && zeroArpu.arpuOverride === 0,
+    'three states plus a fourth sign, all separable');
+
   const zero = readStoredEventModifiers(throughXlsx([toRow({ ...EVENT, promoPricingAmount: 0 } as MarketEvent)])[0]);
   check('CARRIER: a real ZERO override survives as 0, not as absent',
     zero.promoPricingAmount === 0, `${zero.promoPricingAmount}`);
@@ -253,12 +266,12 @@ function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[]
   } else {
     const wb = XLSX.read(fs.readFileSync(FIX), { cellDates: true });
     const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(wb.Sheets['Market_Events']);
-    check('BEHAVIOURAL: the save carries five promotion events', rows.length === 5, `${rows.length}`);
+    check('BEHAVIOURAL: the save carries six promotion events', rows.length === 6, `${rows.length}`);
 
     const read = rows.map(r => readStoredEventModifiers(r));
 
     check('BEHAVIOURAL: every row reads as a promotion',
-      read.filter(m => m.isPromotion).length === 5, `${read.filter(m => m.isPromotion).length}/5`);
+      read.filter(m => m.isPromotion).length === 6, `${read.filter(m => m.isPromotion).length}/6`);
 
     // THE EDITABLE ARPU, on a real file rather than a literal. Stated, stated
     // as zero, and unset — all three in one save, which is the distinction the
@@ -267,6 +280,8 @@ function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[]
       read[3].arpuOverride === 31.4, `${read[3].arpuOverride}`);
     check('BEHAVIOURAL: a stated ZERO override survives as 0, not as unset',
       read[4].arpuOverride === 0, `${read[4].arpuOverride}`);
+    check('BEHAVIOURAL: a NEGATIVE stated rate survives a real file as negative',
+      read[5].arpuOverride === -4.25, `${read[5].arpuOverride}`);
     check('BEHAVIOURAL: and the rows that state nothing reload UNSET, not 0',
       read.slice(0, 3).every(m => m.arpuOverride === undefined),
       JSON.stringify(read.slice(0, 3).map(m => m.arpuOverride)));

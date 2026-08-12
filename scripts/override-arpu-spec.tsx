@@ -252,6 +252,15 @@ async function main() {
     /Your rate/i.test(bodyText()),
     'if zero read as unset, a free acquisition would silently become the cohort average');
 
+  // ── NEGATIVE is a deliberate affordance, not an input error ──────────────
+  await type(box(), '-4.25');
+  check('NEGATIVE: the input accepts a below-zero rate',
+    box().value === '-4.25', `"${box().value}"`);
+  check('NEGATIVE: and it reads as a stated rate, not as an unset box',
+    /Your rate/i.test(bodyText()));
+  check('NEGATIVE: the input carries no min attribute that would block it',
+    box().getAttribute('min') === null, `min="${box().getAttribute('min')}"`);
+
   // ── The revert affordance returns to the default ─────────────────────────
   const revert = byText('Use the default');
   check('REVERT: an explicit way back to the default is offered', !!revert);
@@ -321,6 +330,7 @@ async function main() {
     const unset = arpuSeries(runWith(undefined));
     const stated = arpuSeries(runWith(99));
     const zero = arpuSeries(runWith(0));
+    const negative = arpuSeries(runWith(-4.25));
 
     // ANTI-VACUITY: lengths matching proves nothing if the values are undefined.
     const finiteCount = unset.filter((v: any) => Number.isFinite(v)).length;
@@ -342,6 +352,19 @@ async function main() {
       'a free acquisition must not fall through the truthiness chain to last month blended ARPU');
     check('DERIVATION: stated 99 and stated 0 are not the same forecast',
       differs(stated, zero));
+
+    // A NEGATIVE RATE MUST NOT BE CLAMPED. The derivation read Math.abs() until
+    // 2026-08-12, which made -4.25 and +4.25 the same forecast while the events
+    // table showed the sign — the two disagreeing about one number.
+    const positive = arpuSeries(runWith(4.25));
+    check('NEGATIVE: a below-zero rate changes the forecast',
+      differs(unset, negative));
+    check('NEGATIVE: and is NOT the same forecast as its positive twin',
+      differs(negative, positive),
+      'Math.abs() here would make these identical — that was the defect');
+    check('NEGATIVE: the events table shows the sign, agreeing with the derivation',
+      eventArpuDelta({ ...baseEvent, arpuOverride: -4.25 }) === -4.25,
+      'the table and the engine must not disagree about one number');
 
     // The table's ARPU column — the "states which it used" half of the rule.
     check('NO SILENT SUBSTITUTION: a percentage row with a stated rate shows it',
@@ -375,6 +398,10 @@ async function main() {
     const persists = ((app + tab).match(/arpuOverride:\s+newEvent\.arpuOverride/g) ?? []).length;
     check('WIRING: every construction site persists it, not merely most',
       persists === 5, `${persists}/5 — a field on four writers of five is the promo-field defect again`);
+    check('WIRING: NO sign convention is applied to the override anywhere',
+      !/arpuOverride === undefined \? undefined : (?:neg|abs)\(/.test(app + tab)
+        && !/Math\.abs\(e\.arpuOverride\)/.test(tab),
+      'the Outflow neg()/abs() pair is for QUANTITIES; a rate stated absolutely keeps its sign');
     check('WIRING: no site special-cases percentages back to a bare zero rate',
       !/isPct\w*\s*\?\s*\{\s*arpu:\s*0/.test(app + tab),
       'the inline `isPct ? { arpu: 0 } : ...` zeroed a stated rate on save');

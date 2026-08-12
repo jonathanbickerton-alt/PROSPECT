@@ -248,7 +248,7 @@ export default function App() {
       customerVolume:   neg(newEvent.customerVolume   || 0),
       revenue:          neg(resolved.revenue),
       arpu:             neg(resolved.arpu),
-      arpuOverride:     newEvent.arpuOverride === undefined ? undefined : neg(newEvent.arpuOverride),
+      arpuOverride:     newEvent.arpuOverride,
       name:         newEvent.name         || '',
       campaignName: newEvent.campaignName || '',
       comment:      newEvent.comment      || '',
