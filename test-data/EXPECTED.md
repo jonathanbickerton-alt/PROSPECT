@@ -6397,6 +6397,87 @@ restatement:
 - **The box pre-populates from the event's TARGET cohort's trailing 3-month
   average**, mirroring the absolute card.
 
+
+#### BUILT 2026-08-12 — request 1 (Volume card, % mode). Requests 2 and 3 NOT built.
+
+**What shipped.** An editable rate on the Volume card's percentage mode, carried
+by a new `MarketEvent.arpuOverride`, round-tripping through the export column
+`Arpu_Override` and `readStoredEventModifiers`, preferred by the per-view
+derivation, and pre-populated from the target cohort's trailing 3-month average
+with the source stated on the surface.
+
+**The premise in the table above was slightly wrong, and the correction matters.**
+It says a percentage event "today calculates a figure and shows it read-only".
+On the Volume card it did not show it at all: the ARPU and Revenue cells are
+rendered only when the draft is absolute. Meanwhile the stored event DID carry a
+rate — `resolveEventArpuRevenue` auto-fills the trailing average whenever ARPU is
+blank on an Inflow or Retention event. So the figure existed, applied, and was
+invisible and uneditable. The request was better founded than its own wording.
+
+**ABSENCE CARRIER — and this is the sharpest case of the pattern yet.** Three
+states must stay distinct: unset (use the derived rate), stated, and stated as
+ZERO (a free acquisition). `arpu` alone cannot hold them, because the auto-fill
+makes "user typed 30" and "app filled 30" identical, and truthiness cannot hold
+them either, because a stated 0 is falsy. So known-ness gets its own carrier:
+the presence of `arpuOverride`. Every read tests `!== undefined`, never
+truthiness, and the stored carrier is `''` exactly as `Promo_Pricing_Amount`
+uses it. `readOptionalNumber` is now the ONE definition of that carrier, shared
+by both fields — `Number('')` is 0, so an emptiness test must precede the
+numeric one or every blank cell reads as a deliberate zero.
+
+**`resolveEventArpuRevenue` was NOT extended to do this.** It tests
+`if (rawArpu)`, so a stated zero falls straight through to the auto-fill. That
+truthiness is correct for its own callers, who genuinely mean "blank", and wrong
+for an override. `draftEventRate` sits ahead of it and tests the override for
+presence.
+
+**THERE ARE FIVE WRITERS, NOT FOUR, AND THE FIFTH WAS MISSED.** This entry said
+"all four sites" in its first version, because four is how many I counted inside
+`WhatIfTab`. The fifth is `App.tsx`'s `addMarketEvent`, and it is the DEFAULT
+add path — `handleAddMarketEvent` routes to it whenever month-spreading is off,
+which it is unless the user turns it on. It built its rate inline and carried no
+`arpuOverride`, so an ordinary Add click discarded a stated rate silently.
+
+**This is the promo-field defect, one session after the session that closed it**
+— a field added to four writers out of five — and it survived the round-trip
+spec, the mounted card spec and a guard-trap, because all three drive a
+hand-built event and none can reach the real save path (the mounted harness
+passes a noop `addMarketEvent`). It was found by the stage-2 gate counting the
+writers instead of believing the count.
+
+`draftEventRate` now lives in `forecasting.ts` rather than the component, so
+App can share it, and it owns the PERCENTAGE rule too: two sites previously
+special-cased `isPct ? { arpu: 0, revenue: 0 } : …` inline, which was correct
+before the rate was editable and zeroed a stated rate afterwards.
+
+**The lasting guard is a COUNT, not a claim.** `spec:override-arpu` asserts
+five `draftEventRate` call sites and five sites persisting `arpuOverride`, and
+guard-trap 61 removes the field from App's literal to prove that check still
+bites. A source check that nobody can plant against is decoration.
+
+#### HELD — request 2 (Value card). The design record is ambiguous here.
+
+**Not built, and not chosen between.** "The same treatment" does not resolve on
+the Value card, and the two readings are materially different work:
+
+| reading | consequence |
+|---|---|
+| **(a)** the **New blended ARPU** becomes editable | contradicts this record's own rule — that figure is `Σ share × tierBaseArpu`, i.e. it FOLLOWS from the mix the user is setting, so editing it creates exactly the "two independently editable boxes for one relationship" the Service-Revenue rule forbids. It is also, functionally, "type a target and let the mix conform" — the constrained mix mode, whose extension is on hold |
+| **(b)** the per-tier **Base ARPU** column becomes editable | consistent: those are derived-from-data figures shown read-only, and the blend stays derived |
+
+**A finding that should inform the decision.** The Value card's "vs baseline"
+delta compares a share-weighted blend against an **equal-weight mean** —
+`baselineBlendedArpu` is `Σ tierArpu / n`, its own comment says "Approximate",
+and the label says "equal-weight avg of tier ARPUs". Making the weighted side
+editable while the comparator remains an unweighted mean would compound a
+comparison that is already between two different things. Worth resolving in the
+same pass, whichever reading is chosen.
+
+#### NOT IN SCOPE — request 3 (Promotion, volume section)
+
+Untouched. It sits on the recorded eager-vs-per-view boundary below, and the
+promotion card's extension decisions are open.
+
 **The target cohort, NOT the viewing filter's cohort.** Stated explicitly
 because this is the stale-forecast class of mistake: seeding a field from
 whatever the user happens to be looking at produces a number that is correct on

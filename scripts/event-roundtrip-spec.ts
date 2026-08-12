@@ -65,6 +65,7 @@ const EVENT: MarketEvent = {
   promoMix: { 'RED XL': 60, 'RED ULTD': 40 },
   promoPricingMode: 'percentage',
   promoPricingAmount: 12.5,
+  arpuOverride: 27.75,
 } as MarketEvent;
 
 /**
@@ -91,6 +92,7 @@ const toRow = (e: MarketEvent) => ({
   Promo_Mix_JSON: e.promoMix ? JSON.stringify(e.promoMix) : '',
   Promo_Pricing_Mode: e.promoPricingMode ?? '',
   Promo_Pricing_Amount: e.promoPricingAmount ?? '',
+  Arpu_Override: e.arpuOverride ?? '',
 });
 
 /** Through a REAL workbook, not an object handed straight back. */
@@ -117,6 +119,7 @@ function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[]
   check('FIELD: promoMixAxis', m.promoMixAxis === 'tariff', `${m.promoMixAxis}`);
   check('FIELD: promoPricingMode', m.promoPricingMode === 'percentage', `${m.promoPricingMode}`);
   check('FIELD: promoPricingAmount', m.promoPricingAmount === 12.5, `${m.promoPricingAmount}`);
+  check('FIELD: arpuOverride', m.arpuOverride === 27.75, `${m.arpuOverride}`);
   // The mix is the one structured field — identity means the members AND their
   // shares, not merely that something parsed.
   check('FIELD: promoMix members and shares survive',
@@ -129,13 +132,15 @@ function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[]
   const bare: MarketEvent = { ...EVENT,
     amountType: undefined, percentageBasis: undefined, retentionLinked: undefined,
     isPromotion: undefined, promoRebanded: undefined, promoMixAxis: undefined,
-    promoMix: undefined, promoPricingMode: undefined, promoPricingAmount: undefined } as MarketEvent;
+    promoMix: undefined, promoPricingMode: undefined, promoPricingAmount: undefined,
+    arpuOverride: undefined } as MarketEvent;
   const m = readStoredEventModifiers(throughXlsx([toRow(bare)])[0]);
 
   check('ABSENT: promoMixAxis reads absent, not a value', m.promoMixAxis === undefined, `${m.promoMixAxis}`);
   check('ABSENT: promoMix reads absent, not an empty mix', m.promoMix === undefined, JSON.stringify(m.promoMix));
   check('ABSENT: promoPricingMode reads absent', m.promoPricingMode === undefined, `${m.promoPricingMode}`);
   check('ABSENT: promoPricingAmount reads absent, NOT 0', m.promoPricingAmount === undefined, `${m.promoPricingAmount}`);
+  check('ABSENT: arpuOverride reads absent, NOT 0', m.arpuOverride === undefined, `${m.arpuOverride}`);
   check('ABSENT: isPromotion reads false (absent and false mean the same here)', m.isPromotion === false);
   check('ABSENT: defaults are the pre-2026-08-01 behaviour',
     m.amountType === 'absolute' && m.percentageBasis === 'baseline' && m.retentionLinked === true,
@@ -144,6 +149,13 @@ function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[]
   // THE CARRIER THAT MATTERS. Zero is a legitimate override amount, so absence
   // cannot be recovered from the number — the empty string is what separates
   // them, and this is the Seed_Base_Known lesson on a second field.
+  const zeroArpu = readStoredEventModifiers(throughXlsx([toRow({ ...EVENT, arpuOverride: 0 } as MarketEvent)])[0]);
+  check('ZERO vs ABSENT: a stated ARPU of 0 survives as 0 — a free acquisition',
+    zeroArpu.arpuOverride === 0, `${zeroArpu.arpuOverride}`);
+  check('ZERO vs ABSENT: and 0 is still distinguishable from unset',
+    zeroArpu.arpuOverride === 0 && m.arpuOverride === undefined,
+    'if these collapse, every unset override becomes a zero-revenue event');
+
   const zero = readStoredEventModifiers(throughXlsx([toRow({ ...EVENT, promoPricingAmount: 0 } as MarketEvent)])[0]);
   check('CARRIER: a real ZERO override survives as 0, not as absent',
     zero.promoPricingAmount === 0, `${zero.promoPricingAmount}`);
@@ -208,7 +220,7 @@ function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[]
   // The writer must still emit every column this spec round-trips, or the copy
   // of it above is testing a shape the app no longer produces.
   for (const col of ['Is_Promotion', 'Promo_Rebanded', 'Promo_Mix_Axis',
-                     'Promo_Mix_JSON', 'Promo_Pricing_Mode', 'Promo_Pricing_Amount',
+                     'Promo_Mix_JSON', 'Promo_Pricing_Mode', 'Promo_Pricing_Amount', 'Arpu_Override',
                      'Amount_Type', 'Percentage_Basis', 'Retention_Linked']) {
     check(`WRITER: the export still writes ${col}`, app.includes(`${col}:`),
       'the export dropped a column this spec claims to round-trip');
@@ -241,12 +253,23 @@ function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[]
   } else {
     const wb = XLSX.read(fs.readFileSync(FIX), { cellDates: true });
     const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(wb.Sheets['Market_Events']);
-    check('BEHAVIOURAL: the save carries three promotion events', rows.length === 3, `${rows.length}`);
+    check('BEHAVIOURAL: the save carries five promotion events', rows.length === 5, `${rows.length}`);
 
     const read = rows.map(r => readStoredEventModifiers(r));
 
     check('BEHAVIOURAL: every row reads as a promotion',
-      read.filter(m => m.isPromotion).length === 3, `${read.filter(m => m.isPromotion).length}/3`);
+      read.filter(m => m.isPromotion).length === 5, `${read.filter(m => m.isPromotion).length}/5`);
+
+    // THE EDITABLE ARPU, on a real file rather than a literal. Stated, stated
+    // as zero, and unset — all three in one save, which is the distinction the
+    // carrier exists for and the one a single-value fixture cannot show.
+    check('BEHAVIOURAL: a stated ARPU override survives the round trip',
+      read[3].arpuOverride === 31.4, `${read[3].arpuOverride}`);
+    check('BEHAVIOURAL: a stated ZERO override survives as 0, not as unset',
+      read[4].arpuOverride === 0, `${read[4].arpuOverride}`);
+    check('BEHAVIOURAL: and the rows that state nothing reload UNSET, not 0',
+      read.slice(0, 3).every(m => m.arpuOverride === undefined),
+      JSON.stringify(read.slice(0, 3).map(m => m.arpuOverride)));
 
     // The mix the engine solved must survive the file unchanged.
     const mix = read[0].promoMix;

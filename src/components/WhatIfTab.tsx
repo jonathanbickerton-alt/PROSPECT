@@ -12,7 +12,7 @@ import { SKIP_REASON_KEY } from '../types/forecast';
 import { EventChangeConfirmModal } from './EventChangeConfirmModal';
 import type { MarketEvent } from '../utils/forecasting';
 import { rebalance, achievableTargetRange, solveForTarget, blendedArpu, conformsToTotal } from '../utils/mixConstraint';
-import { resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta } from '../utils/forecasting';
+import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
@@ -902,8 +902,16 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
             (!e.tariffL2 || e.tariffL2 === 'All' || !vtarL2 || e.tariffL2 === vtarL2),
           )
           .forEach(e => {
+            // A STATED RATE OUTRANKS EVERY DERIVATION, and is tested for
+            // presence rather than truthiness. The chain below is all
+            // truthiness — `Math.abs(e.revenue) > 0`, `e.arpu > 0` — which is
+            // fine for figures the app derived, and wrong for one the user
+            // typed: a stated 0 (a free acquisition) would fall through both
+            // arms and silently become the previous month's blended ARPU.
             const derivedArpu =
-              e.subscriberVolume > 0 && Math.abs(e.revenue) > 0
+              e.arpuOverride !== undefined
+                ? Math.abs(e.arpuOverride)          // the user said so
+                : e.subscriberVolume > 0 && Math.abs(e.revenue) > 0
                 ? e.revenue / e.subscriberVolume   // revenue ÷ volume — primary source
                 : e.arpu > 0
                   ? e.arpu                          // explicit arpu entry
@@ -1810,7 +1818,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       const vol = Math.round((newEvent.subscriberVolume || 0) * fraction);
       // Phase 3 P4: auto-populate ARPU from the cohort trailing average when the
       // user left it blank on a volume-only Inflow/Retention spread.
-      const resolved = resolveEventArpuRevenue(vol, newEvent.arpu, Math.round((newEvent.revenue || 0) * fraction), newEvent.scenario, cohortAvgArpu);
+      const resolved = draftEventRate(newEvent, cohortAvgArpu, vol, Math.round((newEvent.revenue || 0) * fraction));
       return {
         id: Math.random().toString(36).substr(2, 9),
         scenario:        newEvent.scenario as any,
@@ -1826,6 +1834,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         customerVolume:   neg(Math.round((newEvent.customerVolume || 0) * fraction)),
         revenue:          neg(resolved.revenue),
         arpu:             neg(resolved.arpu),
+        arpuOverride:             newEvent.arpuOverride === undefined ? undefined : neg(newEvent.arpuOverride),
         name:             newEvent.name         || '',
         campaignName:     newEvent.campaignName || '',
         comment:          newEvent.comment      || '',
@@ -1884,6 +1893,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       customerVolume: abs(event.customerVolume),
       revenue: abs(event.revenue),
       arpu: abs(event.arpu),
+      // Restored so reopening an event shows what the USER stated, not the
+      // auto-fill that would otherwise be indistinguishable from it. Tested for
+      // presence, never truthiness: a stated rate of 0 must reopen as 0.
+      arpuOverride: event.arpuOverride === undefined ? undefined : abs(event.arpuOverride),
       name: event.name ?? '',
       campaignName: event.campaignName ?? '',
       comment: event.comment,
@@ -1973,6 +1986,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       customerVolume: totalCust,
       revenue: totalRev,
       arpu: abs(first.arpu),
+      arpuOverride: first.arpuOverride === undefined ? undefined : abs(first.arpuOverride),
       name: '',
       campaignName: campaign,
       comment: rows.find(e => e.comment)?.comment ?? '',
@@ -1993,7 +2007,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
     let newEvents: MarketEvent[];
     if (!spreadEnabled || newEvent.scenario === 'ARPU') {
-      const resolvedSingle = resolveEventArpuRevenue(newEvent.subscriberVolume || 0, newEvent.arpu, newEvent.revenue, newEvent.scenario, cohortAvgArpu);
+      const resolvedSingle = draftEventRate(newEvent, cohortAvgArpu, newEvent.subscriberVolume || 0, newEvent.revenue);
       newEvents = [{
         id: Math.random().toString(36).substr(2, 9),
         scenario: newEvent.scenario as MarketEvent['scenario'],
@@ -2009,6 +2023,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         customerVolume:   neg(newEvent.customerVolume   || 0),
         revenue:          neg(resolvedSingle.revenue),
         arpu:             neg(resolvedSingle.arpu),
+        arpuOverride:             newEvent.arpuOverride === undefined ? undefined : neg(newEvent.arpuOverride),
         name: '',
         campaignName: newEvent.campaignName || '',
         comment: newEvent.comment || '',
@@ -2029,7 +2044,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         const vol = Math.round((newEvent.subscriberVolume || 0) * fraction);
         // Phase 3 P4: auto-populate ARPU from the cohort trailing average when the
         // user left it blank on a volume-only Inflow/Retention spread.
-        const resolved = resolveEventArpuRevenue(vol, newEvent.arpu, Math.round((newEvent.revenue || 0) * fraction), newEvent.scenario, cohortAvgArpu);
+        const resolved = draftEventRate(newEvent, cohortAvgArpu, vol, Math.round((newEvent.revenue || 0) * fraction));
         return {
           id: Math.random().toString(36).substr(2, 9),
           scenario: newEvent.scenario as MarketEvent['scenario'],
@@ -2045,6 +2060,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           customerVolume:   neg(Math.round((newEvent.customerVolume   || 0) * fraction)),
           revenue:          neg(resolved.revenue),
           arpu:             neg(resolved.arpu),
+          arpuOverride:             newEvent.arpuOverride === undefined ? undefined : neg(newEvent.arpuOverride),
           name: '',
           campaignName: newEvent.campaignName || '',
           comment: newEvent.comment || '',
@@ -2149,9 +2165,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // Phase 3 P4: re-resolve ARPU on save too — if the user clears the field back
     // to blank while editing, they get the cohort placeholder again rather than a
     // stale explicit value or a diluting zero.
-    const resolved = isPctEdit
-      ? { arpu: 0, revenue: 0 }
-      : resolveEventArpuRevenue(newEvent.subscriberVolume ?? 0, newEvent.arpu, newEvent.revenue, newEvent.scenario, cohortAvgArpu);
+    // Through the shared helper in BOTH modes now — it owns the percentage
+    // rule, so a stated rate survives a percentage save instead of being
+    // zeroed by an inline special case that predated the override.
+    const resolved = draftEventRate(
+      newEvent, cohortAvgArpu, newEvent.subscriberVolume ?? 0, newEvent.revenue, isPctEdit);
     const patch: Partial<MarketEvent> = {
       scenario: newEvent.scenario as MarketEvent['scenario'],
       segment: newEvent.segment ?? 'All',
@@ -2166,6 +2184,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       customerVolume:   neg(newEvent.customerVolume   ?? 0),
       revenue:          neg(resolved.revenue),
       arpu:             neg(resolved.arpu),
+      arpuOverride:             newEvent.arpuOverride === undefined ? undefined : neg(newEvent.arpuOverride),
       name: newEvent.name ?? '',
       campaignName: newEvent.campaignName ?? '',
       comment: newEvent.comment ?? '',
@@ -3168,10 +3187,72 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 {/* Phase 3 P4 — visible confirmation of the auto-populate default */}
                 {!newEvent.arpu && cohortAvgArpu != null && (
                   <p className="mt-1 text-[10px] text-slate-400 leading-snug">
-                    
+
                     {t('whatif_left_blank_uses_the_cohort_s_trailing_3_month')}{cohortAvgArpu.toFixed(2)}
                   </p>
                 )}
+              </div>
+              )}
+              {/* EDITABLE ARPU on a percentage event — Alessandro, settled
+                  2026-08-04 as a RATE. Absolute mode is untouched: it already
+                  has an editable ARPU whose value is stored directly. This is
+                  the mode where the figure existed and was not shown at all —
+                  the cells above are hidden when the draft is a percentage — so
+                  the rate the event carried was neither visible nor editable. */}
+              {isPercentageDraft && (
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">
+                  {t('whatif_override_arpu_label')}
+                </label>
+                <input
+                  type="number"
+                  step={0.01}
+                  data-testid="pct-arpu-override"
+                  value={newEvent.arpuOverride ?? ''}
+                  placeholder={cohortAvgArpu != null ? cohortAvgArpu.toFixed(2) : undefined}
+                  onChange={e => {
+                    const raw = e.target.value;
+                    // CLEARED IS UNSET, NOT ZERO. Number('') is 0, so the
+                    // emptiness test has to come first or clearing the box would
+                    // silently state a rate of zero — the exact collision the
+                    // stored carrier exists to prevent.
+                    setNewEvent({
+                      ...newEvent,
+                      arpuOverride: raw === '' ? undefined : Number(raw),
+                    });
+                  }}
+                  className={`w-full text-sm border rounded-lg p-2 outline-none focus:border-[#e60000] ${
+                    newEvent.arpuOverride !== undefined
+                      ? 'border-[#e60000] bg-[#e60000]/5 font-semibold text-slate-800'
+                      : 'border-slate-200 bg-white text-slate-500'
+                  }`}
+                />
+                {/* SETTINGS TRUTH: the user sees where the number came from.
+                    A pre-populated box that does not say it is a default reads
+                    as a value someone chose. */}
+                <p className="mt-1 text-[10px] leading-snug">
+                  {newEvent.arpuOverride !== undefined ? (
+                    <span className="text-[#e60000] font-medium">
+                      {t('whatif_override_arpu_yours')}
+                      {cohortAvgArpu != null && (
+                        <>
+                          {' '}
+                          <button
+                            type="button"
+                            onClick={() => setNewEvent({ ...newEvent, arpuOverride: undefined })}
+                            className="hover:underline"
+                          >{t('whatif_override_arpu_revert')}</button>
+                        </>
+                      )}
+                    </span>
+                  ) : cohortAvgArpu != null ? (
+                    <span className="text-slate-400">
+                      {t('whatif_override_arpu_default_from', { value: cohortAvgArpu.toFixed(2) })}
+                    </span>
+                  ) : (
+                    <span className="text-amber-600">{t('whatif_override_arpu_no_default')}</span>
+                  )}
+                </p>
               </div>
               )}
               <div>

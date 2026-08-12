@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
 import { filterToKey, cohortToFilter, forecastForView, forecastForStep1Selection, step1ResolveDecision, describeScope } from './utils/viewFilter';
@@ -225,9 +225,14 @@ export default function App() {
     // A percentage event carries no per-subscriber ARPU, so the trailing-
     // average auto-fill is skipped: storing one would be a number with no
     // meaning, and the table dashes the column for these rows anyway.
-    const resolved = isPct
-      ? { arpu: 0, revenue: 0 }
-      : resolveEventArpuRevenue(newEvent.subscriberVolume || 0, newEvent.arpu, newEvent.revenue, newEvent.scenario, cohortAvgArpu);
+    // THE FIFTH WRITER. This is the DEFAULT add path — WhatIfTab's
+    // handleAddMarketEvent routes here whenever month-spreading is off, which
+    // it is unless the user turns it on. It built its own rate inline and never
+    // carried arpuOverride, so an ordinary Add click discarded a stated rate
+    // silently. Found by the stage-2 gate; the count of writers was four in my
+    // head and five in the code.
+    const resolved = draftEventRate(
+      newEvent, cohortAvgArpu, newEvent.subscriberVolume || 0, newEvent.revenue, isPct);
     const event: MarketEvent = {
       id: Math.random().toString(36).substr(2, 9),
       scenario: newEvent.scenario as any,
@@ -243,6 +248,7 @@ export default function App() {
       customerVolume:   neg(newEvent.customerVolume   || 0),
       revenue:          neg(resolved.revenue),
       arpu:             neg(resolved.arpu),
+      arpuOverride:     newEvent.arpuOverride === undefined ? undefined : neg(newEvent.arpuOverride),
       name:         newEvent.name         || '',
       campaignName: newEvent.campaignName || '',
       comment:      newEvent.comment      || '',
@@ -551,6 +557,9 @@ export default function App() {
       Promo_Mix_JSON: e.promoMix ? JSON.stringify(e.promoMix) : '',
       Promo_Pricing_Mode: e.promoPricingMode ?? '',
       Promo_Pricing_Amount: e.promoPricingAmount ?? '',
+      // Alessandro's editable ARPU. '' is the ABSENCE carrier and 0 is a real
+      // stated rate — `?? ''` is doing that work, so it must not become `?? 0`.
+      Arpu_Override: e.arpuOverride ?? '',
     }));
     XLSX.utils.book_append_sheet(
       wb,

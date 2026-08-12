@@ -741,5 +741,10 @@
   "whatif_mix_target_blocked_other": "Las fijaciones actuales no dejan nada libre para mover.",
   "whatif_mix_blend_unknown": "no se conoce",
   "whatif_mix_blend_unknown_reason": "Un nivel con proporción no tiene ARPU, por lo que no hay valor mixto que mostrar. No es un valor mixto de cero.",
-  "whatif_mix_sum_amber_reason": "Esta mezcla no suma 100 %. Se cargó exactamente como se guardó y no se ha ajustado por usted; edite una proporción antes de guardar."
+  "whatif_mix_sum_amber_reason": "Esta mezcla no suma 100 %. Se cargó exactamente como se guardó y no se ha ajustado por usted; edite una proporción antes de guardar.",
+  "whatif_override_arpu_label": "ARPU de estos abonados",
+  "whatif_override_arpu_default_from": "Predeterminado: media móvil de 3 meses de la cohorte objetivo, {{value}}. Escriba para sustituirlo.",
+  "whatif_override_arpu_yours": "Su valor: sustituye al predeterminado de la cohorte.",
+  "whatif_override_arpu_revert": "Usar el predeterminado",
+  "whatif_override_arpu_no_default": "No hay media móvil para esta cohorte objetivo, por lo que no hay valor predeterminado. Introduzca una tarifa."
 }

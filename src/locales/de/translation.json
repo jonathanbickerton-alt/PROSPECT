@@ -741,5 +741,10 @@
   "whatif_mix_target_blocked_other": "Die aktuellen Haltungen lassen nichts Bewegliches übrig.",
   "whatif_mix_blend_unknown": "nicht bekannt",
   "whatif_mix_blend_unknown_reason": "Eine Stufe mit Anteil hat keinen ARPU, daher gibt es keinen Mischwert. Das ist kein Mischwert von null.",
-  "whatif_mix_sum_amber_reason": "Diese Mischung ergibt nicht 100 %. Sie wurde exakt wie gespeichert geladen und nicht für Sie angepasst; bearbeiten Sie einen Anteil, bevor Sie speichern."
+  "whatif_mix_sum_amber_reason": "Diese Mischung ergibt nicht 100 %. Sie wurde exakt wie gespeichert geladen und nicht für Sie angepasst; bearbeiten Sie einen Anteil, bevor Sie speichern.",
+  "whatif_override_arpu_label": "ARPU für diese Teilnehmer",
+  "whatif_override_arpu_default_from": "Standard: gleitender 3-Monats-Durchschnitt der Zielkohorte, {{value}}. Zum Überschreiben eingeben.",
+  "whatif_override_arpu_yours": "Ihr Wert — überschreibt den Kohortenstandard.",
+  "whatif_override_arpu_revert": "Standard verwenden",
+  "whatif_override_arpu_no_default": "Kein gleitender Durchschnitt für diese Zielkohorte, also gibt es keinen Standard. Bitte einen Wert eingeben."
 }

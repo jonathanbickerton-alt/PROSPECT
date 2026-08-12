@@ -76,6 +76,9 @@ const evtRow = (over) => ({
   Is_Promotion: 'Yes', Promo_Rebanded: 'No',
   Promo_Mix_Axis: 'value', Promo_Mix_JSON: JSON.stringify(MIX),
   Promo_Pricing_Mode: '', Promo_Pricing_Amount: '',
+  // '' is the ABSENCE carrier for the editable ARPU, exactly as it is for
+  // the pricing amount. Never `?? 0` here.
+  Arpu_Override: '',
   ...over,
 });
 
@@ -94,6 +97,20 @@ const rows = [
     ID: 'promo-mix-3', Sequence: 3, Start_Month: '2026-11',
     Comment: 'Promotion with no mix arm — absent, not empty',
     Promo_Mix_Axis: '', Promo_Mix_JSON: '',
+  }),
+  // Alessandro's EDITABLE ARPU, stated. The first two rows leave it blank, so
+  // one file now carries stated / unset side by side.
+  evtRow({
+    ID: 'promo-mix-4', Sequence: 4, Start_Month: '2026-12',
+    Comment: 'Editable ARPU stated by the user',
+    Arpu_Override: 31.4,
+  }),
+  // And stated as ZERO — a free acquisition. Behaviourally the whole point of
+  // the carrier: this row must reload as 0, and rows 1-3 must reload as unset.
+  evtRow({
+    ID: 'promo-mix-5', Sequence: 5, Start_Month: '2027-01',
+    Comment: 'Editable ARPU stated as ZERO — a free acquisition, not unset',
+    Arpu_Override: 0,
   }),
 ];
 

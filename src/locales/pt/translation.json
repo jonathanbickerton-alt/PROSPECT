@@ -741,5 +741,10 @@
   "whatif_mix_target_blocked_other": "As fixações atuais não deixam nada livre para mover.",
   "whatif_mix_blend_unknown": "desconhecido",
   "whatif_mix_blend_unknown_reason": "Um escalão com parcela não tem ARPU, pelo que não há valor misto a mostrar. Não é um valor misto de zero.",
-  "whatif_mix_sum_amber_reason": "Esta combinação não soma 100%. Foi carregada exatamente como guardada e não foi ajustada por si; edite uma parcela antes de guardar."
+  "whatif_mix_sum_amber_reason": "Esta combinação não soma 100%. Foi carregada exatamente como guardada e não foi ajustada por si; edite uma parcela antes de guardar.",
+  "whatif_override_arpu_label": "ARPU destes assinantes",
+  "whatif_override_arpu_default_from": "Predefinido: média móvel de 3 meses da coorte alvo, {{value}}. Escreva para substituir.",
+  "whatif_override_arpu_yours": "O seu valor — substitui o predefinido da coorte.",
+  "whatif_override_arpu_revert": "Usar o predefinido",
+  "whatif_override_arpu_no_default": "Não há média móvel para esta coorte alvo, por isso não há predefinido. Introduza uma taxa."
 }

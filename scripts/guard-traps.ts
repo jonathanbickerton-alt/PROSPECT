@@ -61,6 +61,7 @@ const VIEWFILTER = 'src/utils/viewFilter.ts';
 const MIXSPEC = 'scripts/mix-constraint-spec.ts';
 const MIXENGINE = 'src/utils/mixConstraint.ts';
 const MIXCARD = 'scripts/mix-card-spec.tsx';
+const OVERRIDESPEC = 'scripts/override-arpu-spec.tsx';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE];
@@ -640,6 +641,35 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       'const promoMixBlocksSave = promoMixEnabled && promoTierData.length > 0 &&',
       'const promoMixBlocksSave = false && promoMixEnabled && promoTierData.length > 0 &&') },
+  // ── Traps 59-60: Alessandro's editable ARPU. Both plant the SAME defect at
+  //    the two places it can occur — the field failing to survive a save, and
+  //    the field surviving but being ignored where it is meant to apply. A
+  //    round trip that carries a value nothing reads is not a round trip.
+  //
+  // 59 is the one the brief names: the override dropped from the shared reader.
+  { id: '59 the ARPU override dropped from the reader', why: 'a stated rate does not survive a reload',
+    file: ENGINE, spec: EVTROUND,
+    mutate: s => s.replace('    arpuOverride: readOptionalNumber(row.Arpu_Override),', '') },
+  // 60 keeps the field and severs its EFFECT: the per-view derivation stops
+  // preferring it, so a stated rate round-trips perfectly and changes nothing.
+  // Zero is where it bites first — the truthiness chain below the override
+  // silently converts a free acquisition into last month's blended ARPU.
+  { id: '60 the derivation stops preferring the stated rate', why: 'the override survives but is ignored',
+    file: WHATIF, spec: OVERRIDESPEC,
+    mutate: s => s.replace(
+      '              e.arpuOverride !== undefined' + nl +
+      '                ? Math.abs(e.arpuOverride)          // the user said so' + nl +
+      '                : e.subscriberVolume > 0',
+      '              e.subscriberVolume > 0') },
+  // 61 removes the override from App's addMarketEvent — the DEFAULT add path,
+  // and the site the stage-2 gate found uncovered. Nothing drove it: this spec's
+  // harness passes a noop addMarketEvent, so the wiring check is a source check,
+  // and this trap is what proves the source check still bites.
+  { id: '61 the default Add path drops the override', why: 'an ordinary Add click discards the stated rate',
+    file: APP, spec: OVERRIDESPEC,
+    mutate: s => s.replace(
+      '      arpuOverride:     newEvent.arpuOverride === undefined ? undefined : neg(newEvent.arpuOverride),' + nl,
+      '') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -650,7 +680,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

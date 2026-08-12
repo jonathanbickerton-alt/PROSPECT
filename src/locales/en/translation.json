@@ -750,5 +750,10 @@
   "whatif_mix_target_blocked_other": "The current holds leave nothing free to move.",
   "whatif_mix_blend_unknown": "not known",
   "whatif_mix_blend_unknown_reason": "A tier carrying share has no ARPU, so there is no blend to show. This is not a blend of zero.",
-  "whatif_mix_sum_amber_reason": "This mix does not total 100%. It was loaded exactly as saved and has not been adjusted for you; edit a share to resolve it before saving."
+  "whatif_mix_sum_amber_reason": "This mix does not total 100%. It was loaded exactly as saved and has not been adjusted for you; edit a share to resolve it before saving.",
+  "whatif_override_arpu_label": "ARPU for these subscribers",
+  "whatif_override_arpu_default_from": "Default: the target cohort’s trailing 3-month average, {{value}}. Type to override.",
+  "whatif_override_arpu_yours": "Your rate — overriding the cohort default.",
+  "whatif_override_arpu_revert": "Use the default",
+  "whatif_override_arpu_no_default": "No trailing average for this target cohort, so there is no default to fall back on. Enter a rate."
 }

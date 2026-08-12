@@ -741,5 +741,10 @@
   "whatif_mix_target_blocked_other": "I blocchi attuali non lasciano nulla di libero da spostare.",
   "whatif_mix_blend_unknown": "non nota",
   "whatif_mix_blend_unknown_reason": "Un livello con quota non ha ARPU, quindi non esiste un valore misto da mostrare. Non è un valore misto pari a zero.",
-  "whatif_mix_sum_amber_reason": "Questo mix non somma 100%. È stato caricato esattamente come salvato e non è stato corretto per te; modifica una quota prima di salvare."
+  "whatif_mix_sum_amber_reason": "Questo mix non somma 100%. È stato caricato esattamente come salvato e non è stato corretto per te; modifica una quota prima di salvare.",
+  "whatif_override_arpu_label": "ARPU di questi abbonati",
+  "whatif_override_arpu_default_from": "Predefinito: media mobile a 3 mesi della coorte di destinazione, {{value}}. Digita per sostituirlo.",
+  "whatif_override_arpu_yours": "Il tuo valore — sostituisce il predefinito della coorte.",
+  "whatif_override_arpu_revert": "Usa il predefinito",
+  "whatif_override_arpu_no_default": "Nessuna media mobile per questa coorte di destinazione, quindi non c’è un predefinito. Inserisci una tariffa."
 }

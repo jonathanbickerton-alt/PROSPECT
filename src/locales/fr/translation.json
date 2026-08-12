@@ -741,5 +741,10 @@
   "whatif_mix_target_blocked_other": "Les blocages actuels ne laissent rien de libre à déplacer.",
   "whatif_mix_blend_unknown": "inconnue",
   "whatif_mix_blend_unknown_reason": "Un palier portant une part n’a pas d’ARPU, il n’y a donc pas de valeur mixte à afficher. Ce n’est pas une valeur mixte nulle.",
-  "whatif_mix_sum_amber_reason": "Ce mix ne totalise pas 100 %. Il a été chargé exactement tel qu’enregistré et n’a pas été ajusté pour vous ; modifiez une part avant d’enregistrer."
+  "whatif_mix_sum_amber_reason": "Ce mix ne totalise pas 100 %. Il a été chargé exactement tel qu’enregistré et n’a pas été ajusté pour vous ; modifiez une part avant d’enregistrer.",
+  "whatif_override_arpu_label": "ARPU de ces abonnés",
+  "whatif_override_arpu_default_from": "Par défaut : moyenne mobile sur 3 mois de la cohorte cible, {{value}}. Saisissez pour remplacer.",
+  "whatif_override_arpu_yours": "Votre valeur — remplace la valeur par défaut de la cohorte.",
+  "whatif_override_arpu_revert": "Utiliser la valeur par défaut",
+  "whatif_override_arpu_no_default": "Aucune moyenne mobile pour cette cohorte cible, donc aucune valeur par défaut. Saisissez un taux."
 }

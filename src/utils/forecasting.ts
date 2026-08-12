@@ -67,6 +67,27 @@ export interface MarketEvent {
   customerVolume: number;
   revenue: number;
   arpu: number;
+  /**
+   * The user's EXPLICITLY STATED per-subscriber rate for the subscribers this
+   * event moves — Alessandro's editable ARPU, settled 2026-08-04 as a RATE and
+   * not a quantity. Absolute; applied at full magnitude to every leg, never
+   * pro-rated; the volume keeps resolving per view.
+   *
+   * ABSENT IS NOT ZERO, and this field exists only because of that. `arpu`
+   * above cannot carry the distinction: `resolveEventArpuRevenue` auto-fills
+   * the target cohort's trailing 3-month average whenever the user leaves the
+   * box blank, so a stored `arpu` of 30 might be the user saying "thirty" or
+   * the app saying "thirty on your behalf" — indistinguishable, and the card
+   * has to show the difference. Zero is also a legitimate rate (a free
+   * acquisition), so the absence cannot ride on falsiness either.
+   *
+   * This is the Seed_Base_Known pattern: when a legitimate value collides with
+   * unset, known-ness gets its own carrier. Here the carrier is the field's
+   * own presence — `undefined` means the user has stated nothing and the
+   * derived rate applies. Downstream reads must test `!== undefined`, never
+   * truthiness, and must never substitute 0.
+   */
+  arpuOverride?: number;
   name?: string;
   /** Campaign name groups multiple events into one named campaign — empty string = uncategorised */
   campaignName: string;
@@ -124,6 +145,11 @@ export interface MarketEvent {
  *                       (a 0% or zero override), so the empty string is the
  *                       carrier keeping absence distinct from it. This is the
  *                       one field on this set where the distinction bites.
+ *   arpuOverride        '' -> undefined, 0 -> 0. THE SAME CARRIER AND THE
+ *                       SHARPEST CASE FOR IT: a stated rate of 0 is a free
+ *                       acquisition, and a blank box means "use the target
+ *                       cohort's trailing average". Collapsing them would turn
+ *                       every unset override into a zero-revenue event.
  *   promoMixAxis        only 'value' | 'tariff' survive; anything else absent.
  *   promoMix            parsed from JSON; blank or unparseable -> absent, and an
  *                       empty object -> absent too, because "a mix with no
@@ -158,12 +184,28 @@ export interface StoredEventModifiers {
   promoMix?: Record<string, number>;
   promoPricingMode?: 'percentage' | 'absolute';
   promoPricingAmount?: number;
+  arpuOverride?: number;
+}
+
+/**
+ * A stored number where BLANK MEANS UNSET and zero means zero.
+ *
+ * One definition, because there are now two fields with this exact carrier —
+ * `Promo_Pricing_Amount` and `Arpu_Override` — and a second copy of the
+ * condition is how two fields that should agree about absence come to differ.
+ * The condition is fiddlier than it looks: `Number('')` is 0, so an
+ * emptiness test has to precede the numeric one or every blank cell reads as a
+ * deliberate zero, which is the precise failure this carrier exists to prevent.
+ */
+function readOptionalNumber(raw: unknown): number | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 export function readStoredEventModifiers(row: Record<string, unknown>): StoredEventModifiers {
   const axis = String(row.Promo_Mix_Axis ?? '');
   const mode = String(row.Promo_Pricing_Mode ?? '');
-  const amt = row.Promo_Pricing_Amount;
 
   let promoMix: Record<string, number> | undefined;
   const mixRaw = row.Promo_Mix_JSON;
@@ -185,8 +227,12 @@ export function readStoredEventModifiers(row: Record<string, unknown>): StoredEv
     promoMixAxis:    axis === 'tariff' ? 'tariff' : axis === 'value' ? 'value' : undefined,
     promoMix,
     promoPricingMode: mode === 'absolute' ? 'absolute' : mode === 'percentage' ? 'percentage' : undefined,
-    promoPricingAmount: amt !== undefined && amt !== null && amt !== '' && Number.isFinite(Number(amt))
-      ? Number(amt) : undefined,
+    promoPricingAmount: readOptionalNumber(row.Promo_Pricing_Amount),
+    // The editable ARPU. Same carrier, same reason, and the reason is sharper
+    // here: a stated rate of 0 is a free acquisition and a blank box means "use
+    // the target cohort's trailing average". Collapsing them would silently
+    // convert every unset override into a zero-revenue event.
+    arpuOverride: readOptionalNumber(row.Arpu_Override),
   };
 }
 
@@ -2695,6 +2741,16 @@ export function resequenceRebuild(
  * restatement agrees with itself no matter what the table does.
  */
 export function eventArpuDelta(e: MarketEvent): number | null {
+  // A STATED RATE IS ALWAYS SHOWN, percentage or not — this is the "no silent
+  // substitution" half of the editable-ARPU rule. The dash above exists because
+  // a percentage row normally carries a rate the app auto-filled and the user
+  // never chose, so printing it would attribute a number to them. An override
+  // is the opposite case: they did choose it, and hiding it would mean the
+  // table showed a dash for the one row whose rate is not a derivation.
+  //
+  // Tested for presence, not truthiness, so a stated 0 renders as 0 rather
+  // than falling through to the dash it is least like.
+  if (e.arpuOverride !== undefined) return e.arpuOverride;
   if (e.amountType === 'percentage') return null;
   return e.arpu !== 0 ? e.arpu : null;
 }
@@ -2743,6 +2799,58 @@ export function bySequence(a: MarketEvent, b: MarketEvent): number {
   if (s !== 0) return s;
   const d = a.date.localeCompare(b.date);
   return d !== 0 ? d : a.id.localeCompare(b.id);
+}
+
+/**
+ * The rate a draft event will carry, and whether the USER stated it.
+ *
+ * THE ONE DEFINITION, and it lives here rather than in WhatIfTab because there
+ * are FIVE sites that build a MarketEvent from the draft form and one of them
+ * is in App.tsx. The first version of this helper lived in the component and
+ * covered the four sites inside it; the stage-2 gate found the fifth, which is
+ * the DEFAULT add path — `handleAddMarketEvent` calls App's `addMarketEvent`
+ * whenever month-spreading is off, which it is unless the user turns it on. A
+ * stated rate typed into the box and saved with an ordinary click was silently
+ * discarded.
+ *
+ * That is precisely the defect the promo-field session existed to close, in a
+ * new place: a field added to four writers out of five. Counting the writers is
+ * the check that catches it, and "four" was my count, not a measured one.
+ *
+ * PERCENTAGE EVENTS ARE HANDLED HERE TOO, for the same reason. Two sites used
+ * to special-case them inline with `isPct ? { arpu: 0, revenue: 0 } : …`, on the
+ * grounds that a percentage event carries no per-subscriber ARPU. That was true
+ * until the rate became editable. The zero still applies when nothing is stated
+ * — the volume field holds a percent, so a revenue derived from it would be
+ * fiction — but a STATED rate must survive, because it is the one number on the
+ * row the user chose.
+ *
+ * `resolveEventArpuRevenue` cannot absorb this: it tests `if (rawArpu)`, so a
+ * stated rate of ZERO falls straight through to the auto-fill. That truthiness
+ * is right for its own callers, who genuinely mean "blank", and wrong for an
+ * override, where 0 is a free acquisition. The override is therefore tested for
+ * PRESENCE here, ahead of it.
+ */
+export function draftEventRate(
+  draft: { arpuOverride?: number; arpu?: number; scenario?: string },
+  cohortAvgArpu: number | null | undefined,
+  vol: number,
+  rawRevenue: number | undefined,
+  isPct = false,
+): { arpu: number; revenue: number; overridden: boolean } {
+  if (draft.arpuOverride !== undefined) {
+    // Revenue is DERIVED from the stated rate, never an independent input —
+    // and stays 0 for a percentage event, whose `vol` is a percent and not a
+    // count of people.
+    return {
+      arpu: draft.arpuOverride,
+      revenue: isPct ? 0 : vol * draft.arpuOverride,
+      overridden: true,
+    };
+  }
+  if (isPct) return { arpu: 0, revenue: 0, overridden: false };
+  const r = resolveEventArpuRevenue(vol, draft.arpu, rawRevenue, draft.scenario, cohortAvgArpu);
+  return { arpu: r.arpu, revenue: r.revenue, overridden: false };
 }
 
 export function resolveEventArpuRevenue(
