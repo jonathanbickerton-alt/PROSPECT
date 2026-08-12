@@ -1363,9 +1363,27 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   }, []);
 
   // Computed blended ARPU from current draft
+  /**
+   * The rate a tier actually carries: the user's STATED value if they stated
+   * one, else the derived figure. Tested for PRESENCE — a stated 0 is a band
+   * priced at nothing and must not fall through to the derived rate, and a
+   * stated negative is an acquisition credit carried verbatim.
+   *
+   * ONE definition, read by the blend, the yield column and the event builder,
+   * so the surface and the saved event cannot disagree about which number the
+   * user chose.
+   */
+  const effectiveTierArpu = useCallback(
+    (tier: string, derived: number) =>
+      draftTierArpuOverride[tier] !== undefined ? draftTierArpuOverride[tier] : derived,
+    [draftTierArpuOverride]);
+
   const draftBlendedArpu = useMemo(() => {
-    return yieldTierData.reduce((sum, t) => sum + (draftMix[t.tier] ?? 0) / 100 * t.baseArpu, 0);
-  }, [draftMix, yieldTierData]);
+    // From the EFFECTIVE rates, so a tier edit moves this on screen with no
+    // save. The dependency on draftTierArpuOverride is what makes it live.
+    return yieldTierData.reduce(
+      (sum, t) => sum + (draftMix[t.tier] ?? 0) / 100 * effectiveTierArpu(t.tier, t.baseArpu), 0);
+  }, [draftMix, yieldTierData, effectiveTierArpu]);
 
   // Baseline blended ARPU from data (equal to sum of existing share × arpu)
   const baselineBlendedArpu = useMemo(() => {
@@ -1652,7 +1670,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const handleAddYieldEvent = useCallback(() => {
     if (!newYieldEvent.month || yieldTierData.length === 0) return;
     const tariffBaseArpu: Record<string, number> = {};
-    yieldTierData.forEach(t => { tariffBaseArpu[t.tier] = t.baseArpu; });
+    // The snapshot the engine reads is the EFFECTIVE rate, so a saved event
+    // behaves as the card showed it. The override map is persisted alongside so
+    // provenance survives too — which number was the user's is not recoverable
+    // from the snapshot alone.
+    yieldTierData.forEach(t => { tariffBaseArpu[t.tier] = effectiveTierArpu(t.tier, t.baseArpu); });
 
     const event: YieldEvent = {
       id: Math.random().toString(36).substr(2, 9),
@@ -5103,6 +5125,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     <div className={`space-y-1.5 pr-1 ${yieldTierData.length > 8 ? 'overflow-y-auto max-h-[340px]' : ''}`}>
                       {yieldTierData.map(({ tier, baseArpu }) => {
                         const mixPct = draftMix[tier] ?? 0;
+                        const overridden = draftTierArpuOverride[tier] !== undefined;
+                        const effRate = effectiveTierArpu(tier, baseArpu);
                         return (
                           <div key={tier} className="grid gap-x-3 items-center" style={{ gridTemplateColumns: 'minmax(80px,180px) 1fr 52px 90px 80px' }}>
                             <span className="text-xs font-medium text-slate-700 truncate leading-none" title={tier}>{tier}</span>
@@ -5124,11 +5148,43 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               onChange={e => handleSliderChange(tier, Number(e.target.value))}
                               className="w-full text-xs font-semibold text-slate-700 text-right tabular-nums border border-slate-200 rounded px-1 py-0.5 outline-none focus:border-[#e60000] bg-white"
                             />
-                            <span className="text-xs text-slate-400 text-right tabular-nums leading-none">
-                              {formatNumber(baseArpu)}
-                            </span>
+                            {/* EDITABLE BASE ARPU — request 2, reading (b). The
+                                INPUT becomes editable; the blend below stays
+                                derived. Same four states as the Volume card's
+                                pct-arpu-override: unset shows the derived figure
+                                as a placeholder, stated is styled distinctly,
+                                clearing returns to unset, and a stated 0 or a
+                                negative is a value like any other. No sign
+                                transform — a rate is written verbatim. */}
+                            <input
+                              type="number"
+                              step={0.01}
+                              data-testid={`tier-arpu-override-${tier}`}
+                              value={overridden ? draftTierArpuOverride[tier] : ''}
+                              placeholder={formatNumber(baseArpu)}
+                              title={overridden
+                                ? t('whatif_tier_arpu_yours')
+                                : t('whatif_tier_arpu_default_from', { value: formatNumber(baseArpu) })}
+                              onChange={e => {
+                                const raw = e.target.value;
+                                // CLEARED IS UNSET, NOT ZERO. Number('') is 0,
+                                // so the emptiness test comes first or clearing
+                                // the box silently states a rate of nothing.
+                                setDraftTierArpuOverride(prev => {
+                                  const next = { ...prev };
+                                  if (raw === '') delete next[tier];
+                                  else next[tier] = Number(raw);
+                                  return next;
+                                });
+                              }}
+                              className={`w-full text-xs text-right tabular-nums border rounded px-1 py-0.5 outline-none focus:border-[#e60000] ${
+                                overridden
+                                  ? 'border-[#e60000] bg-[#e60000]/5 font-semibold text-slate-800'
+                                  : 'border-slate-200 bg-white text-slate-400'
+                              }`}
+                            />
                             <span className="text-xs text-emerald-700 text-right tabular-nums font-semibold leading-none">
-                              {formatNumber(mixPct / 100 * baseArpu)}
+                              {formatNumber(mixPct / 100 * effRate)}
                             </span>
                           </div>
                         );

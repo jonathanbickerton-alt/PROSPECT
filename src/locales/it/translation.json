@@ -746,5 +746,7 @@
   "whatif_override_arpu_default_from": "Predefinito: media mobile a 3 mesi della coorte di destinazione, {{value}}. Digita per sostituirlo.",
   "whatif_override_arpu_yours": "Il tuo valore — sostituisce il predefinito della coorte.",
   "whatif_override_arpu_revert": "Usa il predefinito",
-  "whatif_override_arpu_no_default": "Nessuna media mobile per questa coorte di destinazione, quindi non c’è un predefinito. Inserisci una tariffa."
+  "whatif_override_arpu_no_default": "Nessuna media mobile per questa coorte di destinazione, quindi non c’è un predefinito. Inserisci una tariffa.",
+  "whatif_tier_arpu_yours": "Il tuo valore per questo livello — sostituisce quello derivato.",
+  "whatif_tier_arpu_default_from": "Derivato da ricavi ÷ volume di questo livello nella coorte dell'evento: {{value}}. Digita per sostituirlo."
 }

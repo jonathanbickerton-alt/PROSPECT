@@ -746,5 +746,7 @@
   "whatif_override_arpu_default_from": "Standard: gleitender 3-Monats-Durchschnitt der Zielkohorte, {{value}}. Zum Überschreiben eingeben.",
   "whatif_override_arpu_yours": "Ihr Wert — überschreibt den Kohortenstandard.",
   "whatif_override_arpu_revert": "Standard verwenden",
-  "whatif_override_arpu_no_default": "Kein gleitender Durchschnitt für diese Zielkohorte, also gibt es keinen Standard. Bitte einen Wert eingeben."
+  "whatif_override_arpu_no_default": "Kein gleitender Durchschnitt für diese Zielkohorte, also gibt es keinen Standard. Bitte einen Wert eingeben.",
+  "whatif_tier_arpu_yours": "Ihr Wert für diese Stufe — überschreibt den abgeleiteten Wert.",
+  "whatif_tier_arpu_default_from": "Abgeleitet aus Umsatz ÷ Menge dieser Stufe in der Kohorte des Ereignisses: {{value}}. Zum Überschreiben eingeben."
 }

@@ -135,6 +135,38 @@ const BASE: any = {
     `${signed.length} — sign conventions belong to QUANTITIES; a rate is written verbatim`);
 }
 
+// ── THE CARD SURFACE IS WIRED TO THE CARRIER ─────────────────────────────
+//
+// Source-level, and declared as such: the mounted spec the brief asked for was
+// shed for budget (see the report). These catch the wiring being severed, which
+// is what guard-trap 64 plants; they do not prove rendered behaviour, and the
+// next session should mount it.
+{
+  const tab = fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8');
+
+  check('SURFACE: the per-tier input exists and is addressable',
+    tab.includes('data-testid={`tier-arpu-override-${tier}`}'));
+  check('SURFACE: it writes the carrier by PRESENCE — cleared deletes the key',
+    tab.includes("if (raw === '') delete next[tier];"),
+    "Number('') is 0, so clearing must delete rather than store a zero");
+  check('SURFACE: the derived figure is the PLACEHOLDER, so unset shows it without claiming it',
+    tab.includes('placeholder={formatNumber(baseArpu)}'));
+
+  check('EFFECTIVE RATE: one definition, tested for presence not truthiness',
+    tab.includes('draftTierArpuOverride[tier] !== undefined ? draftTierArpuOverride[tier] : derived'),
+    'a stated 0 must not fall through to the derived rate');
+  check('LIVE: the blend re-derives from the EFFECTIVE rate',
+    tab.includes('effectiveTierArpu(t.tier, t.baseArpu)'));
+  check('LIVE: and depends on the override map, which is what makes it move without a save',
+    tab.includes('[draftMix, yieldTierData, effectiveTierArpu]'));
+  check('SAVED: the construction site snapshots the EFFECTIVE rate, so a saved event matches the card',
+    tab.includes('tariffBaseArpu[t.tier] = effectiveTierArpu'));
+
+  const signed = tab.match(/draftTierArpuOverride[^\n]*(?:neg\(|abs\(|Math\.abs\()/g) ?? [];
+  check('SIGN: zero transforms touch the draft override either',
+    signed.length === 0, `${signed.length}`);
+}
+
 console.log(`\nyield-roundtrip spec: ${pass} passed, ${fails.length} failed`);
 fails.forEach(f => console.log('  FAIL ' + f));
 process.exit(fails.length ? 1 : 0);

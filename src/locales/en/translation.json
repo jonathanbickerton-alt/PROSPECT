@@ -755,5 +755,7 @@
   "whatif_override_arpu_default_from": "Default: the target cohort’s trailing 3-month average, {{value}}. Type to override.",
   "whatif_override_arpu_yours": "Your rate — overriding the cohort default.",
   "whatif_override_arpu_revert": "Use the default",
-  "whatif_override_arpu_no_default": "No trailing average for this target cohort, so there is no default to fall back on. Enter a rate."
+  "whatif_override_arpu_no_default": "No trailing average for this target cohort, so there is no default to fall back on. Enter a rate.",
+  "whatif_tier_arpu_yours": "Your rate for this tier — overriding the derived figure.",
+  "whatif_tier_arpu_default_from": "Derived from this tier's revenue ÷ volume in the event's cohort: {{value}}. Type to override."
 }

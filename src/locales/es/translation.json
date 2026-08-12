@@ -746,5 +746,7 @@
   "whatif_override_arpu_default_from": "Predeterminado: media móvil de 3 meses de la cohorte objetivo, {{value}}. Escriba para sustituirlo.",
   "whatif_override_arpu_yours": "Su valor: sustituye al predeterminado de la cohorte.",
   "whatif_override_arpu_revert": "Usar el predeterminado",
-  "whatif_override_arpu_no_default": "No hay media móvil para esta cohorte objetivo, por lo que no hay valor predeterminado. Introduzca una tarifa."
+  "whatif_override_arpu_no_default": "No hay media móvil para esta cohorte objetivo, por lo que no hay valor predeterminado. Introduzca una tarifa.",
+  "whatif_tier_arpu_yours": "Su valor para este nivel: sustituye la cifra derivada.",
+  "whatif_tier_arpu_default_from": "Derivado de ingresos ÷ volumen de este nivel en la cohorte del evento: {{value}}. Escriba para sustituirlo."
 }

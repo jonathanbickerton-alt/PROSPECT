@@ -746,5 +746,7 @@
   "whatif_override_arpu_default_from": "Predefinido: média móvel de 3 meses da coorte alvo, {{value}}. Escreva para substituir.",
   "whatif_override_arpu_yours": "O seu valor — substitui o predefinido da coorte.",
   "whatif_override_arpu_revert": "Usar o predefinido",
-  "whatif_override_arpu_no_default": "Não há média móvel para esta coorte alvo, por isso não há predefinido. Introduza uma taxa."
+  "whatif_override_arpu_no_default": "Não há média móvel para esta coorte alvo, por isso não há predefinido. Introduza uma taxa.",
+  "whatif_tier_arpu_yours": "O seu valor para este escalão — substitui o valor derivado.",
+  "whatif_tier_arpu_default_from": "Derivado de receita ÷ volume deste escalão na coorte do evento: {{value}}. Escreva para substituir."
 }

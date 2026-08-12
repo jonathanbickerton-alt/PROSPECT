@@ -705,6 +705,17 @@ const TRAPS: Trap[] = [
       '              const tariffBaseArpuOverride = readStoredRateMap(r.Tariff_Base_ARPU_Override_JSON);',
       '              let tariffBaseArpuOverride: any = {};' + nl +
       "              try { tariffBaseArpuOverride = JSON.parse(String(r.Tariff_Base_ARPU_Override_JSON ?? '{}')); } catch {}") },
+  // 64 severs the input from the carrier: clearing the box stores a zero
+  // instead of deleting the key. It looks like a simplification and collapses
+  // the two states the whole carrier exists to separate — a band the user
+  // priced at nothing, and a band they said nothing about. Number('') is 0, so
+  // this is the shape the mistake actually takes.
+  { id: '64 clearing the tier override stores zero instead of unsetting', why: 'unset and stated-zero collapse on the Value card',
+    file: WHATIF, spec: YIELDROUND,
+    mutate: s => s.replace(
+      "                                  if (raw === '') delete next[tier];" + nl +
+      '                                  else next[tier] = Number(raw);',
+      '                                  next[tier] = Number(raw);') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

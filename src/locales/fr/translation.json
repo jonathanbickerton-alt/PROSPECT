@@ -746,5 +746,7 @@
   "whatif_override_arpu_default_from": "Par défaut : moyenne mobile sur 3 mois de la cohorte cible, {{value}}. Saisissez pour remplacer.",
   "whatif_override_arpu_yours": "Votre valeur — remplace la valeur par défaut de la cohorte.",
   "whatif_override_arpu_revert": "Utiliser la valeur par défaut",
-  "whatif_override_arpu_no_default": "Aucune moyenne mobile pour cette cohorte cible, donc aucune valeur par défaut. Saisissez un taux."
+  "whatif_override_arpu_no_default": "Aucune moyenne mobile pour cette cohorte cible, donc aucune valeur par défaut. Saisissez un taux.",
+  "whatif_tier_arpu_yours": "Votre valeur pour ce palier — remplace la valeur dérivée.",
+  "whatif_tier_arpu_default_from": "Dérivé du chiffre d'affaires ÷ volume de ce palier dans la cohorte de l'événement : {{value}}. Saisissez pour remplacer."
 }
