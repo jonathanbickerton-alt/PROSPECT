@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-08-12 15:33 +0100 (UTC 2026-08-12 14:33)
-Certifies: __CERT__
-Repo: __REPO__
+Certifies: fa578ae, branch main, tree CLEAN.
+Repo: committed fa578ae, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before the state check and
   before any code — the rule shipped at 1a2efa4, now standing practice.
 STATE CHECK: HEAD 099cd04, tree clean, origin in sync. The brief's base
