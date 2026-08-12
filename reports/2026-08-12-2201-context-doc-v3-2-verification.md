@@ -5,7 +5,7 @@
 ```
 Generated: 2026-08-12 22:01 +0100 (UTC 2026-08-12 21:01)
 Verified against: c6efd74, branch main, tree CLEAN (bar this report).
-Repo: __REPO__
+Repo: committed 0324e47, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before any check ran.
 CONTRADICTED, and it is the document's headline — **REQUEST 3 WAS NEVER
   BUILT.** Section 5 narrates it as shipped and section 6 calls the arc CLOSED
