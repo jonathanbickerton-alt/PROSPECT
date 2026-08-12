@@ -3,7 +3,31 @@
 ## FOR ADVISOR
 
 ```
-PLACEHOLDER
+Generated: 2026-08-12 12:16 +0100 (UTC 2026-08-12 11:16)
+Certifies: a50cca9, branch main, tree CLEAN.
+Repo: committed a50cca9, pushed (origin in sync)
+THE BRIEF'S PREMISE WAS NOT YET TRUE: it asked me to confirm the persistence
+  half was merged and state its hash. It was BUILT AND UNCOMMITTED, pending the
+  guard-trap run started at the end of the previous turn. Merged now at a50cca9.
+SHIPPED: Request 2's persistence half — YieldEvent.tariffBaseArpuOverride,
+  readStoredRateMap, the export column, the one import route, the one
+  construction site, spec:yield-roundtrip 18/18, guard-trap 63.
+HELD: the CARD SURFACE — one notch past the brief's own shed order, which named
+  item 3 first. Scope went, the record did not. The field is INERT until an
+  input exists: the state mixConstraint sat in after its first session.
+CARRIER: presence PER BUCKET. tariffBaseArpu cannot hold unset-vs-stated (a
+  derived 30 and a typed 30 are one number) and truthiness cannot either (a
+  stated 0 is falsy and legitimate). readStoredRateMap REUSES readOptionalNumber
+  per value rather than restating it — Number('') is 0, and that trap now lives
+  in one place for scalars and maps alike. Corrupt entries DROP, not default;
+  an empty map reads ABSENT.
+NEGATIVE ASSERTED AT SOURCE ON DAY ONE — zero sign transforms — the 03a08fe
+  assertion applied before a rider finds it missing rather than after.
+COUNTS PINNED not claimed: 1 construction / 1 caller / 1 import route, with trap
+  63 hand-rolling a parse beside the shared reader to prove the pin bites.
+GATE: 36/36 specs, guard-traps 61/61, lint+build clean. No 3-stage agent gate —
+  no rendered surface to examine; DECLARED, not skipped. UNMOVED 74/72/2 and the
+  MAPEs; no engine-arithmetic site touched. WALK: nothing to walk yet.
 ```
 
 ---
