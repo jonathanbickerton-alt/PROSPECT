@@ -35,7 +35,7 @@ ENUMERATION RE-VERIFIED at dae586d, not quoted: 1 construction site, 1 caller,
 ## 0. What this session did, and what it deliberately did not
 
 The brief asked for a records task **first** and then the Request 2 build. **The
-records task is done in full. The build is held.**
+records task is done in full. The build is held.** Carried by `3c513d1`.
 
 That is the close-ritual budget clause being applied on the first session after
 it was written:
