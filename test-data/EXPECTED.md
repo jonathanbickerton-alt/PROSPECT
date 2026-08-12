@@ -6548,6 +6548,46 @@ trap**, not a claim.
   `sum(Revenue) / sum(Volume)` per tier over the event's own cohort — or that
   figure scaled to the forecast when the card is in Forecast ARPU mode.
 
+#### WALK FINDING 2026-08-12 — two baselines on adjacent surfaces. ACCIDENTAL.
+
+**Jon's walk, with screenshots.** With overrides present, the Value card shows
+baseline **16.62** (delta **+2.02**) while the saved event's table row shows
+baseline **16.04** (delta **+2.60**). One event, two adjacent surfaces, two
+answers.
+
+**Diagnosed, and the classification is ACCIDENTAL — my own fallout, not design.**
+
+Both surfaces compute the *same definition* — an equal-weight mean of the tier
+ARPUs — over **different inputs**:
+
+| surface | reads | so its baseline holds constant |
+|---|---|---|
+| card, `baselineBlendedArpu` | `yieldTierData.baseArpu` — the **DERIVED** rates | the data's rates, ignoring the user's overrides |
+| table row, `evtBaselineArpu` | `evt.tariffBaseArpu` — since `4d8ae2b` the **EFFECTIVE** rates | the user's stated rates, so only the MIX moves |
+
+**Before `4d8ae2b` they agreed**, because `tariffBaseArpu` stored derived rates
+on both sides. The surface session changed the snapshot to store the *effective*
+rate — correct in itself, and the reason a reloaded event behaves as the card
+showed it — and the side effect was that one baseline began including overrides
+while the other did not.
+
+**Not fixed here, per the brief.** The table's reading is arguably the more
+useful of the two (it isolates the mix effect at stated rates), but nobody chose
+it, and choosing between them changes a displayed figure. That is comparator
+work.
+
+#### This sharpens option (b)'s scope
+
+The queued session must now decide **two** things, not one:
+
+1. share-weighted versus equal-weight — the original question;
+2. **over DERIVED or EFFECTIVE rates** — newly live, because the two are no
+   longer the same numbers once a user can state a rate.
+
+Whichever it picks, **both surfaces must pick the same one**, and each should
+name what its baseline holds constant. Defensible-if-labelled is the bar, and
+neither surface is labelled today.
+
 #### SETTLED 2026-08-12 — the comparator is option (c). Option (b) is QUEUED.
 
 **Jon's decision.** The equal-weight **"Approximate" label stays, and stays
