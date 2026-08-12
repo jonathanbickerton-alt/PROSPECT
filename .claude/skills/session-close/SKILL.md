@@ -22,6 +22,24 @@ Costing a unit of work means costing the build *and* the close. Three report
 gaps in one week were all the same shape: budget spent on scope, nothing left to
 record with. The build survives in the diff; the reasoning does not.
 
+## 0a. The skeleton is the session's FIRST ACTION — final, 2026-08-12
+
+**Before the state check. Before diagnosis. Before any code.** Create
+`reports/<yyyy-mm-dd-HHMM>-<topic>.md` with its title, `Generated:` line and an
+empty FOR ADVISOR block, then start work. Fill it at close.
+
+**EVERY session, unconditionally** — build, merge, diagnosis, state check, a
+one-line lookup, a session that answers a question and stops. There is no
+read-only exception and no triviality exception. A three-line report is a valid
+report.
+
+A session that dies therefore leaves a skeleton with placeholders, and **that is
+the diagnostic**: it says a session started here and did not finish. The empty
+case said nothing at all.
+
+Four conditional forms of this rule were written and every one leaked at the
+same step — deciding whether a report was owed. The condition is gone.
+
 ## 0b. Write the report SKELETON, then checkpoint — added 2026-08-12
 
 **Before the gate below runs, the report file exists.** Full narrative, full FOR

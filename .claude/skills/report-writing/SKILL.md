@@ -1,6 +1,6 @@
 ---
 name: report-writing
-description: Use when writing any session report, gate report, diagnosis, or verification report to reports/ — anything that will be uploaded to the advisor chat or read by someone who was not in the session. Covers the filename convention, the FOR ADVISOR block, and the command that sources the timestamp. Trigger on "write the report", "report per convention", "standard report format", or whenever a session is being closed out. ALSO TRIGGER ON ANY TASK THAT CHANGES REPO STATE, whether or not a report was asked for: merge, commit, push, rebase, cherry-pick, revert, tag, branch, "land it", "merge X into main", renaming or deleting files, editing config or agent definitions, or any run that mutates a tracked file — every one of those ends by writing a report file, however mechanical the task looked. ALSO TRIGGER ON ANY SESSION THAT PRODUCES FINDINGS A FUTURE SESSION WILL CONSUME, even with zero files changed: a diagnosis, a classification, an enumeration, a recommendation, or a decision the next session builds on. Only a TRIVIAL read-only check with nothing to carry forward (a lookup, a count, "does this still say X") may end with an inline summary alone.
+description: Use when writing any session report, gate report, diagnosis, or verification report to reports/ — anything that will be uploaded to the advisor chat or read by someone who was not in the session. Covers the filename convention, the FOR ADVISOR block, and the command that sources the timestamp. Trigger on "write the report", "report per convention", "standard report format", or whenever a session is being closed out. ALSO TRIGGER ON ANY TASK THAT CHANGES REPO STATE, whether or not a report was asked for: merge, commit, push, rebase, cherry-pick, revert, tag, branch, "land it", "merge X into main", renaming or deleting files, editing config or agent definitions, or any run that mutates a tracked file — every one of those ends by writing a report file, however mechanical the task looked. TRIGGER UNCONDITIONALLY, ON EVERY SESSION, whatever it does — build, merge, diagnosis, state check, a single lookup, or a session that answers a question and stops. There is NO read-only exception and NO triviality exception; the conditional forms of this trigger were tried four times and each leaked at the judgment step. The skeleton is created as the session's FIRST ACTION, before the state check and before any code, and filled at close; a three-line report is a valid report, and a skeleton left with placeholders is a valid diagnostic.
 ---
 
 # Writing a report
@@ -9,10 +9,21 @@ A report that exists only in a chat transcript is not retrievable by anyone who
 was not in the session, and is lost at compaction. Every report is a repo
 artefact.
 
-**Two things trigger one, and the second is the one that gets missed.** A
-session that CHANGED STATE needs a record because state moved. A session that
-produced FINDINGS needs one because the next decision moves — and that is easier
-to lose, precisely because it leaves no trace anyone would notice was absent.
+**FINAL FORM, 2026-08-12: nothing triggers a report, because a report is
+unconditional.** Every session writes one. The skeleton is the session's FIRST
+ACTION — before the state check, before diagnosis, before code — and is filled
+at close.
+
+A three-line report is a valid report. A skeleton left with placeholders is a
+valid diagnostic: it says a session started and did not finish, which the empty
+case never said.
+
+**Four conditional forms were written and each leaked at the judgment step**:
+state-changing only; then state-changing or findings-producing; then with a
+trivial-check exception; then with a carry-forward test. None was wrong about
+which sessions deserve a report. All were wrong to ask, because the sessions
+that most needed one were the ones least able to spare the attention to decide.
+The condition is removed rather than tightened a fifth time.
 
 Amended 2026-08-12, after a read-only session established that the Value card's
 equal-weight comparator is four sites (two of them denominators inside the

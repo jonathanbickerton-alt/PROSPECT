@@ -105,24 +105,40 @@ Every session report is **also** written to
 in a chat transcript is not retrievable by anyone who was not in the session,
 and is lost at compaction.
 
-### What triggers a report: CHANGED STATE, not the size of the task
+### EVERY SESSION PRODUCES A REPORT. There is no condition — final, 2026-08-12
 
 **Any session that changes repo state ends by writing a report file.** Changing
 state means committing, merging, moving HEAD, or mutating any file — tracked or
 not. There is no size threshold and no category of change too small to record.
 
-**An inline chat summary is sufficient only for a strictly read-only session** —
-a question answered, a file inspected, a measurement taken and nothing written.
-The moment anything is written, so is a report.
+**SUPERSEDED 2026-08-12 — there is no inline-summary exception.** The sentence
+that stood here carved one out for "a strictly read-only session". It is gone,
+not narrowed. Nothing below reinstates it.
 
 **AMENDED 2026-08-12: a report is ALSO required for any session that produces
 FINDINGS A FUTURE SESSION WILL CONSUME**, whether or not it changed state.
 
-An inline chat summary is sufficient only for a **trivial read-only check with
-nothing to carry forward** — a lookup, a count, a "does this file still say X".
-The moment a session produces a diagnosis, a classification, an enumeration, a
-recommendation, or a decision the next session is expected to build on, that is
-a report even if not one byte changed.
+**That refinement is also superseded.** It replaced one judgment call with a
+narrower one — "is this trivial? does anything carry forward?" — and a narrower
+judgment call is still a judgment call.
+
+**THE RULE, FINAL: every session produces a report file. No read-only
+exception, no triviality exception, no judgment.** A state check's report can be
+three lines. A one-line lookup's report can be one line. The cost of a report
+nobody needed is a file; the cost of a missing one is work nobody can retrieve.
+
+**THE SKELETON IS THE FIRST ACTION OF EVERY SESSION** — before the state check,
+before diagnosis, before any code — and is filled at close. A session that dies
+therefore leaves a skeleton with placeholders, and that skeleton IS the
+diagnostic: it says a session started here and did not finish, which is
+information the empty case never carried.
+
+**Why the condition is gone rather than tightened. FOUR conditional refinements
+were written, and every one leaked at the same step — the judgment.** The
+trigger was never wrong about which sessions deserve a report; it was wrong to
+ask the question at all, because the sessions that most needed one were exactly
+the sessions least able to spare the attention to decide. Removing the condition
+removes the step that failed.
 
 **This exists because a diagnosis nearly died in a transcript, twice.** A
 read-only session established that the Value card's equal-weight comparator is
