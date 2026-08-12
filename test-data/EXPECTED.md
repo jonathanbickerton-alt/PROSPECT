@@ -6506,7 +6506,113 @@ five `draftEventRate` call sites and five sites persisting `arpuOverride`, and
 guard-trap 61 removes the field from App's literal to prove that check still
 bites. A source check that nobody can plant against is decoration.
 
-#### HELD — request 2 (Value card). The design record is ambiguous here.
+#### RESOLVED 2026-08-12 — request 2 is reading (b). NOT YET BUILT.
+
+**Jon's decision.** The ambiguity below is settled in favour of **reading (b)**:
+the **per-tier Base ARPU column becomes editable**; the blended ARPU stays
+DERIVED and read-only.
+
+**Provenance.** Jon's original request (2026-08-11) was for *"adjusting the Base
+ARPU used"* — the **inputs**, not the blend. **Reading (a) is REJECTED** on two
+grounds, both already recorded here: it creates the two-boxes-one-relationship
+the Service-Revenue rule forbids, and it is functionally a rebuild of the
+constrained mix-target extension, which is on hold.
+
+**Status: DESIGN SETTLED, BUILD NOT STARTED.** The session that carried the
+build brief spent its budget on the records below and held the build rather than
+half-applying it — see the close-ritual budget clause in CLAUDE.md.
+
+**The enumeration the build inherits, re-verified 2026-08-12 at `dae586d`:**
+
+| thing | count |
+|---|---|
+| construction site building `tariffBaseArpu` from the draft | **1** (`WhatIfTab` ~1641-1667) |
+| `addYieldEvent` callers | **1** |
+| yield import routes | **1** (`App.tsx` ~1032; the second `Tariff_Base_ARPU_JSON` hit is the export writer) |
+
+Unlike market events there is no second import path, so the writer-count guard
+is cheap — and per the fifth-writer lesson it must be a **counted pin with a
+trap**, not a claim.
+
+**Constraints the build inherits, all already settled elsewhere in this file:**
+
+- the request-1 pattern throughout — default shown and its SOURCE NAMED,
+  edited-vs-default visibly distinct, clear-returns-to-default, stated zero
+  distinct from unset;
+- **NEGATIVE accepted verbatim.** Per the rate-sign rule beside the rates rule:
+  no sign transform may touch it, and the build asserts **zero transforms** on
+  the new field exactly as `03a08fe` asserts for `arpuOverride`;
+- carriers presence-based through `readOptionalNumber` — **extended, never
+  duplicated**;
+- the tier figure's source, which must be named on screen, is
+  `sum(Revenue) / sum(Volume)` per tier over the event's own cohort — or that
+  figure scaled to the forecast when the card is in Forecast ARPU mode.
+
+#### SETTLED 2026-08-12 — the comparator is option (c). Option (b) is QUEUED.
+
+**Jon's decision.** The equal-weight **"Approximate" label stays, and stays
+honest**. Nothing about the comparator changes now.
+
+- **Option (a) — card-only share-weighting — REJECTED.** It would leave the card
+  disagreeing with the engine it describes, which is worse than the imprecision
+  it fixes.
+- **Option (b) — share-weighted baseline in card AND engine — QUEUED as its own
+  gated session.** It is explicitly a **forecast-behaviour change that MOVES
+  FIGURES**, so it does not ride along with a UI feature and it gets its own
+  gate and its own re-measurement of the pinned numbers.
+
+**Option (b)'s inherited scope, per the diagnosis report
+(`reports/2026-08-12-1135-value-card-comparator-diagnosis.md`):**
+
+- **all FIVE equal-weight sites**, not the four named as the comparator —
+  `WhatIfTab:855` and `:1013` (the `yieldRatio` denominators, which COMPUTE a
+  forecast number rather than describe one), `:1354` (the card's "vs baseline"),
+  `:5247` (the event list's delta), **and `computeTierData`'s forecast-scaling
+  branch**, which derives its scale factor the same way and sets the tier ARPUs
+  the card displays;
+- **the engine-side `?? 0` sites** among the eight recorded there;
+- a **persisted baseline-shares carrier** on `YieldEvent` — shares are derivable
+  at draft time but were never stored, which is why the engine cannot be fixed
+  without one — plus a **migration story** for events saved without it.
+
+**Build no part of option (b) outside that session.**
+
+#### QUEUED DESIGN — request 3, the promotion card's value-mix arm. NOT BUILT.
+
+Per-band editable ARPU on the promotion card. **All four decisions are Jon's,
+2026-08-12.** Recorded here because they arrived in a chat brief and would
+otherwise live only in a transcript — the precise failure the report-trigger and
+budget rules were written to stop.
+
+1. **Pre-population.** Each band's override box defaults to that band's trailing
+   3-month average, with the **source named on the surface** — the same rule as
+   the Volume and Value cards, not a third convention.
+2. **Overrides PERSIST** into the event and round-trip. *"An override that
+   vanishes on reload is the class of surprise this project exists to kill."*
+3. **An override RESOLVES absence.** A band reading "not known" becomes usable
+   when the user supplies a rate: the blend recomputes, and the save path that
+   previously refused on an absent blend accepts. This is new ground — requests
+   1 and 2 make a value editable; this one makes an override *unlock* a refusal.
+4. **Provenance on screen.** An overridden band ARPU is visibly distinct from a
+   calculated one **at a glance** — settings-truth: the user always knows which
+   numbers are theirs.
+
+**A note the build session should not have to rediscover:** the engine needs no
+change. `perMemberArpus` is already an input to `achievableTargetRange`,
+`solveForTarget` and `blendedArpu`, so the work is wiring the effective per-band
+rate (override by PRESENCE, else derived) into it. The check that matters is
+that a band edit moves the **Reachable range** and the solved mix *live* — an
+override that moved the blend but not the range would be two surfaces
+disagreeing about one number, which is the defect shape this arc keeps finding.
+
+**Its premise needs restating before it is built.** The brief that carried these
+decisions described request 3 as closing the arc and assumed a request-2 merge
+that does not exist. Request 3 is the **third of four**; request 2 is designed
+but unbuilt.
+
+#### The original ambiguity, kept for the reasoning
+
+
 
 **Not built, and not chosen between.** "The same treatment" does not resolve on
 the Value card, and the two readings are materially different work:
