@@ -5,7 +5,7 @@
 ```
 Generated: 2026-08-12 12:51 +0100 (UTC 2026-08-12 11:51)
 Certifies: records only — ZERO source files changed. HEAD at start 7eaa59b.
-Repo: __PENDING__
+Repo: committed 61a6e96, pushed (origin in sync)
 WRITTEN SKELETON-FIRST, the rule it introduces. This block and the whole
   narrative existed before any verification ran; only the numbers and the Repo
   line were filled after. A reader finding __PENDING__ still here knows the
