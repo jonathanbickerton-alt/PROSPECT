@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-08-12 15:08 +0100 (UTC 2026-08-12 14:08)
-Certifies: __CERT__
-Repo: __REPO__
+Certifies: 1a2efa4, branch main, tree CLEAN.
+Repo: committed 1a2efa4, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION — before the recovery check and
   before any amendment. That ordering is the session's subject, practised before
   it was written down.
