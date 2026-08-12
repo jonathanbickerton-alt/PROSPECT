@@ -188,6 +188,36 @@ report-writing skill. It reads either
 `Repo: reverted clean at <hash>`, and there is no third form because there is no
 third state.
 
+
+#### THE CLOSE RITUAL IS BUDGETED WORK, NOT AN EPILOGUE — added 2026-08-12
+
+**Commit, push and report are part of the session's budget from the first
+minute.** They are not what happens with whatever is left over.
+
+Therefore: **a session nearing its budget sheds SCOPE, never the record.** Drop
+the last increment, hold it explicitly, and close properly on what is already
+done. And the test that makes this concrete —
+
+> **If the close ritual cannot be afforded, the last increment taken on could
+> not be afforded either.**
+
+An increment whose cost excludes recording it was never the size it looked. The
+budget for a unit of work is the build *plus* the close; costing only the build
+is how a session arrives at the end with something finished and nothing
+retrievable.
+
+**Why this exists: three report gaps in one week**, each the same shape — a
+session that spent its close-ritual budget on scope and then had nothing left to
+record with. Two merges went unreported; a diagnosis lived only in a transcript
+until the next brief planned against a merge that did not exist; and a rider
+that fixed two real defects was committed with no report at all, one commit
+before the rule requiring one was strengthened.
+
+None of those were caused by not knowing the rule. All three were caused by
+treating the record as the thing that gets cut when time runs short — which
+inverts it, because the build is recoverable from the diff and the reasoning is
+not.
+
 `HHMM` is 24-hour local time at generation. It is in the filename so reports
 sort chronologically by name alone — filesystem timestamps do not survive
 copying, archiving, or a fresh clone, and several reports a day is normal.

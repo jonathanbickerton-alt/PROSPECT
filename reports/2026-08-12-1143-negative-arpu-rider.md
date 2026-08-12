@@ -59,8 +59,13 @@ may clamp, reject or re-sign it.
 
 ## 2. Two defects against that label
 
-Both were introduced by the request-1 build the day before, and both were
-invisible until the sign was asked about.
+**Both are classified INTRODUCED BY `6667464`** — the request-1 build of the
+previous day, which made the ARPU editable and, in doing so, wrote both the
+`Math.abs` and the seven sign transforms. Neither is pre-existing: before
+`6667464` there was no `arpuOverride` for a sign convention to be wrong about.
+
+Both were invisible until the sign was asked about, and would have stayed so:
+each is a no-op on the paths anyone exercises by default.
 
 ### `Math.abs(e.arpuOverride)` in the per-view derivation
 

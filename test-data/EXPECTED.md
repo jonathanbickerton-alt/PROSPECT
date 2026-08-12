@@ -6391,6 +6391,21 @@ restatement:
 - **The rate applies at FULL MAGNITUDE to every leg**, per the settled rates
   rule - never pro-rated. A rate is not a quantity and does not split across
   the cohorts an event lands on.
+- **And it does not take a quantity's SIGN either — added 2026-08-12.** Sign
+  conventions belong to QUANTITIES. This app stores Outflow volumes and revenue
+  negative and displays them positive, via a `neg()`/`abs()` pair; a RATE stated
+  absolutely is written and read **VERBATIM**, with no transform on either side.
+
+  The two halves of the rates rule now read together: a rate does not split
+  across cohorts, and a rate does not flip with the metric's direction. Both
+  follow from the same thing — a rate is not a quantity — and both were learned
+  the same way, by a quantity's habit being applied to one.
+
+  **Evidence.** `6667464` applied the Outflow `neg()`/`abs()` pair to
+  `arpuOverride` at seven sites, so a typed −5 stored as −5 and reopened as +5;
+  and it clamped the derivation with `Math.abs`, so the events table and the
+  forecast engine disagreed about one stated negative. Both were invisible on
+  Inflow and Retention, where those transforms are the identity.
 - **Service Revenue becomes a DERIVED per-view display** - rate x resolved
   volume - and stops being an independent input. Two independently editable
   boxes for one relationship is how they drift apart.

@@ -7,6 +7,21 @@ description: Use when finishing a working session on a branch — running the pr
 
 Work through in order. A step that cannot be completed is reported, not skipped.
 
+## 0. Budget the close BEFORE the build — added 2026-08-12
+
+Everything below — the gate, the commit, the push, the report — is **inside the
+session's budget**, not an epilogue funded by what survives it.
+
+**A session running short sheds SCOPE, never the record.** Hold the last
+increment explicitly, say so, and close properly on what is done.
+
+> **If the close ritual cannot be afforded, the last increment taken on could
+> not be afforded either.**
+
+Costing a unit of work means costing the build *and* the close. Three report
+gaps in one week were all the same shape: budget spent on scope, nothing left to
+record with. The build survives in the diff; the reasoning does not.
+
 ## 1. The three-stage gate
 
 Run all three, in order, each over the branch HEAD:
