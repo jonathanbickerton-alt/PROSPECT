@@ -1378,6 +1378,22 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       draftTierArpuOverride[tier] !== undefined ? draftTierArpuOverride[tier] : derived,
     [draftTierArpuOverride]);
 
+  /**
+   * The effective rate for EVERY tier, built once.
+   *
+   * THE ONE DEFINITION the card's baseline and the saved snapshot share. They
+   * diverged before precisely because each computed its own basis: the card
+   * averaged the DERIVED rates while the snapshot stored the EFFECTIVE ones, so
+   * one event showed two baselines on adjacent surfaces. Deriving both from
+   * this single map is what makes that impossible rather than merely unlikely,
+   * and spec:yield-roundtrip pins the agreement.
+   */
+  const effectiveTierArpuMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    yieldTierData.forEach(t => { m[t.tier] = effectiveTierArpu(t.tier, t.baseArpu); });
+    return m;
+  }, [yieldTierData, effectiveTierArpu]);
+
   const draftBlendedArpu = useMemo(() => {
     // From the EFFECTIVE rates, so a tier edit moves this on screen with no
     // save. The dependency on draftTierArpuOverride is what makes it live.
@@ -1387,12 +1403,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   // Baseline blended ARPU from data (equal to sum of existing share × arpu)
   const baselineBlendedArpu = useMemo(() => {
-    if (yieldTierData.length === 0) return 0;
-    const total = yieldTierData.reduce((s, t) => s + t.baseArpu, 0);
-    if (total === 0) return 0;
-    // Approximate: assume existing mix is data-driven (average ARPU of all tiers weighted equally)
-    return yieldTierData.reduce((s, t) => s + t.baseArpu, 0) / yieldTierData.length;
-  }, [yieldTierData]);
+    // EQUAL-WEIGHT OVER THE STATED RATES — the same basis the engine's
+    // yieldRatio denominator uses, which reads the stored (effective) map. Jon's
+    // option (a), 2026-08-12: one baseline and one delta across the card, the
+    // event row and the applied forecast, rather than two answers with captions
+    // explaining why they differ.
+    //
+    // It reads effectiveTierArpuMap rather than recomputing, so this and the
+    // snapshot cannot drift apart again — which is how the divergence arose.
+    //
+    // Still equal-weight, still approximate as a baseline: whether it should be
+    // share-weighted is the queued option-(b) question and is untouched here.
+    const rates = Object.values(effectiveTierArpuMap);
+    if (rates.length === 0) return 0;
+    return rates.reduce((s, v) => s + v, 0) / rates.length;
+  }, [effectiveTierArpuMap]);
 
   // ---------------------------------------------------------------------------
   // Custom Promotion Card (Phase 4) — a combined promo: mandatory volume
@@ -1669,12 +1694,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   const handleAddYieldEvent = useCallback(() => {
     if (!newYieldEvent.month || yieldTierData.length === 0) return;
-    const tariffBaseArpu: Record<string, number> = {};
-    // The snapshot the engine reads is the EFFECTIVE rate, so a saved event
-    // behaves as the card showed it. The override map is persisted alongside so
-    // provenance survives too — which number was the user's is not recoverable
-    // from the snapshot alone.
-    yieldTierData.forEach(t => { tariffBaseArpu[t.tier] = effectiveTierArpu(t.tier, t.baseArpu); });
+    // THE SAME MAP the card's baseline is computed from — not a second walk of
+    // yieldTierData producing the same numbers by coincidence. The snapshot the
+    // engine reads is the EFFECTIVE rate, so a saved event behaves as the card
+    // showed it; the override map is persisted alongside so provenance survives,
+    // since which number was the user's is not recoverable from this alone.
+    const tariffBaseArpu: Record<string, number> = { ...effectiveTierArpuMap };
 
     const event: YieldEvent = {
       id: Math.random().toString(36).substr(2, 9),

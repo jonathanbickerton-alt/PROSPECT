@@ -159,12 +159,73 @@ const BASE: any = {
     tab.includes('effectiveTierArpu(t.tier, t.baseArpu)'));
   check('LIVE: and depends on the override map, which is what makes it move without a save',
     tab.includes('[draftMix, yieldTierData, effectiveTierArpu]'));
+  // Re-aimed 2026-08-12: this pinned the per-tier assignment
+  // `tariffBaseArpu[t.tier] = effectiveTierArpu(...)`, which option (a) replaced
+  // with a spread of the shared map. The line went stale under a change that
+  // strengthened what it guards — the traps-60-and-61 lesson, this time in a
+  // spec rather than a trap. Aimed at the property, not the spelling.
   check('SAVED: the construction site snapshots the EFFECTIVE rate, so a saved event matches the card',
-    tab.includes('tariffBaseArpu[t.tier] = effectiveTierArpu'));
+    tab.includes('{ ...effectiveTierArpuMap }'),
+    'the snapshot must come from the effective basis, however it is spelled');
 
   const signed = tab.match(/draftTierArpuOverride[^\n]*(?:neg\(|abs\(|Math\.abs\()/g) ?? [];
   check('SIGN: zero transforms touch the draft override either',
     signed.length === 0, `${signed.length}`);
+
+  // ── ONE BASIS: the card's baseline and the snapshot share a single map ────
+  //
+  // These diverged once already — the card averaged DERIVED rates while the
+  // snapshot stored EFFECTIVE ones, so one event showed two baselines on
+  // adjacent surfaces. Jon settled it as option (a): one basis everywhere. The
+  // guard is that both READ THE SAME OBJECT rather than each walking
+  // yieldTierData and arriving at equal numbers by coincidence.
+  check('ONE BASIS: the effective map is built once',
+    (tab.match(/const effectiveTierArpuMap = useMemo\(/g) ?? []).length === 1);
+  check('ONE BASIS: the card baseline reads that map, not yieldTierData',
+    tab.includes('const rates = Object.values(effectiveTierArpuMap);'),
+    'averaging yieldTierData.baseArpu here is the divergence returning');
+  check('ONE BASIS: the snapshot spreads the SAME map',
+    tab.includes('const tariffBaseArpu: Record<string, number> = { ...effectiveTierArpuMap };'),
+    'a second walk of yieldTierData would agree today and drift tomorrow');
+  check('ONE BASIS: no surviving baseline over the DERIVED rates',
+    !/reduce\(\(s, t\) => s \+ t\.baseArpu, 0\) \/ yieldTierData\.length/.test(tab),
+    'the pre-option-(a) computation must be gone, not merely bypassed');
+
+  check('LABEL: the caption names the basis rather than saying only "equal-weight"',
+    /Equal-weight average of the stated tier ARPUs/.test(
+      fs.readFileSync('src/locales/en/translation.json', 'utf8')),
+    'a baseline that moves on an override edit must read as design');
+}
+
+// ── NO OVERRIDES: byte-identical to the pre-change behaviour ──────────────
+//
+// The change must be a no-op wherever nobody has stated a rate — which is every
+// shipped fixture. Asserted arithmetically rather than by running the card:
+// with an empty override map the effective rate IS the derived rate, so the
+// equal-weight mean over either is the same number.
+{
+  const derived = { 'Low Value': 8, 'Mid Value': 20, 'High Value': 45 };
+  const mean = (o: Record<string, number>) => {
+    const v = Object.values(o);
+    return v.reduce((s, x) => s + x, 0) / v.length;
+  };
+  const effective = (over: Record<string, number>) => {
+    const m: Record<string, number> = {};
+    for (const k of Object.keys(derived)) {
+      m[k] = over[k] !== undefined ? over[k] : (derived as Record<string, number>)[k];
+    }
+    return m;
+  };
+
+  check('NO-OVERRIDE: the baseline is unchanged when nothing is stated',
+    mean(effective({})) === mean(derived), `${mean(effective({}))} vs ${mean(derived)}`);
+  check('NO-OVERRIDE: and that is exact, not merely close',
+    Object.is(mean(effective({})), mean(derived)));
+  check('OVERRIDE: a stated rate DOES move the baseline — the point of option (a)',
+    mean(effective({ 'High Value': 20 })) !== mean(derived),
+    'if this did not move, card and forecast would still disagree');
+  check('OVERRIDE: a stated ZERO moves it too, rather than reading as unset',
+    mean(effective({ 'High Value': 0 })) < mean(derived));
 }
 
 console.log(`\nyield-roundtrip spec: ${pass} passed, ${fails.length} failed`);

@@ -716,6 +716,17 @@ const TRAPS: Trap[] = [
       "                                  if (raw === '') delete next[tier];" + nl +
       '                                  else next[tier] = Number(raw);',
       '                                  next[tier] = Number(raw);') },
+  // 65 re-creates the two-baseline divergence by hand-rolling a second baseline
+  // over the DERIVED rates, which is exactly what the card did before option
+  // (a). It reads as a harmless local computation and silently puts the card
+  // back into disagreement with the event row and the applied forecast — one
+  // event, two baselines, two deltas. The defect was found by a walk rather
+  // than by any instrument, which is why it now has one.
+  { id: '65 a second baseline hand-rolled over the derived rates', why: 'card and forecast disagree again about one baseline',
+    file: WHATIF, spec: YIELDROUND,
+    mutate: s => s.replace(
+      '    const rates = Object.values(effectiveTierArpuMap);',
+      '    const rates = yieldTierData.map(t => t.baseArpu);') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

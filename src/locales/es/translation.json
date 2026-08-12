@@ -368,7 +368,7 @@
   "whatif_scale_tier_arpus_to_match_the_forecast_s_per": "Scale tier ARPUs to match the forecast's per-scenario ARPU for the selected month.",
   "whatif_yield": "Yield",
   "whatif_baseline_blended_arpu": "Baseline Blended ARPU",
-  "whatif_equal_weight_avg_of_tier_arpus": "Equal-weight avg of tier ARPUs",
+  "whatif_equal_weight_avg_of_tier_arpus": "Media de igual ponderación de los ARPU indicados por nivel: la misma base que aplica la previsión.",
   "whatif_new_blended_arpu": "New Blended ARPU",
   "whatif_add_yield_event": "Add Yield Event",
   "whatif_blended_arpu": "Blended ARPU",
