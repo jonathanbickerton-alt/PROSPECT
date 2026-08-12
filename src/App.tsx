@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, readStoredRateMap, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
 import { filterToKey, cohortToFilter, forecastForView, forecastForStep1Selection, step1ResolveDecision, describeScope } from './utils/viewFilter';
@@ -646,6 +646,11 @@ export default function App() {
       Mix_Axis: e.mixAxis ?? 'value',
       Tariff_Mix_JSON: JSON.stringify(e.tariffMix),
       Tariff_Base_ARPU_JSON: JSON.stringify(e.tariffBaseArpu),
+      // The user's STATED per-bucket rates. '' is the absence carrier — an
+      // empty object would claim "an override map with no members", which is a
+      // different thing from "no overrides" and is how promoMix already reads.
+      Tariff_Base_ARPU_Override_JSON: e.tariffBaseArpuOverride
+        ? JSON.stringify(e.tariffBaseArpuOverride) : '',
       Comment: e.comment ?? '',
     }));
     XLSX.utils.book_append_sheet(
@@ -1034,6 +1039,11 @@ export default function App() {
               let tariffBaseArpu: Record<string, number> = {};
               try { tariffMix = JSON.parse(String(r.Tariff_Mix_JSON ?? '{}')); } catch {}
               try { tariffBaseArpu = JSON.parse(String(r.Tariff_Base_ARPU_JSON ?? '{}')); } catch {}
+              // Through the SHARED map reader, which reuses readOptionalNumber
+              // per value: presence is the carrier, a stated 0 survives as 0,
+              // a negative survives verbatim, and a corrupted entry is dropped
+              // rather than defaulted.
+              const tariffBaseArpuOverride = readStoredRateMap(r.Tariff_Base_ARPU_Override_JSON);
               return {
                 id:            String(r.ID ?? Math.random().toString(36).substr(2, 9)),
                 name:          String(r.Name ?? ''),
@@ -1047,6 +1057,7 @@ export default function App() {
                 mixAxis:       (r.Mix_Axis === 'tariff' ? 'tariff' : 'value') as 'value' | 'tariff',
                 tariffMix,
                 tariffBaseArpu,
+                tariffBaseArpuOverride,
                 comment:       String(r.Comment ?? ''),
               };
             }));

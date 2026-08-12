@@ -1297,6 +1297,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // ── Yield Events form local draft state ──────────────────────────────────
   // draftMix holds the live slider values (always sums to 100).
   const [draftMix, setDraftMix] = useState<Record<string, number>>({});
+  /** Per-tier STATED base ARPUs. Presence per key is the carrier; a key absent
+   *  means "use the derived figure". Held here rather than merged into
+   *  draftMix so the two never have to be told apart later. */
+  const [draftTierArpuOverride, setDraftTierArpuOverride] = useState<Record<string, number>>({});
   // 'historical' = raw data average per tier; 'forecast' = scaled to match the
   // forecast's per-scenario ARPU for the selected yield event month.
   const [yieldArpuMode, setYieldArpuMode] = useState<'historical' | 'forecast'>('historical');
@@ -1616,6 +1620,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // Restored AFTER the fields that drive the tier list. seedMixPreserving is
     // what stops the seeding effect wiping this on the next render.
     setDraftMix({ ...ev.tariffMix });
+    // Restored so reopening shows what the USER stated, not the derived figure
+    // that would otherwise be indistinguishable from it. Absent restores to an
+    // empty map, which is "nothing stated" — the same thing, one level down.
+    setDraftTierArpuOverride({ ...(ev.tariffBaseArpuOverride ?? {}) });
     setEditingYieldId(ev.id);
   }, [setNewYieldEvent]);
 
@@ -1657,6 +1665,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       mixAxis,
       tariffMix: { ...draftMix },
       tariffBaseArpu,
+      // THE ONE CONSTRUCTION SITE — verified 1/1/1 at dae586d and pinned by
+      // spec:yield-roundtrip. Absent rather than {} when the user has stated
+      // nothing, so "no overrides" and "an empty override map" stay distinct.
+      // No sign transform: a rate is written verbatim (03a08fe's lesson).
+      tariffBaseArpuOverride: Object.keys(draftTierArpuOverride).length > 0
+        ? { ...draftTierArpuOverride } : undefined,
       rollForward: newYieldEvent.rollForward ?? false,
       name:    newYieldEvent.name    ?? '',
       comment: newYieldEvent.comment ?? '',

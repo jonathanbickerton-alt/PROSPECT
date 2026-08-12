@@ -420,6 +420,26 @@ export interface YieldEvent {
   /** bucket label → base ARPU derived from data when the event was added */
   tariffBaseArpu: Record<string, number>;
   /**
+   * bucket label → the USER'S EXPLICITLY STATED base ARPU for that bucket —
+   * Alessandro's request 2, settled 2026-08-11 as reading (b): the INPUTS
+   * become editable and the blend stays derived.
+   *
+   * PRESENCE IS THE CARRIER, per bucket. A key present means the user stated
+   * that bucket's rate; a key absent means use the derived figure in
+   * tariffBaseArpu. `tariffBaseArpu` cannot hold the distinction because a
+   * derived 30 and a typed 30 are the same number, and truthiness cannot hold
+   * it because a stated 0 is falsy and legitimate.
+   *
+   * NEGATIVE IS ACCEPTED VERBATIM, per the rate-sign rule recorded beside the
+   * rates rule: sign conventions belong to QUANTITIES, and a rate stated
+   * absolutely is written and read with no transform on either side. A minus
+   * means ARPU below zero — an acquisition credit — never a reduction from the
+   * derived value.
+   *
+   * Absent entirely (not an empty object) when the user has stated nothing.
+   */
+  tariffBaseArpuOverride?: Record<string, number>;
+  /**
    * When false: applies to this cohort's inflow/retention for `month` only.
    * When true:  rolls the mix forward to all subsequent months' inflow/retention
    *             for this cohort (segment + product + channelL1 + channelL2 + ibro).

@@ -62,6 +62,7 @@ const MIXSPEC = 'scripts/mix-constraint-spec.ts';
 const MIXENGINE = 'src/utils/mixConstraint.ts';
 const MIXCARD = 'scripts/mix-card-spec.tsx';
 const OVERRIDESPEC = 'scripts/override-arpu-spec.tsx';
+const YIELDROUND = 'scripts/yield-roundtrip-spec.ts';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE];
@@ -692,6 +693,18 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '                ? e.arpuOverride                    // the user said so, sign and all',
       '                ? Math.abs(e.arpuOverride)') },
+  // 63 severs the yield override's single import route by hand-rolling a parse
+  // beside the shared reader. It round-trips at a glance and drops every
+  // absence rule with it: JSON.parse defaults a blank to {}, a stated 0 and an
+  // unset bucket collapse, and a corrupted entry becomes a number. This is the
+  // promo-field shape — one route quietly diverging — planted on the route the
+  // enumeration says is the only one.
+  { id: '63 the yield override import hand-rolled beside the shared reader', why: 'absence rules drop on the only import route',
+    file: APP, spec: YIELDROUND,
+    mutate: s => s.replace(
+      '              const tariffBaseArpuOverride = readStoredRateMap(r.Tariff_Base_ARPU_Override_JSON);',
+      '              let tariffBaseArpuOverride: any = {};' + nl +
+      "              try { tariffBaseArpuOverride = JSON.parse(String(r.Tariff_Base_ARPU_Override_JSON ?? '{}')); } catch {}") },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -702,7 +715,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

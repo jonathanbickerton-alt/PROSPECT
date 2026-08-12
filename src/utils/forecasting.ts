@@ -203,6 +203,34 @@ function readOptionalNumber(raw: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+/**
+ * A stored JSON map of bucket -> stated rate, where PRESENCE of a key is the
+ * carrier and each value goes through `readOptionalNumber`.
+ *
+ * One function rather than a parse at each call site, and it reuses the scalar
+ * carrier rather than restating its conditions — `Number('')` is 0, so an
+ * emptiness test must precede the numeric one, and that logic now lives in
+ * exactly one place for both the scalar fields and this map.
+ *
+ * A key whose value will not read as a finite number is DROPPED rather than
+ * defaulted, so a corrupted entry degrades to "the user stated nothing for
+ * this bucket" instead of "the user stated zero". Blank, unparseable, or an
+ * empty object all read ABSENT — an override map with no members is not the
+ * same claim as no override map, exactly as promoMix already has it.
+ */
+export function readStoredRateMap(raw: unknown): Record<string, number> | undefined {
+  if (raw === undefined || raw === null || raw === '') return undefined;
+  let parsed: unknown;
+  try { parsed = JSON.parse(String(raw)); } catch { return undefined; }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+    const n = readOptionalNumber(v);
+    if (n !== undefined) out[k] = n;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 export function readStoredEventModifiers(row: Record<string, unknown>): StoredEventModifiers {
   const axis = String(row.Promo_Mix_Axis ?? '');
   const mode = String(row.Promo_Pricing_Mode ?? '');

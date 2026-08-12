@@ -1,0 +1,140 @@
+/**
+ * THE VALUE CARD'S PER-TIER BASE ARPU OVERRIDE ROUND-TRIPS.
+ *
+ *   npm run spec:yield-roundtrip
+ *
+ * Request 2, reading (b) (EXPECTED.md, settled 2026-08-11): the per-tier Base
+ * ARPU becomes editable and the blend stays DERIVED. This file pins the
+ * PERSISTENCE half — the carrier, the export column and the single import
+ * route. The card surface is held for the next session and is deliberately not
+ * asserted here.
+ *
+ * WHAT IT IS CAREFUL ABOUT:
+ *
+ *  - DRIVEN BOTH WAYS, through a real xlsx write/read. A round-trip check that
+ *    unit-tests the reader on literal inputs is how the promo-field hole
+ *    survived: the writer was never exercised, so a column it failed to emit
+ *    could not be seen.
+ *  - PRESENCE IS THE CARRIER, per bucket. Unset, stated, stated-as-zero and
+ *    stated-NEGATIVE are four separable states and every one is asserted.
+ *  - THE WRITER COUNT IS PINNED, not claimed. The enumeration was verified at
+ *    dae586d as 1 construction site / 1 addYieldEvent caller / 1 import route.
+ *    A field on some writers and not all is the defect this programme has now
+ *    paid for twice; guard-trap 63 proves the pin still bites.
+ *  - NO SIGN TRANSFORM may touch the field, per the rate-sign rule. Asserted at
+ *    source exactly as 03a08fe asserts it for arpuOverride.
+ */
+import * as fs from 'fs';
+import * as XLSX from 'xlsx';
+import { readStoredRateMap } from '../src/utils/forecasting';
+
+let pass = 0; const fails: string[] = [];
+const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails.push(n + (d ? `  [${d}]` : '')); };
+
+/** The Yield_Events writer, lifted from App.tsx. A wiring check below pins it
+ *  in step, so this copy cannot quietly test a shape the app no longer emits. */
+const toRow = (e: any) => ({
+  ID: e.id, Name: e.name ?? '', IBRO: e.ibro,
+  Segment: e.segment, Product: e.product,
+  Channel_L1: e.channelL1, Channel_L2: e.channelL2,
+  Month: e.month, Roll_Forward: e.rollForward ? 'Yes' : 'No',
+  Mix_Axis: e.mixAxis ?? 'value',
+  Tariff_Mix_JSON: JSON.stringify(e.tariffMix),
+  Tariff_Base_ARPU_JSON: JSON.stringify(e.tariffBaseArpu),
+  Tariff_Base_ARPU_Override_JSON: e.tariffBaseArpuOverride
+    ? JSON.stringify(e.tariffBaseArpuOverride) : '',
+  Comment: e.comment ?? '',
+});
+
+function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Yield_Events');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  return XLSX.utils.sheet_to_json(XLSX.read(buf, { type: 'buffer' }).Sheets['Yield_Events']);
+}
+
+const BASE: any = {
+  id: 'yld-1', name: 'Autumn yield', ibro: 'Inflow',
+  segment: 'Corporate', product: 'Mobile Voice', channelL1: 'Direct', channelL2: 'All',
+  month: '2026-09', rollForward: false, mixAxis: 'value',
+  tariffMix: { 'Low Value': 30, 'Mid Value': 30, 'High Value': 40 },
+  tariffBaseArpu: { 'Low Value': 8, 'Mid Value': 20, 'High Value': 45 },
+  comment: 'round-trip subject',
+};
+
+// ── FOUR SEPARABLE STATES: unset, stated, stated-zero, stated-negative ─────
+{
+  const withOverride = { ...BASE, tariffBaseArpuOverride: {
+    'Low Value': 12.5,      // stated
+    'Mid Value': 0,         // stated ZERO — a free band, not "unset"
+    'High Value': -4.25,    // stated NEGATIVE — an acquisition credit
+  } };
+  const back = readStoredRateMap(throughXlsx([toRow(withOverride)])[0].Tariff_Base_ARPU_Override_JSON);
+
+  check('ROUND TRIP: the override map survives a real xlsx write/read', !!back, JSON.stringify(back));
+  check('STATED: a plain rate survives', back?.['Low Value'] === 12.5, `${back?.['Low Value']}`);
+  check('ZERO: a stated zero survives as 0, NOT as unset',
+    back?.['Mid Value'] === 0, `${back?.['Mid Value']}`);
+  check('NEGATIVE: a below-zero rate survives VERBATIM, unclamped and un-resigned',
+    back?.['High Value'] === -4.25, `${back?.['High Value']}`);
+  check('COUNT: exactly the three stated buckets came back, no extras invented',
+    back && Object.keys(back).length === 3, `${back && Object.keys(back).length}`);
+
+  // A bucket the user said nothing about must NOT appear.
+  const partial = { ...BASE, tariffBaseArpuOverride: { 'Mid Value': 19 } };
+  const p2 = readStoredRateMap(throughXlsx([toRow(partial)])[0].Tariff_Base_ARPU_Override_JSON);
+  check('UNSET: a bucket with nothing stated is ABSENT from the map, not zeroed',
+    !!p2 && p2['Low Value'] === undefined && p2['Mid Value'] === 19,
+    JSON.stringify(p2));
+}
+
+// ── ABSENCE, and the empty map that is not the same claim ─────────────────
+{
+  const none = readStoredRateMap(throughXlsx([toRow(BASE)])[0].Tariff_Base_ARPU_Override_JSON);
+  check('ABSENT: no override map reads undefined, not {}', none === undefined, JSON.stringify(none));
+
+  check('ABSENT: an EMPTY map reads absent — "no members" is not "no map"',
+    readStoredRateMap('{}') === undefined);
+  check('ABSENT: unparseable reads absent rather than half-read',
+    readStoredRateMap('{not json') === undefined);
+  check('ABSENT: an array is not a rate map', readStoredRateMap('[1,2]') === undefined);
+  check('MALFORMED: a non-numeric entry is DROPPED, not defaulted to zero',
+    JSON.stringify(readStoredRateMap('{"a":5,"b":"oops"}')) === JSON.stringify({ a: 5 }),
+    JSON.stringify(readStoredRateMap('{"a":5,"b":"oops"}')));
+  check('MALFORMED: a blank entry is dropped too — Number("") is 0 and must not read as one',
+    JSON.stringify(readStoredRateMap('{"a":5,"b":""}')) === JSON.stringify({ a: 5 }));
+}
+
+// ── THE WRITER COUNT, PINNED — verified 1/1/1 at dae586d ──────────────────
+{
+  const app = fs.readFileSync('src/App.tsx', 'utf8');
+  const tab = fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8');
+
+  const construction = (tab.match(/tariffBaseArpuOverride:/g) ?? []).length;
+  check('PIN: exactly ONE construction site persists the override',
+    construction === 1, `${construction} — the enumeration says 1, and a field on some writers is the defect this pays for`);
+
+  const callers = (tab.match(/addYieldEvent\(/g) ?? []).length;
+  check('PIN: exactly ONE addYieldEvent caller', callers === 1, `${callers}`);
+
+  const importRoutes = (app.match(/readStoredRateMap\(r\.Tariff_Base_ARPU_Override_JSON\)/g) ?? []).length;
+  check('PIN: exactly ONE import route reads it, through the SHARED map reader',
+    importRoutes === 1, `${importRoutes}`);
+
+  check('WIRING: the export writes the column',
+    /Tariff_Base_ARPU_Override_JSON:/.test(app),
+    'the writer must emit it or this spec tests a shape the app does not produce');
+  check('WIRING: the import does not hand-roll a parse beside the shared reader',
+    !/JSON\.parse\(String\(r\.Tariff_Base_ARPU_Override_JSON/.test(app),
+    'a per-site copy is how the promo fields came to round-trip on one path only');
+
+  // THE RATE-SIGN RULE, asserted at source as 03a08fe asserts it for arpuOverride.
+  const signed = (app + tab).match(/tariffBaseArpuOverride[^\n]*(?:neg\(|abs\(|Math\.abs\()/g) ?? [];
+  check('SIGN: ZERO sign transforms touch the override anywhere',
+    signed.length === 0,
+    `${signed.length} — sign conventions belong to QUANTITIES; a rate is written verbatim`);
+}
+
+console.log(`\nyield-roundtrip spec: ${pass} passed, ${fails.length} failed`);
+fails.forEach(f => console.log('  FAIL ' + f));
+process.exit(fails.length ? 1 : 0);
