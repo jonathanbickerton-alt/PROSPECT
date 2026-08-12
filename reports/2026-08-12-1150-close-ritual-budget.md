@@ -5,7 +5,7 @@
 ```
 Generated: 2026-08-12 11:50 +0100 (UTC 2026-08-12 10:50)
 Certifies: docs and records only — ZERO source files changed.
-Repo: committed e3cdfda, pushed (origin in sync)
+Repo: committed 5e4e463, pushed (origin in sync)
 PART 1 — STATE: HEAD was 0b90640, tree CLEAN, origin in sync. The negative-ARPU
   sign-fix work is COMMITTED AND PUSHED at 03a08fe, so the commit-and-push
   branch of the stability rule did not apply and nothing was guessed. Verified
