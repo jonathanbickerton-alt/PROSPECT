@@ -115,6 +115,29 @@ not. There is no size threshold and no category of change too small to record.
 a question answered, a file inspected, a measurement taken and nothing written.
 The moment anything is written, so is a report.
 
+**AMENDED 2026-08-12: a report is ALSO required for any session that produces
+FINDINGS A FUTURE SESSION WILL CONSUME**, whether or not it changed state.
+
+An inline chat summary is sufficient only for a **trivial read-only check with
+nothing to carry forward** — a lookup, a count, a "does this file still say X".
+The moment a session produces a diagnosis, a classification, an enumeration, a
+recommendation, or a decision the next session is expected to build on, that is
+a report even if not one byte changed.
+
+**This exists because a diagnosis nearly died in a transcript, twice.** A
+read-only session established that the Value card's equal-weight comparator is
+FOUR sites, two of them denominators inside the forecast engine; that baseline
+shares are derivable at draft time but were never persisted; and that a
+card-only fix would put the card in disagreement with the engine. It changed no
+files, so under the rule as written an inline summary was compliant. The next
+brief then arrived assuming a merge that did not exist and planning against the
+gap — which is exactly what an unwritten finding causes.
+
+The original rule reasoned from "did anything get written". The better question
+is "will anyone need this who was not here". A merge needs recording because it
+moved state; a diagnosis needs recording because it moves the NEXT decision, and
+the second is easier to lose precisely because it leaves no trace to notice.
+
 **This rule exists because a merge went unrecorded.** Two branches were
 fast-forwarded onto main, verified against the gated tree, and the whole suite
 re-run on the result — and none of it produced a file, because the task read as

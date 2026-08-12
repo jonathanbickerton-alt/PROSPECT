@@ -1,6 +1,6 @@
 ---
 name: report-writing
-description: Use when writing any session report, gate report, diagnosis, or verification report to reports/ — anything that will be uploaded to the advisor chat or read by someone who was not in the session. Covers the filename convention, the FOR ADVISOR block, and the command that sources the timestamp. Trigger on "write the report", "report per convention", "standard report format", or whenever a session is being closed out. ALSO TRIGGER ON ANY TASK THAT CHANGES REPO STATE, whether or not a report was asked for: merge, commit, push, rebase, cherry-pick, revert, tag, branch, "land it", "merge X into main", renaming or deleting files, editing config or agent definitions, or any run that mutates a tracked file — every one of those ends by writing a report file, however mechanical the task looked. Only a strictly read-only session (a question answered, nothing written) may end with an inline summary alone.
+description: Use when writing any session report, gate report, diagnosis, or verification report to reports/ — anything that will be uploaded to the advisor chat or read by someone who was not in the session. Covers the filename convention, the FOR ADVISOR block, and the command that sources the timestamp. Trigger on "write the report", "report per convention", "standard report format", or whenever a session is being closed out. ALSO TRIGGER ON ANY TASK THAT CHANGES REPO STATE, whether or not a report was asked for: merge, commit, push, rebase, cherry-pick, revert, tag, branch, "land it", "merge X into main", renaming or deleting files, editing config or agent definitions, or any run that mutates a tracked file — every one of those ends by writing a report file, however mechanical the task looked. ALSO TRIGGER ON ANY SESSION THAT PRODUCES FINDINGS A FUTURE SESSION WILL CONSUME, even with zero files changed: a diagnosis, a classification, an enumeration, a recommendation, or a decision the next session builds on. Only a TRIVIAL read-only check with nothing to carry forward (a lookup, a count, "does this still say X") may end with an inline summary alone.
 ---
 
 # Writing a report
@@ -8,6 +8,19 @@ description: Use when writing any session report, gate report, diagnosis, or ver
 A report that exists only in a chat transcript is not retrievable by anyone who
 was not in the session, and is lost at compaction. Every report is a repo
 artefact.
+
+**Two things trigger one, and the second is the one that gets missed.** A
+session that CHANGED STATE needs a record because state moved. A session that
+produced FINDINGS needs one because the next decision moves — and that is easier
+to lose, precisely because it leaves no trace anyone would notice was absent.
+
+Amended 2026-08-12, after a read-only session established that the Value card's
+equal-weight comparator is four sites (two of them denominators inside the
+forecast engine), that baseline shares were never persisted, and that the
+obvious fix would put the card in disagreement with the engine. Nothing was
+written, so an inline summary was compliant. The next brief arrived assuming a
+merge that did not exist. **If a later session would plan differently for having
+read it, it is a report.**
 
 ## 1. Source the timestamp — one command, never composed
 
