@@ -22,6 +22,50 @@ Costing a unit of work means costing the build *and* the close. Three report
 gaps in one week were all the same shape: budget spent on scope, nothing left to
 record with. The build survives in the diff; the reasoning does not.
 
+## 0b. Write the report SKELETON, then checkpoint — added 2026-08-12
+
+**Before the gate below runs, the report file exists.** Full narrative, full FOR
+ADVISOR block, measured numbers as marked placeholders (`guard-traps: __/__
+PENDING`). After the gate, fill the placeholders and add the `Repo:` line.
+
+Then, **immediately before starting guard-traps**, say one line:
+
+> *Skeleton written; close affordable — starting guard-traps.*
+
+If it cannot be said honestly, **shed scope now**, before the expensive run.
+
+Close failures in this project cluster at one position: after guard-traps, the
+most expensive operation, which runs last. Three closes died there. The skeleton
+moves the reasoning to the cheap side of that operation, so a session dying
+post-gate loses digits rather than argument — and a report found with
+placeholders is a precise signal of where it died, not a defect.
+
+## 0c. RECOVERY — a session ended without its report
+
+Improvised three times before it was written down. When the previous session
+left no report, do **not** start new work: run this state check first and take
+the branch it lands on.
+
+Report `git status`, HEAD, origin sync, and `ls -t reports/ | head -3`, then:
+
+| branch | condition | action |
+|---|---|---|
+| **1. Closed** | commit exists, pushed, report file present | say so and **stop**. Nothing to do |
+| **2. Gated, unclosed** | gate finished, tree green, no commit or no report | complete the close now — suite, commit, push, **retrospective** report that says it is retrospective and re-runs nothing beyond what the close requires |
+| **3. Died mid-gate** | a guard-traps run did not finish | **verify the tree is clean before anything else**. Guard-traps restores on completion; a killed run may have stranded mutations. Check `git diff --numstat` against **every** file it touches, restore any stranding, then run the gate fresh and close properly |
+
+**Two traps in branch 3, both paid for.**
+
+**A run still in flight looks exactly like a dead one.** A `git status` taken
+during a run shows mutated files, and reading it will suggest a stranding that
+is not there. This happened on 2026-08-12: `src/App.tsx` read as modified, the
+diff was empty seconds later because the run had restored it. **A state check is
+part of the "everything else" that waits for the run** — confirm the run is
+finished before drawing any conclusion from the tree.
+
+**And check every target, not the plausible ones.** The stranding that started
+this rule was in files nobody had edited, which is what made it hard to see.
+
 ## 1. The three-stage gate
 
 Run all three, in order, each over the branch HEAD:

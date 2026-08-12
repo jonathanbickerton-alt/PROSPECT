@@ -218,6 +218,56 @@ treating the record as the thing that gets cut when time runs short — which
 inverts it, because the build is recoverable from the diff and the reasoning is
 not.
 
+
+#### THE REPORT SKELETON IS WRITTEN BEFORE THE GATE — added 2026-08-12
+
+**As soon as the build is code-complete, and BEFORE guard-traps starts, write
+the report file.** Full narrative, full FOR ADVISOR block, everything — except
+the measured numbers, which go in as marked placeholders:
+
+```
+guard-traps: __/__ PENDING
+full suite:  __/__ PENDING
+```
+
+After the gate, fill the placeholders and add the `Repo:` line. Nothing else
+should need writing.
+
+**Why this position specifically.** The close failures in this project do not
+scatter — they cluster at one point, immediately AFTER guard-traps. That is the
+most expensive operation in the session and it runs last, so a session that is
+going to run out runs out exactly there: build done, gate done, nothing
+recorded. Three closes have died in that window.
+
+Writing the skeleton first moves the reasoning to the cheap side of the
+expensive operation. **A session dying post-gate then loses digits, not
+argument** — and the digits are recoverable by re-running, while the reasoning
+is not recoverable at all.
+
+**A report found with placeholders in it is not a defect — it is a signal**, and
+a precise one: it says the session died between the gate and the fill, and it
+hands the next session the whole argument with only the numbers missing. That is
+strictly better than the alternative it replaces, which was an empty
+`reports/` directory and a diff to reverse-engineer.
+
+The pre-commit rider still governs what such a report may claim: a report
+written before the commit says so, and does not imply a hash it cannot contain.
+
+#### THE CLOSE CHECKPOINT — one line, immediately before guard-traps
+
+**Before starting guard-traps, state in one line that the skeleton is written
+and the close is affordable.**
+
+> *Skeleton written; close affordable — starting guard-traps.*
+
+If that sentence cannot honestly be said, **shed scope THEN** — before the
+expensive run, not after it. Shedding after the gate wastes the gate; shedding
+before it costs nothing but the increment.
+
+This is the budget clause given a specific moment to bite. "Budget the close
+from minute one" is true and easy to agree with while drifting past it; a
+checkpoint at a named position is a thing that either happened or did not.
+
 `HHMM` is 24-hour local time at generation. It is in the filename so reports
 sort chronologically by name alone — filesystem timestamps do not survive
 copying, archiving, or a fresh clone, and several reports a day is normal.
