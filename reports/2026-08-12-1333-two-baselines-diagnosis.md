@@ -5,7 +5,7 @@
 ```
 Generated: 2026-08-12 13:33 +0100 (UTC 2026-08-12 12:33)
 Certifies: records only — ZERO source files changed. HEAD at start 7a56495.
-Repo: __PENDING__
+Repo: committed 300a721, pushed (origin in sync)
 WALK FINDING CLASSIFIED **ACCIDENTAL**, and it is MY fallout. Card baseline
   16.62 (+2.02) vs the saved row 16.04 (+2.60). Both compute the SAME definition
   — equal-weight mean of tier ARPUs — over DIFFERENT INPUTS: the card reads
