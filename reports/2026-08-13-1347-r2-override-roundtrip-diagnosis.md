@@ -5,7 +5,7 @@
 ```
 Generated: 2026-08-13 13:47 +0100 (UTC 2026-08-13 12:47)
 Verified against: 9694520, branch main, tree CLEAN (bar this report).
-Repo: __REPO__
+Repo: committed d1c9ab3, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before any check ran.
 NOT REPRODUCED BY INSPECTION — the honest headline. Every link checks out at
   HEAD: the ONE yield writer persists tariffBaseArpuOverride (it survived
