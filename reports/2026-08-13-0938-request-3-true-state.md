@@ -5,7 +5,7 @@
 ```
 Generated: 2026-08-13 09:38 +0100 (UTC 2026-08-13 08:38)
 Verified against: 3a78c32, branch main, tree CLEAN (bar this report).
-Repo: __REPO__
+Repo: committed 786aa33, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before any check ran.
 THE DECISIVE FACT: the promo band row has THREE controls — a range input, a
   number input (both wired to handlePromoSliderChange, i.e. the SHARE) and a
