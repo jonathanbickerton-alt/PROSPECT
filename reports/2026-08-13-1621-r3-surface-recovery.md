@@ -5,7 +5,7 @@
 ```
 Generated: 2026-08-13 16:21 +0100 (UTC 2026-08-13 15:21)
 Verified against: c847f29, branch main, tree now CLEAN.
-Repo: __PENDING__
+Repo: reverted clean at c847f29; this report committed ce91be9, pushed
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before any check ran.
 BRANCH: work present but UNGATED and HALF-APPLIED → REVERTED CLEAN. No commits,
   no stash, no stranded guard-trap mutations. HEAD never moved past c847f29.
