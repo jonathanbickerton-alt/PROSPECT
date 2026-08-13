@@ -748,5 +748,10 @@
   "whatif_override_arpu_revert": "Standard verwenden",
   "whatif_override_arpu_no_default": "Kein gleitender Durchschnitt für diese Zielkohorte, also gibt es keinen Standard. Bitte einen Wert eingeben.",
   "whatif_tier_arpu_yours": "Ihr Wert für diese Stufe — überschreibt den abgeleiteten Wert.",
-  "whatif_tier_arpu_default_from": "Abgeleitet aus Umsatz ÷ Menge dieser Stufe in der Kohorte des Ereignisses: {{value}}. Zum Überschreiben eingeben."
+  "whatif_tier_arpu_default_from": "Abgeleitet aus Umsatz ÷ Menge dieser Stufe in der Kohorte des Ereignisses: {{value}}. Zum Überschreiben eingeben.",
+  "whatif_orphan_band_label": "nicht mehr in den Daten",
+  "whatif_orphan_band_explain": "„{{band}}“ trägt {{share}} % dieses Mixes, erscheint aber nicht mehr in den aktuellen Daten. Ohne ARPU lässt sich der Mischwert nicht berechnen. Zum Fortfahren entfernen.",
+  "whatif_orphan_drop": "Band entfernen",
+  "whatif_orphan_drop_aria": "„{{band}}“ entfernen und die übrigen Anteile neu verteilen",
+  "whatif_mix_blocked_orphans": "Speichern nicht möglich: {{bands}} existieren nicht mehr in den aktuellen Daten. Zum Fortfahren entfernen."
 }

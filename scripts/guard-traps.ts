@@ -69,7 +69,31 @@ const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
-const nl = orig.includes('\r\n') ? '\r\n' : '\n';
+
+/**
+ * ANCHORS ARE BUILT IN LF, AND EVERY TARGET IS NORMALISED TO LF BEFORE MATCHING.
+ *
+ * This was `orig.includes('\r\n') ? '\r\n' : '\n'` — ONE file's line endings,
+ * applied to anchors that target EIGHT files. On 2026-08-13 the editing tooling
+ * rewrote WhatIfTab.tsx from CRLF to LF while the file `nl` was sampled from
+ * stayed CRLF, and every MULTI-LINE anchor into WhatIfTab stopped matching at
+ * once: traps 56, 60 and 64 reported INCONCLUSIVE, and 57 reported MISSED.
+ *
+ * 57 is the instructive one. Its mutation is two `.replace()` calls, and the
+ * FIRST inserts a marker constant on a single line — so it matched, the content
+ * changed, `mutated !== base` held, and the trap was recorded as successfully
+ * planted. Only the second, multi-line replace carried the actual defect, and it
+ * silently no-oped. **A multi-part mutation whose cheap part succeeds will
+ * report PLANTED while the part that matters does nothing**, which is a MISSED
+ * that looks like a guard failure rather than a harness failure.
+ *
+ * Line endings are not a property these anchors are trying to pin, so they are
+ * normalised away rather than tracked. Restore still writes the PRISTINE
+ * snapshot, so no file's real line endings are changed by a run.
+ */
+const nl = '\n';
+const toLF = (s: string) => s.replace(/\r\n/g, '\n');
+void orig;
 
 /** The line the row body builds its mix on — every trap plants relative to it. */
 const ANCHOR = "        const derivedMix = incumbentSrc.kind === 'derived'";
@@ -749,6 +773,30 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '    m[t.tier] = stated !== undefined ? stated : t.baseArpu;',
       '    m[t.tier] = t.baseArpu;') },
+  // 68 drops the draft seed from the single-event edit-restore handler. DEFERRED
+  // FROM SESSION 1, which shipped both restore handlers with no mounted proof
+  // that a reopened event shows its stated rate — the gap that report named. The
+  // saved event still carries the map and the export still writes it; only the
+  // reopen forgets, which looks exactly like "the user never typed one".
+  //
+  // Note it targets the EVENT handler specifically, not the campaign one: the
+  // two seed from different rows and a trap that either could satisfy would be
+  // the ambiguous-anchor failure trap 64 hit in session 1.
+  { id: '68 the reopen forgets the stated band rate', why: 'a saved override silently reverts to derived when reopened',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      '    setDraftPromoBandArpu({ ...(event.promoBandArpuOverride ?? {}) });',
+      '') },
+  // 69 makes the orphan predicate always empty. The save still refuses — the
+  // blend is genuinely null — but nothing renders to say why and nothing offers
+  // a remedy, which is EXACTLY the state before this session: a refusal the
+  // user cannot act on. The trap proves the orphan rows and the naming refusal
+  // are load-bearing rather than decorative.
+  { id: '69 the orphan predicate stops finding orphans', why: 'the save refuses again with nothing on screen to fix',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      '    .filter(k => !members.includes(k))',
+      '    .filter(() => false)') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -768,7 +816,10 @@ try {
 
   for (const t of TRAPS) {
     const target = t.file ?? FILE;
-    const base = originals.get(target)!;
+    const pristine = originals.get(target)!;
+    // Matched in LF so an anchor cannot miss on line endings alone; the pristine
+    // snapshot is what gets restored, so the file's real endings are untouched.
+    const base = toLF(pristine);
     const mutated = t.mutate(base);
     if (mutated === base) {
       // The anchor moved. Silently planting nothing would report a clean catch
@@ -780,7 +831,7 @@ try {
     results.push(specFails(t.spec)
       ? { id: t.id, state: 'CAUGHT', detail: t.why }
       : { id: t.id, state: 'MISSED', detail: 'planted and the spec stayed GREEN — ' + t.why });
-    fs.writeFileSync(target, base);   // one trap at a time, never compounded
+    fs.writeFileSync(target, pristine);   // one trap at a time, never compounded
   }
 } finally {
   // Unconditional. This harness mutates tracked source; dying mid-run without

@@ -748,5 +748,10 @@
   "whatif_override_arpu_revert": "Usar el predeterminado",
   "whatif_override_arpu_no_default": "No hay media móvil para esta cohorte objetivo, por lo que no hay valor predeterminado. Introduzca una tarifa.",
   "whatif_tier_arpu_yours": "Su valor para este nivel: sustituye la cifra derivada.",
-  "whatif_tier_arpu_default_from": "Derivado de ingresos ÷ volumen de este nivel en la cohorte del evento: {{value}}. Escriba para sustituirlo."
+  "whatif_tier_arpu_default_from": "Derivado de ingresos ÷ volumen de este nivel en la cohorte del evento: {{value}}. Escriba para sustituirlo.",
+  "whatif_orphan_band_label": "ya no está en los datos",
+  "whatif_orphan_band_explain": "«{{band}}» tiene el {{share}} % de esta combinación, pero ya no aparece en los datos actuales, por lo que carece de ARPU y no puede calcularse el valor mixto. Elimínelo para continuar.",
+  "whatif_orphan_drop": "Eliminar banda",
+  "whatif_orphan_drop_aria": "Eliminar «{{band}}» y reequilibrar las proporciones restantes",
+  "whatif_mix_blocked_orphans": "No se puede guardar: {{bands}} ya no existen en los datos actuales. Elimínelos para continuar."
 }

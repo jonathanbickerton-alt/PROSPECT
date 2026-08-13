@@ -757,5 +757,10 @@
   "whatif_override_arpu_revert": "Use the default",
   "whatif_override_arpu_no_default": "No trailing average for this target cohort, so there is no default to fall back on. Enter a rate.",
   "whatif_tier_arpu_yours": "Your rate for this tier — overriding the derived figure.",
-  "whatif_tier_arpu_default_from": "Derived from this tier's revenue ÷ volume in the event's cohort: {{value}}. Type to override."
+  "whatif_tier_arpu_default_from": "Derived from this tier's revenue ÷ volume in the event's cohort: {{value}}. Type to override.",
+  "whatif_orphan_band_label": "no longer in the data",
+  "whatif_orphan_band_explain": "\"{{band}}\" carries {{share}}% of this mix but no longer appears in the current data, so it has no ARPU and the blend cannot be calculated. Drop it to continue.",
+  "whatif_orphan_drop": "Drop band",
+  "whatif_orphan_drop_aria": "Drop \"{{band}}\" and rebalance the remaining shares",
+  "whatif_mix_blocked_orphans": "Cannot save: {{bands}} no longer exist in the current data. Drop them to continue."
 }

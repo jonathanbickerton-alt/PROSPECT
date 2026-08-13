@@ -637,6 +637,195 @@ async function main() {
       String(wi.promoEffectiveArpuMap(tiers, { A: 0 }).A));
     check('R3 effective rate: an unset band keeps its derived figure',
       wi.promoEffectiveArpuMap(tiers, { A: 0 }).B === 20);
+
+    // ORPHAN PREDICATE — one definition, exercised directly for the cases the
+    // mount cannot reach, with expectations written by hand.
+    check('R3 orphan: share for a non-member is orphaned',
+      wi.promoOrphanedBands(['A', 'B'], { A: 50, B: 30, GONE: 20 }).join(',') === 'GONE');
+    check('R3 orphan: a non-member carrying ZERO share is NOT orphaned',
+      wi.promoOrphanedBands(['A', 'B'], { A: 100, GONE: 0 }).length === 0,
+      'zero share contributes nothing to the blend, so it blocks nothing');
+    check('R3 orphan: current members are never orphaned',
+      wi.promoOrphanedBands(['A', 'B'], { A: 50, B: 50 }).length === 0);
+  }
+
+  // ── SESSION 2: EDIT-REOPEN, and the orphaned-band drop ────────────────────
+  //
+  // The reopen transition closes the gap session 1 named: the restore handlers
+  // shipped there, but nothing MOUNTED proved a reopened event shows the stated
+  // rate. Driven through the card's own edit control, never by seeding state.
+  {
+    const members2 = cardMembers;
+    const evenMix: Record<string, number> = {};
+    const even = 100 / members2.length;
+    members2.forEach((m, i) => {
+      evenMix[m] = i === members2.length - 1 ? 100 - even * (members2.length - 1) : even;
+    });
+
+    const STATED = 33.5;
+    const savedWithOverride: any = {
+      id: 'reopen-with-override', scenario: 'Inflow',
+      segment: 'Corporate', product: 'All', productL2: 'All',
+      channel: 'All', channelL2: 'All', tariffL1: 'All', tariffL2: 'All',
+      date: '2026-09', sequence: 1, subscriberVolume: 500, customerVolume: 0,
+      revenue: 5000, arpu: 10, name: '', campaignName: '', comment: '', contractLength: 12,
+      isPromotion: true, promoRebanded: false,
+      promoMixAxis: 'value', promoMix: evenMix,
+      promoBandArpuOverride: { [members2[0]]: STATED },
+    };
+
+    const captured2: any[] = [];
+    const props5 = {
+      ...whatIfProps(),
+      marketEvents: [savedWithOverride],
+      updateMarketEvent: (id: string, e: any) => { captured2.push({ id, e }); },
+    };
+    const c5 = document.createElement('div');
+    host.appendChild(c5);
+    const root5 = createRoot(c5);
+    await (act as any)(async () => { root5.render(withProvider(React.createElement(M, props5))); });
+
+    const tab5 = [...c5.querySelectorAll('button')].find(b => norm(b.textContent || '') === 'Promotion') as any;
+    check('REOPEN: the Promotion card opens with the saved promotion present', !!tab5);
+    if (tab5) {
+      await (act as any)(async () => { tab5.click(); });
+      const edit5 = [...c5.querySelectorAll('button')]
+        .find(b => /edit promotion/i.test(b.getAttribute('title') || '')) as any;
+      check('REOPEN: the saved promotion exposes an edit control', !!edit5);
+      if (edit5) {
+        await (act as any)(async () => { edit5.click(); });
+
+        const bandIn = (band: string) =>
+          c5.querySelector(`[data-testid="promo-band-arpu-override-${band}"]`) as any;
+        const seeded = bandIn(members2[0]);
+        const untouched = members2.length > 1 ? bandIn(members2[1]) : null;
+
+        check('REOPEN: the stated rate is restored into the input',
+          !!seeded && Number(seeded.value) === STATED,
+          seeded ? `value "${seeded.value}" expected ${STATED}` : 'input not found');
+        check('REOPEN: and it is STYLED as edited, not merely populated',
+          !!seeded && /bg-\[#e60000\]\/5/.test(seeded.className),
+          'a restored override the user cannot distinguish from a default is half a restore');
+        if (untouched) {
+          check('REOPEN: a band the event did not state stays UNSET',
+            untouched.value === '', `"${untouched.value}"`);
+          check('REOPEN: and shows the derived figure as its placeholder, unstyled',
+            !!untouched.getAttribute('placeholder')
+              && !/bg-\[#e60000\]\/5/.test(untouched.className));
+        }
+
+        // CLEAR THE RESTORED OVERRIDE → derived-today returns (decision 5).
+        const setNum5 = async (el: any, v: string) => {
+          await (act as any)(async () => {
+            nativeSetter.call(el, v);
+            el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+            el.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+          });
+        };
+        if (seeded) {
+          const derivedPh = Number(seeded.getAttribute('placeholder'));
+          await setNum5(seeded, '');
+          check('REOPEN clear: the box returns to unset',
+            bandIn(members2[0]).value === '');
+          check('REOPEN clear: styling reverts and the derived figure is shown again',
+            !/bg-\[#e60000\]\/5/.test(bandIn(members2[0]).className)
+              && Number(bandIn(members2[0]).getAttribute('placeholder')) === derivedPh,
+            'decision 5: clearing returns to the rate the data derives TODAY');
+
+          // RE-STATE and SAVE — the update must carry the new rate through the
+          // real writer, not the restored one.
+          await setNum5(bandIn(members2[0]), '41.25');
+          const saveBtn = [...c5.querySelectorAll('button')]
+            .find(b => /^Save/i.test(norm(b.textContent || ''))) as any;
+          check('REOPEN save: a Save control is present and enabled',
+            !!saveBtn && !saveBtn.disabled);
+          if (saveBtn && !saveBtn.disabled) {
+            await (act as any)(async () => { saveBtn.click(); });
+            const upd = captured2.length ? captured2[captured2.length - 1].e : null;
+            check('REOPEN save: the edit writes back through the real update path', !!upd);
+            if (upd) {
+              check('REOPEN save: the saved map carries the RE-STATED rate, not the restored one',
+                upd.promoBandArpuOverride
+                  && near(upd.promoBandArpuOverride[members2[0]], 41.25, 1e-9),
+                JSON.stringify(upd.promoBandArpuOverride));
+              const row5 = fc.marketEventExportRow(upd);
+              check('REOPEN save: and it survives the real export writer',
+                near(JSON.parse(String(row5.Promo_Band_ARPU_Override_JSON))[members2[0]], 41.25, 1e-9),
+                String(row5.Promo_Band_ARPU_Override_JSON));
+            }
+          }
+        }
+      }
+    }
+    await (act as any)(async () => { root5.unmount(); });
+
+    // ── ORPHANED BAND: restore → named → refused → dropped → saveable ───────
+    //
+    // The stored mix names a band the current data does not describe. This is
+    // the case Finding C identified and the one the refusal could not be lifted
+    // from before this session.
+    const ORPHAN = '__band_that_left_the_data__';
+    const orphanMix: Record<string, number> = {};
+    const share = 80 / members2.length;
+    members2.forEach(m => { orphanMix[m] = share; });
+    orphanMix[ORPHAN] = 20;
+
+    const c6 = document.createElement('div');
+    host.appendChild(c6);
+    const root6 = createRoot(c6);
+    await (act as any)(async () => {
+      root6.render(withProvider(React.createElement(M, {
+        ...whatIfProps(), marketEvents: [{ ...savedWithOverride, id: 'orphan-case', promoMix: orphanMix,
+          promoBandArpuOverride: undefined }],
+      })));
+    });
+    const tab6 = [...c6.querySelectorAll('button')].find(b => norm(b.textContent || '') === 'Promotion') as any;
+    if (tab6) {
+      await (act as any)(async () => { tab6.click(); });
+      const edit6 = [...c6.querySelectorAll('button')]
+        .find(b => /edit promotion/i.test(b.getAttribute('title') || '')) as any;
+      check('ORPHAN: the promotion with an orphaned band can be reopened', !!edit6);
+      if (edit6) {
+        await (act as any)(async () => { edit6.click(); });
+
+        const orphanRow = () => c6.querySelector(`[data-testid="promo-orphan-row-${ORPHAN}"]`);
+        const refusal = () => c6.querySelector('[data-testid="promo-orphan-refusal"]');
+        const dropBtn = () => c6.querySelector(`[data-testid="promo-orphan-drop-${ORPHAN}"]`) as any;
+
+        check('ORPHAN: the orphaned band RENDERS rather than vanishing silently',
+          !!orphanRow(), 'a silently dropped band changes a saved mix behind the user');
+        check('ORPHAN: the row NAMES the band',
+          (orphanRow()?.textContent || '').includes(ORPHAN));
+        check('ORPHAN: the row offers NO ARPU input — narrowed decision 3',
+          !c6.querySelector(`[data-testid="promo-band-arpu-override-${ORPHAN}"]`),
+          'nothing should invite a rate for a population the data lacks');
+        check('ORPHAN: the refusal is shown and NAMES the band, not a generic block',
+          !!refusal() && (refusal()!.textContent || '').includes(ORPHAN),
+          refusal()?.textContent || 'no refusal element');
+
+        const saveable6 = () => [...c6.querySelectorAll('button')]
+          .filter(b => /^(Add|Save)/i.test(norm(b.textContent || '')));
+        check('ORPHAN: no save control is enabled while the orphan carries share',
+          saveable6().length > 0 && !saveable6().some((b: any) => !b.disabled),
+          `${saveable6().filter((b: any) => !b.disabled).length}/${saveable6().length} enabled`);
+
+        // THE DROP.
+        check('ORPHAN: a drop control is offered', !!dropBtn());
+        if (dropBtn()) {
+          await (act as any)(async () => { dropBtn().click(); });
+          check('ORPHAN drop: the orphaned row is gone', !orphanRow());
+          check('ORPHAN drop: and so is the refusal', !refusal());
+          const sum6 = [...c6.querySelectorAll('input[type=range]')]
+            .reduce((a: number, s: any) => a + Number(s.value), 0);
+          check('ORPHAN drop: the remaining shares are rebalanced to the total',
+            Math.abs(sum6 - 100) < 1e-3, `${sum6.toFixed(4)}`);
+          check('ORPHAN drop: THE REFUSAL IS LIFTED — a save control is now enabled',
+            saveable6().some((b: any) => !b.disabled),
+            'this is the gap Finding C identified: a refusal with no remedy');
+        }
+      }
+    }
+    await (act as any)(async () => { root6.unmount(); });
   }
 
   report();

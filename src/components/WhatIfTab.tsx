@@ -307,6 +307,40 @@ export function promoEffectiveArpuMap(
 }
 
 /**
+ * ORPHANED BANDS — R3 session 2's one definition.
+ *
+ * A band is orphaned when the draft mix carries share for a key that is NOT a
+ * current member. The mechanism, established by the 2026-08-13 recovery report
+ * (Finding C): `blendedArpu` iterates `Object.keys(shares)`, so a foreign key
+ * with share makes the blend null and blocks the save. `handleEditPromoStart`
+ * assigns `event.promoMix` wholesale, and the reseed effect is keyed on the
+ * tier-list string — which does not change on an edit-restore — so foreign keys
+ * survive exactly there.
+ *
+ * SHARE > 0 is the test, not mere presence. A key carrying zero share
+ * contributes nothing to the blend (`blendedArpu` skips `s === 0`), so it
+ * blocks nothing and naming it would be the card reporting a problem the user
+ * does not have.
+ *
+ * ONE definition, read by the refusal copy, the orphan rows and the drop
+ * action. They must agree about which bands are orphaned or the card will
+ * refuse a save while showing nothing to fix — which is the state this session
+ * exists to remove, and a hand-rolled twin would reintroduce it.
+ */
+export function promoOrphanedBands(
+  members: string[],
+  draftMix: Record<string, number>,
+): string[] {
+  return Object.keys(draftMix ?? {})
+    .filter(k => !members.includes(k))
+    .filter(k => {
+      const s = draftMix[k];
+      return typeof s === 'number' && Number.isFinite(s) && s > 0;
+    })
+    .sort();
+}
+
+/**
  * The stated rates that may be PERSISTED: only bands the event actually uses.
  *
  * The draft map is keyed by band NAME and outlives a value↔tariff axis switch,
@@ -1662,10 +1696,59 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     () => conformsToTotal(promoMembers, promoDraftMix),
     [promoMembers, promoDraftMix]);
 
+  /** Bands carrying share that the current data no longer describes. ONE
+   *  definition — the rows, the refusal copy and the drop action all read this
+   *  same array, so they cannot disagree about what is wrong. */
+  const promoOrphans = useMemo(
+    () => promoOrphanedBands(promoMembers, promoDraftMix),
+    [promoMembers, promoDraftMix]);
+
   /** Save guard: the card cannot write a non-conforming mix, and cannot write a
    *  mix whose blend is unknown. Both are absence, and neither is a zero. */
   const promoMixBlocksSave = promoMixEnabled && promoTierData.length > 0 &&
     (!promoMixConforms || promoDraftBlendedArpu === null);
+
+  /**
+   * Drop an orphaned band: remove its share, then let the EXISTING engine
+   * rebalance the remainder — padlocks respected, total conserved. The card
+   * does not compute a repaired mix itself; re-implementing that is trap 56.
+   *
+   * The stale draft-ARPU key goes too. The write path already filters stale
+   * keys out of the saved event, so this is not about persistence — it is that
+   * a dropped band's stated rate left in the draft would RESURRECT if the mix
+   * axis round-trips and the band name reappears. Dropping is the user saying
+   * this band is not part of the promotion; its rate should not outlive it.
+   */
+  const handlePromoDropOrphan = useCallback((band: string) => {
+    setPromoDraftMix(prev => {
+      const next = { ...prev };
+      delete next[band];
+
+      // THE ENGINE CONSERVES THE TOTAL, not this handler. `rebalance` builds
+      // its view over the MEMBERS, so the orphan key is already invisible to
+      // it; re-asserting a free member's OWN current share makes it redistribute
+      // the shortfall across the other free members proportionally, with the
+      // padlocks holding. Not seedMixPreserving — that normalises across every
+      // member and would rewrite a held share, which is trap 54's shape.
+      const anchor = promoMembers.find(m => !promoMixLocked.includes(m));
+      if (anchor === undefined) return next;
+
+      const out = rebalance(promoMembers, next, promoMixLocked, anchor, next[anchor] ?? 0);
+      // Every member padlocked leaves nothing free to absorb the shortfall. The
+      // orphan still goes — READ TOLERATES, so the mix simply loads short and
+      // the amber sum indicator says so, and releasing a padlock repairs it.
+      // Silently overriding a padlock to reach 100 would be the card deciding.
+      return out.kind === 'ok' ? out.shares : next;
+    });
+    setDraftPromoBandArpu(prev => {
+      if (prev[band] === undefined) return prev;
+      const next = { ...prev };
+      delete next[band];
+      return next;
+    });
+    // promoMixLocked is READ inside — the hook dependency read-set, not the
+    // list of things that ought to retrigger it.
+  }, [promoMembers, promoMixLocked]);
 
   // Trailing 3-month cohort-average ARPU for the promo's own dimensions/target
   // (Phase 3 P4 pattern) — the fallback base when the mix arm isn't used.
@@ -4915,7 +4998,63 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 </div>
                               );
                             })}
+
+                            {/* ORPHANED BANDS — bands carrying share that the
+                                current data no longer describes.
+
+                                THEY RENDER. The alternative — dropping them
+                                silently on restore — would change a saved
+                                promotion's mix behind the user's back, and the
+                                standing principle is that data problems are
+                                COMMUNICATED, never quietly handled. So the row
+                                names the band, shows the share it still holds,
+                                and says plainly why it blocks the save.
+
+                                NO ARPU INPUT, per the narrowed decision 3. The
+                                typed-override lift is for bands the data
+                                describes; inviting a rate for a population that
+                                is not in the data would be asking the user to
+                                invent one. The remedy offered is to drop the
+                                band, which states something true. */}
+                            {promoOrphans.map(band => (
+                              <div
+                                key={`orphan-${band}`}
+                                data-testid={`promo-orphan-row-${band}`}
+                                className="grid gap-x-3 items-center rounded border border-amber-300 bg-amber-50 px-1.5 py-1"
+                                style={{ gridTemplateColumns: 'minmax(80px,180px) 1fr 52px 34px 90px' }}
+                              >
+                                <span className="text-xs font-medium text-amber-900 truncate leading-none" title={band}>{band}</span>
+                                <span className="text-[10px] text-amber-700 leading-tight">
+                                  {t('whatif_orphan_band_label')}
+                                </span>
+                                <span className="text-xs font-semibold text-amber-900 text-right tabular-nums">
+                                  {formatNumber(promoDraftMix[band] ?? 0)}
+                                </span>
+                                <span />
+                                <button
+                                  type="button"
+                                  data-testid={`promo-orphan-drop-${band}`}
+                                  aria-label={t('whatif_orphan_drop_aria', { band })}
+                                  title={t('whatif_orphan_band_explain', {
+                                    band, share: formatNumber(promoDraftMix[band] ?? 0) })}
+                                  onClick={() => handlePromoDropOrphan(band)}
+                                  className="text-[11px] font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded px-2 py-1 transition-colors"
+                                >{t('whatif_orphan_drop')}</button>
+                              </div>
+                            ))}
                           </div>
+
+                          {/* THE REFUSAL NAMES ITS CAUSE. A generic blocked
+                              state was the whole defect: the card refused and
+                              showed nothing to fix. */}
+                          {promoOrphans.length > 0 && (
+                            <div
+                              data-testid="promo-orphan-refusal"
+                              className="mt-2 text-[11px] font-semibold text-amber-700"
+                            >
+                              {t('whatif_mix_blocked_orphans', { bands: promoOrphans.join(', ') })}
+                            </div>
+                          )}
                           {/* ABSENCE IS NOT 0.00. A member carrying share whose ARPU
                               is unknown means there IS no blend, and the copy states
                               the cause. formatNumber(null) would have printed a

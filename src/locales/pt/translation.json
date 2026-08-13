@@ -748,5 +748,10 @@
   "whatif_override_arpu_revert": "Usar o predefinido",
   "whatif_override_arpu_no_default": "Não há média móvel para esta coorte alvo, por isso não há predefinido. Introduza uma taxa.",
   "whatif_tier_arpu_yours": "O seu valor para este escalão — substitui o valor derivado.",
-  "whatif_tier_arpu_default_from": "Derivado de receita ÷ volume deste escalão na coorte do evento: {{value}}. Escreva para substituir."
+  "whatif_tier_arpu_default_from": "Derivado de receita ÷ volume deste escalão na coorte do evento: {{value}}. Escreva para substituir.",
+  "whatif_orphan_band_label": "já não consta dos dados",
+  "whatif_orphan_band_explain": "«{{band}}» detém {{share}} % desta combinação mas já não aparece nos dados atuais; sem ARPU, o valor misto não pode ser calculado. Remova-o para continuar.",
+  "whatif_orphan_drop": "Remover escalão",
+  "whatif_orphan_drop_aria": "Remover «{{band}}» e reequilibrar as parcelas restantes",
+  "whatif_mix_blocked_orphans": "Não é possível guardar: {{bands}} já não existem nos dados atuais. Remova-os para continuar."
 }
