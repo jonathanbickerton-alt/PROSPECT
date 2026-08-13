@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-08-13 17:15 +0100 (UTC 2026-08-13 16:15)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: c7d4710 (body written PRE-commit; only these 2 lines added after)
+Repo: committed c7d4710, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before the base check.
 BASE: HEAD cb1320f vs the brief's 4531acf — one commit, REPORT-ONLY (--stat:
   only reports/). The established predecessor-Repo-fill drift; flagged, proceeded.
