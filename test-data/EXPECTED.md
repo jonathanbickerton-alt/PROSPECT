@@ -6617,6 +6617,51 @@ honest**. Nothing about the comparator changes now.
 
 **Build no part of option (b) outside that session.**
 
+#### R3 DECISIONS 5 AND 6 (Jon, 2026-08-13) — and the CARRIER is now built
+
+**Two decisions the original four did not cover**, both raised by the
+2026-08-13 true-state report:
+
+5. **Clear-after-reload on a promotion band: DERIVED-TODAY.** Clearing an
+   override returns the band to the rate the data derives *now*, exactly as the
+   Value card behaves. **No rate-at-save snapshot** — the alternative would need
+   a third stored figure and would make "clear" mean something different on two
+   cards that otherwise behave alike.
+6. **The unliftable save refusal closes via R3 itself. No interim escape.** The
+   refusal is real today and has no user-reachable remedy; the remedy is the
+   input, and adding a bypass would ship a second way out that R3 then has to
+   remove.
+
+**THE CARRIER SHIPPED 2026-08-13, INERT.** `MarketEvent.promoBandArpuOverride`
+— a per-band rate map, **two-field shape** beside the effective rates the event
+already carries, because which number the user chose is not recoverable from a
+blend. Presence per band is the carrier; absent entirely, never `{}`; negative
+verbatim per the rate-sign rule.
+
+- **written** by `buildPromoEvents` by presence (and only when the mix arm is
+  on — an override map without a mix claims bands the event does not use);
+- **exported** as `Promo_Band_ARPU_Override_JSON` with the `''` absence carrier;
+- **read** by `readStoredEventModifiers` through the shared `readStoredRateMap`
+  — extended, never forked, so **both** market-event import routes get it;
+- **pinned**: the spec asserts exactly TWO routes spreading the shared reader,
+  and guard-trap 66 drops the field to prove the pin bites.
+
+**Nothing produces one yet** — the promotion card still has no per-band input.
+That is the surface session. An inert carrier is a coherent resting state, the
+same shape `a50cca9` rested in before R2's surface landed.
+
+#### THE MARKET-EVENT EXPORT ROW IS NOW ONE FUNCTION
+
+`marketEventExportRow` in `forecasting.ts`, used by App's export **and** by
+`spec:event-roundtrip`. It previously lived inline in App and was **copied** into
+the spec, pinned only by a column-name grep — recorded as Finding 2 of the
+2026-08-13 R2 diagnosis, and a direct breach of *round-trip checks drive the
+WRITER*. A copy round-trips itself and certifies nothing.
+
+The wiring checks that grepped App for each column went stale on the extraction
+and went red; they are re-aimed at the stronger property — **the row the real
+writer emits carries each column** — which cannot go stale on a move.
+
 #### QUEUED DESIGN — request 3, the promotion card's value-mix arm. NOT BUILT.
 
 Per-band editable ARPU on the promotion card. **All four decisions are Jon's,

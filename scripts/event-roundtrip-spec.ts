@@ -29,7 +29,7 @@
  */
 import * as fs from 'fs';
 import * as XLSX from 'xlsx';
-import { readStoredEventModifiers, bySequence } from '../src/utils/forecasting';
+import { readStoredEventModifiers, bySequence, marketEventExportRow } from '../src/utils/forecasting';
 import type { MarketEvent } from '../src/utils/forecasting';
 
 let pass = 0; const fails: string[] = [];
@@ -75,25 +75,16 @@ const EVENT: MarketEvent = {
  * promo column this spec's copy is stale, and the check says so rather than this
  * file quietly testing a shape the app no longer writes.
  */
-const toRow = (e: MarketEvent) => ({
-  ID: e.id, Sequence: e.sequence, Name: e.name ?? '', Campaign_Name: e.campaignName ?? '',
-  Scenario: e.scenario, Segment: e.segment, Product: e.product,
-  Product_L2: e.productL2 ?? 'All', Channel: e.channel, Channel_L2: e.channelL2 ?? 'All',
-  Tariff_L1: e.tariffL1 ?? 'All', Tariff_L2: e.tariffL2 ?? 'All',
-  Start_Month: e.date, Subscriber_Volume: e.subscriberVolume, Customer_Volume: e.customerVolume,
-  Revenue: e.revenue, ARPU: e.arpu, Contract_Length_Months: e.contractLength ?? 24,
-  Comment: e.comment ?? '',
-  Amount_Type: e.amountType ?? 'absolute',
-  Percentage_Basis: e.percentageBasis ?? '',
-  Retention_Linked: e.retentionLinked === false ? 'No' : 'Yes',
-  Is_Promotion: e.isPromotion ? 'Yes' : 'No',
-  Promo_Rebanded: e.promoRebanded ? 'Yes' : 'No',
-  Promo_Mix_Axis: e.promoMixAxis ?? '',
-  Promo_Mix_JSON: e.promoMix ? JSON.stringify(e.promoMix) : '',
-  Promo_Pricing_Mode: e.promoPricingMode ?? '',
-  Promo_Pricing_Amount: e.promoPricingAmount ?? '',
-  Arpu_Override: e.arpuOverride ?? '',
-});
+/**
+ * THE REAL WRITER, not a copy.
+ *
+ * This was a hand-copied object literal "lifted from App.tsx", pinned only by a
+ * check that App emitted the same column names. Finding 2 of the 2026-08-13 R2
+ * diagnosis recorded that as certifying nothing: a copy round-trips itself. The
+ * row builder is now exported from forecasting.ts and App uses the same one, so
+ * a column added to the export is exercised here rather than mirrored here.
+ */
+const toRow = (e: MarketEvent) => marketEventExportRow(e);
 
 /** Through a REAL workbook, not an object handed straight back. */
 function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[] {
@@ -169,6 +160,36 @@ function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[]
     negArpu.arpuOverride === -4.25 && m.arpuOverride === undefined && zeroArpu.arpuOverride === 0,
     'three states plus a fourth sign, all separable');
 
+  // ── R3's PER-BAND CARRIER, driven through the REAL writer ──────────────
+  //
+  // Inert at this commit — no input produces one — so this is the carrier's
+  // proof that it round-trips the moment the surface session lands, which is
+  // the a50cca9 shape and the reason an inert carrier is a resting state.
+  const BANDS = { 'Low Value': 11.5, 'Mid Value': 0, 'High Value': -4.25 };
+  const band = readStoredEventModifiers(
+    throughXlsx([toRow({ ...EVENT, promoBandArpuOverride: BANDS } as MarketEvent)])[0]);
+  check('R3 CARRIER: the per-band map survives a real xlsx round trip',
+    !!band.promoBandArpuOverride, JSON.stringify(band.promoBandArpuOverride));
+  check('R3 CARRIER: every band comes back, none invented',
+    !!band.promoBandArpuOverride && Object.keys(band.promoBandArpuOverride).length === 3,
+    `${band.promoBandArpuOverride && Object.keys(band.promoBandArpuOverride).length}`);
+  check('R3 CARRIER: a stated rate survives verbatim',
+    band.promoBandArpuOverride?.['Low Value'] === 11.5);
+  check('R3 CARRIER: a stated ZERO survives as 0, not as unset',
+    band.promoBandArpuOverride?.['Mid Value'] === 0,
+    'a band priced at nothing is not a band nobody priced');
+  check('R3 CARRIER: a NEGATIVE survives VERBATIM — zero sign transforms',
+    band.promoBandArpuOverride?.['High Value'] === -4.25,
+    'sign conventions belong to quantities; a rate is written as stated');
+
+  const noBand = readStoredEventModifiers(throughXlsx([toRow(EVENT)])[0]);
+  check('R3 CARRIER: absent when nothing is stated, not {}',
+    noBand.promoBandArpuOverride === undefined, JSON.stringify(noBand.promoBandArpuOverride));
+  check('R3 CARRIER: an EMPTY map reads absent — "no members" is not "no map"',
+    readStoredEventModifiers(
+      throughXlsx([toRow({ ...EVENT, promoBandArpuOverride: {} } as MarketEvent)])[0]
+    ).promoBandArpuOverride === undefined);
+
   const zero = readStoredEventModifiers(throughXlsx([toRow({ ...EVENT, promoPricingAmount: 0 } as MarketEvent)])[0]);
   check('CARRIER: a real ZERO override survives as 0, not as absent',
     zero.promoPricingAmount === 0, `${zero.promoPricingAmount}`);
@@ -230,14 +251,33 @@ function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[]
     !/promoMixAxis:\s+r[.[]/.test(app) && !/promoPricingMode:\s+r[.[]/.test(app),
     'a per-site copy is back, which is how the two routes drifted');
 
-  // The writer must still emit every column this spec round-trips, or the copy
-  // of it above is testing a shape the app no longer produces.
+  // RE-AIMED 2026-08-13. These grepped App.tsx for each column, which was right
+  // while the row literal lived there. Extracting marketEventExportRow moved the
+  // lines they pinned and they went red — the stale-anchor lesson, caught by the
+  // harness failing rather than passing quietly.
+  //
+  // Aimed at the PROPERTY now, and a stronger one: the row the REAL writer emits
+  // actually carries each column. That cannot go stale on a move, and it
+  // exercises the writer instead of grepping for it.
+  const emitted = marketEventExportRow(EVENT);
   for (const col of ['Is_Promotion', 'Promo_Rebanded', 'Promo_Mix_Axis',
-                     'Promo_Mix_JSON', 'Promo_Pricing_Mode', 'Promo_Pricing_Amount', 'Arpu_Override',
-                     'Amount_Type', 'Percentage_Basis', 'Retention_Linked']) {
-    check(`WRITER: the export still writes ${col}`, app.includes(`${col}:`),
-      'the export dropped a column this spec claims to round-trip');
+                     'Promo_Mix_JSON', 'Promo_Pricing_Mode', 'Promo_Pricing_Amount',
+                     'Amount_Type', 'Percentage_Basis', 'Retention_Linked',
+                     'Arpu_Override', 'Promo_Band_ARPU_Override_JSON']) {
+    check(`WRITER: the real export row carries ${col}`, col in emitted,
+      'the export dropped a column this spec round-trips');
   }
+  // THE ROUTE COUNT, PINNED — the fifth-writer lesson. Market events have TWO
+  // import routes and both spread readStoredEventModifiers, so extending that
+  // one function reaches both or neither. A third route, or a route that stops
+  // spreading, is the shape this pin exists to catch.
+  const spreads = (app.match(/\.\.\.readStoredEventModifiers\(r\)/g) ?? []).length;
+  check('PIN: exactly TWO market-event import routes, both through the shared reader',
+    spreads === 2, `${spreads} — a field added to one route only is the promo-field defect`);
+
+  check('WRITER: App uses the SHARED row builder, not a second literal',
+    app.includes('map(marketEventExportRow)'),
+    'a re-inlined literal would put the spec back to certifying a copy');
 }
 
 // ---------------------------------------------------------------------------

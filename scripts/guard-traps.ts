@@ -727,6 +727,16 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '    const rates = Object.values(effectiveTierArpuMap);',
       '    const rates = yieldTierData.map(t => t.baseArpu);') },
+  // 66 drops R3's per-band map from the shared reader. Planted where the
+  // heuristic is weakest: the carrier is INERT — nothing produces one yet — so
+  // no rendered surface and no behavioural fixture can miss it. The round trip
+  // through the REAL writer is the only thing standing between this field and
+  // the promo-field defect repeating on a third carrier.
+  { id: '66 the R3 per-band override dropped from the shared reader', why: 'a stated band rate would not survive a reload',
+    file: ENGINE, spec: EVTROUND,
+    mutate: s => s.replace(
+      '    promoBandArpuOverride: readStoredRateMap(row.Promo_Band_ARPU_Override_JSON),',
+      '') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

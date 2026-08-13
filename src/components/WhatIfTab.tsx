@@ -270,6 +270,10 @@ function blankPromo(): PromoDraft {
 }
 
 interface BuildPromoEventsParams {
+  /** R3's per-band stated rates, by presence. Undefined until the surface
+   *  session adds the input — the parameter exists so the save path is already
+   *  correct when it does. */
+  bandArpuOverride?: Record<string, number>;
   target: 'Inflow' | 'Retention';
   draft: PromoDraft;
   mixEnabled: boolean;
@@ -361,6 +365,16 @@ function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
       promoRebanded,
       promoMixAxis: p.mixEnabled ? p.mixAxis : undefined,
       promoMix: p.mixEnabled ? { ...p.draftMix } : undefined,
+      // R3's carrier, carried through BY PRESENCE. Absent entirely when nothing
+      // is stated, and absent when the mix arm is off — an override map without
+      // a mix is a claim about bands the event does not use.
+      //
+      // INERT at this commit: p.bandArpuOverride is always undefined because no
+      // input writes it yet. The passthrough exists so the surface session adds
+      // a control, not a save path — and so the round trip is provable now.
+      promoBandArpuOverride: p.mixEnabled && p.bandArpuOverride
+        && Object.keys(p.bandArpuOverride).length > 0
+        ? { ...p.bandArpuOverride } : undefined,
       promoPricingMode: p.pricingEnabled ? p.pricingMode : undefined,
       promoPricingAmount: p.pricingEnabled ? p.pricingAmount : undefined,
       sequence: p.startSequence + i,

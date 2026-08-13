@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, readStoredRateMap, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, readStoredRateMap, marketEventExportRow, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
 import { filterToKey, cohortToFilter, forecastForView, forecastForStep1Selection, step1ResolveDecision, describeScope } from './utils/viewFilter';
@@ -524,43 +524,11 @@ export default function App() {
     // ── Sheet 3: Market_Events ────────────────────────────────────────────────
     // Sorted by sequence so the sheet reads in the order the user sees,
     // independent of insertion history.
-    const evtRows = [...marketEvents].sort(bySequence).map(e => ({
-      ID: e.id,
-      Sequence: e.sequence,
-      Name: e.name ?? '',
-      Campaign_Name: e.campaignName ?? '',
-      Scenario: e.scenario,
-      Segment: e.segment,
-      Product: e.product,
-      Product_L2: e.productL2 ?? 'All',
-      Channel: e.channel,
-      Channel_L2: e.channelL2 ?? 'All',
-      Tariff_L1: e.tariffL1 ?? 'All',
-      Tariff_L2: e.tariffL2 ?? 'All',
-      Start_Month: e.date,
-      Subscriber_Volume: e.subscriberVolume,
-      Customer_Volume: e.customerVolume,
-      Revenue: e.revenue,
-      ARPU: e.arpu,
-      Contract_Length_Months: e.contractLength ?? 24,
-      Comment: e.comment ?? '',
-      // Percentage events. Distinct column names from the Pricing_Events sheet's
-      // Input_Mode/Amount pair on purpose: that one is a RATE and this is a
-      // VOLUME, and a shared column name would invite conflating them.
-      Amount_Type: e.amountType ?? 'absolute',
-      Percentage_Basis: e.percentageBasis ?? '',
-      Retention_Linked: e.retentionLinked === false ? 'No' : 'Yes',
-      // Phase 4 — Custom Promotion Card
-      Is_Promotion: e.isPromotion ? 'Yes' : 'No',
-      Promo_Rebanded: e.promoRebanded ? 'Yes' : 'No',
-      Promo_Mix_Axis: e.promoMixAxis ?? '',
-      Promo_Mix_JSON: e.promoMix ? JSON.stringify(e.promoMix) : '',
-      Promo_Pricing_Mode: e.promoPricingMode ?? '',
-      Promo_Pricing_Amount: e.promoPricingAmount ?? '',
-      // Alessandro's editable ARPU. '' is the ABSENCE carrier and 0 is a real
-      // stated rate — `?? ''` is doing that work, so it must not become `?? 0`.
-      Arpu_Override: e.arpuOverride ?? '',
-    }));
+    // ONE writer. This row shape used to live inline here and was COPIED into
+    // spec:event-roundtrip, so the spec certified its own copy — the weakness
+    // recorded as Finding 2 of the 2026-08-13 R2 diagnosis. Extracted so the
+    // spec drives the real thing and a column added here reaches both.
+    const evtRows = [...marketEvents].sort(bySequence).map(marketEventExportRow);
     XLSX.utils.book_append_sheet(
       wb,
       XLSX.utils.json_to_sheet(evtRows.length ? evtRows : [{ Note: 'No market events defined' }]),

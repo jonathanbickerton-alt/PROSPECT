@@ -114,6 +114,28 @@ export interface MarketEvent {
    */
   promoMixAxis?: 'value' | 'tariff';
   promoMix?: Record<string, number>;
+  /**
+   * bucket label -> the USER'S STATED per-band ARPU for the promotion card's
+   * value-mix arm — Request 3's carrier, settled 2026-08-12.
+   *
+   * THE TWO-FIELD SHAPE, per R2's precedent and for its reason: this map sits
+   * ALONGSIDE the effective rates the event already carries, because which
+   * number the user chose is NOT recoverable from a blended snapshot. Store one
+   * without the other and provenance dies at save — a reloaded promotion could
+   * show the right arithmetic and could not say whose number it was.
+   *
+   * PRESENCE PER BAND is the carrier: a key present means that band's rate was
+   * stated. Absent ENTIRELY (undefined, never {}) when nothing is stated — "a
+   * map with no members" is not the claim "no map".
+   *
+   * NEGATIVE IS VERBATIM per the rate-sign rule: sign conventions belong to
+   * quantities, and no transform touches a rate.
+   *
+   * INERT AT THIS COMMIT — nothing produces one yet. The promotion card has no
+   * per-band input; that is R3's surface session. The carrier round-trips the
+   * moment an input exists, which is the a50cca9 resting shape.
+   */
+  promoBandArpuOverride?: Record<string, number>;
   /** Phase 4 — Custom Promotion Card: the pricing arm's raw inputs, stored for
    *  the same edit-restoration reason as promoMix above.
    *
@@ -185,6 +207,7 @@ export interface StoredEventModifiers {
   promoPricingMode?: 'percentage' | 'absolute';
   promoPricingAmount?: number;
   arpuOverride?: number;
+  promoBandArpuOverride?: Record<string, number>;
 }
 
 /**
@@ -231,6 +254,61 @@ export function readStoredRateMap(raw: unknown): Record<string, number> | undefi
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+/**
+ * THE Market_Events export row — one definition, used by App's export AND by
+ * spec:event-roundtrip.
+ *
+ * It lived inline in App and was COPIED into the spec, which meant the spec
+ * round-tripped its own copy and pinned it only by a column-name check. That is
+ * Finding 2 of the 2026-08-13 R2 diagnosis, and the standing rule it breaks is
+ * `round-trip checks drive the WRITER`. Extracted so a column added here is
+ * exercised by the spec rather than mirrored in it.
+ */
+export function marketEventExportRow(e: MarketEvent): Record<string, unknown> {
+  return {
+    ID: e.id,
+    Sequence: e.sequence,
+    Name: e.name ?? '',
+    Campaign_Name: e.campaignName ?? '',
+    Scenario: e.scenario,
+    Segment: e.segment,
+    Product: e.product,
+    Product_L2: e.productL2 ?? 'All',
+    Channel: e.channel,
+    Channel_L2: e.channelL2 ?? 'All',
+    Tariff_L1: e.tariffL1 ?? 'All',
+    Tariff_L2: e.tariffL2 ?? 'All',
+    Start_Month: e.date,
+    Subscriber_Volume: e.subscriberVolume,
+    Customer_Volume: e.customerVolume,
+    Revenue: e.revenue,
+    ARPU: e.arpu,
+    Contract_Length_Months: e.contractLength ?? 24,
+    Comment: e.comment ?? '',
+    // Percentage events. Distinct column names from the Pricing_Events sheet's
+    // Input_Mode/Amount pair on purpose: that one is a RATE and this is a
+    // VOLUME, and a shared column name would invite conflating them.
+    Amount_Type: e.amountType ?? 'absolute',
+    Percentage_Basis: e.percentageBasis ?? '',
+    Retention_Linked: e.retentionLinked === false ? 'No' : 'Yes',
+    // Phase 4 — Custom Promotion Card
+    Is_Promotion: e.isPromotion ? 'Yes' : 'No',
+    Promo_Rebanded: e.promoRebanded ? 'Yes' : 'No',
+    Promo_Mix_Axis: e.promoMixAxis ?? '',
+    Promo_Mix_JSON: e.promoMix ? JSON.stringify(e.promoMix) : '',
+    Promo_Pricing_Mode: e.promoPricingMode ?? '',
+    Promo_Pricing_Amount: e.promoPricingAmount ?? '',
+    // Alessandro's editable ARPU. '' is the ABSENCE carrier and 0 is a real
+    // stated rate — `?? ''` is doing that work, so it must not become `?? 0`.
+    Arpu_Override: e.arpuOverride ?? '',
+    // R3's per-band override map. '' is the ABSENCE carrier and an empty map
+    // must never be written — "no members" is not the claim "no map", the
+    // same rule Promo_Mix_JSON and the yield override already follow.
+    Promo_Band_ARPU_Override_JSON: e.promoBandArpuOverride
+      ? JSON.stringify(e.promoBandArpuOverride) : '',
+  };
+}
+
 export function readStoredEventModifiers(row: Record<string, unknown>): StoredEventModifiers {
   const axis = String(row.Promo_Mix_Axis ?? '');
   const mode = String(row.Promo_Pricing_Mode ?? '');
@@ -261,6 +339,10 @@ export function readStoredEventModifiers(row: Record<string, unknown>): StoredEv
     // the target cohort's trailing average". Collapsing them would silently
     // convert every unset override into a zero-revenue event.
     arpuOverride: readOptionalNumber(row.Arpu_Override),
+    // R3's per-band map, through the SAME shared map reader the yield override
+    // uses — extended, never forked. BOTH market-event import routes spread
+    // this function's result, so the field reaches both or neither.
+    promoBandArpuOverride: readStoredRateMap(row.Promo_Band_ARPU_Override_JSON),
   };
 }
 
