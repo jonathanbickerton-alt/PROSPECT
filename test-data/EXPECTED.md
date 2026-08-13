@@ -6650,6 +6650,45 @@ verbatim per the rate-sign rule.
 That is the surface session. An inert carrier is a coherent resting state, the
 same shape `a50cca9` rested in before R2's surface landed.
 
+#### R3 AMENDMENTS (Jon, 2026-08-13) — after the recovery report's findings
+
+The surface session's first attempt died mid-build. The recovery
+(`reports/2026-08-13-1621-r3-surface-recovery.md`) reverted it clean and
+surfaced findings that change two of the decisions above.
+
+**DECISION 1 IS AMENDED — the default is named by its REAL basis.** The input
+reuses the existing `whatif_tier_arpu_default_from` key verbatim, in all six
+locales: *"Derived from this tier's revenue ÷ volume in the event's cohort"*.
+
+The **"trailing 3-month average" wording is RETIRED for this input**, because it
+was never true of it. `computeTierData` derives the per-band figure as
+sum(revenue) ÷ sum(volume) over the whole filtered cohort history; the
+trailing-3-month figure is `promoCohortAvgArpu`, a different number used as the
+fallback when the mix arm is **off**, and it keeps its own label. Naming the
+wrong basis would have been a fabricated identifier in user-visible copy — the
+same failure class that moved regression-guard from Haiku to Sonnet, arriving
+where a user rather than an agent would read it.
+
+**DECISION 3 IS NARROWED, and Finding C resolves as OPTION 2.** The
+typed-override refusal-lift applies to **RENDERED bands only**.
+
+The reason is structural: `computeTierData` never emits a non-finite rate, so
+every band with a rendered row already has one and can never be the cause of a
+null blend. The blend is null only when the draft mix carries share for a key
+**absent from `promoTierData`** — an *orphaned* band, which by definition has no
+row to type into. An input cannot lift that refusal.
+
+**Orphaned bands resolve by an explicit "drop orphaned bands" action** — it
+lifts the refusal without inventing a rate for a band the data does not
+describe. Inventing one would be the tool stating a figure on the user's behalf.
+
+**THE SPLIT, on record:**
+
+- **Session 1** — the input, the shared effective-rate definition, the write
+  unification, the mounted-spec extension, the guard-trap.
+- **Session 2** — the orphaned-band drop action, the edit-reopen mounted
+  transition, and that transition's guard-trap.
+
 #### THE MARKET-EVENT EXPORT ROW IS NOW ONE FUNCTION
 
 `marketEventExportRow` in `forecasting.ts`, used by App's export **and** by

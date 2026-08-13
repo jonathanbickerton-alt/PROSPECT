@@ -29,6 +29,11 @@
  *    state behind it.
  *  - IT PINS COUNTS. Every sweep says how many cases it exercised, so a
  *    selector that silently matches nothing cannot pass as a clean run.
+ *
+ * EXTENDED 2026-08-13 for REQUEST 3 — the per-band ARPU override. Deliberately
+ * an extension of THIS file rather than a second harness: the recovery report's
+ * Finding D established that the mount, the card-opening and the saved-promotion
+ * restore already existed here, and two harnesses for one card drift.
  */
 import { JSDOM } from 'jsdom';
 
@@ -431,6 +436,207 @@ async function main() {
       }
     }
     await (act as any)(async () => { root3.unmount(); });
+  }
+
+  // ── REQUEST 3: the per-band ARPU override, driven through the real input ───
+  //
+  // A FRESH MOUNT, because the blocks above deliberately leave the card in a
+  // poked-at state. Every assertion below is a TRANSITION: the rendered value,
+  // the styling and the blend are read before and after each act, so a check
+  // cannot pass on a static render that happened to look right.
+  {
+    const captured: any[] = [];
+    const props4 = { ...whatIfProps(), setMarketEvents: (v: any) => { captured.push(v); } };
+    const c4 = document.createElement('div');
+    host.appendChild(c4);
+    const root4 = createRoot(c4);
+    await (act as any)(async () => { root4.render(withProvider(React.createElement(M, props4))); });
+
+    const promoTab4 = [...c4.querySelectorAll('button')].find(b => norm(b.textContent || '') === 'Promotion') as any;
+    check('R3: the Promotion card is reachable', !!promoTab4);
+    if (promoTab4) {
+      await (act as any)(async () => { promoTab4.click(); });
+      const boxes4 = [...c4.querySelectorAll('input[type=checkbox]')] as any[];
+      const mixBox4 = boxes4.find(b =>
+        /mix/i.test(b.closest('label')?.textContent || b.parentElement?.textContent || ''));
+      check('R3: the mix arm toggle is present', !!mixBox4);
+      if (mixBox4) {
+        await (act as any)(async () => { mixBox4.click(); });
+
+        const bandInputs = () =>
+          [...c4.querySelectorAll('[data-testid^="promo-band-arpu-override-"]')] as any[];
+        const text4 = () => c4.textContent || '';
+        const blendNow = () => {
+          const m = text4().match(/blended ARPU:?\s*(-?[\d.]+)/i);
+          return m ? Number(m[1]) : null;
+        };
+        const setNum4 = async (el: any, v: string) => {
+          await (act as any)(async () => {
+            nativeSetter.call(el, v);
+            el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+            el.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+          });
+        };
+
+        const inputs = bandInputs();
+        const bandCount = inputs.length;
+        // COUNT PINNED, and cross-checked against a DIFFERENT selector — a
+        // band-input sweep that silently matched nothing would otherwise pass
+        // every check below vacuously.
+        check('R3: every mix member renders a per-band ARPU input',
+          bandCount > 0 && bandCount === c4.querySelectorAll('[data-testid^="promo-mix-lock-"]').length,
+          `${bandCount} inputs vs ${c4.querySelectorAll('[data-testid^="promo-mix-lock-"]').length} padlocks`);
+
+        if (bandCount > 0) {
+          const first = () => bandInputs()[0];
+
+          // ── STATE 1: UNSET. Derived shown as a placeholder, source NAMED. ──
+          check('R3 unset: the input is empty, not pre-filled with the derived figure',
+            first().value === '', `value "${first().value}" — a filled box would read as a stated rate`);
+          const ph = first().getAttribute('placeholder');
+          check('R3 unset: the derived figure is shown as the placeholder',
+            !!ph && /\d/.test(ph), `placeholder "${ph}"`);
+          // FINDING A: the source is named, and named CORRECTLY. The retired
+          // wording would have claimed a trailing 3-month average, which is a
+          // different figure (promoCohortAvgArpu, the mix-OFF fallback).
+          const title0 = first().getAttribute('title') || '';
+          check('R3 unset: the default NAMES its real basis (revenue ÷ volume)',
+            /revenue\s*÷\s*volume/i.test(title0), `title "${title0}"`);
+          check('R3 unset: and does NOT claim a trailing 3-month average',
+            !/3-month|three-month|trailing/i.test(title0),
+            'Finding A — that wording describes promoCohortAvgArpu, not this figure');
+
+          const derivedBlend = blendNow();
+          check('R3: a blend is rendered before any override', derivedBlend !== null, `${derivedBlend}`);
+
+          // ── TRANSITION: type an override → styling flips AND blend moves ──
+          const derivedFirst = Number(ph);
+          const stated = derivedFirst + 25;
+          await setNum4(first(), String(stated));
+          check('R3 stated: the typed rate is the rendered value',
+            Number(first().value) === stated, `${first().value}`);
+          // NOT /border-\[#e60000\]/ — the base class carries
+          // `focus:border-[#e60000]` in BOTH states, so that pattern matched
+          // always and this check passed vacuously on its first run. The
+          // background tint appears ONLY in the overridden branch.
+          check('R3 stated: the styling flips to edited-vs-default',
+            /bg-\[#e60000\]\/5/.test(first().className) && !/text-slate-400/.test(first().className),
+            `class "${first().className}"`);
+          const statedBlend = blendNow();
+          check('R3 stated: and the LIVE BLEND moves — the card reads the stated rate',
+            statedBlend !== null && derivedBlend !== null && Math.abs(statedBlend - derivedBlend) > 1e-6,
+            `${derivedBlend} -> ${statedBlend}`);
+
+          // ── TRANSITION: clear → derived returns, styling reverts ──────────
+          await setNum4(first(), '');
+          check('R3 clear: the box empties back to unset',
+            first().value === '', `"${first().value}"`);
+          check('R3 clear: the styling reverts to default',
+            !/bg-\[#e60000\]\/5/.test(first().className) && /text-slate-400/.test(first().className),
+            `class "${first().className}"`);
+          check('R3 clear: and the blend returns to the DERIVED figure — derived-today',
+            near(blendNow() as number, derivedBlend as number, 1e-9),
+            `${blendNow()} vs ${derivedBlend}`);
+
+          // ── STATED ZERO IS NOT UNSET. The decisive presence check. ────────
+          await setNum4(first(), '0');
+          check('R3 zero: a stated 0 styles as EDITED, not as unset',
+            /bg-\[#e60000\]\/5/.test(first().className),
+            'truthiness instead of presence would collapse stated-zero into unset');
+          const zeroBlend = blendNow();
+          check('R3 zero: a stated 0 moves the blend — it is a real rate, not absence',
+            zeroBlend !== null && derivedBlend !== null && zeroBlend < derivedBlend,
+            `${derivedBlend} -> ${zeroBlend}`);
+
+          // ── NEGATIVE IS VERBATIM. No sign transform anywhere. ─────────────
+          await setNum4(first(), '-4.25');
+          check('R3 negative: the value is carried VERBATIM, sign intact',
+            Number(first().value) === -4.25, `${first().value} — a clamp would read 4.25 or 0`);
+          const negBlend = blendNow();
+          check('R3 negative: and it pulls the blend BELOW the stated-zero blend',
+            negBlend !== null && zeroBlend !== null && negBlend < zeroBlend,
+            `${zeroBlend} -> ${negBlend}`);
+
+          // ── SAVE THROUGH THE REAL WRITER ──────────────────────────────────
+          //
+          // The typed rate must reach the stored event AND its exported row.
+          // Driven by clicking the card's own Add control, then passing the
+          // captured event through marketEventExportRow — the REAL export
+          // writer, not a copy of its shape.
+          await setNum4(first(), '12.75');
+          const dateInput = c4.querySelector('input[type=month]') as any;
+          const volInput = [...c4.querySelectorAll('input[type=number]')]
+            .find((i: any) => /volume/i.test(i.closest('div')?.textContent || '')) as any;
+          if (dateInput) await setNum4(dateInput, '2026-09');
+          if (volInput) await setNum4(volInput, '500');
+
+          // BEFORE the click: adding resets the draft and re-renders the rows,
+          // so a name read afterwards is read off the wrong state.
+          const bandName = String(bandInputs()[0]?.getAttribute('data-testid') || '')
+            .replace('promo-band-arpu-override-', '');
+          check('R3 save: the band under test is named', bandName !== '', `"${bandName}"`);
+
+          const addBtn = [...c4.querySelectorAll('button')]
+            .find(b => /^Add/i.test(norm(b.textContent || ''))) as any;
+          check('R3 save: an Add control is present and enabled', !!addBtn && !addBtn.disabled,
+            addBtn ? `disabled=${addBtn.disabled}` : 'no Add control');
+          if (addBtn && !addBtn.disabled) {
+            await (act as any)(async () => { addBtn.click(); });
+            const written = captured.length ? captured[captured.length - 1] : [];
+            const evt = written.find((e: any) => e.isPromotion);
+            check('R3 save: the click produced a promotion event', !!evt, `${written.length} events`);
+            if (evt) {
+              check('R3 save: the saved event carries the stated map',
+                !!evt.promoBandArpuOverride, JSON.stringify(evt.promoBandArpuOverride));
+              check('R3 save: and the map holds the rate that was TYPED',
+                evt.promoBandArpuOverride && near(evt.promoBandArpuOverride[bandName], 12.75, 1e-9),
+                `${JSON.stringify(evt.promoBandArpuOverride)} for band "${bandName}"`);
+              // ONLY the band that was typed — the other members were left
+              // unset and absence per band is the carrier.
+              check('R3 save: bands left unset are ABSENT from the map, not zero-filled',
+                evt.promoBandArpuOverride && Object.keys(evt.promoBandArpuOverride).length === 1,
+                `${Object.keys(evt.promoBandArpuOverride || {}).length} keys for ${bandCount} bands`);
+
+              // THE REAL EXPORT WRITER.
+              const row = fc.marketEventExportRow(evt);
+              check('R3 export: the real writer emits the override column',
+                'Promo_Band_ARPU_Override_JSON' in row);
+              check('R3 export: carrying the typed rate through JSON',
+                near(JSON.parse(String(row.Promo_Band_ARPU_Override_JSON))[bandName], 12.75, 1e-9),
+                String(row.Promo_Band_ARPU_Override_JSON));
+
+              // AND BACK. The reader is the shared one the carrier session pinned.
+              const back = fc.readStoredEventModifiers(row);
+              check('R3 round trip: the shared reader restores the stated rate',
+                back.promoBandArpuOverride && near(back.promoBandArpuOverride[bandName], 12.75, 1e-9),
+                JSON.stringify(back.promoBandArpuOverride));
+            }
+          }
+        }
+      }
+    }
+    await (act as any)(async () => { root4.unmount(); });
+
+    // STALE-KEY FILTER (Finding E), at the function the write path calls.
+    // Unit-level on purpose: the harness has no tariff axis available, so the
+    // axis switch that creates a stale key is not drivable through this mount.
+    // The expectation is written out by hand rather than computed with the
+    // function under test.
+    const wi: any = await import('../src/components/WhatIfTab');
+    const tiers = [{ tier: 'A', baseArpu: 10 }, { tier: 'B', baseArpu: 20 }];
+    const withStale = wi.promoStatedRatesForMembers(tiers, { A: 5, GONE: 99 });
+    check('R3 stale keys: a band that is no longer a member is NOT persisted',
+      withStale && withStale.A === 5 && withStale.GONE === undefined
+        && Object.keys(withStale).length === 1,
+      JSON.stringify(withStale));
+    check('R3 stale keys: a map of ONLY stale bands is absence, not {}',
+      wi.promoStatedRatesForMembers(tiers, { GONE: 99 }) === undefined,
+      String(wi.promoStatedRatesForMembers(tiers, { GONE: 99 })));
+    check('R3 effective rate: a stated 0 beats the derived figure (presence, not truthiness)',
+      wi.promoEffectiveArpuMap(tiers, { A: 0 }).A === 0,
+      String(wi.promoEffectiveArpuMap(tiers, { A: 0 }).A));
+    check('R3 effective rate: an unset band keeps its derived figure',
+      wi.promoEffectiveArpuMap(tiers, { A: 0 }).B === 20);
   }
 
   report();

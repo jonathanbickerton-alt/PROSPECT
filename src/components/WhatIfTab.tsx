@@ -269,10 +269,69 @@ function blankPromo(): PromoDraft {
   };
 }
 
+/**
+ * THE EFFECTIVE RATE FOR EVERY BAND — R3's one definition.
+ *
+ * Override-if-present over the derived figure, tested for PRESENCE: a stated 0
+ * is a band priced at nothing and must not fall through to the derived rate,
+ * and a stated negative is an acquisition credit carried verbatim.
+ *
+ * MODULE-LEVEL, not a hook, so the CARD and `buildPromoEvents` call the SAME
+ * one. That is the whole point. The write path used to build its own `tierArpu`
+ * from the derived figures alone, so a card showing a stated rate would have
+ * saved an event blended from the derived ones — the two-baselines defect trap
+ * 65 exists for, arriving on a third surface. One shared function makes that
+ * impossible rather than merely tested for. (Finding B, 2026-08-13 recovery.)
+ *
+ * NOTE THE ORDERING against the derived path's sign guard. `computeTierData`
+ * clamps with `Math.max(0, ...)` when it scales to a forecast month, so a
+ * DERIVED rate can never be negative. That clamp runs BEFORE this function, on
+ * `baseArpu`, and this function REPLACES rather than adjusts — so a stated
+ * -4.25 reaches the engine as -4.25. The clamp is not crossed; it is upstream.
+ * The spec asserts this rather than trusting the reading.
+ *
+ * Iterating `tierData` and not the override's own keys is deliberate: a stated
+ * rate for a band that is no longer a member contributes nothing here, which is
+ * what makes a stale key harmless on the READ side.
+ */
+export function promoEffectiveArpuMap(
+  tierData: { tier: string; baseArpu: number }[],
+  override: Record<string, number> | undefined,
+): Record<string, number> {
+  const m: Record<string, number> = {};
+  tierData.forEach(t => {
+    const stated = override?.[t.tier];
+    m[t.tier] = stated !== undefined ? stated : t.baseArpu;
+  });
+  return m;
+}
+
+/**
+ * The stated rates that may be PERSISTED: only bands the event actually uses.
+ *
+ * The draft map is keyed by band NAME and outlives a value↔tariff axis switch,
+ * so without this a rate typed before the switch would be written into a saved
+ * event naming a band that event has no share in. (Finding E.)
+ *
+ * Returns `undefined`, never `{}` — after filtering, a map naming only stale
+ * bands states nothing about this event, and absence is the carrier.
+ */
+export function promoStatedRatesForMembers(
+  tierData: { tier: string; baseArpu: number }[],
+  override: Record<string, number> | undefined,
+): Record<string, number> | undefined {
+  if (!override) return undefined;
+  const out: Record<string, number> = {};
+  tierData.forEach(t => {
+    const stated = override[t.tier];
+    if (stated !== undefined) out[t.tier] = stated;
+  });
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 interface BuildPromoEventsParams {
-  /** R3's per-band stated rates, by presence. Undefined until the surface
-   *  session adds the input — the parameter exists so the save path is already
-   *  correct when it does. */
+  /** R3's per-band stated rates, by presence. The card's draft map; the bands
+   *  it names are filtered to the CURRENT members on the way out. */
   bandArpuOverride?: Record<string, number>;
   target: 'Inflow' | 'Retention';
   draft: PromoDraft;
@@ -318,8 +377,12 @@ function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
   const total = pcts.reduce((s, pct) => s + pct, 0);
   if (total <= 0) return [];
 
-  const tierArpu: Record<string, number> = {};
-  p.tierData.forEach(t => { tierArpu[t.tier] = t.baseArpu; });
+  // THE SAME MAP THE CARD BLENDS, from the SAME function — stated rates
+  // included. This used to be hand-rolled from `t.baseArpu` alone, which meant
+  // the card could show a stated rate while the saved event blended the derived
+  // one. Retired per Finding B.
+  const tierArpu = promoEffectiveArpuMap(p.tierData, p.bandArpuOverride);
+  const statedForMembers = promoStatedRatesForMembers(p.tierData, p.bandArpuOverride);
   // THE WRITE SIDE of the blend. Before the collapse this read
   // `tierArpu[tier] ?? 0`, so a member carrying share with an unknown ARPU
   // contributed zero and the contaminated figure was written into the saved
@@ -369,12 +432,9 @@ function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
       // is stated, and absent when the mix arm is off — an override map without
       // a mix is a claim about bands the event does not use.
       //
-      // INERT at this commit: p.bandArpuOverride is always undefined because no
-      // input writes it yet. The passthrough exists so the surface session adds
-      // a control, not a save path — and so the round trip is provable now.
-      promoBandArpuOverride: p.mixEnabled && p.bandArpuOverride
-        && Object.keys(p.bandArpuOverride).length > 0
-        ? { ...p.bandArpuOverride } : undefined,
+      // LIVE: the card's per-band input writes the draft map this comes from,
+      // filtered to the current members so a stale key cannot reach the event.
+      promoBandArpuOverride: p.mixEnabled ? statedForMembers : undefined,
       promoPricingMode: p.pricingEnabled ? p.pricingMode : undefined,
       promoPricingAmount: p.pricingEnabled ? p.pricingAmount : undefined,
       sequence: p.startSequence + i,
@@ -1503,13 +1563,34 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoDraftMix(prev => seedMixPreserving(prev, promoTierData.map(t => t.tier)));
   }, [promoTierData.map(t => t.tier).join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** Member ARPUs, keyed — the engine's `perMemberArpus`. Derived here once so
-   *  every engine call in this card sees the same numbers. */
-  const promoTierArpu = useMemo<Record<string, number>>(() => {
-    const m: Record<string, number> = {};
-    promoTierData.forEach(t => { m[t.tier] = t.baseArpu; });
-    return m;
-  }, [promoTierData]);
+  /**
+   * R3's draft: the rates the user has STATED for individual bands.
+   *
+   * NO `seedMixPreserving` EQUIVALENT, and the reason is structural rather than
+   * an omission — re-established this session rather than inherited:
+   *
+   * `draftMix` needs preserving because it must carry an entry for EVERY member
+   * (shares sum to a fixed total), so an effect rebuilds it from the tier list
+   * whenever that list changes — and it is that rebuild which wiped a restore.
+   * This map is SPARSE BY DESIGN: absence per band IS the carrier, nothing has
+   * to cover the members, so no effect rebuilds it and there is no rebuild to
+   * protect against. Its only writers are the input below, the two edit-restore
+   * handlers, and the draft reset.
+   *
+   * Keys for bands that are no longer members are therefore possible — switch
+   * the mix axis with a rate typed — and are harmless: the effective map
+   * iterates the CURRENT members, and the write path filters them out. Keeping
+   * rather than clearing them means switching axis and back returns the user's
+   * typed rates, which is what presence-as-carrier should do.
+   */
+  const [draftPromoBandArpu, setDraftPromoBandArpu] = useState<Record<string, number>>({});
+
+  /** Member ARPUs, keyed — the engine's `perMemberArpus`, with stated rates
+   *  applied. ONE map from ONE function, so the reachable range, the target
+   *  solve, the live blend and the saved event cannot disagree about a band. */
+  const promoTierArpu = useMemo<Record<string, number>>(
+    () => promoEffectiveArpuMap(promoTierData, draftPromoBandArpu),
+    [promoTierData, draftPromoBandArpu]);
 
   const promoMembers = useMemo(() => promoTierData.map(t => t.tier), [promoTierData]);
 
@@ -1614,6 +1695,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // a new place.
     setPromoMixLocked([]);
     setPromoTargetArpu('');
+    // R3's stated rates ARE carried by a saved event, unlike the two above — so
+    // this clear is what stops the NEXT promotion silently inheriting them. The
+    // restore handlers seed the map deliberately, and only from the event they
+    // open.
+    setDraftPromoBandArpu({});
   }, []);
 
   // ── Add Custom Promotion event(s) ─────────────────────────────────────────
@@ -1630,6 +1716,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const events = buildPromoEvents({
       target: promoTarget, draft: newPromo,
       mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
+      bandArpuOverride: draftPromoBandArpu,
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
       cohortAvgArpu: promoCohortAvgArpu,
       spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
@@ -1639,7 +1726,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
     setMarketEvents([...marketEvents, ...events]);
     resetPromoDraft();
-  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, marketEvents, setMarketEvents, resetPromoDraft]);
+  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, marketEvents, setMarketEvents, resetPromoDraft]);
 
   // ── Unique options for Yield Event form ───────────────────────────────────
   const ySegmentOptions = useMemo(
@@ -2305,6 +2392,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoMixEnabled(!!event.promoMix);
     setPromoMixAxis(event.promoMixAxis ?? 'value');
     setPromoDraftMix(event.promoMix ? { ...event.promoMix } : {});
+    // R3: seed the stated rates from the event, override-if-present. Absent on
+    // the event means an EMPTY draft, never the previous draft's rates —
+    // reopening an event that states nothing must show the derived figures.
+    setDraftPromoBandArpu({ ...(event.promoBandArpuOverride ?? {}) });
     // Locks and target are draft-time only and no saved event carries them,
     // so opening an edit starts from no holds and no target rather than
     // inheriting whatever the previous draft had.
@@ -2358,6 +2449,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoMixEnabled(!!first.promoMix);
     setPromoMixAxis(first.promoMixAxis ?? 'value');
     setPromoDraftMix(first.promoMix ? { ...first.promoMix } : {});
+    // R3, from the SAME row the mix comes from. A campaign's rows are one
+    // promotion spread across months, so the first row's stated rates are the
+    // campaign's; taking them from another row could show one month's.
+    setDraftPromoBandArpu({ ...(first.promoBandArpuOverride ?? {}) });
     // Locks and target are draft-time only and no saved event carries them,
     // so opening an edit starts from no holds and no target rather than
     // inheriting whatever the previous draft had.
@@ -2379,6 +2474,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const events = buildPromoEvents({
       target: promoTarget, draft: newPromo,
       mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
+      bandArpuOverride: draftPromoBandArpu,
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
       cohortAvgArpu: promoCohortAvgArpu,
       spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [100],
@@ -2393,13 +2489,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     updateMarketEvent(editingPromoId, { ...events[0], id: editingPromoId });
     setEditingPromoId(null);
     resetPromoDraft();
-  }, [editingPromoId, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, marketEvents, updateMarketEvent, resetPromoDraft]);
+  }, [editingPromoId, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, marketEvents, updateMarketEvent, resetPromoDraft]);
 
   const handleSavePromoCampaign = useCallback(() => {
     if (!editingPromoCampaign || !newPromo.date || !newPromo.subscriberVolume) return;
     const events = buildPromoEvents({
       target: promoTarget, draft: newPromo,
       mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
+      bandArpuOverride: draftPromoBandArpu,
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
       cohortAvgArpu: promoCohortAvgArpu,
       spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
@@ -2417,7 +2514,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setMarketEvents([...promoSurvivors, ...resequenceRebuild(events, promoReplaced, promoSurvivors)]);
     setEditingPromoCampaign(null);
     resetPromoDraft();
-  }, [editingPromoCampaign, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, marketEvents, setMarketEvents, resetPromoDraft]);
+  }, [editingPromoCampaign, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, marketEvents, setMarketEvents, resetPromoDraft]);
 
   const handleCancelPromoEdit = useCallback(() => {
     setEditingPromoId(null);
@@ -4727,6 +4824,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             {promoTierData.map(({ tier, baseArpu }) => {
                               const mixPct = promoDraftMix[tier] ?? 0;
                               const held = promoMixLocked.includes(tier);
+                              // PRESENCE, not truthiness — a stated 0 is a band
+                              // priced at nothing and must style as edited.
+                              const bandOverridden = draftPromoBandArpu[tier] !== undefined;
                               // Immovable for one of TWO distinct reasons: the user
                               // held it, or the constraints leave a single value. The
                               // padlock only ever reflects the first — collapsing the
@@ -4769,9 +4869,49 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                     onClick={() => handlePromoLockToggle(tier)}
                                     className={`justify-self-center px-1.5 py-0.5 text-[13px] leading-none rounded transition-colors ${held ? 'text-[#e60000]' : 'text-slate-300 hover:text-slate-500'}`}
                                   >{held ? '\u{1F512}' : '\u{1F513}'}</button>
-                                  <span className="text-xs text-slate-400 text-right tabular-nums leading-none">
-                                    {formatNumber(baseArpu)}
-                                  </span>
+                                  {/* EDITABLE BAND ARPU — Request 3, the same
+                                      four states as the Value card's tier
+                                      override and the Volume card's
+                                      pct-arpu-override: unset shows the derived
+                                      figure as a PLACEHOLDER, stated is styled
+                                      distinctly, clearing returns to unset, and
+                                      a stated 0 or negative is a value like any
+                                      other. No sign transform — a rate is
+                                      written verbatim (the rate-sign rule).
+
+                                      The default is named by its REAL basis via
+                                      the reused R2 key; "trailing 3-month
+                                      average" was retired for this input
+                                      because it describes promoCohortAvgArpu,
+                                      a different figure (Finding A). */}
+                                  <input
+                                    type="number"
+                                    step={0.01}
+                                    data-testid={`promo-band-arpu-override-${tier}`}
+                                    value={bandOverridden ? draftPromoBandArpu[tier] : ''}
+                                    placeholder={formatNumber(baseArpu)}
+                                    title={bandOverridden
+                                      ? t('whatif_tier_arpu_yours')
+                                      : t('whatif_tier_arpu_default_from', { value: formatNumber(baseArpu) })}
+                                    onChange={e => {
+                                      const raw = e.target.value;
+                                      // CLEARED IS UNSET, NOT ZERO. Number('')
+                                      // is 0, so the emptiness test comes first
+                                      // or clearing the box silently states a
+                                      // rate of nothing.
+                                      setDraftPromoBandArpu(prev => {
+                                        const next = { ...prev };
+                                        if (raw === '') delete next[tier];
+                                        else next[tier] = Number(raw);
+                                        return next;
+                                      });
+                                    }}
+                                    className={`w-full text-xs text-right tabular-nums border rounded px-1 py-0.5 outline-none focus:border-[#e60000] ${
+                                      bandOverridden
+                                        ? 'border-[#e60000] bg-[#e60000]/5 font-semibold text-slate-800'
+                                        : 'border-slate-200 bg-white text-slate-400'
+                                    }`}
+                                  />
                                 </div>
                               );
                             })}

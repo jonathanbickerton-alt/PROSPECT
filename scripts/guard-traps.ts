@@ -737,6 +737,18 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '    promoBandArpuOverride: readStoredRateMap(row.Promo_Band_ARPU_Override_JSON),',
       '') },
+  // 67 makes the DERIVED rate always win in R3's one effective-rate definition
+  // — the override is still stored, still exported, still restored on reopen,
+  // and simply never read. That is the nastiest shape this capability can fail
+  // in, because every carrier-level check stays green: the map round-trips
+  // perfectly and the number the user typed just never reaches the blend or the
+  // saved event. Only a MOUNTED transition catches it, which is why the trap
+  // points at the mix-card spec rather than a round-trip one.
+  { id: '67 the stated band rate stops beating the derived one', why: 'R3 overrides round-trip perfectly and are silently ignored',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      '    m[t.tier] = stated !== undefined ? stated : t.baseArpu;',
+      '    m[t.tier] = t.baseArpu;') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

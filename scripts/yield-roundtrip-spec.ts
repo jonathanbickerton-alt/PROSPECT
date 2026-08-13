@@ -146,11 +146,26 @@ const BASE: any = {
 
   check('SURFACE: the per-tier input exists and is addressable',
     tab.includes('data-testid={`tier-arpu-override-${tier}`}'));
+  // RE-AIMED 2026-08-13, R3 surface session. These two anchored on source text
+  // that WAS unique to the Value card's tier input. R3's per-band input on the
+  // promotion card uses the identical clear-idiom and the identical placeholder
+  // expression, so each string now has TWO owners — and an `includes` check
+  // satisfied by either one stops testing this card. Guard-trap 64 proved it:
+  // the trap deleted the yield site's idiom and this spec stayed GREEN.
+  //
+  // The count is therefore the anchor. Two override inputs share these idioms
+  // by design; if EITHER loses one, the count drops and this fails. A third
+  // input arriving will also fail here, which is correct — it should be a
+  // deliberate update, not a silent widening of what this check covers.
+  const countOf = (needle: string) => tab.split(needle).length - 1;
+
   check('SURFACE: it writes the carrier by PRESENCE — cleared deletes the key',
-    tab.includes("if (raw === '') delete next[tier];"),
+    countOf("if (raw === '') delete next[tier];") === 2,
+    `${countOf("if (raw === '') delete next[tier];")} sites, expected 2 (Value tier + promo band) — ` +
     "Number('') is 0, so clearing must delete rather than store a zero");
   check('SURFACE: the derived figure is the PLACEHOLDER, so unset shows it without claiming it',
-    tab.includes('placeholder={formatNumber(baseArpu)}'));
+    countOf('placeholder={formatNumber(baseArpu)}') === 2,
+    `${countOf('placeholder={formatNumber(baseArpu)}')} sites, expected 2`);
 
   check('EFFECTIVE RATE: one definition, tested for presence not truthiness',
     tab.includes('draftTierArpuOverride[tier] !== undefined ? draftTierArpuOverride[tier] : derived'),
