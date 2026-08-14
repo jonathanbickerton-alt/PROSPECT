@@ -5,7 +5,7 @@
 ```
 Generated: 2026-08-14 12:34 +0100 (UTC 2026-08-14 11:34)
 Verified against: b02f76a, branch main, tree clean (bar this report).
-Repo: __PENDING__
+Repo: no source changed (read-only); this report committed c841e43, pushed
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before any check ran.
 PART 1 — THE ARTEFACT DOES NOT EXIST. No v3.3 on this machine; newest is v3.2
   (2026-08-12), with ZERO mentions of the R3 symbols. I verified the brief's
