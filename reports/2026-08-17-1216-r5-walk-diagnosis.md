@@ -5,7 +5,7 @@
 ```
 Generated: 2026-08-17 12:16 +0100 (UTC 2026-08-17 11:16)
 Verified against: 42f6625, branch main, tree clean (bar this report).
-Repo: __PENDING__
+Repo: no source changed (read-only); this report committed ded1564, pushed
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before any check ran.
 OBS 4 AND OBS 2 ARE ONE DEFECT, AND IT IS MINE (R5, b3795f3). Both read
   `newPricingEvent.amount`, which DILUTION MODE NEVER SETS — one writer only,
