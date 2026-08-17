@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-08-17 14:12 +0100 (UTC 2026-08-17 13:12)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: 77d3de7 (body written PRE-commit; only these 2 lines added after)
+Repo: committed 77d3de7, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before the base check.
 BASE: HEAD 35eab0c vs the brief's c4e1f48 — one commit, REPORT-ONLY.
 MEASURED FIRST, BEFORE ANY COMPONENT CODE: 6.90 ms per slice run on the
