@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-08-17 14:45 +0100 (UTC 2026-08-17 13:45)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: 5a14872 — NO CODE CHANGE; the tree is 77d3de7 plus records
+Repo: committed 5a14872, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before the base check.
 BASE: HEAD c10ca25 vs the brief's 77d3de7 — one commit, REPORT-ONLY.
 THE MEASUREMENT STOP FIRED. Per-slice map on the 12,112-row edge fixture:
