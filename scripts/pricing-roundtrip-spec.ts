@@ -30,6 +30,7 @@ import fs from 'fs';
 import {
   pricingEventExportRow, pricingEventFromRow, pricingEventSummary,
   retainedRevenueRatio, dilutionAmountPct, isValidDilutionPct,
+  applyPricingToBlend, pricedVolumesFor, pricingAdjustedBlend, pricingDraftBlockReason,
 } from '../src/utils/forecasting';
 import type { PricingEvent } from '../src/types/forecast';
 
@@ -206,6 +207,126 @@ check('wiring: the pricing apply loop has NO dilution branch — it rides the me
   !/pricingMode\s*===\s*'dilution'[^\n]*\n?[^\n]*applyDelta/.test(tab)
     && !tab.includes('if (pe.pricingMode'),
   'the apply path must not know this mode exists');
+
+// ── 8. THE WEIGHTING — hand-written literals, chosen to stay exact ─────────
+//
+// Deliberately round numbers so the expected values are computed by hand from
+// the formula and land on exact binary fractions. Nothing below is produced by
+// calling the function under test.
+//
+//   blend 100, +10% on a priced pool of 250 out of 1000:
+//   priced ARPU = 110
+//   weighted    = (250 x 110 + 750 x 100) / 1000 = 102.5
+check('weighting: the priced pool moves the blend by its VOLUME SHARE',
+  applyPricingToBlend(250, 110, 1000, 100) === 102.5,
+  String(applyPricingToBlend(250, 110, 1000, 100)));
+check('weighting: and NOT by the full ratio — that is the defect being fixed',
+  applyPricingToBlend(250, 110, 1000, 100) !== 110);
+check('weighting: pricing EVERYTHING is the full ratio, so nothing is over-damped',
+  applyPricingToBlend(1000, 110, 1000, 100) === 110,
+  String(applyPricingToBlend(1000, 110, 1000, 100)));
+check('weighting: nothing priced leaves the blend untouched',
+  applyPricingToBlend(0, 110, 1000, 100) === 100);
+check('weighting: no volume at all leaves the blend untouched, not NaN',
+  applyPricingToBlend(250, 110, 0, 100) === 100);
+
+// Volume selection, per target/cohortScope — the same choice the apply path makes.
+const VOLS = { inflow: 100, retention: 400, base: 1500 };  // total 2000
+check('volumes: retention-scoped cohorts prices the retention volume only',
+  JSON.stringify(pricedVolumesFor({ target: 'cohorts', cohortScope: 'retention' }, VOLS))
+    === JSON.stringify({ pricedVol: 400, totalVol: 2000 }),
+  JSON.stringify(pricedVolumesFor({ target: 'cohorts', cohortScope: 'retention' }, VOLS)));
+check('volumes: both-scoped cohorts prices inflow + retention, not the base',
+  pricedVolumesFor({ target: 'cohorts', cohortScope: 'both' }, VOLS)!.pricedVol === 500);
+check('volumes: cohorts+base adds the base pool',
+  pricedVolumesFor({ target: 'cohorts+base', cohortScope: 'retention' }, VOLS)!.pricedVol === 1900);
+check('volumes: base-only returns ABSENCE — the display cannot decompose that pool',
+  pricedVolumesFor({ target: 'base-only', cohortScope: 'both' }, VOLS) === null);
+
+// The composed display figure, hand-computed:
+//   blend 100, retention-scoped +10%, priced 400 of 2000
+//   = (400 x 110 + 1600 x 100) / 2000 = 102
+check('display: the composed blend matches the hand-computed weighting',
+  pricingAdjustedBlend(
+    { target: 'cohorts', cohortScope: 'retention', inputMode: 'percentage', amount: 10 },
+    100, VOLS) === 102,
+  String(pricingAdjustedBlend(
+    { target: 'cohorts', cohortScope: 'retention', inputMode: 'percentage', amount: 10 }, 100, VOLS)));
+check('display: base-only yields ABSENCE rather than an invented figure',
+  pricingAdjustedBlend(
+    { target: 'base-only', cohortScope: 'both', inputMode: 'percentage', amount: 10 },
+    100, VOLS) === null);
+check('display: missing volumes yield ABSENCE, never the unweighted figure',
+  pricingAdjustedBlend(
+    { target: 'cohorts', cohortScope: 'retention', inputMode: 'percentage', amount: 10 },
+    100, null) === null);
+
+// AGREEMENT, pinned structurally. The apply path and the display now reach the
+// same arithmetic through the same function, so agreement is a property of the
+// wiring rather than of two implementations happening to match. Both call
+// sites in the apply path are counted, so losing one fails here.
+check('agreement: the apply path calls the shared weighting at BOTH its sites',
+  (tab.split('applyPricingToBlend(').length - 1) === 2,
+  `${tab.split('applyPricingToBlend(').length - 1} call sites, expected 2`);
+check('agreement: the apply path no longer inlines the weighting arithmetic',
+  !tab.includes('(pricedVol * pricedARPU + (totalVol - pricedVol)'),
+  'an inlined copy beside the shared call is how the two drift apart again');
+check('agreement: the row and Preview Impact both read the composed display figure',
+  (tab.split('pricingAdjustedBlend(').length - 1) === 2,
+  `${tab.split('pricingAdjustedBlend(').length - 1} display call sites, expected 2`);
+
+// ── 9. THE BLOCK REASON — one predicate, every term named ──────────────────
+const M = '2026-09';
+const cases: [string, any, string | null][] = [
+  ['no month at all', {}, 'whatif_pricing_block_no_month'],
+  ['Direct with no amount', { month: M }, 'whatif_pricing_block_no_amount'],
+  ['Direct with an amount', { month: M, amount: -3 }, null],
+  ['dilution, neither figure', { month: M, pricingMode: 'dilution' }, 'whatif_pricing_block_dilution_incomplete'],
+  ['dilution, only current', { month: M, pricingMode: 'dilution', dilutionCurrentPct: 25 }, 'whatif_pricing_block_dilution_incomplete'],
+  ['dilution, only target', { month: M, pricingMode: 'dilution', dilutionTargetPct: 20 }, 'whatif_pricing_block_dilution_incomplete'],
+  ['dilution, current out of range', { month: M, pricingMode: 'dilution', dilutionCurrentPct: 100, dilutionTargetPct: 20 }, 'whatif_pricing_block_dilution_range'],
+  ['dilution, negative target', { month: M, pricingMode: 'dilution', dilutionCurrentPct: 25, dilutionTargetPct: -1 }, 'whatif_pricing_block_dilution_range'],
+  ['a complete dilution form', { month: M, pricingMode: 'dilution', dilutionCurrentPct: 25, dilutionTargetPct: 20 }, null],
+];
+for (const [name, draft, expected] of cases) {
+  check(`gating: ${name} -> ${expected ?? 'ADDABLE'}`,
+    pricingDraftBlockReason(draft) === expected,
+    `got ${pricingDraftBlockReason(draft)}`);
+}
+
+// THE WALK'S DEFECT, pinned directly. A complete dilution form has NO Direct
+// amount — that is the normal case, not an edge — and must be addable.
+check('gating: THE WALK DEFECT — a dilution form with no Direct amount IS addable',
+  pricingDraftBlockReason({
+    month: M, pricingMode: 'dilution', dilutionCurrentPct: 25, dilutionTargetPct: 20,
+    amount: undefined,
+  }) === null,
+  'a mode-blind amount test is what refused these forms silently');
+check('gating: a stated ZERO dilution pair is addable — 0 is a real figure',
+  pricingDraftBlockReason({ month: M, pricingMode: 'dilution', dilutionCurrentPct: 0, dilutionTargetPct: 0 }) === null);
+check('gating: every reason is a key that EXISTS in the real en locale',
+  cases.every(([, , r]) => r === null || typeof en[r] === 'string'),
+  cases.filter(([, , r]) => r !== null && typeof en[r as string] !== 'string').map(c => c[2]).join(', '));
+
+// ONE PREDICATE, not two. The handler must not keep a second copy of the rule.
+check('gating: the button and the handler read the SAME predicate',
+  (tab.split('pricingDraftBlockReason(').length - 1) === 2,
+  `${tab.split('pricingDraftBlockReason(').length - 1} call sites, expected 2 (button memo + handler)`);
+check('gating: the old mode-blind button condition is gone',
+  !tab.includes('!newPricingEvent.month || newPricingEvent.amount === undefined'));
+check('gating: the blocking reason is RENDERED, not merely computed',
+  tab.includes('data-testid="pricing-block-reason"'),
+  'a disabled control with no stated reason is the defect, not the fix');
+
+// Switching Direct -> Dilution must not leave a stale Direct amount behind.
+// Scoped to the mode button's own handler rather than a character window — the
+// first form of this check allowed 600 chars and the real gap is 823, so it
+// failed on correct code. A distance is not the property being asserted.
+const dilBtn = tab.slice(tab.indexOf('data-testid="pricing-mode-dilution"'));
+const dilBtnHandler = dilBtn.slice(0, dilBtn.indexOf('})}'));
+check('gating: the dilution mode switch clears the stale Direct amount',
+  dilBtnHandler.includes('amount: undefined'),
+  'a leftover amount silently decided which forms could be added');
 
 console.log(`\npricing-roundtrip spec: ${pass} passed, ${fails.length} failed`);
 fails.forEach(f => console.log('  FAIL  ' + f));

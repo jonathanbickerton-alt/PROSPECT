@@ -783,5 +783,10 @@
   "whatif_summary_col_name": "Nombre",
   "whatif_summary_col_adjusts": "Modifica",
   "whatif_summary_col_scope": "Ámbito",
-  "whatif_summary_col_when": "Cuándo"
+  "whatif_summary_col_when": "Cuándo",
+  "whatif_pricing_block_no_month": "Elija un mes antes de añadir este evento.",
+  "whatif_pricing_block_no_amount": "Introduzca un importe antes de añadir este evento.",
+  "whatif_pricing_block_dilution_incomplete": "Introduzca la dilución actual y la objetivo antes de añadir este evento.",
+  "whatif_pricing_block_dilution_range": "Las cifras de dilución deben ser 0 o más e inferiores a 100.",
+  "whatif_preview_not_available": "No hay cifra ponderada para este evento: los eventos solo sobre la base afectan a un grupo que esta vista no puede desglosar."
 }

@@ -6715,6 +6715,30 @@ All three rest on the 2026-08-14 true-state report.
    come back as a plain percentage event, showing an ARPU delta the user never
    typed and losing the two numbers they did.
 
+#### R5 WALK DECISIONS (Jon, 2026-08-17) — the Pricing card's display and gating
+
+From the 2026-08-17 walk on the edge fixture and its diagnosis
+(`2026-08-17-1216-r5-walk-diagnosis.md`).
+
+1. **THE ROW AND PREVIEW IMPACT SHOW THE VOLUME-WEIGHTED BLEND** — the same
+   figure the apply path produces. Three surfaces, ONE definition of the
+   weighting.
+
+   The row was applying the FULL percentage to a blended baseline with no
+   weighting, so a retention-scoped event read as +6.67% on the whole book when
+   the engine moved only the retention share. The apply path was right and the
+   display was wrong; the fix is not a second correct implementation but the
+   same one, called from all three.
+
+2. **THE ADD GATING FIX IS FEEDBACK, NOT ENABLEMENT.** Every blocking term
+   names its reason on screen.
+
+   A disabled control with a stated reason satisfies the principle that data
+   and action problems are communicated. A button merely enabled into a handler
+   that silently `return`s does not — it moves the silence one layer down,
+   where it is harder to find. The diagnosis counted FIVE blocking terms across
+   two layers, none of which said anything.
+
 #### R4 DECISIONS (Jon, 2026-08-14) — the combined events summary table
 
 Recorded here because the advisor's document update had not reached this file.

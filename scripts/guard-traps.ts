@@ -840,6 +840,25 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '  return rows.sort((a, b) => a.pass - b.pass || a.month.localeCompare(b.month));',
       '  return rows.sort((a, b) => a.month.localeCompare(b.month));') },
+  // 74 drops the WEIGHTING inside the shared function, so the full ratio hits
+  // the whole blend — reinstating exactly the defect Jon's walk found, but now
+  // in the one place both the apply path AND the display read. That is the
+  // point of having extracted it: before, the engine was right and only the
+  // display was wrong, and no single edit could have been caught in both.
+  { id: '74 the pricing weighting drops out of the shared function', why: 'a scoped event reads as its full ratio against the whole book',
+    file: ENGINE, spec: PRICEROUND,
+    mutate: s => s.replace(
+      '  return (pricedVol * pricedArpu + (totalVol - pricedVol) * blendArpu) / totalVol;',
+      '  return pricedArpu;') },
+  // 75 makes the block-reason predicate always addable. The button then gates
+  // NOTHING and the reason line renders NOTHING, so an incomplete draft reaches
+  // a handler that returns silently — which is the pre-fix behaviour with an
+  // enabled button, i.e. the shape the decision explicitly rejected.
+  { id: '75 the pricing block reason stops finding reasons', why: 'the refusal goes silent again, one layer further down',
+    file: ENGINE, spec: PRICEROUND,
+    mutate: s => s.replace(
+      "  if (!draft.month) return 'whatif_pricing_block_no_month';",
+      '  return null;') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

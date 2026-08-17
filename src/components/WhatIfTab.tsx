@@ -12,8 +12,8 @@ import { SKIP_REASON_KEY } from '../types/forecast';
 import { EventChangeConfirmModal } from './EventChangeConfirmModal';
 import type { MarketEvent } from '../utils/forecasting';
 import { rebalance, achievableTargetRange, solveForTarget, blendedArpu, conformsToTotal } from '../utils/mixConstraint';
-import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows } from '../utils/forecasting';
-import type { ProRataLeaf, ProRataScope } from '../utils/forecasting';
+import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason } from '../utils/forecasting';
+import type { ProRataLeaf, ProRataScope, PricingVolumes } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
 import { MultiSelectDropdown } from './MultiSelectDropdown';
@@ -1197,7 +1197,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
             const totalVol      = m.uplifted.inflow + m.uplifted.retention + newBAdj;
             if (totalVol > 0 && pricedVol > 0) {
               const pricedARPU = applyDelta(pricingARPU);
-              pricingARPU = (pricedVol * pricedARPU + (totalVol - pricedVol) * pricingARPU) / totalVol;
+              pricingARPU = applyPricingToBlend(pricedVol, pricedARPU, totalVol, pricingARPU);
             }
           } else if (pe.target === 'base-only') {
             // Base Only: delta applies to the base pool component only;
@@ -1219,7 +1219,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
               const totalVol     = m.uplifted.inflow + m.uplifted.retention + newBAdj;
               if (totalVol > 0 && pricedVol > 0) {
                 const pricedARPU = applyDelta(pricingARPU);
-                pricingARPU = (pricedVol * pricedARPU + (totalVol - pricedVol) * pricingARPU) / totalVol;
+                pricingARPU = applyPricingToBlend(pricedVol, pricedARPU, totalVol, pricingARPU);
               }
             }
           }
@@ -1715,6 +1715,22 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     () => buildEventsSummaryRows({ marketEvents, yieldEvents, pricingEvents }, t),
     [marketEvents, yieldEvents, pricingEvents, t]);
 
+  /**
+   * The month's volumes the pricing weighting is computed over, read from the
+   * SAME series the apply path wrote them to.
+   *
+   * `chartData`'s row carries `Inflow (Adjusted)` = m.uplifted.inflow,
+   * `Retention (Adjusted)` = m.uplifted.retention and `Base (Adjusted)` =
+   * newBAdj — exactly the three the pricing pass selects between. So the
+   * display weights over the truthful volumes rather than an approximation of
+   * them, which is what made this fix possible at all: had they not been
+   * reachable, an approximated weight would have been the same defect wearing
+   * a fix's clothes.
+   *
+   * The one loss is precision: chart rows are rounded to 2dp on the way in.
+   * That moves a displayed ARPU by well under a penny and is not worth a
+   * second unrounded series to avoid.
+   */
   const promoOrphans = useMemo(
     () => promoOrphanedBands(promoMembers, promoDraftMix),
     [promoMembers, promoDraftMix]);
@@ -2026,22 +2042,32 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     );
   }, [marketEvents, yieldEvents, pricingEvents, formatNumber]);
 
+  /** The ONE reason the pricing draft cannot be added, or null. Read by the
+   *  button, by the message beside it, and by the handler's guard. */
+  const pricingBlockReason = useMemo(
+    () => pricingDraftBlockReason(newPricingEvent),
+    [newPricingEvent]);
+
+  const monthVolumes = useCallback((month: string): PricingVolumes | null => {
+    const r = chartData.find((x: any) => x.month === month);
+    if (!r) return null;
+    return {
+      inflow: Number(r['Inflow (Adjusted)']) || 0,
+      retention: Number(r['Retention (Adjusted)']) || 0,
+      base: Number(r['Base (Adjusted)']) || 0,
+    };
+  }, [chartData]);
+
   // ── Add Pricing Event (defined here so it can read chartData) ────────────
   const handleAddPricingEvent = useCallback(() => {
+    // THE SAME PREDICATE THE BUTTON READS — not a second copy of it. The two
+    // disagreeing is what let a valid dilution form be refused by a mode-blind
+    // button while the handler would have accepted it.
+    if (pricingDraftBlockReason(newPricingEvent) !== null) return;
     const isDilution = newPricingEvent.pricingMode === 'dilution';
-    // R5: in dilution mode the amount is DERIVED, so the guard is on the two
-    // stated figures instead. dilutionAmountPct returns null for anything out
-    // of range, which is the single validity test — [0,100) on both, and the
-    // current figure never 100 because it is the denominator.
     const dilutionPct = isDilution
       ? dilutionAmountPct(newPricingEvent.dilutionCurrentPct, newPricingEvent.dilutionTargetPct)
       : null;
-    if (isDilution) {
-      if (dilutionPct === null) return;
-    } else if (newPricingEvent.amount === undefined) {
-      return;
-    }
-    if (!newPricingEvent.month) return;
     // Snapshot the pre-pricing blended ARPU for the selected month from chartData
     const matchRow = chartData.find(r => r.month === newPricingEvent.month);
     const originalBaseArpu = matchRow ? (matchRow['ARPU (Adjusted)'] as number) : 0;
@@ -4340,6 +4366,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           // event. Setting both here rather than at save keeps
                           // the visible form honest about what will be written.
                           inputMode: 'percentage', cohortScope: 'retention',
+                          // THE STALE DIRECT AMOUNT GOES. A figure typed in the
+                          // other mode does not belong to this one — the R3
+                          // stale-draft-key precedent. It also removes the
+                          // mechanism behind the walk's phantom "the one with a
+                          // name worked": a leftover amount was silently
+                          // deciding which forms could be added.
+                          amount: undefined,
                         })}
                         className={`flex-1 px-3 py-1.5 text-[11px] font-semibold transition-colors ${
                           newPricingEvent.pricingMode === 'dilution'
@@ -4530,9 +4563,44 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         const matchRow = chartData.find(r => r.month === newPricingEvent.month);
                         const baseArpu = matchRow ? (matchRow['ARPU (Adjusted)'] as number) : null;
                         if (baseArpu === null) return <p className="text-xs text-slate-400">{t('whatif_select_a_month_to_preview')}</p>;
-                        const amt = newPricingEvent.amount ?? 0;
-                        const mode = newPricingEvent.inputMode ?? 'percentage';
-                        const adjusted = mode === 'percentage' ? baseArpu * (1 + amt / 100) : baseArpu + amt;
+                        // DILUTION-AWARE. This read `newPricingEvent.amount`,
+                        // which dilution mode never sets — the draft's amount
+                        // has ONE writer, the Direct input, and that input is
+                        // not rendered in dilution mode. So the panel showed
+                        // +0.0% beside a live line correctly saying +6.67%.
+                        // The amount now comes from the SAME shared function
+                        // the live line and the save handler already use, so
+                        // the two panels agree by construction.
+                        const isDil = newPricingEvent.pricingMode === 'dilution';
+                        const dilPct = isDil
+                          ? dilutionAmountPct(newPricingEvent.dilutionCurrentPct, newPricingEvent.dilutionTargetPct)
+                          : null;
+                        if (isDil && dilPct === null) {
+                          return <p className="text-xs text-slate-400">{t('whatif_dilution_awaiting')}</p>;
+                        }
+                        const amt = isDil ? (dilPct as number) : (newPricingEvent.amount ?? 0);
+                        const mode = isDil ? 'percentage' : (newPricingEvent.inputMode ?? 'percentage');
+                        // AND WEIGHTED, through the apply path's own function.
+                        const adjusted = pricingAdjustedBlend(
+                          {
+                            target: newPricingEvent.target ?? 'cohorts',
+                            cohortScope: isDil ? 'retention' : (newPricingEvent.cohortScope ?? 'both'),
+                            inputMode: mode as 'percentage' | 'absolute',
+                            amount: amt,
+                          },
+                          baseArpu,
+                          monthVolumes(newPricingEvent.month as string),
+                        );
+                        if (adjusted === null) {
+                          // base-only, or no volumes for that month. Absence is
+                          // stated, never replaced by the unweighted figure.
+                          return (
+                            <>
+                              <p className="text-[10px] text-slate-400">{t('whatif_baseline_arpu')}{' '}<span className="font-medium text-slate-600">{formatNumber(baseArpu)}</span></p>
+                              <p className="text-[10px] text-amber-600 mt-0.5">{t('whatif_preview_not_available')}</p>
+                            </>
+                          );
+                        }
                         const delta = adjusted - baseArpu;
                         return (
                           <>
@@ -4576,11 +4644,26 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       {t('whatif_editing_event_modify_the_fields_above_then_cl')}
                     </div>
                   )}
+                  {/* ONE PREDICATE, and it SAYS WHY. The button used to test
+                      two terms while the handler tested three more, and the
+                      button's amount test was mode-blind — so a valid dilution
+                      form could never reach the handler that would have
+                      accepted it, and nothing on screen said so. Refusing
+                      without a reason is the failure the design principle
+                      names; enabling the button instead would only move the
+                      silence into the handler. */}
                   <button
                     onClick={handleAddPricingEvent}
-                    disabled={!newPricingEvent.month || newPricingEvent.amount === undefined}
+                    disabled={pricingBlockReason !== null}
+                    title={pricingBlockReason ? t(pricingBlockReason) : undefined}
                     className="px-6 py-2 bg-[#e60000] text-white text-sm font-semibold rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
                   >{editingPricingId ? t('whatif_save_changes') : t('whatif_add_pricing_event')}</button>
+                  {pricingBlockReason && (
+                    <p
+                      data-testid="pricing-block-reason"
+                      className="w-full text-[11px] text-amber-700 mt-1"
+                    >{t(pricingBlockReason)}</p>
+                  )}
                   {editingPricingId && (
                     <button
                       type="button"
@@ -4624,10 +4707,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         .map(pe => {
                           const amt = pe.amount;
                           const baseArpu = pe.originalBaseArpu;
-                          const adjustedArpu = pe.inputMode === 'percentage'
-                            ? Math.max(0, baseArpu * (1 + amt / 100))
-                            : Math.max(0, baseArpu + amt);
-                          const delta = adjustedArpu - baseArpu;
+                          // THE WEIGHTED FIGURE, from the SAME function the
+                          // apply path runs. This used to apply the full
+                          // percentage to the blended baseline, so a
+                          // retention-scoped event read as its full ratio
+                          // against the whole book — 24.72 -> 26.37 where the
+                          // engine moved only the retention share. The row now
+                          // asks the engine's own weighting instead of having
+                          // an opinion about it.
+                          const adjustedArpu = pricingAdjustedBlend(pe, baseArpu, monthVolumes(pe.month));
+                          const delta = adjustedArpu === null ? null : adjustedArpu - baseArpu;
                           return (
                             <tr key={pe.id} className={`transition-colors ${
                               editingPricingId === pe.id
@@ -4692,12 +4781,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 </span>
                               </td>
                               <td className="px-4 py-2.5 text-right tabular-nums text-slate-500">{formatNumber(baseArpu)}</td>
+                              {/* ABSENCE IS NOT 0.00, here as everywhere. A
+                                  base-only event, or a month with no volumes,
+                                  has no weighted figure this row can state —
+                                  and formatNumber(null) would print one that
+                                  reads as real. The dash carries a reason. */}
+                              {adjustedArpu === null || delta === null ? (
+                                <td className="px-4 py-2.5 text-right text-slate-400" title={t('whatif_preview_not_available')}>—</td>
+                              ) : (
                               <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${delta >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                                 {formatNumber(adjustedArpu)}
                                 <span className="block text-[10px] font-normal">
                                   {delta >= 0 ? '+' : ''}{formatNumber(delta)}
                                 </span>
                               </td>
+                              )}
                               <td className="px-4 py-2.5 text-slate-500 max-w-[120px] truncate" title={pe.comment}>{pe.comment || '—'}</td>
                               <td className="px-4 py-2.5 text-center">
                                 <button

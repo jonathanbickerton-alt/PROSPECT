@@ -783,5 +783,10 @@
   "whatif_summary_col_name": "Name",
   "whatif_summary_col_adjusts": "Ändert",
   "whatif_summary_col_scope": "Bereich",
-  "whatif_summary_col_when": "Wann"
+  "whatif_summary_col_when": "Wann",
+  "whatif_pricing_block_no_month": "Wählen Sie einen Monat, bevor Sie dieses Ereignis hinzufügen.",
+  "whatif_pricing_block_no_amount": "Geben Sie einen Betrag ein, bevor Sie dieses Ereignis hinzufügen.",
+  "whatif_pricing_block_dilution_incomplete": "Geben Sie die aktuelle und die Ziel-Verwässerung ein, bevor Sie dieses Ereignis hinzufügen.",
+  "whatif_pricing_block_dilution_range": "Verwässerungswerte müssen mindestens 0 und kleiner als 100 sein.",
+  "whatif_preview_not_available": "Kein gewichteter Wert für dieses Ereignis – reine Basis-Ereignisse betreffen einen Pool, den diese Ansicht nicht aufschlüsseln kann."
 }

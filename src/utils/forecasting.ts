@@ -364,6 +364,138 @@ export function dilutionAmountPct(
   return ratio === null ? null : (ratio - 1) * 100;
 }
 
+/**
+ * THE VOLUME WEIGHTING — one definition, called by the apply path AND by every
+ * surface that displays what a pricing event does.
+ *
+ * A pricing event moves the ARPU of the pool it targets, not the whole book.
+ * The month's blend afterwards is the priced pool at its new rate plus the
+ * untouched remainder, over the total:
+ *
+ *   (pricedVol x pricedArpu + (totalVol - pricedVol) x blendArpu) / totalVol
+ *
+ * EXTRACTED FROM THE APPLY PATH, which now calls it — the marketEventExportRow
+ * precedent, and for the same reason. The pricing row and Preview Impact each
+ * had their own idea of what an event does to a blend (they applied the full
+ * ratio and skipped the weighting entirely), so one event produced three
+ * different numbers on three surfaces. A display cannot be trusted to
+ * re-implement this correctly, because it already did not.
+ *
+ * Degenerate inputs return the blend UNCHANGED rather than a NaN or a zero,
+ * matching the guard the apply path already had: nothing priced, or nothing
+ * there to price, means nothing moves.
+ */
+export function applyPricingToBlend(
+  pricedVol: number,
+  pricedArpu: number,
+  totalVol: number,
+  blendArpu: number,
+): number {
+  if (!Number.isFinite(totalVol) || !Number.isFinite(pricedVol)) return blendArpu;
+  if (!(totalVol > 0) || !(pricedVol > 0)) return blendArpu;
+  return (pricedVol * pricedArpu + (totalVol - pricedVol) * blendArpu) / totalVol;
+}
+
+/**
+ * THE BLEND A PRICING EVENT PRODUCES — what every display surface should show.
+ *
+ * Composes the three steps the apply path takes, in the same order and through
+ * the same functions: the delta on the priced pool, the volumes that pool
+ * covers, and the weighting back into the month's blend.
+ *
+ * Returns null — ABSENCE, to be rendered as such — when the figure cannot be
+ * stated honestly: `base-only` (whose decomposition the display does not have)
+ * or missing volumes. A display that substituted the unweighted figure here
+ * would reintroduce exactly the defect this replaces.
+ */
+export function pricingAdjustedBlend(
+  e: Pick<PricingEvent, 'target' | 'cohortScope' | 'inputMode' | 'amount'>,
+  blendArpu: number,
+  v: PricingVolumes | null,
+): number | null {
+  if (!v || !Number.isFinite(blendArpu)) return null;
+  const pools = pricedVolumesFor(e, v);
+  if (pools === null) return null;
+  const pricedArpu = e.inputMode === 'percentage'
+    ? blendArpu * (1 + e.amount / 100)
+    : blendArpu + e.amount;
+  return Math.max(0, applyPricingToBlend(pools.pricedVol, pricedArpu, pools.totalVol, blendArpu));
+}
+
+/**
+ * WHY A PRICING DRAFT CANNOT BE ADDED — one predicate, read by the button's
+ * disabled state AND by the handler's guard.
+ *
+ * Returns an i18n KEY naming the reason, or null when the draft is addable.
+ * A key rather than a sentence so the card renders it in the user's language;
+ * a reason rather than a boolean because the walk found a control that refused
+ * and said nothing, five times over.
+ *
+ * THE DUPLICATE-PREDICATES RULE APPLIES. Before this, the button tested two
+ * terms and the handler tested three more, and they disagreed: the button's
+ * `amount === undefined` was MODE-BLIND, so a perfectly valid dilution form —
+ * whose figures the handler would have accepted — could never reach the
+ * handler at all. Two copies of "is this addable" is how that happens; there
+ * is now one.
+ *
+ * ORDER IS THE REPORTING ORDER. Month first because it is the field furthest
+ * from the amount controls and the easiest to leave unset.
+ */
+export function pricingDraftBlockReason(
+  draft: {
+    month?: string;
+    amount?: number;
+    pricingMode?: 'dilution';
+    dilutionCurrentPct?: number;
+    dilutionTargetPct?: number;
+  },
+): string | null {
+  if (!draft.month) return 'whatif_pricing_block_no_month';
+  if (draft.pricingMode === 'dilution') {
+    // Absence and out-of-range are DIFFERENT user situations and get different
+    // sentences: one is "you have not finished", the other is "that cannot be".
+    if (draft.dilutionCurrentPct === undefined || draft.dilutionTargetPct === undefined) {
+      return 'whatif_pricing_block_dilution_incomplete';
+    }
+    if (dilutionAmountPct(draft.dilutionCurrentPct, draft.dilutionTargetPct) === null) {
+      return 'whatif_pricing_block_dilution_range';
+    }
+    return null;
+  }
+  if (draft.amount === undefined) return 'whatif_pricing_block_no_amount';
+  return null;
+}
+
+/** The month's volumes a pricing weight is computed over. */
+export interface PricingVolumes { inflow: number; retention: number; base: number; }
+
+/**
+ * Which volume a pricing event actually prices, per its `target` and
+ * `cohortScope` — the SAME selection the apply path makes.
+ *
+ * Returns null for `base-only`, and that is a real answer rather than a gap:
+ * that branch prices the base POOL against the event pools inside the base, a
+ * decomposition the display does not have and cannot reconstruct from month
+ * volumes. A display given null must say it cannot show the figure — inventing
+ * a weight from the numbers it happens to hold is precisely the defect this
+ * session is fixing, in a new place.
+ */
+export function pricedVolumesFor(
+  e: { target: PricingEvent['target']; cohortScope: PricingEvent['cohortScope'] },
+  v: PricingVolumes,
+): { pricedVol: number; totalVol: number } | null {
+  const totalVol = v.inflow + v.retention + v.base;
+  if (e.target === 'base-only') return null;
+  const inflowVol = e.cohortScope !== 'retention' ? v.inflow : 0;
+  const retentionVol = e.cohortScope !== 'inflow' ? v.retention : 0;
+  const cohortVol = inflowVol + retentionVol;
+  // 'cohorts+base' with scope 'both' prices everything — the apply path takes a
+  // shortcut there and multiplies the blend directly, which is the same thing
+  // this returns (pricedVol === totalVol makes the weighting an identity).
+  const pricedVol = e.target === 'cohorts' ? cohortVol : cohortVol + v.base;
+  return { pricedVol, totalVol };
+}
+
 // ---------------------------------------------------------------------------
 // R4 — the event summarisers, one per kind
 //

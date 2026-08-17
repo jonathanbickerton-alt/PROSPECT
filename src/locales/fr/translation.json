@@ -783,5 +783,10 @@
   "whatif_summary_col_name": "Nom",
   "whatif_summary_col_adjusts": "Modifie",
   "whatif_summary_col_scope": "Périmètre",
-  "whatif_summary_col_when": "Quand"
+  "whatif_summary_col_when": "Quand",
+  "whatif_pricing_block_no_month": "Choisissez un mois avant d’ajouter cet événement.",
+  "whatif_pricing_block_no_amount": "Saisissez un montant avant d’ajouter cet événement.",
+  "whatif_pricing_block_dilution_incomplete": "Saisissez la dilution actuelle et la dilution cible avant d’ajouter cet événement.",
+  "whatif_pricing_block_dilution_range": "Les valeurs de dilution doivent être supérieures ou égales à 0 et inférieures à 100.",
+  "whatif_preview_not_available": "Aucune valeur pondérée pour cet événement : les événements portant uniquement sur la base concernent un pool que cette vue ne peut pas décomposer."
 }
