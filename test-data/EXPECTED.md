@@ -6739,6 +6739,37 @@ From the 2026-08-17 walk on the edge fixture and its diagnosis
    where it is harder to find. The diagnosis counted FIVE blocking terms across
    two layers, none of which said anything.
 
+#### PRICING RESIDUALS (Jon, 2026-08-17) — after the walk fixes
+
+1. **`originalBaseArpu` BECOMES EVENT-SCOPED.** The snapshot is the blend of
+   **the event's own dimensions** at its month, before this event and after the
+   earlier passes — the same basis the apply path prices against.
+
+   **CORRECTION TO THE DIAGNOSIS'S OBS 1b, established 2026-08-17 while
+   building this.** The old snapshot was **not** view-scoped and did **not**
+   depend on the filter set at save time. `chartData` comes from
+   `computeAdjustedForecast` called with **`cohortScope`** — derived from
+   `baseForecast.cohort`, the LOADED cohort — and there is a measured defect on
+   record (an 8.2% divergence over the horizon) behind the decision that view
+   state must never drive it.
+
+   So the real defect is narrower and less alarming than recorded: an event
+   scoped **inside** the loaded cohort took the *cohort's* blend rather than its
+   own slice's. Two identically-scoped events always agreed; an event narrower
+   than the cohort was measured against the wrong basis. The fix is unchanged —
+   the reason for it is what was wrong.
+
+   **COMPAT: existing saved events keep their stored values verbatim.** User
+   data is not rewritten by a semantics change. The new meaning applies to NEW
+   saves only, and the export/import carriers are unchanged — so a workbook
+   saved before this change still round-trips exactly.
+
+2. **OBSERVATION 3 IS CLOSED — there was no defect.** The apparent gap at the
+   start of the forecast window was the **ARPU Outflow (Ref)** line, not the
+   baseline. Jon's tooltips confirmed Baseline = Adjusted at July, and the
+   weighted effect rendering on the matching slice. The reference line is
+   treated as a legibility problem, not an arithmetic one.
+
 #### R4 DECISIONS (Jon, 2026-08-14) — the combined events summary table
 
 Recorded here because the advisor's document update had not reached this file.

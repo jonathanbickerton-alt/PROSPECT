@@ -31,6 +31,7 @@ import {
   pricingEventExportRow, pricingEventFromRow, pricingEventSummary,
   retainedRevenueRatio, dilutionAmountPct, isValidDilutionPct,
   applyPricingToBlend, pricedVolumesFor, pricingAdjustedBlend, pricingDraftBlockReason,
+  eventScopeMatchesView,
 } from '../src/utils/forecasting';
 import type { PricingEvent } from '../src/types/forecast';
 
@@ -327,6 +328,78 @@ const dilBtnHandler = dilBtn.slice(0, dilBtn.indexOf('})}'));
 check('gating: the dilution mode switch clears the stale Direct amount',
   dilBtnHandler.includes('amount: undefined'),
   'a leftover amount silently decided which forms could be added');
+
+// ── 10. THE SHARED SCOPE PREDICATE ─────────────────────────────────────────
+//
+// Expectations hand-written from the rule, not derived by calling it: an event
+// matches when, on every dimension, it is unscoped OR the view is unscoped OR
+// the two agree.
+const ALLVIEW = {
+  segment: 'All', productL1: null, productL2: null,
+  channelL1: null, channelL2: null, tariffL1: null, tariffL2: null,
+};
+const CORPVIEW = { ...ALLVIEW, segment: 'Corporate' };
+
+check('scope: an unscoped event matches every view',
+  eventScopeMatchesView({ segment: 'All' }, CORPVIEW));
+check('scope: a Corporate event matches the Corporate view',
+  eventScopeMatchesView({ segment: 'Corporate' }, CORPVIEW));
+check('scope: a Corporate event does NOT match the Consumer view',
+  !eventScopeMatchesView({ segment: 'Corporate' }, { ...ALLVIEW, segment: 'Consumer' }),
+  'this is the tooltip defect: events listed over lines they cannot move');
+// PARTIAL APPLICATION STILL MATCHES — the rule chosen, asserted so it is a
+// decision rather than an accident of the implementation.
+check('scope: a Corporate event STILL matches the all-segments view (partial)',
+  eventScopeMatchesView({ segment: 'Corporate' }, ALLVIEW),
+  'a view broader than the event still shows it — it moves part of what is on screen');
+check('scope: a dimension the carrier lacks is treated as no filter',
+  eventScopeMatchesView({ segment: 'Corporate' }, { ...CORPVIEW, productL2: 'Premium' }),
+  'yield events have no productL2 and must not be excluded for lacking one');
+check('scope: a mismatch on ANY dimension excludes',
+  !eventScopeMatchesView({ segment: 'Corporate', channelL1: 'Retail' },
+    { ...CORPVIEW, channelL1: 'Direct' }));
+
+// The predicate has ONE definition and the tooltip uses it rather than its own.
+check('scope wiring: the tooltip filters through the shared predicate',
+  (tab.split('eventScopeMatchesView(').length - 1) >= 4,
+  `${tab.split('eventScopeMatchesView(').length - 1} call sites — apply path + three carriers in the tooltip`);
+check('scope wiring: the pricing apply filter no longer hand-rolls the comparisons',
+  !tab.includes('const segOk  = pe.segment   ===') && !tab.includes('const tar2Ok = !pe.tariffL2'),
+  'the seven inline comparisons are what the shared predicate replaced');
+
+// ── 11. THE EVENT-SCOPED BASELINE ──────────────────────────────────────────
+check('baseline: the snapshot runs the pipeline against the EVENT dims',
+  tab.includes('const eventScopeSeries = computeAdjustedForecast('),
+  'it read chartData, which is scoped to the LOADED COHORT, not to the event');
+// EXACTLY ONE chartData lookup for the draft month survives, and it is PREVIEW
+// IMPACT — which legitimately shows the effect on the slice the user is looking
+// at. The SAVE HANDLER no longer uses it. The first form of this check asserted
+// the string was gone entirely and failed on correct code.
+check('baseline: the save handler no longer reads the cohort-scoped chartData',
+  (tab.split('chartData.find(r => r.month === newPricingEvent.month)').length - 1) === 1,
+  `${tab.split('chartData.find(r => r.month === newPricingEvent.month)').length - 1} sites, expected 1 (Preview Impact only)`);
+check('baseline: the event being edited is EXCLUDED, so the basis is pre-this-event',
+  tab.includes('pricingEvents.filter(p => p.id !== editingPricingId)'),
+  'otherwise an edit measures the event against a blend that already contains it');
+check('baseline: dims go through dimOrNull, so All and absent both mean no filter',
+  tab.includes('viewProduct: { l1: dimOrNull(newPricingEvent.product)'));
+
+// ── 12. NAME ON THE CARDS' OWN LISTS ───────────────────────────────────────
+check('names: the pricing list renders a Name cell with the per-kind fallback',
+  tab.includes("t('whatif_summary_unnamed_pricing')"),
+  'the summary table named events while the card that owns them did not');
+check('names: the yield list does too',
+  tab.includes("t('whatif_summary_unnamed_yield')"));
+// THREE, not two: the R4 summary table's own header is the third, and reusing
+// its key across all three is the point — one vocabulary, not a second. The
+// first expectation here was 2 and the run corrected it.
+check('names: all three Name headers share ONE label key, not a second vocabulary',
+  (tab.split("t('whatif_summary_col_name')").length - 1) === 3,
+  `${tab.split("t('whatif_summary_col_name')").length - 1} Name headers, expected 3 (summary + pricing + yield)`);
+// FLAGGED BY PRESENCE, not inferred from the rendered string — the same rule
+// the summary table uses, so typing the fallback text does not fake a name.
+check('names: the fallback is chosen by presence, not by comparing the string',
+  tab.includes("(pe.name || '').trim() ? 'text-slate-700' : 'italic text-slate-400'"));
 
 console.log(`\npricing-roundtrip spec: ${pass} passed, ${fails.length} failed`);
 fails.forEach(f => console.log('  FAIL  ' + f));

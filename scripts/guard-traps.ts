@@ -859,6 +859,25 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "  if (!draft.month) return 'whatif_pricing_block_no_month';",
       '  return null;') },
+  // 76 reverts the baseline snapshot to the COHORT-scoped series. The number
+  // still looks plausible — it is a real ARPU for a real slice, just not the
+  // event's — which is why this needs a trap rather than a reader: an event
+  // scoped inside the loaded cohort silently takes the cohort's blend as its
+  // baseline, and nothing on screen says which slice the figure describes.
+  { id: '76 the pricing baseline reverts to the cohort-scoped series', why: 'a narrow event is measured against the wrong slice',
+    file: WHATIF, spec: PRICEROUND,
+    mutate: s => s.replace(
+      '    const matchRow = eventScopeSeries.find((r: any) => r.month === newPricingEvent.month);',
+      '    const matchRow = chartData.find(r => r.month === newPricingEvent.month);') },
+  // 77 makes the pricing apply filter ignore scope entirely — every pricing
+  // event applies to every slice. This is the scenarioHelper divergence
+  // reproduced on the side that currently gets it right, and it is the check
+  // that the shared predicate is load-bearing rather than decorative.
+  { id: '77 the pricing apply path stops filtering by scope', why: 'every pricing event applies to every slice',
+    file: WHATIF, spec: PRICEROUND,
+    mutate: s => s.replace(
+      '          if (!eventScopeMatchesView(pe, viewScopeForMatch)) return false;',
+      '') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

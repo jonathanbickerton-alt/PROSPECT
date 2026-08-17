@@ -364,6 +364,54 @@ export function dilutionAmountPct(
   return ratio === null ? null : (ratio - 1) * 100;
 }
 
+/** An event's scope dimensions, normalised across the three carriers. A
+ *  dimension a carrier does not have is simply absent, which reads the same as
+ *  'All' — no filter on that dimension. */
+export interface EventScopeDims {
+  segment?: string; product?: string; productL2?: string;
+  channelL1?: string; channelL2?: string;
+  tariffL1?: string; tariffL2?: string;
+}
+
+/** The viewed slice, in the same terms. `null` means "All" on that axis. */
+export interface ViewScope {
+  segment: string;
+  productL1: string | null; productL2: string | null;
+  channelL1: string | null; channelL2: string | null;
+  tariffL1: string | null; tariffL2: string | null;
+}
+
+/**
+ * DOES THIS EVENT TOUCH THE VIEWED SLICE? — one definition.
+ *
+ * An event matches when, on every dimension, either it is unscoped ('All' or
+ * absent) or the view is unscoped, or the two agree. So a Corporate event
+ * matches the all-segments view (it applies to part of it) and does NOT match
+ * the Consumer view. That is the rule the apply path already uses; this is that
+ * rule named and shared rather than copied.
+ *
+ * THE RULE FOR PARTIAL APPLICATION IS "STILL MATCHES". A view broader than the
+ * event still lists it, because the event genuinely moves part of what is on
+ * screen. The alternative — hiding anything that does not apply wholly — would
+ * hide precisely the events whose partial effect is hardest to account for.
+ *
+ * Extracted because the chart tooltip was listing events regardless of scope:
+ * two Corporate events appeared over a view whose lines they could not move.
+ * A tooltip-local reimplementation is how the scenarioHelper divergence
+ * happened, so there is one predicate and the tooltip calls it.
+ */
+export function eventScopeMatchesView(d: EventScopeDims, v: ViewScope): boolean {
+  const ok = (dim: string | undefined, view: string | null) =>
+    !dim || dim === 'All' || !view || view === 'All' || dim === view;
+  return ok(d.segment, v.segment === 'All' ? null : v.segment)
+    && ok(d.product, v.productL1)
+    && ok(d.productL2, v.productL2)
+    && ok(d.channelL1, v.channelL1)
+    && ok(d.channelL2, v.channelL2)
+    && ok(d.tariffL1, v.tariffL1)
+    && ok(d.tariffL2, v.tariffL2);
+}
+
 /**
  * THE VOLUME WEIGHTING — one definition, called by the apply path AND by every
  * surface that displays what a pricing event does.

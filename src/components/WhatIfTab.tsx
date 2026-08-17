@@ -12,8 +12,8 @@ import { SKIP_REASON_KEY } from '../types/forecast';
 import { EventChangeConfirmModal } from './EventChangeConfirmModal';
 import type { MarketEvent } from '../utils/forecasting';
 import { rebalance, achievableTargetRange, solveForTarget, blendedArpu, conformsToTotal } from '../utils/mixConstraint';
-import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason } from '../utils/forecasting';
-import type { ProRataLeaf, ProRataScope, PricingVolumes } from '../utils/forecasting';
+import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView } from '../utils/forecasting';
+import type { ProRataLeaf, ProRataScope, PricingVolumes, ViewScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
 import { MultiSelectDropdown } from './MultiSelectDropdown';
@@ -639,6 +639,13 @@ export function autoBalanceMix(prev: Record<string, number>, changedTier: string
  * assertions) without a DOM. The useMemo below is now a thin caller; the body is
  * unchanged, so behaviour is identical.
  */
+/** 'All' and absent both mean "no filter on this dimension" — the shape the
+ *  view selections use, so an event's dims can be handed to the same
+ *  pipeline the chart runs on. */
+function dimOrNull(v: string | undefined): string | null {
+  return !v || v === 'All' ? null : v;
+}
+
 export interface AdjustedForecastInput {
   baseForecast: any;
   marketEvents: MarketEvent[];
@@ -680,6 +687,14 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
     const vchanL2 = vchan.l2;
     const vtarL1 = viewTariff.l1;  // null = All (Phase 2a; event tariff targeting arrives in 2b)
     const vtarL2 = viewTariff.l2;
+
+    /** The viewed slice in the shared predicate's terms. */
+    const viewScopeForMatch: ViewScope = {
+      segment: vseg,
+      productL1: vprodL1, productL2: vprodL2,
+      channelL1: vchanL1, channelL2: vchanL2,
+      tariffL1: vtarL1, tariffL2: vtarL2,
+    };
 
     // ---------------------------------------------------------------------------
     // Pass 1 — apply market events to each forecast month.
@@ -1173,14 +1188,12 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
       let pricingARPU = blendedARPU;
       pricingEvents
         .filter(pe => {
-          const segOk  = pe.segment   === 'All' || vseg    === 'All' || pe.segment   === vseg;
-          const prodOk = pe.product   === 'All' || !vprodL1              || pe.product   === vprodL1;
-          const pl2Ok  = pe.productL2 === 'All' || !vprodL2              || pe.productL2 === vprodL2;
-          const ch1Ok  = pe.channelL1 === 'All' || !vchanL1              || pe.channelL1 === vchanL1;
-          const ch2Ok  = pe.channelL2 === 'All' || !vchanL2              || pe.channelL2 === vchanL2;
-          const tar1Ok = !pe.tariffL1 || pe.tariffL1 === 'All' || !vtarL1 || pe.tariffL1 === vtarL1;
-          const tar2Ok = !pe.tariffL2 || pe.tariffL2 === 'All' || !vtarL2 || pe.tariffL2 === vtarL2;
-          if (!segOk || !prodOk || !pl2Ok || !ch1Ok || !ch2Ok || !tar1Ok || !tar2Ok) return false;
+          // THE SHARED SCOPE PREDICATE. These seven comparisons used to be
+          // written out here, and the chart tooltip had no equivalent at all —
+          // which is why it listed events that could not move the lines beside
+          // them. One definition now, and this call site is what proves it
+          // behaves identically to the arithmetic it replaced.
+          if (!eventScopeMatchesView(pe, viewScopeForMatch)) return false;
           if (pe.duration === 'one-off') return pe.month === m.month;
           return pe.month <= m.month;
         })
@@ -2003,9 +2016,31 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // ── Custom chart tooltip — shows KPI values + any event names for that month ─
   const renderTooltip = useCallback(({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
-    const meForMonth = marketEvents.filter(e => e.date === label);
-    const yeForMonth = yieldEvents.filter(e => e.month === label);
-    const peForMonth = pricingEvents.filter(e => e.month === label);
+    // SCOPE-FILTERED, through the SAME predicate the apply path uses. This
+    // listed every event in the month regardless of scope, so two
+    // Corporate-scoped events appeared over a view whose lines they could not
+    // move — a tooltip asserting a connection that was not there. Each
+    // carrier's dims are normalised at the call because the three carriers
+    // name them differently; the RULE lives in one place.
+    // Against the LOADED COHORT, which is what the chart is scoped to —
+    // computeAdjustedForecast is called with cohortScope, never with view-bar
+    // state, and there is a measured defect on record behind that choice.
+    const tipView: ViewScope = {
+      segment: cohortScope.seg,
+      productL1: cohortScope.prod.l1, productL2: cohortScope.prod.l2,
+      channelL1: cohortScope.chan.l1, channelL2: cohortScope.chan.l2,
+      tariffL1: cohortScope.tar.l1, tariffL2: cohortScope.tar.l2,
+    };
+    const meForMonth = marketEvents.filter(e => e.date === label && eventScopeMatchesView({
+      segment: e.segment, product: e.product, productL2: e.productL2,
+      channelL1: e.channel, channelL2: e.channelL2,
+      tariffL1: e.tariffL1, tariffL2: e.tariffL2,
+    }, tipView));
+    const yeForMonth = yieldEvents.filter(e => e.month === label && eventScopeMatchesView({
+      segment: e.segment, product: e.product,
+      channelL1: e.channelL1, channelL2: e.channelL2,
+    }, tipView));
+    const peForMonth = pricingEvents.filter(e => e.month === label && eventScopeMatchesView(e, tipView));
     const hasEvents = meForMonth.length + yeForMonth.length + peForMonth.length > 0;
     return (
       <div style={{ background: '#fff', borderRadius: 8, boxShadow: '0 4px 6px -1px rgb(0 0 0/0.1)', padding: '10px 14px', minWidth: 180 }}>
@@ -2068,8 +2103,32 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const dilutionPct = isDilution
       ? dilutionAmountPct(newPricingEvent.dilutionCurrentPct, newPricingEvent.dilutionTargetPct)
       : null;
-    // Snapshot the pre-pricing blended ARPU for the selected month from chartData
-    const matchRow = chartData.find(r => r.month === newPricingEvent.month);
+    // EVENT-SCOPED BASELINE (Jon, 2026-08-17). This read `chartData`, the
+    // VIEW-scoped series — so the baseline a row displayed depended on whatever
+    // filter happened to be set when Add was pressed, and two identical events
+    // saved under two filters carried two different baselines.
+    //
+    // It now runs the SAME pipeline against the EVENT's own dims. Not an
+    // approximation: computeAdjustedForecast's view scope is four plain
+    // arguments, so it can be asked about any slice without mounted state.
+    //
+    // THIS EVENT IS EXCLUDED on the edit path, so the basis is genuinely
+    // pre-this-event rather than a figure that already contains it — a subtlety
+    // the chartData version got wrong on every edit.
+    const eventScopeSeries = computeAdjustedForecast({
+      baseForecast, marketEvents, yieldEvents,
+      pricingEvents: editingPricingId
+        ? pricingEvents.filter(p => p.id !== editingPricingId)
+        : pricingEvents,
+      viewSegment: newPricingEvent.segment ?? 'All',
+      viewProduct: { l1: dimOrNull(newPricingEvent.product), l2: dimOrNull(newPricingEvent.productL2) },
+      viewChannel: { l1: dimOrNull(newPricingEvent.channelL1), l2: dimOrNull(newPricingEvent.channelL2) },
+      viewTariff: { l1: dimOrNull(newPricingEvent.tariffL1), l2: dimOrNull(newPricingEvent.tariffL2) },
+      data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
+      wiTariffL1Col, wiTariffL2Col, wiValueCol,
+      wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
+    }).chartData;
+    const matchRow = eventScopeSeries.find((r: any) => r.month === newPricingEvent.month);
     const originalBaseArpu = matchRow ? (matchRow['ARPU (Adjusted)'] as number) : 0;
 
     const event: PricingEvent = {
@@ -3106,14 +3165,27 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   })}
 
                   {/* Outflow ARPU reference line — shown whenever ARPU KPI is selected */}
+                  {/* A REFERENCE, AND IT MUST LOOK LIKE ONE. At 1.5px with a
+                      "3 6" dash it read as a series: during a gated walk it was
+                      mistaken for the baseline, and the apparent "gap from the
+                      start of the forecast" was THIS line diverging from
+                      Baseline — not Baseline from Adjusted. That is evidence it
+                      misleads, not a taste question.
+
+                      Baseline is solid 2px with dots; Adjusted is "5 5" 2px
+                      with dots. This is now 1px, sparsely dotted and
+                      semi-transparent, so it cannot be read as either.
+                      DEFAULT VISIBILITY IS UNCHANGED — whether it should show
+                      by default is a product call, and it is not taken here. */}
                   {selectedKpis.includes('ARPU') && (
                     <Line
                       yAxisId="right"
                       type="monotone"
                       dataKey="ARPU Outflow (Ref)"
                       stroke="#94a3b8"
-                      strokeWidth={1.5}
-                      strokeDasharray="3 6"
+                      strokeWidth={1}
+                      strokeDasharray="1 7"
+                      strokeOpacity={0.55}
                       dot={false}
                       name="ARPU Outflow (Ref)"
                       connectNulls
@@ -4680,6 +4752,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   <thead className="text-[10px] text-slate-500 bg-slate-50 border-b border-slate-200 uppercase tracking-wider">
                     <tr>
                       <th className="px-4 py-3 font-semibold">{t('common_month')}</th>
+                      <th className="px-4 py-3 font-semibold">{t('whatif_summary_col_name')}</th>
                       <th className="px-4 py-3 font-semibold">{t('common_segment')}</th>
                       <th className="px-4 py-3 font-semibold">{t('common_product')}</th>
                       <th className="px-4 py-3 font-semibold">{t('common_product_l2')}</th>
@@ -4698,7 +4771,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   <tbody className="divide-y divide-slate-100">
                     {pricingEvents.length === 0 ? (
                       <tr>
-                        <td colSpan={wiTariffL1Col ? 14 : 13} className="px-5 py-8 text-center text-slate-400 italic">{t('whatif_no_pricing_events_yet_use_the_form_above_to_a')}</td>
+                        <td colSpan={wiTariffL1Col ? 15 : 14} className="px-5 py-8 text-center text-slate-400 italic">{t('whatif_no_pricing_events_yet_use_the_form_above_to_a')}</td>
                       </tr>
                     ) : (
                       pricingEvents
@@ -4724,6 +4797,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 : 'hover:bg-slate-50'
                             }`}>
                               <td className="px-4 py-2.5 font-medium text-slate-700">{fmtMonth(pe.month)}</td>
+                              {/* NAME. The card's own list had none while the R4
+                                  summary table did, so an event was identifiable in
+                                  one place and anonymous in the other. The fallback
+                                  is FLAGGED by presence, not inferred from the
+                                  string, so a user who literally types the fallback
+                                  text still reads as named. */}
+                              <td className={`px-4 py-2.5 max-w-[140px] truncate ${(pe.name || '').trim() ? 'text-slate-700' : 'italic text-slate-400'}`}
+                                  title={(pe.name || '').trim() || t('whatif_summary_unnamed_pricing')}>
+                                {(pe.name || '').trim() || t('whatif_summary_unnamed_pricing')}
+                              </td>
                               <td className="px-4 py-2.5 text-slate-600">{pe.segment}</td>
                               <td className="px-4 py-2.5 text-slate-600">{pe.product}</td>
                               <td className="px-4 py-2.5 text-slate-600">{pe.productL2}</td>
@@ -5936,6 +6019,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   <thead className="text-[10px] text-slate-500 bg-slate-50 border-b border-slate-200 uppercase tracking-wider">
                     <tr>
                       <th className="px-4 py-3 font-semibold">{t('common_month')}</th>
+                      <th className="px-4 py-3 font-semibold">{t('whatif_summary_col_name')}</th>
                       <th className="px-4 py-3 font-semibold">IBRO</th>
                       <th className="px-4 py-3 font-semibold">{t('common_segment')}</th>
                       <th className="px-4 py-3 font-semibold">{t('common_product')}</th>
@@ -5959,7 +6043,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   <tbody className="divide-y divide-slate-100">
                     {yieldEvents.length === 0 ? (
                       <tr>
-                        <td colSpan={7 + allYieldTiers.length * 2} className="px-5 py-8 text-center text-slate-400 italic">{t('whatif_no_yield_events_yet_use_the_form_above_to_ove')}</td>
+                        <td colSpan={8 + allYieldTiers.length * 2} className="px-5 py-8 text-center text-slate-400 italic">{t('whatif_no_yield_events_yet_use_the_form_above_to_ove')}</td>
                       </tr>
                     ) : (
                       yieldEvents
@@ -5985,6 +6069,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                   : 'hover:bg-slate-50'
                               }`}>
                                 <td className="px-4 py-2.5 font-medium text-slate-700" rowSpan={2}>{fmtMonth(evt.month)}</td>
+                                <td className={`px-4 py-2.5 max-w-[140px] truncate ${(evt.name || '').trim() ? 'text-slate-700' : 'italic text-slate-400'}`}
+                                    rowSpan={2} title={(evt.name || '').trim() || t('whatif_summary_unnamed_yield')}>
+                                  {(evt.name || '').trim() || t('whatif_summary_unnamed_yield')}
+                                </td>
                                 <td className="px-4 py-2.5 text-slate-500" rowSpan={2}>
                                   <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${evt.ibro === 'Inflow' ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
                                     {evt.ibro}
