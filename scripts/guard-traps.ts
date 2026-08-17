@@ -64,6 +64,7 @@ const MIXCARD = 'scripts/mix-card-spec.tsx';
 const OVERRIDESPEC = 'scripts/override-arpu-spec.tsx';
 const YIELDROUND = 'scripts/yield-roundtrip-spec.ts';
 const PRICEROUND = 'scripts/pricing-roundtrip-spec.ts';
+const SUMMARYSPEC = 'scripts/events-summary-spec.ts';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE];
@@ -818,6 +819,27 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '  return (1 - targetPct / 100) / (1 - currentPct / 100);',
       '  return (1 - targetPct / 100) / (currentPct / 100);') },
+  // 72 drops a whole CARRIER from the combined projection. The yield card keeps
+  // working and its own list keeps rendering, so nothing on the cards looks
+  // wrong — the combined view simply stops being combined, which is the one
+  // thing only the table can be wrong about. Planted where the heuristic is
+  // weakest: a missing row type is invisible unless something counts kinds.
+  { id: '72 a carrier vanishes from the events summary', why: 'the combined view silently stops being combined',
+    file: ENGINE, spec: SUMMARYSPEC,
+    mutate: s => s.replace(
+      '  for (const e of src.yieldEvents ?? []) {',
+      '  for (const e of [] as YieldEventLike[]) {') },
+  // 73 sorts the combined set by MONTH across kinds. This is the subtle one and
+  // the reason the ordering check asserts a sequence rather than a set: a
+  // month-sorted table looks like a timeline, reads like a timeline, and is a
+  // lie — a pricing event in January still applies after a yield event in June.
+  // The decisive spec check is that an EARLIER-month yield row still sorts
+  // BELOW later-month market rows, which only pipeline order satisfies.
+  { id: '73 the events summary sorts chronologically across kinds', why: 'a plausible-looking timeline that is not the application order',
+    file: ENGINE, spec: SUMMARYSPEC,
+    mutate: s => s.replace(
+      '  return rows.sort((a, b) => a.pass - b.pass || a.month.localeCompare(b.month));',
+      '  return rows.sort((a, b) => a.month.localeCompare(b.month));') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -828,7 +850,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

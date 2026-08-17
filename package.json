@@ -49,7 +49,8 @@
     "spec:mix-card": "tsx scripts/mix-card-spec.tsx",
     "spec:override-arpu": "tsx scripts/override-arpu-spec.tsx",
     "spec:yield-roundtrip": "tsx scripts/yield-roundtrip-spec.ts",
-    "spec:pricing-roundtrip": "tsx scripts/pricing-roundtrip-spec.ts"
+    "spec:pricing-roundtrip": "tsx scripts/pricing-roundtrip-spec.ts",
+    "spec:events-summary": "tsx scripts/events-summary-spec.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

@@ -364,6 +364,25 @@ export function dilutionAmountPct(
   return ratio === null ? null : (ratio - 1) * 100;
 }
 
+// ---------------------------------------------------------------------------
+// R4 — the event summarisers, one per kind
+//
+// THEY DESCRIBE, THEY NEVER RE-DERIVE. Every figure below is read from the
+// event's STORED fields; where a figure needs combining, it goes through the
+// SHARED function that already owns that arithmetic (blendTierMixOrNull) rather
+// than a local copy. The summary table must not become a second home for event
+// semantics — `scenarioHelper` is already a parallel apply path duplicating the
+// yield and pricing logic, and a third description of what an event does is how
+// three descriptions start disagreeing.
+//
+// EACH TAKES `t`. The table must say the same words the owning card says; a
+// summariser holding its own English would be a second copy of the card's
+// vocabulary, drifting silently and untranslated in five locales.
+// ---------------------------------------------------------------------------
+
+/** The i18n lookup, narrowed to what a summariser needs. */
+export type SummaryT = (key: string, params?: Record<string, unknown>) => string;
+
 /**
  * How a pricing event describes ITSELF in a list. Exported and small on
  * purpose: the R4 events-summary table needs exactly this string for this
@@ -374,15 +393,191 @@ export function dilutionAmountPct(
  * A dilution event says what the user typed ("25% → 20% dilution"), never the
  * derived ARPU percentage. Recognising his own scenario in the list is the
  * whole point for Alessandro; "+6.67%" is a number he never entered.
+ *
+ * GAINED `t` IN R4. It previously hard-coded the English word "dilution", which
+ * was a real gap: the card renders this string beside a Mode cell that IS
+ * translated, so five locales showed one translated label and one English one
+ * on the same row. Found by the table needing the same words as the card.
  */
-export function pricingEventSummary(e: PricingEvent): string {
+export function pricingEventSummary(e: PricingEvent, t: SummaryT): string {
   if (e.pricingMode === 'dilution'
       && isValidDilutionPct(e.dilutionCurrentPct)
       && isValidDilutionPct(e.dilutionTargetPct)) {
-    return `${e.dilutionCurrentPct}% → ${e.dilutionTargetPct}% dilution`;
+    return t('whatif_summary_dilution', {
+      from: e.dilutionCurrentPct, to: e.dilutionTargetPct,
+    });
   }
   const sign = e.amount > 0 ? '+' : '';
   return e.inputMode === 'percentage' ? `${sign}${e.amount}%` : `${sign}${e.amount}`;
+}
+
+/**
+ * A VOLUME market event: the scenario it moves and by how much, in the units it
+ * was stated in. `amountType: 'percentage'` means `subscriberVolume` is a
+ * percentage, not a count — reading it as a count is the misreading this says
+ * out loud rather than leaving to the column header.
+ */
+export function volumeEventSummary(e: MarketEvent, t: SummaryT): string {
+  const pct = e.amountType === 'percentage';
+  const sign = e.subscriberVolume > 0 ? '+' : '';
+  const amount = pct ? `${sign}${e.subscriberVolume}%` : `${sign}${e.subscriberVolume.toLocaleString()}`;
+  return t('whatif_summary_volume', { scenario: e.scenario, amount });
+}
+
+/**
+ * A PROMOTION market event: the volume it adds, and which optional arms it
+ * carries. The arms are reported by PRESENCE of the stored fields — not by
+ * re-deciding what a promotion does — so an event that carried a mix reads as
+ * having carried one even if the card's current state says otherwise.
+ */
+export function promoEventSummary(e: MarketEvent, t: SummaryT): string {
+  const parts: string[] = [
+    t('whatif_summary_promo_volume', { amount: e.subscriberVolume.toLocaleString() }),
+  ];
+  if (e.promoMix) {
+    parts.push(t('whatif_summary_promo_mix', {
+      count: Object.keys(e.promoMix).length,
+      axis: e.promoMixAxis === 'tariff' ? t('whatif_tariff') : t('whatif_tier'),
+    }));
+  }
+  if (e.promoPricingAmount !== undefined) {
+    const sign = e.promoPricingAmount > 0 ? '+' : '';
+    parts.push(e.promoPricingMode === 'percentage'
+      ? `${sign}${e.promoPricingAmount}%`
+      : `${sign}${e.promoPricingAmount}`);
+  }
+  return parts.join(' · ');
+}
+
+/**
+ * A YIELD event: which cohort it re-mixes, across how many bands, and the
+ * blended rate that mix produces.
+ *
+ * THE BLEND GOES THROUGH `blendTierMixOrNull`, the same function the card and
+ * the engine use — not a local sum. And it blends against the STORED
+ * `tariffBaseArpu`, which is already the EFFECTIVE snapshot (overrides applied
+ * at save), so no override rule is re-implemented here either. Absence stays
+ * absence: a mix whose blend is unknown says so rather than printing 0.00.
+ */
+export function yieldEventSummary(e: YieldEventLike, t: SummaryT): string {
+  const bands = Object.keys(e.tariffMix ?? {}).length;
+  const blend = blendTierMixOrNull(e.tariffMix ?? {}, e.tariffBaseArpu ?? {});
+  return t('whatif_summary_yield', {
+    ibro: e.ibro,
+    bands,
+    blend: blend === null ? t('whatif_mix_blend_unknown') : blend.toFixed(2),
+  });
+}
+
+/** The yield fields a summary needs. Declared structurally so `forecasting.ts`
+ *  does not take a value import on the types module for one signature. */
+export interface YieldEventLike {
+  id: string;
+  ibro: 'Inflow' | 'Retention';
+  segment: string; product: string; channelL1: string; channelL2: string;
+  month: string;
+  mixAxis?: 'value' | 'tariff';
+  tariffMix: Record<string, number>;
+  tariffBaseArpu: Record<string, number>;
+  rollForward: boolean;
+  name?: string;
+}
+
+/** One row of the combined table — a projection, carrying no semantics of its
+ *  own beyond which summariser produced it. */
+export interface EventSummaryRow {
+  id: string;
+  /** Pass order: 0 market, 1 yield, 2 pricing. The sort key, and the reason
+   *  the table can claim to show application order at all. */
+  pass: 0 | 1 | 2;
+  card: string;
+  name: string;
+  /** True when `name` is a fallback rather than something the user typed. */
+  unnamed: boolean;
+  adjusts: string;
+  scope: string;
+  when: string;
+  month: string;
+}
+
+/** Dimensions, wildcards omitted. 'All' and absent both mean "no filter", and
+ *  printing them would fill the column with noise that says nothing. */
+function scopeOf(dims: (string | undefined)[], t: SummaryT): string {
+  const kept = dims.filter(d => d && d !== 'All');
+  return kept.length ? kept.join(' / ') : t('whatif_summary_scope_all');
+}
+
+/**
+ * THE COMBINED PROJECTION — every event a user has created, across all THREE
+ * carriers, in PIPELINE ORDER.
+ *
+ * Pipeline order is kind-in-pass-order, then month ascending within kind, and
+ * it is the ONLY true order available. `sequence` exists on MarketEvent alone
+ * and is explicitly display and edit-slot only, not processing order; the other
+ * two carriers have no ordering field at all. A single creation-order list
+ * across carriers would have to CONSTRUCT an order and present it as the order
+ * things apply in — a fabrication with a plausible face. Decision 1, 2026-08-14.
+ *
+ * Sorting the combined set by month ACROSS kinds would be the same error in a
+ * subtler dress: it reads as a timeline and is not one, because a pricing event
+ * in January still applies after a yield event in June.
+ */
+export function buildEventsSummaryRows(
+  src: {
+    marketEvents: MarketEvent[];
+    yieldEvents: YieldEventLike[];
+    pricingEvents: PricingEvent[];
+  },
+  t: SummaryT,
+): EventSummaryRow[] {
+  const rows: EventSummaryRow[] = [];
+
+  for (const e of src.marketEvents ?? []) {
+    const promo = !!e.isPromotion;
+    const named = (e.campaignName || e.name || '').trim();
+    rows.push({
+      id: e.id, pass: 0,
+      card: promo ? t('whatif_promotion') : t('whatif_volume'),
+      name: named || t(promo ? 'whatif_summary_unnamed_promo' : 'whatif_summary_unnamed_volume'),
+      unnamed: !named,
+      adjusts: promo ? promoEventSummary(e, t) : volumeEventSummary(e, t),
+      scope: scopeOf([e.segment, e.product, e.productL2, e.channel, e.channelL2, e.tariffL1, e.tariffL2], t),
+      // MarketEvent has no duration or roll-forward concept — one row is one
+      // month. Rendering an empty cell would read as "unknown"; the dash is a
+      // statement that the carrier has no such field.
+      when: e.date, month: e.date,
+    });
+  }
+
+  for (const e of src.yieldEvents ?? []) {
+    const named = (e.name || '').trim();
+    rows.push({
+      id: e.id, pass: 1,
+      card: t('whatif_summary_card_value'),
+      name: named || t('whatif_summary_unnamed_yield'),
+      unnamed: !named,
+      adjusts: yieldEventSummary(e, t),
+      scope: scopeOf([e.segment, e.product, e.channelL1, e.channelL2], t),
+      when: e.rollForward ? `${e.month} · ${t('whatif_all_fwd')}` : e.month,
+      month: e.month,
+    });
+  }
+
+  for (const e of src.pricingEvents ?? []) {
+    const named = (e.name || '').trim();
+    rows.push({
+      id: e.id, pass: 2,
+      card: t('whatif_summary_card_pricing'),
+      name: named || t('whatif_summary_unnamed_pricing'),
+      unnamed: !named,
+      adjusts: pricingEventSummary(e, t),
+      scope: scopeOf([e.segment, e.product, e.productL2, e.channelL1, e.channelL2, e.tariffL1, e.tariffL2], t),
+      when: e.duration === 'recurring' ? `${e.month} · ${t('whatif_summary_recurring')}` : e.month,
+      month: e.month,
+    });
+  }
+
+  return rows.sort((a, b) => a.pass - b.pass || a.month.localeCompare(b.month));
 }
 
 /**

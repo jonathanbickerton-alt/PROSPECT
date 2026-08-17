@@ -6715,6 +6715,34 @@ All three rest on the 2026-08-14 true-state report.
    come back as a plain percentage event, showing an ARPU delta the user never
    typed and losing the two numbers they did.
 
+#### R4 DECISIONS (Jon, 2026-08-14) — the combined events summary table
+
+Recorded here because the advisor's document update had not reached this file.
+All three rest on the 2026-08-14 true-state report.
+
+1. **PIPELINE ORDER, because it is the only true order.** The table sorts by
+   KIND in pass order — market → yield → pricing — then by month ascending
+   within kind.
+
+   The tempting alternative, a single list in creation order, **cannot be
+   built**: `sequence` exists only on `MarketEvent` and is explicitly display
+   and edit-slot only, not processing order (`forecasting.ts:2109-2126`);
+   `YieldEvent` and `PricingEvent` carry no ordering field at all. There is no
+   shared timestamp and no interleaved index, so a cross-carrier creation order
+   would have to be **constructed** — and a constructed order presented as the
+   order things apply in is a fabrication with a plausible face.
+
+2. **THE EXISTING CARD LISTS ARE NOT TOUCHED.** All four keep their differing
+   sorts (Volume by `bySequence`, Pricing and Value by month, Promotion
+   unsorted). Harmonising them is a separate decision about four surfaces
+   people already use; the summary table is additive and earns its own order.
+
+3. **DESCRIBE, NEVER RE-DERIVE.** Every figure in the table is read from the
+   event's STORED fields through one summariser per kind. The table must not
+   become a second home for event semantics — `scenarioHelper` is already a
+   parallel apply path duplicating yield and pricing logic, and a third
+   description of what an event does is how the three start disagreeing.
+
 #### THE MARKET-EVENT EXPORT ROW IS NOW ONE FUNCTION
 
 `marketEventExportRow` in `forecasting.ts`, used by App's export **and** by

@@ -12,7 +12,7 @@ import { SKIP_REASON_KEY } from '../types/forecast';
 import { EventChangeConfirmModal } from './EventChangeConfirmModal';
 import type { MarketEvent } from '../utils/forecasting';
 import { rebalance, achievableTargetRange, solveForTarget, blendedArpu, conformsToTotal } from '../utils/mixConstraint';
-import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary } from '../utils/forecasting';
+import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
@@ -1699,6 +1699,22 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   /** Bands carrying share that the current data no longer describes. ONE
    *  definition — the rows, the refusal copy and the drop action all read this
    *  same array, so they cannot disagree about what is wrong. */
+  /**
+   * R4 — the combined view across all THREE carriers, in PIPELINE order.
+   *
+   * Collapsed by default: the summary answers a question the user asks
+   * occasionally ("what have I set up?"), and the cards are what they work in.
+   *
+   * The projection is a pure function in `forecasting.ts` rather than JSX here,
+   * for the reason every summariser it calls is exported too: R4's table and
+   * the cards must describe an event identically, and a description written
+   * inside one component is one the other surfaces cannot reach.
+   */
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const summaryRows = useMemo(
+    () => buildEventsSummaryRows({ marketEvents, yieldEvents, pricingEvents }, t),
+    [marketEvents, yieldEvents, pricingEvents, t]);
+
   const promoOrphans = useMemo(
     () => promoOrphanedBands(promoMembers, promoDraftMix),
     [promoMembers, promoDraftMix]);
@@ -3083,6 +3099,83 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               <div className="h-full flex items-center justify-center text-slate-400 text-sm">{t('whatif_select_at_least_one_kpi_above_to_view_the_cha')}</div>
             )}
           </div>
+        </div>
+
+        {/* ── R4 — THE COMBINED EVENTS SUMMARY ────────────────────────────────
+            Below the visual and above the cards: it answers "what have I set
+            up?" before the user goes looking card by card. Collapsed by
+            default and capped when open, so it never pushes the cards down the
+            page — it is a reference, not the working surface.
+
+            It DESCRIBES. Every cell comes from a summariser reading the
+            event's stored fields; nothing here recomputes what an event does.
+            The four card lists keep their own differing orders untouched. */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200">
+          <button
+            type="button"
+            data-testid="events-summary-toggle"
+            aria-expanded={summaryOpen}
+            onClick={() => setSummaryOpen(o => !o)}
+            className="w-full flex items-center justify-between gap-3 px-5 py-3 text-left"
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              <span className="text-sm font-semibold text-slate-700">{t('whatif_summary_title')}</span>
+              <span
+                data-testid="events-summary-count"
+                className="text-[11px] font-semibold text-slate-500 bg-slate-100 rounded-full px-2 py-0.5"
+              >{t('whatif_summary_count', { count: summaryRows.length })}</span>
+            </span>
+            <ChevronDown
+              size={16}
+              className={`shrink-0 text-slate-400 transition-transform ${summaryOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+
+          {summaryOpen && (
+            <div className="px-5 pb-4" data-testid="events-summary-body">
+              {summaryRows.length === 0 ? (
+                <p className="text-xs text-slate-400 italic py-2">{t('whatif_summary_empty')}</p>
+              ) : (
+                <>
+                  {/* THE ORDER IS STATED, not left to be inferred from the row
+                      sequence. A reader who assumes chronology would be wrong,
+                      and the table cannot show chronology because no
+                      cross-carrier creation order exists to show. */}
+                  <p className="text-[10px] text-slate-400 mb-2">{t('whatif_summary_order_note')}</p>
+                  <div className="overflow-y-auto max-h-[320px] overflow-x-auto">
+                    <table className="w-full text-xs text-left">
+                      <thead className="text-[10px] text-slate-500 bg-slate-50 uppercase tracking-wider sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 font-semibold">{t('whatif_summary_col_card')}</th>
+                          <th className="px-3 py-2 font-semibold">{t('whatif_summary_col_name')}</th>
+                          <th className="px-3 py-2 font-semibold">{t('whatif_summary_col_adjusts')}</th>
+                          <th className="px-3 py-2 font-semibold">{t('whatif_summary_col_scope')}</th>
+                          <th className="px-3 py-2 font-semibold">{t('whatif_summary_col_when')}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {summaryRows.map(r => (
+                          <tr key={`${r.pass}-${r.id}`} data-testid={`events-summary-row-${r.id}`}>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600">
+                                {r.card}
+                              </span>
+                            </td>
+                            <td className={`px-3 py-2 max-w-[160px] truncate ${r.unnamed ? 'italic text-slate-400' : 'text-slate-700'}`} title={r.name}>
+                              {r.name}
+                            </td>
+                            <td className="px-3 py-2 text-slate-700 whitespace-nowrap">{r.adjusts}</td>
+                            <td className="px-3 py-2 text-slate-500 max-w-[180px] truncate" title={r.scope}>{r.scope}</td>
+                            <td className="px-3 py-2 text-slate-500 whitespace-nowrap tabular-nums">{r.when}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── Volume / Value / Pricing / Promotion tab switcher — below the chart ── */}
@@ -4576,7 +4669,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 className={`px-4 py-2.5 text-right font-semibold tabular-nums ${amt >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}
                               >
                                 {pe.pricingMode === 'dilution'
-                                  ? pricingEventSummary(pe)
+                                  ? pricingEventSummary(pe, t)
                                   : `${amt >= 0 ? '+' : ''}${pe.inputMode === 'percentage' ? `${amt.toFixed(1)}%` : formatNumber(amt)}`}
                               </td>
                               <td className="px-4 py-2.5">

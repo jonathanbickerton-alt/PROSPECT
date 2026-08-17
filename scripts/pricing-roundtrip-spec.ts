@@ -143,14 +143,30 @@ check('stated zero: 0% dilution round-trips as 0, NOT as absence',
 check('stated zero: and keeps its mode', zeroBack.pricingMode === 'dilution');
 
 // ── 5. THE ROW SUMMARY — what the user typed, not what was derived ─────────
+//
+// RE-AIMED IN R4, when pricingEventSummary gained a `t`. The old calls passed
+// one argument and went red on the signature change — the anchor rule working:
+// a change that rewrites what a check calls re-aims it in the same commit.
+//
+// `t` is built from the REAL en locale rather than stubbed, so a missing or
+// renamed key fails here instead of surfacing as a raw key on screen.
+const en = JSON.parse(fs.readFileSync('src/locales/en/translation.json', 'utf8'));
+const t = (k: string, p?: Record<string, unknown>) => {
+  let s = en[k];
+  if (typeof s !== 'string') return `!!MISSING:${k}!!`;
+  for (const [n, v] of Object.entries(p ?? {})) s = s.split(`{{${n}}}`).join(String(v));
+  return s;
+};
+check('summary: the dilution key EXISTS in the real en locale',
+  !t('whatif_summary_dilution', { from: 1, to: 2 }).startsWith('!!MISSING'));
 check('summary: a dilution event describes itself in the user\'s own figures',
-  pricingEventSummary(dilution) === '25% → 20% dilution', pricingEventSummary(dilution));
+  pricingEventSummary(dilution, t) === '25% → 20% dilution', pricingEventSummary(dilution, t));
 check('summary: and does NOT lead with the derived ARPU percentage',
-  !pricingEventSummary(dilution).includes('6.6'), pricingEventSummary(dilution));
+  !pricingEventSummary(dilution, t).includes('6.6'), pricingEventSummary(dilution, t));
 check('summary: a plain percentage event still reads as a percentage',
-  pricingEventSummary(plain) === '-3%', pricingEventSummary(plain));
+  pricingEventSummary(plain, t) === '-3%', pricingEventSummary(plain, t));
 check('summary: a dilution event with a corrupt figure falls back rather than lying',
-  pricingEventSummary({ ...dilution, dilutionCurrentPct: undefined }) !== '25% → 20% dilution');
+  pricingEventSummary({ ...dilution, dilutionCurrentPct: undefined }, t) !== '25% → 20% dilution');
 
 // ── 6. WIRING — the app really uses these seams, and the route count ───────
 const app = fs.readFileSync('src/App.tsx', 'utf8');
@@ -176,8 +192,13 @@ check('wiring: and restores both stated figures',
 check('wiring: the card computes the amount through the SHARED function',
   tab.includes('dilutionAmountPct('),
   'a second copy of the ratio is how the card and the saved event start disagreeing');
+// Anchored on the CALL, not on its argument list — the previous form pinned
+// `pricingEventSummary(pe)` and went red when R4 added the `t` parameter, which
+// is a signature change rather than a wiring loss. Counted, so a second inline
+// description appearing beside it also fails.
 check('wiring: the row summary comes from the shared summariser, not inline JSX',
-  tab.includes('pricingEventSummary(pe)'));
+  (tab.split('pricingEventSummary(').length - 1) === 1,
+  `${tab.split('pricingEventSummary(').length - 1} call sites in the card, expected 1`);
 
 // THE APPLY LOOP MUST BE UNTOUCHED. R5 rides the existing mechanism; if this
 // ever needs a dilution arm, the wiring is wrong and this check says so.
