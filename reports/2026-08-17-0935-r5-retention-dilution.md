@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-08-17 09:35 +0100 (UTC 2026-08-17 08:35)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: b3795f3 (body written PRE-commit; only these 2 lines added after)
+Repo: committed 5bc50d0 (docs) + b3795f3 (R5), pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before the base check.
 BASE: HEAD d168a06 vs the brief's c841e43 — one commit, REPORT-ONLY (--stat).
 HOUSEKEEPING 1 DONE LATE — v3.3.1 was ABSENT at the base check and ARRIVED
