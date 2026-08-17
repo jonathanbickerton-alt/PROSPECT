@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-08-17 12:54 +0100 (UTC 2026-08-17 11:54)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: 8f3b34e (body written PRE-commit; only these 2 lines added after)
+Repo: committed 8f3b34e, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before the base check.
 BASE: HEAD 80489fc vs the brief's ded1564 — one commit, REPORT-ONLY.
 ITEM 2 DID NOT FIRE — chartData already carries Inflow/Retention/Base
