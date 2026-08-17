@@ -6764,6 +6764,26 @@ From the 2026-08-17 walk on the edge fixture and its diagnosis
    saves only, and the export/import carriers are unchanged — so a workbook
    saved before this change still round-trips exactly.
 
+3. **PREVIEW IMPACT COMPUTES AGAINST THE EVENT-SCOPED BASELINE** (Jon,
+   2026-08-17) — the same slice invocation the save path uses, memoised on the
+   draft's dims and month. Preview and the saved row then agree **by
+   construction** rather than by two surfaces happening to match.
+
+   Decision 1 above made the saved row event-scoped while Preview stayed
+   cohort-scoped, so for an event narrower than the loaded cohort the previewed
+   baseline and the row's differed. That inconsistency was introduced knowingly
+   and recorded rather than hidden; this closes it.
+
+   **The typed figures are NOT in the memo key.** Changing the current or target
+   dilution recomputes only the cheap arithmetic against the cached baseline;
+   only a change of dims or month pays for a slice run.
+
+   **THIS IS CONDITIONAL ON MEASUREMENT.** The fallback, pre-authorised, is to
+   label the two bases differently instead ("effect on the loaded cohort" vs the
+   event slice) if a dim-change run proves disruptive at interactive latency.
+   An unmeasured pipeline run in a render path is the thing this programme keeps
+   paying for; the number goes in the session report either way.
+
 2. **OBSERVATION 3 IS CLOSED — there was no defect.** The apparent gap at the
    start of the forecast window was the **ARPU Outflow (Ref)** line, not the
    baseline. Jon's tooltips confirmed Baseline = Adjusted at July, and the

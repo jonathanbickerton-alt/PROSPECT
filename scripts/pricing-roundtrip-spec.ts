@@ -368,21 +368,58 @@ check('scope wiring: the pricing apply filter no longer hand-rolls the compariso
   'the seven inline comparisons are what the shared predicate replaced');
 
 // ── 11. THE EVENT-SCOPED BASELINE ──────────────────────────────────────────
-check('baseline: the snapshot runs the pipeline against the EVENT dims',
-  tab.includes('const eventScopeSeries = computeAdjustedForecast('),
-  'it read chartData, which is scoped to the LOADED COHORT, not to the event');
-// EXACTLY ONE chartData lookup for the draft month survives, and it is PREVIEW
-// IMPACT — which legitimately shows the effect on the slice the user is looking
-// at. The SAVE HANDLER no longer uses it. The first form of this check asserted
-// the string was gone entirely and failed on correct code.
-check('baseline: the save handler no longer reads the cohort-scoped chartData',
-  (tab.split('chartData.find(r => r.month === newPricingEvent.month)').length - 1) === 1,
-  `${tab.split('chartData.find(r => r.month === newPricingEvent.month)').length - 1} sites, expected 1 (Preview Impact only)`);
-check('baseline: the event being edited is EXCLUDED, so the basis is pre-this-event',
-  tab.includes('pricingEvents.filter(p => p.id !== editingPricingId)'),
+check('baseline: the slice invocation is ONE extracted function',
+  tab.includes('const eventScopeSeriesFor = useCallback('),
+  'Preview and save must not each build their own call to computeAdjustedForecast');
+// THE AGREEMENT PIN. Two callers, one invocation: the save path and Preview's
+// memo. If either grew its own call the count would move, and the two
+// baselines could differ again — which is the defect this closes.
+// TWO, not three: the definition reads `= useCallback(`, so it does not match
+// `eventScopeSeriesFor(` — only the two CALL sites do, which is exactly what
+// this wants to count. The first expectation here was 3 and the run corrected it.
+check('baseline: EXACTLY TWO callers share it — the save path and Preview',
+  (tab.split('eventScopeSeriesFor(').length - 1) === 2,
+  `${tab.split('eventScopeSeriesFor(').length - 1} call sites, expected 2`);
+check('baseline: Preview reads that memo, not the cohort-scoped series',
+  tab.includes('previewScopeSeries?.find((r: any) => r.month === newPricingEvent.month)'));
+check('baseline: and its WEIGHTING volumes come from the same event-scoped series',
+  tab.includes('volumesFromSeries(previewScopeSeries, newPricingEvent.month as string)'),
+  'a ratio taken from the cohort while the baseline came from the event slice belongs to neither');
+// NOW ZERO. The previous session left one legitimate survivor — Preview Impact
+// — and this check expected 1. Preview is now event-scoped too, so NOTHING
+// reads the cohort-scoped series for the pricing draft's month. Re-aimed rather
+// than deleted: the count is the thing worth pinning, and it moved for a reason.
+check('baseline: nothing reads the cohort-scoped chartData for the draft month',
+  (tab.split('chartData.find(r => r.month === newPricingEvent.month)').length - 1) === 0,
+  `${tab.split('chartData.find(r => r.month === newPricingEvent.month)').length - 1} sites, expected 0`);
+// EXCLUSION LIVES INSIDE THE SHARED FUNCTION, so both callers get it or neither
+// does — it cannot be applied on one path and forgotten on the other.
+check('baseline: the edited event is excluded INSIDE the shared invocation',
+  tab.includes('pricingEvents: excludeId ? pricingEvents.filter(p => p.id !== excludeId) : pricingEvents'),
   'otherwise an edit measures the event against a blend that already contains it');
+check('baseline: both callers pass the editing id, so the rule is shared not duplicated',
+  (tab.split('eventScopeSeriesFor(newPricingEvent, editingPricingId').length - 1) === 2,
+  `${tab.split('eventScopeSeriesFor(newPricingEvent, editingPricingId').length - 1} callers passing it, expected 2`);
 check('baseline: dims go through dimOrNull, so All and absent both mean no filter',
-  tab.includes('viewProduct: { l1: dimOrNull(newPricingEvent.product)'));
+  tab.includes('viewProduct: { l1: dimOrNull(draft.product)'));
+
+// THE MEMO KEY — dims and month, never the typed figures. Checked by SOURCE:
+// the dependency array is the key, and a call-count probe would need a mount.
+// Stated plainly rather than implied, per the standing rule about what is and
+// is not machine-checked.
+const memoStart = tab.indexOf('const previewScopeSeries = useMemo(');
+const memoDeps = tab.slice(memoStart, tab.indexOf(']);', memoStart));
+check('memo: the key covers the draft dims and month',
+  ['month', 'segment', 'product', 'productL2', 'channelL1', 'channelL2', 'tariffL1', 'tariffL2']
+    .every(d => memoDeps.includes(`newPricingEvent.${d}`)),
+  'a dim missing from the key would leave Preview showing a stale slice');
+check('memo: and EXCLUDES the typed figures, so typing costs no pipeline run',
+  !memoDeps.includes('dilutionCurrentPct') && !memoDeps.includes('dilutionTargetPct')
+    && !memoDeps.includes('newPricingEvent.amount'),
+  'the figures drive cheap arithmetic against the cached series, not a re-run');
+check('memo: it does not compute when no month is chosen',
+  tab.includes('newPricingEvent.month ? eventScopeSeriesFor('),
+  'the incomplete-draft placeholder must not be preceded by a pipeline run');
 
 // ── 12. NAME ON THE CARDS' OWN LISTS ───────────────────────────────────────
 check('names: the pricing list renders a Name cell with the per-kind fallback',

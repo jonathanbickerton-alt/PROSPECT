@@ -2077,21 +2077,87 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     );
   }, [marketEvents, yieldEvents, pricingEvents, formatNumber]);
 
+  /**
+   * THE EVENT-SCOPED SERIES FOR A PRICING DRAFT — one invocation, called by the
+   * save path AND by Preview Impact.
+   *
+   * Extracted so the two cannot drift: Preview showing one baseline and the
+   * saved row another is the disagreement the previous session introduced and
+   * recorded, and the fix is the same shape as every other fix in this arc —
+   * one definition, two callers, rather than two implementations that happen to
+   * agree today.
+   *
+   * `excludeId` is the event being edited. On ADD it is null and nothing needs
+   * excluding, because an unsaved draft is not in `pricingEvents` yet; on EDIT
+   * both callers must drop it or the event is measured against a blend that
+   * already contains it.
+   *
+   * MEASURED BEFORE IT WAS PUT IN A RENDER PATH: 6.90 ms for a full slice on
+   * the 12,112-row edge fixture, 6.41 ms narrowed to one product — well inside
+   * a 60 Hz frame, and it runs only when the dims or month change, never on a
+   * keystroke. The memo below is what keeps that true.
+   */
+  const eventScopeSeriesFor = useCallback((
+    draft: Partial<PricingEvent>,
+    excludeId: string | null,
+  ): any[] => computeAdjustedForecast({
+    baseForecast, marketEvents, yieldEvents,
+    pricingEvents: excludeId ? pricingEvents.filter(p => p.id !== excludeId) : pricingEvents,
+    viewSegment: draft.segment ?? 'All',
+    viewProduct: { l1: dimOrNull(draft.product), l2: dimOrNull(draft.productL2) },
+    viewChannel: { l1: dimOrNull(draft.channelL1), l2: dimOrNull(draft.channelL2) },
+    viewTariff: { l1: dimOrNull(draft.tariffL1), l2: dimOrNull(draft.tariffL2) },
+    data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
+    wiTariffL1Col, wiTariffL2Col, wiValueCol,
+    wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
+  }).chartData, [baseForecast, marketEvents, yieldEvents, pricingEvents, data,
+    wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
+    wiTariffL1Col, wiTariffL2Col, wiValueCol,
+    wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal]);
+
+  /**
+   * PREVIEW'S BASELINE, memoised on the draft's DIMS AND MONTH ONLY.
+   *
+   * The typed figures are deliberately absent from the key: changing a dilution
+   * percentage recomputes the cheap arithmetic against this cached series and
+   * pays nothing for the pipeline. Only choosing a different slice or month
+   * costs a run, and that is a dropdown interaction rather than a keystroke.
+   *
+   * `duration` is NOT in the key either, and that is a claim worth stating: the
+   * series is the baseline BEFORE this event, so how long this event would last
+   * cannot change it. Duration selects which months the event applies to when
+   * it is applied — a different question from what the month's blend was.
+   *
+   * Null when no month is chosen, so the memo never computes for a draft that
+   * has nothing to preview.
+   */
+  const previewScopeSeries = useMemo(
+    () => (newPricingEvent.month ? eventScopeSeriesFor(newPricingEvent, editingPricingId ?? null) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [newPricingEvent.month, newPricingEvent.segment, newPricingEvent.product,
+     newPricingEvent.productL2, newPricingEvent.channelL1, newPricingEvent.channelL2,
+     newPricingEvent.tariffL1, newPricingEvent.tariffL2,
+     editingPricingId, eventScopeSeriesFor]);
+
   /** The ONE reason the pricing draft cannot be added, or null. Read by the
    *  button, by the message beside it, and by the handler's guard. */
   const pricingBlockReason = useMemo(
     () => pricingDraftBlockReason(newPricingEvent),
     [newPricingEvent]);
 
-  const monthVolumes = useCallback((month: string): PricingVolumes | null => {
-    const r = chartData.find((x: any) => x.month === month);
+  const volumesFromSeries = useCallback((series: any[] | null, month: string): PricingVolumes | null => {
+    const r = series?.find((x: any) => x.month === month);
     if (!r) return null;
     return {
       inflow: Number(r['Inflow (Adjusted)']) || 0,
       retention: Number(r['Retention (Adjusted)']) || 0,
       base: Number(r['Base (Adjusted)']) || 0,
     };
-  }, [chartData]);
+  }, []);
+
+  const monthVolumes = useCallback(
+    (month: string): PricingVolumes | null => volumesFromSeries(chartData, month),
+    [chartData, volumesFromSeries]);
 
   // ── Add Pricing Event (defined here so it can read chartData) ────────────
   const handleAddPricingEvent = useCallback(() => {
@@ -2115,19 +2181,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // THIS EVENT IS EXCLUDED on the edit path, so the basis is genuinely
     // pre-this-event rather than a figure that already contains it — a subtlety
     // the chartData version got wrong on every edit.
-    const eventScopeSeries = computeAdjustedForecast({
-      baseForecast, marketEvents, yieldEvents,
-      pricingEvents: editingPricingId
-        ? pricingEvents.filter(p => p.id !== editingPricingId)
-        : pricingEvents,
-      viewSegment: newPricingEvent.segment ?? 'All',
-      viewProduct: { l1: dimOrNull(newPricingEvent.product), l2: dimOrNull(newPricingEvent.productL2) },
-      viewChannel: { l1: dimOrNull(newPricingEvent.channelL1), l2: dimOrNull(newPricingEvent.channelL2) },
-      viewTariff: { l1: dimOrNull(newPricingEvent.tariffL1), l2: dimOrNull(newPricingEvent.tariffL2) },
-      data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
-      wiTariffL1Col, wiTariffL2Col, wiValueCol,
-      wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
-    }).chartData;
+    const eventScopeSeries = eventScopeSeriesFor(newPricingEvent, editingPricingId);
     const matchRow = eventScopeSeries.find((r: any) => r.month === newPricingEvent.month);
     const originalBaseArpu = matchRow ? (matchRow['ARPU (Adjusted)'] as number) : 0;
 
@@ -4632,7 +4686,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_preview_impact')}</label>
                     <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
                       {(() => {
-                        const matchRow = chartData.find(r => r.month === newPricingEvent.month);
+                        // EVENT-SCOPED, from the SAME invocation the save path
+                        // uses. This read `chartData` — the LOADED COHORT's
+                        // series — while the saved row's baseline became
+                        // event-scoped last session, so for an event narrower
+                        // than the cohort the previewed figure and the row's
+                        // disagreed. They now agree by construction.
+                        const matchRow = previewScopeSeries?.find((r: any) => r.month === newPricingEvent.month);
                         const baseArpu = matchRow ? (matchRow['ARPU (Adjusted)'] as number) : null;
                         if (baseArpu === null) return <p className="text-xs text-slate-400">{t('whatif_select_a_month_to_preview')}</p>;
                         // DILUTION-AWARE. This read `newPricingEvent.amount`,
@@ -4661,7 +4721,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             amount: amt,
                           },
                           baseArpu,
-                          monthVolumes(newPricingEvent.month as string),
+                          // FROM THE SAME EVENT-SCOPED SERIES as the baseline.
+                          // The weighting is a RATIO of priced volume to total,
+                          // so taking it from the cohort while the baseline
+                          // comes from the event's slice would be a weight that
+                          // belongs to neither — the approximation this arc has
+                          // been removing, arriving in a new place.
+                          volumesFromSeries(previewScopeSeries, newPricingEvent.month as string),
                         );
                         if (adjusted === null) {
                           // base-only, or no volumes for that month. Absence is

@@ -878,6 +878,27 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '          if (!eventScopeMatchesView(pe, viewScopeForMatch)) return false;',
       '') },
+  // 78 reverts PREVIEW's baseline to the cohort-scoped series while the saved
+  // row stays event-scoped — reinstating the disagreement the previous session
+  // introduced knowingly and this one closed. Both figures remain plausible
+  // ARPUs for real slices, so nothing looks broken; they simply describe
+  // different populations, and only a check that they come from ONE invocation
+  // can tell.
+  { id: '78 Preview reverts to the cohort-scoped baseline', why: 'the previewed figure and the saved row describe different slices',
+    file: WHATIF, spec: PRICEROUND,
+    mutate: s => s.replace(
+      '                        const matchRow = previewScopeSeries?.find((r: any) => r.month === newPricingEvent.month);',
+      '                        const matchRow = chartData.find(r => r.month === newPricingEvent.month);') },
+  // 79 puts the typed dilution figures into the memo key, so every keystroke
+  // re-runs the pipeline. Nothing renders differently — the numbers are right,
+  // the card just does a full slice computation per character. A correctness
+  // check cannot see this; the key's contents are the only place it shows.
+  { id: '79 the preview memo re-runs on every keystroke', why: 'a pipeline run per character, invisible to a correctness check',
+    file: WHATIF, spec: PRICEROUND,
+    mutate: s => s.replace(
+      "    [newPricingEvent.month, newPricingEvent.segment, newPricingEvent.product,",
+      "    [newPricingEvent.dilutionCurrentPct, newPricingEvent.dilutionTargetPct,"
+      + nl + "     newPricingEvent.month, newPricingEvent.segment, newPricingEvent.product,") },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
