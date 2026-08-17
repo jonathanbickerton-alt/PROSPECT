@@ -762,5 +762,13 @@
   "whatif_orphan_band_explain": "\"{{band}}\" carries {{share}}% of this mix but no longer appears in the current data, so it has no ARPU and the blend cannot be calculated. Drop it to continue.",
   "whatif_orphan_drop": "Drop band",
   "whatif_orphan_drop_aria": "Drop \"{{band}}\" and rebalance the remaining shares",
-  "whatif_mix_blocked_orphans": "Cannot save: {{bands}} no longer exist in the current data. Drop them to continue."
+  "whatif_mix_blocked_orphans": "Cannot save: {{bands}} no longer exist in the current data. Drop them to continue.",
+  "whatif_pricing_mode_direct": "Direct",
+  "whatif_pricing_mode_dilution": "Dilution",
+  "whatif_dilution_current": "Current dilution %",
+  "whatif_dilution_target": "Target dilution %",
+  "whatif_dilution_awaiting": "Enter both figures to see the effect.",
+  "whatif_dilution_effect": "{{value}}% retained revenue",
+  "whatif_dilution_volume_note": "Retention volume is assumed unchanged — this moves retained revenue only.",
+  "whatif_dilution_compounding_note": "Combines multiplicatively with any other pricing event in scope."
 }

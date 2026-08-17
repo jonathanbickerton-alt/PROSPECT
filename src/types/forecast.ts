@@ -375,6 +375,34 @@ export interface PricingEvent {
    * Used in the results table to show baseline vs adjusted ARPU.
    */
   originalBaseArpu: number;
+  /**
+   * R5 — RETENTION DILUTION. Presence of this discriminant means `amount` was
+   * COMPUTED from the two stated figures below rather than typed as an ARPU
+   * percentage. Absent = an ordinary percentage/absolute event, so every event
+   * saved before R5 reads correctly without migration.
+   *
+   * THE MODE IS STORED, AND THAT IS THE POINT. `yieldArpuMode` is not stored
+   * and is not restored on reopen, so a Value-card event made in Forecast mode
+   * comes back showing different derived figures — the 2026-08-13 diagnosis's
+   * Finding 1. Here the same mistake would be worse: a dilution event reopened
+   * without its mode is a plain percentage event showing an ARPU delta the user
+   * never typed, with the two numbers they DID type gone. Decision 3, 2026-08-14.
+   */
+  pricingMode?: 'dilution';
+  /**
+   * The two USER-STATED dilution percentages. Both are stated, never derived:
+   * nothing in any shipped data path carries list price or pre-discount
+   * revenue, so there is no basis to derive them from (decision 1, 2026-08-14).
+   *
+   * Stored ALONGSIDE the computed `amount` rather than instead of it, for the
+   * R2/R3 provenance reason: the ratio is not invertible into a unique pair, so
+   * an event carrying only `amount` could never say which scenario produced it.
+   *
+   * Range [0, 100), and `dilutionCurrentPct` may not be 100 — it is the
+   * denominator (1 - current/100).
+   */
+  dilutionCurrentPct?: number;
+  dilutionTargetPct?: number;
   name?: string;
   comment?: string;
 }

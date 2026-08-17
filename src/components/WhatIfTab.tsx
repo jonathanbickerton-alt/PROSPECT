@@ -12,7 +12,7 @@ import { SKIP_REASON_KEY } from '../types/forecast';
 import { EventChangeConfirmModal } from './EventChangeConfirmModal';
 import type { MarketEvent } from '../utils/forecasting';
 import { rebalance, achievableTargetRange, solveForTarget, blendedArpu, conformsToTotal } from '../utils/mixConstraint';
-import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta } from '../utils/forecasting';
+import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
@@ -1866,6 +1866,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       tariffL1: ev.tariffL1, tariffL2: ev.tariffL2,
       month: ev.month, inputMode: ev.inputMode, amount: ev.amount,
       target: ev.target, cohortScope: ev.cohortScope, duration: ev.duration,
+      // R5 — THE MODE IS RESTORED, and this line is the one the yieldArpuMode
+      // diagnosis is about. Without it a dilution event reopens as a plain
+      // percentage event: the card would show +6.67% — a number the user never
+      // typed — and the 25/20 they DID type would be gone from the form while
+      // still sitting on the event. Guard-trap 70 removes this line.
+      pricingMode: ev.pricingMode,
+      dilutionCurrentPct: ev.dilutionCurrentPct,
+      dilutionTargetPct: ev.dilutionTargetPct,
       name: ev.name ?? '', comment: ev.comment ?? '',
     });
     setEditingPricingId(ev.id);
@@ -2004,7 +2012,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   // ── Add Pricing Event (defined here so it can read chartData) ────────────
   const handleAddPricingEvent = useCallback(() => {
-    if (!newPricingEvent.month || newPricingEvent.amount === undefined) return;
+    const isDilution = newPricingEvent.pricingMode === 'dilution';
+    // R5: in dilution mode the amount is DERIVED, so the guard is on the two
+    // stated figures instead. dilutionAmountPct returns null for anything out
+    // of range, which is the single validity test — [0,100) on both, and the
+    // current figure never 100 because it is the denominator.
+    const dilutionPct = isDilution
+      ? dilutionAmountPct(newPricingEvent.dilutionCurrentPct, newPricingEvent.dilutionTargetPct)
+      : null;
+    if (isDilution) {
+      if (dilutionPct === null) return;
+    } else if (newPricingEvent.amount === undefined) {
+      return;
+    }
+    if (!newPricingEvent.month) return;
     // Snapshot the pre-pricing blended ARPU for the selected month from chartData
     const matchRow = chartData.find(r => r.month === newPricingEvent.month);
     const originalBaseArpu = matchRow ? (matchRow['ARPU (Adjusted)'] as number) : 0;
@@ -2019,12 +2040,24 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       tariffL1:  newPricingEvent.tariffL1  ?? 'All',
       tariffL2:  newPricingEvent.tariffL2  ?? 'All',
       month:     newPricingEvent.month,
-      inputMode: newPricingEvent.inputMode ?? 'percentage',
-      amount:    newPricingEvent.amount,
+      // A dilution event IS a retention-scoped PERCENTAGE event. It rides the
+      // existing mechanism entirely — the apply loop is not touched, and must
+      // not be: if this needed a new arm in the pricing pass, the wiring would
+      // be wrong. Only the way the user STATES it is new.
+      inputMode: isDilution ? 'percentage' : (newPricingEvent.inputMode ?? 'percentage'),
+      amount:    isDilution ? (dilutionPct as number) : (newPricingEvent.amount as number),
       target:      newPricingEvent.target      ?? 'cohorts',
-      cohortScope: newPricingEvent.cohortScope ?? 'both',
+      cohortScope: isDilution ? 'retention' : (newPricingEvent.cohortScope ?? 'both'),
       duration:    newPricingEvent.duration    ?? 'one-off',
       originalBaseArpu,
+      // THE MODE AND BOTH STATED FIGURES ARE PERSISTED, not just the derived
+      // amount — decision 3, and the yieldArpuMode lesson applied before it
+      // bites. Absent entirely on a plain event, so nothing pre-R5 migrates.
+      ...(isDilution ? {
+        pricingMode: 'dilution' as const,
+        dilutionCurrentPct: newPricingEvent.dilutionCurrentPct,
+        dilutionTargetPct:  newPricingEvent.dilutionTargetPct,
+      } : {}),
       name:    newPricingEvent.name    ?? '',
       comment: newPricingEvent.comment ?? '',
     };
@@ -4188,6 +4221,99 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   {/* Input mode + amount */}
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_amount')}</label>
+                    {/* R5 — THE MODE SELECTOR. Dilution sits beside % and € as a
+                        third way of SAYING the same kind of thing (a percentage
+                        change to ARPU), not as a fourth arm of the card. The
+                        event it produces is an ordinary percentage event; only
+                        how the user states it differs. */}
+                    <div className="flex rounded-lg overflow-hidden border border-slate-200 mb-2">
+                      <button
+                        data-testid="pricing-mode-plain"
+                        onClick={() => setNewPricingEvent({
+                          ...newPricingEvent, pricingMode: undefined,
+                          dilutionCurrentPct: undefined, dilutionTargetPct: undefined,
+                        })}
+                        className={`flex-1 px-3 py-1.5 text-[11px] font-semibold border-r border-slate-200 transition-colors ${
+                          newPricingEvent.pricingMode !== 'dilution'
+                            ? 'bg-slate-700 text-white'
+                            : 'bg-white text-slate-500 hover:bg-slate-50'
+                        }`}
+                      >{t('whatif_pricing_mode_direct')}</button>
+                      <button
+                        data-testid="pricing-mode-dilution"
+                        onClick={() => setNewPricingEvent({
+                          ...newPricingEvent, pricingMode: 'dilution',
+                          // A dilution event IS a retention-scoped percentage
+                          // event. Setting both here rather than at save keeps
+                          // the visible form honest about what will be written.
+                          inputMode: 'percentage', cohortScope: 'retention',
+                        })}
+                        className={`flex-1 px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                          newPricingEvent.pricingMode === 'dilution'
+                            ? 'bg-slate-700 text-white'
+                            : 'bg-white text-slate-500 hover:bg-slate-50'
+                        }`}
+                      >{t('whatif_pricing_mode_dilution')}</button>
+                    </div>
+
+                    {newPricingEvent.pricingMode === 'dilution' ? (
+                      <div data-testid="pricing-dilution-inputs">
+                        <div className="flex gap-2">
+                          {([
+                            ['current', 'dilutionCurrentPct', t('whatif_dilution_current')] as const,
+                            ['target', 'dilutionTargetPct', t('whatif_dilution_target')] as const,
+                          ]).map(([slot, field, label]) => (
+                            <div key={slot} className="flex-1">
+                              <span className="block text-[10px] text-slate-400 mb-0.5">{label}</span>
+                              <input
+                                type="number"
+                                step={0.1}
+                                min={0}
+                                max={99.99}
+                                data-testid={`pricing-dilution-${slot}`}
+                                value={newPricingEvent[field] ?? ''}
+                                onChange={e => {
+                                  const raw = e.target.value;
+                                  // CLEARED IS UNSET, NOT ZERO — Number('') is 0,
+                                  // and 0% dilution is a real statement.
+                                  setNewPricingEvent({
+                                    ...newPricingEvent,
+                                    [field]: raw === '' ? undefined : Number(raw),
+                                  });
+                                }}
+                                className="w-full text-sm px-2 py-2 bg-white border border-slate-200 rounded outline-none focus:border-[#e60000]"
+                                placeholder="%"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        {/* THE TRANSLATION, LIVE. The user never converts
+                            dilution points into an ARPU percentage by hand —
+                            that conversion error is why this mode exists. */}
+                        <div className="mt-1.5 text-[11px]" data-testid="pricing-dilution-effect">
+                          {(() => {
+                            const pct = dilutionAmountPct(
+                              newPricingEvent.dilutionCurrentPct, newPricingEvent.dilutionTargetPct);
+                            if (pct === null) {
+                              return <span className="text-slate-400">{t('whatif_dilution_awaiting')}</span>;
+                            }
+                            const sign = pct >= 0 ? '+' : '';
+                            return (
+                              <span className={pct >= 0 ? 'font-semibold text-emerald-700' : 'font-semibold text-rose-700'}>
+                                {t('whatif_dilution_effect', { value: `${sign}${pct.toFixed(2)}` })}
+                              </span>
+                            );
+                          })()}
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1 leading-snug">
+                          {t('whatif_dilution_volume_note')}
+                        </p>
+                        <p className="text-[10px] text-slate-400 mt-1 leading-snug">
+                          {t('whatif_dilution_compounding_note')}
+                        </p>
+                      </div>
+                    ) : (
+                    <>
                     <div className="flex rounded-lg overflow-hidden border border-slate-200">
                       <button
                         onClick={() => setNewPricingEvent({ ...newPricingEvent, inputMode: 'percentage' })}
@@ -4217,6 +4343,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     <p className="text-[10px] text-slate-400 mt-1">
                       {newPricingEvent.inputMode === 'percentage' ? t('whatif_positive_price_rise_negative_discount') : t('whatif_absolute_arpu_change_per_subscriber')}
                     </p>
+                    </>
+                    )}
                   </div>
 
                   {/* Target */}
@@ -4428,12 +4556,28 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 </td>
                               )}
                               <td className="px-4 py-2.5 text-right">
-                                <span className="inline-block px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-semibold">
-                                  {pe.inputMode === 'percentage' ? '%' : '€'}
+                                <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                  pe.pricingMode === 'dilution'
+                                    ? 'bg-indigo-100 text-indigo-700'
+                                    : 'bg-slate-100 text-slate-600'}`}>
+                                  {pe.pricingMode === 'dilution'
+                                    ? t('whatif_pricing_mode_dilution')
+                                    : (pe.inputMode === 'percentage' ? '%' : '€')}
                                 </span>
                               </td>
-                              <td className={`px-4 py-2.5 text-right font-semibold tabular-nums ${amt >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                {amt >= 0 ? '+' : ''}{pe.inputMode === 'percentage' ? `${amt.toFixed(1)}%` : formatNumber(amt)}
+                              {/* THE ROW SAYS WHAT THE USER TYPED. A dilution
+                                  event shown as "+6.7%" is unrecognisable to the
+                                  person who entered 25 → 20, so the summary comes
+                                  from the shared pricingEventSummary — the same
+                                  function R4's summary table will read, rather
+                                  than a second description written inline here. */}
+                              <td
+                                data-testid={`pricing-row-summary-${pe.id}`}
+                                className={`px-4 py-2.5 text-right font-semibold tabular-nums ${amt >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}
+                              >
+                                {pe.pricingMode === 'dilution'
+                                  ? pricingEventSummary(pe)
+                                  : `${amt >= 0 ? '+' : ''}${pe.inputMode === 'percentage' ? `${amt.toFixed(1)}%` : formatNumber(amt)}`}
                               </td>
                               <td className="px-4 py-2.5">
                                 <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${

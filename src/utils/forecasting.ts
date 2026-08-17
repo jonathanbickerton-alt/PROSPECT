@@ -1,5 +1,5 @@
 import { addMonths, format, isValid } from 'date-fns';
-import type { BaseForecast, BaseForecastMonth, CohortKey, ForecastBand, ForecastModel, FittedParams, SkipReason, ArpuBand } from '../types/forecast';
+import type { BaseForecast, BaseForecastMonth, CohortKey, ForecastBand, ForecastModel, FittedParams, SkipReason, ArpuBand, PricingEvent } from '../types/forecast';
 // One direction only: mixConstraint imports nothing, so this cannot cycle.
 import { blendedArpu } from './mixConstraint';
 
@@ -131,9 +131,18 @@ export interface MarketEvent {
    * NEGATIVE IS VERBATIM per the rate-sign rule: sign conventions belong to
    * quantities, and no transform touches a rate.
    *
-   * INERT AT THIS COMMIT — nothing produces one yet. The promotion card has no
-   * per-band input; that is R3's surface session. The carrier round-trips the
-   * moment an input exists, which is the a50cca9 resting shape.
+   * LIVE since 4531acf: the promotion card's per-band ARPU input writes this,
+   * and the map is filtered to the event's CURRENT members on the way out, so a
+   * rate typed before a mix-axis switch cannot be persisted naming a band this
+   * event has no share in.
+   *
+   * THE SHAPE IS AN ANALOGY TO R2, NOT A COPY OF IT. The Value card's tier
+   * override sits beside a per-tier EFFECTIVE map (`tariffBaseArpu`); this one
+   * sits beside a SCALAR — `arpu`/`revenue` carry the resolved blend. The
+   * reason for two fields transfers exactly (a stated rate is not recoverable
+   * from a blend, so storing one loses provenance); the description of what it
+   * sits beside does not. Recorded because a sentence copied from the R2 block
+   * would be wrong — see `2026-08-14-1234-v3-3-verification-r4-r5-true-state.md`.
    */
   promoBandArpuOverride?: Record<string, number>;
   /** Phase 4 — Custom Promotion Card: the pricing arm's raw inputs, stored for
@@ -265,47 +274,187 @@ export function readStoredRateMap(raw: unknown): Record<string, number> | undefi
  * exercised by the spec rather than mirrored in it.
  */
 export function marketEventExportRow(e: MarketEvent): Record<string, unknown> {
-  return {
-    ID: e.id,
-    Sequence: e.sequence,
-    Name: e.name ?? '',
-    Campaign_Name: e.campaignName ?? '',
-    Scenario: e.scenario,
-    Segment: e.segment,
-    Product: e.product,
-    Product_L2: e.productL2 ?? 'All',
-    Channel: e.channel,
-    Channel_L2: e.channelL2 ?? 'All',
-    Tariff_L1: e.tariffL1 ?? 'All',
-    Tariff_L2: e.tariffL2 ?? 'All',
-    Start_Month: e.date,
-    Subscriber_Volume: e.subscriberVolume,
-    Customer_Volume: e.customerVolume,
-    Revenue: e.revenue,
-    ARPU: e.arpu,
-    Contract_Length_Months: e.contractLength ?? 24,
-    Comment: e.comment ?? '',
-    // Percentage events. Distinct column names from the Pricing_Events sheet's
-    // Input_Mode/Amount pair on purpose: that one is a RATE and this is a
-    // VOLUME, and a shared column name would invite conflating them.
-    Amount_Type: e.amountType ?? 'absolute',
-    Percentage_Basis: e.percentageBasis ?? '',
-    Retention_Linked: e.retentionLinked === false ? 'No' : 'Yes',
-    // Phase 4 — Custom Promotion Card
-    Is_Promotion: e.isPromotion ? 'Yes' : 'No',
-    Promo_Rebanded: e.promoRebanded ? 'Yes' : 'No',
-    Promo_Mix_Axis: e.promoMixAxis ?? '',
-    Promo_Mix_JSON: e.promoMix ? JSON.stringify(e.promoMix) : '',
-    Promo_Pricing_Mode: e.promoPricingMode ?? '',
-    Promo_Pricing_Amount: e.promoPricingAmount ?? '',
-    // Alessandro's editable ARPU. '' is the ABSENCE carrier and 0 is a real
-    // stated rate — `?? ''` is doing that work, so it must not become `?? 0`.
-    Arpu_Override: e.arpuOverride ?? '',
-    // R3's per-band override map. '' is the ABSENCE carrier and an empty map
-    // must never be written — "no members" is not the claim "no map", the
-    // same rule Promo_Mix_JSON and the yield override already follow.
-    Promo_Band_ARPU_Override_JSON: e.promoBandArpuOverride
+  return {
+    ID: e.id,
+    Sequence: e.sequence,
+    Name: e.name ?? '',
+    Campaign_Name: e.campaignName ?? '',
+    Scenario: e.scenario,
+    Segment: e.segment,
+    Product: e.product,
+    Product_L2: e.productL2 ?? 'All',
+    Channel: e.channel,
+    Channel_L2: e.channelL2 ?? 'All',
+    Tariff_L1: e.tariffL1 ?? 'All',
+    Tariff_L2: e.tariffL2 ?? 'All',
+    Start_Month: e.date,
+    Subscriber_Volume: e.subscriberVolume,
+    Customer_Volume: e.customerVolume,
+    Revenue: e.revenue,
+    ARPU: e.arpu,
+    Contract_Length_Months: e.contractLength ?? 24,
+    Comment: e.comment ?? '',
+    // Percentage events. Distinct column names from the Pricing_Events sheet's
+    // Input_Mode/Amount pair on purpose: that one is a RATE and this is a
+    // VOLUME, and a shared column name would invite conflating them.
+    Amount_Type: e.amountType ?? 'absolute',
+    Percentage_Basis: e.percentageBasis ?? '',
+    Retention_Linked: e.retentionLinked === false ? 'No' : 'Yes',
+    // Phase 4 — Custom Promotion Card
+    Is_Promotion: e.isPromotion ? 'Yes' : 'No',
+    Promo_Rebanded: e.promoRebanded ? 'Yes' : 'No',
+    Promo_Mix_Axis: e.promoMixAxis ?? '',
+    Promo_Mix_JSON: e.promoMix ? JSON.stringify(e.promoMix) : '',
+    Promo_Pricing_Mode: e.promoPricingMode ?? '',
+    Promo_Pricing_Amount: e.promoPricingAmount ?? '',
+    // Alessandro's editable ARPU. '' is the ABSENCE carrier and 0 is a real
+    // stated rate — `?? ''` is doing that work, so it must not become `?? 0`.
+    Arpu_Override: e.arpuOverride ?? '',
+    // R3's per-band override map. '' is the ABSENCE carrier and an empty map
+    // must never be written — "no members" is not the claim "no map", the
+    // same rule Promo_Mix_JSON and the yield override already follow.
+    Promo_Band_ARPU_Override_JSON: e.promoBandArpuOverride
       ? JSON.stringify(e.promoBandArpuOverride) : '',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// R5 — retention dilution
+// ---------------------------------------------------------------------------
+
+/** A dilution figure is a percentage in [0, 100). 100 is excluded because the
+ *  CURRENT figure is a denominator; excluding it from both keeps one rule. */
+export function isValidDilutionPct(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 100;
+}
+
+/**
+ * THE TRANSLATION, and the reason this mode exists.
+ *
+ *   ratio = (1 - target/100) / (1 - current/100)
+ *
+ * Read it as: revenue retained AFTER the change, over revenue retained BEFORE.
+ * Moving dilution 25% -> 20% does NOT give +5% revenue; it gives 0.80/0.75 =
+ * +6.667%. Doing that conversion by hand is the error the card removes, so the
+ * arithmetic lives in ONE exported function that the card, the event builder
+ * and the spec all read.
+ *
+ * Returns null rather than a number when either figure is out of range —
+ * absence, not a silently substituted 1.0, because a ratio of 1.0 is a real
+ * answer (current == target) and must not double as "you typed nonsense".
+ */
+export function retainedRevenueRatio(
+  currentPct: unknown,
+  targetPct: unknown,
+): number | null {
+  if (!isValidDilutionPct(currentPct) || !isValidDilutionPct(targetPct)) return null;
+  return (1 - targetPct / 100) / (1 - currentPct / 100);
+}
+
+/**
+ * The ratio expressed as the percentage a PricingEvent carries in `amount`.
+ * A target ABOVE current is a legitimate worsening scenario and returns a
+ * NEGATIVE number — no clamp, no abs, per the rate-sign rule.
+ */
+export function dilutionAmountPct(
+  currentPct: unknown,
+  targetPct: unknown,
+): number | null {
+  const ratio = retainedRevenueRatio(currentPct, targetPct);
+  return ratio === null ? null : (ratio - 1) * 100;
+}
+
+/**
+ * How a pricing event describes ITSELF in a list. Exported and small on
+ * purpose: the R4 events-summary table needs exactly this string for this
+ * kind, and a summariser written inline in one card's JSX is one the summary
+ * table cannot reuse — which is how two descriptions of one event start
+ * disagreeing.
+ *
+ * A dilution event says what the user typed ("25% → 20% dilution"), never the
+ * derived ARPU percentage. Recognising his own scenario in the list is the
+ * whole point for Alessandro; "+6.67%" is a number he never entered.
+ */
+export function pricingEventSummary(e: PricingEvent): string {
+  if (e.pricingMode === 'dilution'
+      && isValidDilutionPct(e.dilutionCurrentPct)
+      && isValidDilutionPct(e.dilutionTargetPct)) {
+    return `${e.dilutionCurrentPct}% → ${e.dilutionTargetPct}% dilution`;
+  }
+  const sign = e.amount > 0 ? '+' : '';
+  return e.inputMode === 'percentage' ? `${sign}${e.amount}%` : `${sign}${e.amount}`;
+}
+
+/**
+ * THE Pricing_Events export row — one definition, used by App's export AND by
+ * spec:pricing-roundtrip.
+ *
+ * Extracted this session for the reason `marketEventExportRow` was: a spec that
+ * copies the row shape certifies its own copy. The yield spec still does that
+ * and is still recorded as an open finding; this seam is closed rather than
+ * left to become the third instance.
+ */
+export function pricingEventExportRow(e: PricingEvent): Record<string, unknown> {
+  return {
+    ID: e.id,
+    Name: e.name ?? '',
+    Segment: e.segment,
+    Product: e.product,
+    Product_L2: e.productL2,
+    Channel_L1: e.channelL1,
+    Channel_L2: e.channelL2,
+    Tariff_L1: e.tariffL1 ?? 'All',
+    Tariff_L2: e.tariffL2 ?? 'All',
+    Month: e.month,
+    Input_Mode: e.inputMode,
+    Amount: e.amount,
+    Target: e.target,
+    Cohort_Scope: e.cohortScope,
+    Duration: e.duration,
+    Original_Base_ARPU: e.originalBaseArpu,
+    // R5. '' is the ABSENCE carrier throughout — a plain percentage event
+    // writes three empty cells and reads back with the mode absent, so events
+    // saved before R5 need no migration. 0 is a REAL stated figure (no
+    // dilution today, or none targeted) and must never collapse into ''.
+    Pricing_Mode: e.pricingMode ?? '',
+    Dilution_Current_Pct: e.dilutionCurrentPct ?? '',
+    Dilution_Target_Pct: e.dilutionTargetPct ?? '',
+    Comment: e.comment ?? '',
+  };
+}
+
+/**
+ * THE Pricing_Events reader — the inverse seam, and the one that matters most
+ * here because pricing has exactly ONE import route (unlike market events'
+ * two). One route is not a reason to skip the extraction: it is the reason the
+ * count must be PINNED, so a second route added later cannot quietly diverge
+ * from this one the way the market-event routes nearly did.
+ */
+export function pricingEventFromRow(r: Record<string, unknown>): PricingEvent {
+  const mode = String(r.Pricing_Mode ?? '');
+  return {
+    id:               String(r.ID ?? Math.random().toString(36).substr(2, 9)),
+    name:             String(r.Name ?? ''),
+    segment:          String(r.Segment ?? 'All'),
+    product:          String(r.Product ?? 'All'),
+    productL2:        String(r.Product_L2 ?? 'All'),
+    channelL1:        String(r.Channel_L1 ?? 'All'),
+    channelL2:        String(r.Channel_L2 ?? 'All'),
+    tariffL1:         String(r.Tariff_L1 ?? 'All'),
+    tariffL2:         String(r.Tariff_L2 ?? 'All'),
+    month:            String(r.Month ?? ''),
+    inputMode:        (r.Input_Mode ?? 'percentage') as 'percentage' | 'absolute',
+    amount:           Number(r.Amount ?? 0),
+    target:           (r.Target ?? 'cohorts') as 'cohorts' | 'cohorts+base' | 'base-only',
+    cohortScope:      (r.Cohort_Scope ?? 'both') as 'inflow' | 'retention' | 'both',
+    duration:         (r.Duration ?? 'one-off') as 'one-off' | 'recurring',
+    originalBaseArpu: Number(r.Original_Base_ARPU ?? 0),
+    // Through the SAME shared scalar reader the ARPU overrides use, so the ''
+    // absence rule is not re-implemented per field.
+    ...(mode === 'dilution' ? { pricingMode: 'dilution' as const } : {}),
+    dilutionCurrentPct: readOptionalNumber(r.Dilution_Current_Pct),
+    dilutionTargetPct:  readOptionalNumber(r.Dilution_Target_Pct),
+    comment:          String(r.Comment ?? ''),
   };
 }
 

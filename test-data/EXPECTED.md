@@ -6689,6 +6689,32 @@ describe. Inventing one would be the tool stating a figure on the user's behalf.
 - **Session 2** — the orphaned-band drop action, the edit-reopen mounted
   transition, and that transition's guard-trap.
 
+#### R5 DECISIONS (Jon, 2026-08-14) — retention dilution on the Pricing card
+
+Recorded here because the advisor's document update had not reached this file.
+All three rest on the 2026-08-14 true-state report.
+
+1. **REVENUE-ONLY, AND BOTH FIGURES ARE USER-STATED.** The event moves retained
+   **revenue**; retention **volume** is assumed unchanged and is not touched.
+   Neither the current nor the target dilution is derived, because **there is
+   nothing to derive them from**: `Avg_Unit_Price_GBP` exists in four of seven
+   fixtures and is read by **nothing** — no reader, no importer mapping, no UI.
+   A prefill would have to invent a basis, so there is none.
+
+2. **OPTION 1 ON COMPOUNDING — ride the existing mechanism, document the
+   behaviour.** A dilution event is an ordinary percentage `PricingEvent`, so it
+   **compounds multiplicatively** with any other pricing event in scope, because
+   `pricingARPU` is a running value in the pricing pass. This is the OPPOSITE of
+   the market-event doctrine, where percentage events are flat by construction
+   and `sequence` is explicitly not load-bearing for the numbers. The copy says
+   so on the card rather than the two cards silently disagreeing.
+
+3. **THE MODE AND BOTH FIGURES ARE PERSISTED.** Not just the derived amount.
+   This is the `yieldArpuMode` lesson applied before it bites rather than after:
+   an unstored mode misrepresents the event on reopen — a dilution event would
+   come back as a plain percentage event, showing an ARPU delta the user never
+   typed and losing the two numbers they did.
+
 #### THE MARKET-EVENT EXPORT ROW IS NOW ONE FUNCTION
 
 `marketEventExportRow` in `forecasting.ts`, used by App's export **and** by

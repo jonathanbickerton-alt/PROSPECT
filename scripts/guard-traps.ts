@@ -63,6 +63,7 @@ const MIXENGINE = 'src/utils/mixConstraint.ts';
 const MIXCARD = 'scripts/mix-card-spec.tsx';
 const OVERRIDESPEC = 'scripts/override-arpu-spec.tsx';
 const YIELDROUND = 'scripts/yield-roundtrip-spec.ts';
+const PRICEROUND = 'scripts/pricing-roundtrip-spec.ts';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE];
@@ -797,6 +798,26 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '    .filter(k => !members.includes(k))',
       '    .filter(() => false)') },
+  // 70 drops the MODE restore from the pricing edit-reopen. This is the
+  // yieldArpuMode shape, TRAPPED this time rather than diagnosed after the
+  // fact: the event still carries the mode and both stated figures, the export
+  // still writes them, and only the REOPEN forgets — so a dilution event comes
+  // back as a plain percentage event, showing an ARPU delta the user never
+  // typed while the two numbers they DID type sit on the event, unshown.
+  { id: '70 the pricing reopen forgets the dilution mode', why: 'a dilution event reopens as a plain percentage event',
+    file: WHATIF, spec: PRICEROUND,
+    mutate: s => s.replace(
+      '      pricingMode: ev.pricingMode,',
+      '') },
+  // 71 drops one (1 - …) term from the retained-revenue ratio. The mode still
+  // exists, still round-trips and still renders; only the NUMBER is wrong. The
+  // spec pins 25→20 = +6.6667 as a hand-written literal rather than recomputing
+  // it with the function under test, which is what makes this catchable.
+  { id: '71 the retained-revenue ratio loses a term', why: 'dilution translates to the wrong ARPU percentage',
+    file: ENGINE, spec: PRICEROUND,
+    mutate: s => s.replace(
+      '  return (1 - targetPct / 100) / (1 - currentPct / 100);',
+      '  return (1 - targetPct / 100) / (currentPct / 100);') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -807,7 +828,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

@@ -753,5 +753,13 @@
   "whatif_orphan_band_explain": "«{{band}}» detiene il {{share}} % di questo mix ma non compare più nei dati attuali: senza ARPU il valore misto non può essere calcolato. Rimuovilo per continuare.",
   "whatif_orphan_drop": "Rimuovi banda",
   "whatif_orphan_drop_aria": "Rimuovi «{{band}}» e ribilancia le quote restanti",
-  "whatif_mix_blocked_orphans": "Impossibile salvare: {{bands}} non esistono più nei dati attuali. Rimuovili per continuare."
+  "whatif_mix_blocked_orphans": "Impossibile salvare: {{bands}} non esistono più nei dati attuali. Rimuovili per continuare.",
+  "whatif_pricing_mode_direct": "Diretto",
+  "whatif_pricing_mode_dilution": "Diluizione",
+  "whatif_dilution_current": "Diluizione attuale %",
+  "whatif_dilution_target": "Diluizione obiettivo %",
+  "whatif_dilution_awaiting": "Inserisci entrambi i valori per vedere l’effetto.",
+  "whatif_dilution_effect": "{{value}} % di ricavi mantenuti",
+  "whatif_dilution_volume_note": "Il volume di retention è considerato invariato: questo modifica solo i ricavi mantenuti.",
+  "whatif_dilution_compounding_note": "Si combina in modo moltiplicativo con qualsiasi altro evento di pricing nell’ambito."
 }

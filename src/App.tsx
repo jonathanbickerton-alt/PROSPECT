@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, readStoredRateMap, marketEventExportRow, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, readStoredRateMap, marketEventExportRow, pricingEventExportRow, pricingEventFromRow, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
 import { filterToKey, cohortToFilter, forecastForView, forecastForStep1Selection, step1ResolveDecision, describeScope } from './utils/viewFilter';
@@ -628,25 +628,10 @@ export default function App() {
     );
 
     // ── Sheet 8: Pricing_Events ───────────────────────────────────────────────
-    const pricingRows = pricingEvents.map(e => ({
-      ID: e.id,
-      Name: e.name ?? '',
-      Segment: e.segment,
-      Product: e.product,
-      Product_L2: e.productL2,
-      Channel_L1: e.channelL1,
-      Channel_L2: e.channelL2,
-      Tariff_L1: e.tariffL1 ?? 'All',
-      Tariff_L2: e.tariffL2 ?? 'All',
-      Month: e.month,
-      Input_Mode: e.inputMode,
-      Amount: e.amount,
-      Target: e.target,
-      Cohort_Scope: e.cohortScope,
-      Duration: e.duration,
-      Original_Base_ARPU: e.originalBaseArpu,
-      Comment: e.comment ?? '',
-    }));
+    // ONE writer. This row shape used to live inline here and would have been
+    // COPIED into the spec — the seam marketEventExportRow already closed for
+    // market events. Extracted so the spec drives the real export.
+    const pricingRows = pricingEvents.map(pricingEventExportRow);
     XLSX.utils.book_append_sheet(
       wb,
       XLSX.utils.json_to_sheet(pricingRows.length ? pricingRows : [{ Note: 'No pricing events defined' }]),
@@ -1036,25 +1021,7 @@ export default function App() {
         if (wb.SheetNames.includes('Pricing_Events')) {
           const pricingRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Pricing_Events']);
           if (pricingRaw.length > 0 && !pricingRaw[0]?.Note) {
-            setPricingEvents(pricingRaw.map(r => ({
-              id:               String(r.ID ?? Math.random().toString(36).substr(2, 9)),
-              name:             String(r.Name ?? ''),
-              segment:          String(r.Segment ?? 'All'),
-              product:          String(r.Product ?? 'All'),
-              productL2:        String(r.Product_L2 ?? 'All'),
-              channelL1:        String(r.Channel_L1 ?? 'All'),
-              channelL2:        String(r.Channel_L2 ?? 'All'),
-              tariffL1:         String(r.Tariff_L1 ?? 'All'),
-              tariffL2:         String(r.Tariff_L2 ?? 'All'),
-              month:            String(r.Month ?? ''),
-              inputMode:        (r.Input_Mode ?? 'percentage') as 'percentage' | 'absolute',
-              amount:           Number(r.Amount ?? 0),
-              target:           (r.Target ?? 'cohorts') as 'cohorts' | 'cohorts+base' | 'base-only',
-              cohortScope:      (r.Cohort_Scope ?? 'both') as 'inflow' | 'retention' | 'both',
-              duration:         (r.Duration ?? 'one-off') as 'one-off' | 'recurring',
-              originalBaseArpu: Number(r.Original_Base_ARPU ?? 0),
-              comment:          String(r.Comment ?? ''),
-            })));
+            setPricingEvents(pricingRaw.map(pricingEventFromRow));
           }
         }
 
