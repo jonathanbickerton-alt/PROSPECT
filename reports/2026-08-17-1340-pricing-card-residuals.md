@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-08-17 13:40 +0100 (UTC 2026-08-17 12:40)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: c4e1f48 (body written PRE-commit; only these 2 lines added after)
+Repo: committed c4e1f48, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before the base check.
 BASE: HEAD 220c83e vs the brief's 8f3b34e — one commit, REPORT-ONLY.
 OBS 1b'S STATED CAUSE WAS WRONG — corrected in EXPECTED.md while building.
