@@ -6784,6 +6784,47 @@ From the 2026-08-17 walk on the edge fixture and its diagnosis
    An unmeasured pipeline run in a render path is the thing this programme keeps
    paying for; the number goes in the session report either way.
 
+4. **THE ROW'S WEIGHTING VOLUMES COME FROM A MEMOISED PER-EVENT SLICE SERIES**
+   (Jon, 2026-08-17). Each saved event weights against **its own slice**, and
+   the volumes are **current, not stored** — matching the apply path, which
+   weights against the month's current volumes rather than a snapshot.
+
+   The **baseline stays the save-time snapshot** (`originalBaseArpu`), unchanged
+   — that semantics was decided separately and is not reopened here. So the row
+   pairs a stored baseline with current weights, which is exactly what the apply
+   path does: it prices against a blend it recomputes, using volumes it
+   recomputes.
+
+   Identical slices are **deduped** — N events on one slice share one series.
+
+   **CONDITIONAL ON MEASUREMENT**, on the same terms as decision 3: the worst
+   realistic case is timed against the one-frame threshold before shipping, and
+   if it fails, the number is reported and nothing is improvised.
+
+   **THE MEASUREMENT FAILED, AND THIS DECISION IS THEREFORE NOT IMPLEMENTED**
+   (2026-08-17). Building the per-slice map on the 12,112-row edge fixture:
+
+   | distinct slices | time |
+   |---|---|
+   | 1 | 7.2 ms |
+   | 3 | **16.2 ms** — already at one frame |
+   | 5 | 25.0 ms |
+   | 9 | **45.5 ms** |
+
+   Dedupe works (20 events over 9 available slices cost 40.8 ms, not 20 runs),
+   but it cannot help when the slices genuinely differ. At the stated worst
+   realistic case — 10 events on distinct slices — the cost is **~2.7x one
+   frame**, and it is paid on every change to the events list, on top of the
+   main series rebuild that already happens there.
+
+   **So the row keeps cohort-scoped weights for now**, and the mismatch it
+   carries — stored event-scoped baseline, cohort-scoped weights — remains
+   OPEN. It is unchanged from before this session; nothing was improvised to
+   close it. Options are in `2026-08-17-1445-pricing-row-volume-scope.md`; the
+   one that removes the cost entirely (storing volumes at save) contradicts the
+   "current, not stored" clause above, so re-deciding this means re-deciding
+   that clause too.
+
 2. **OBSERVATION 3 IS CLOSED — there was no defect.** The apparent gap at the
    start of the forecast window was the **ARPU Outflow (Ref)** line, not the
    baseline. Jon's tooltips confirmed Baseline = Adjusted at July, and the
