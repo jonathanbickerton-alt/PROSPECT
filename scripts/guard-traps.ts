@@ -899,6 +899,27 @@ const TRAPS: Trap[] = [
       "    [newPricingEvent.month, newPricingEvent.segment, newPricingEvent.product,",
       "    [newPricingEvent.dilutionCurrentPct, newPricingEvent.dilutionTargetPct,"
       + nl + "     newPricingEvent.month, newPricingEvent.segment, newPricingEvent.product,") },
+  // 80 writes the saved volumes from the COHORT series while the baseline stays
+  // event-sliced — the mixed-axes defect reintroduced at source, and at the
+  // exact moment the fix is written. The stored numbers stay plausible (real
+  // volumes for a real slice), so only a check that both come from the SAME
+  // series can tell. That is why the assertion is about provenance rather than
+  // about the values.
+  { id: '80 saved volumes taken from the cohort series, not the event slice', why: 'baseline and weights describe different slices inside one save',
+    file: WHATIF, spec: PRICEROUND,
+    mutate: s => s.replace(
+      '          volumesFromSeries(eventScopeSeries, newPricingEvent.month) ?? { inflow: 0, retention: 0, base: 0 },',
+      '          volumesFromSeries(chartData, newPricingEvent.month) ?? { inflow: 0, retention: 0, base: 0 },') },
+  // 81 drops the COMPAT branch, so an event saved before this change computes
+  // against stored-undefined instead of falling back to the cohort series. Every
+  // pre-change event in every existing save file would silently lose its
+  // adjusted figure — the population least able to notice, because nobody
+  // re-checks events they saved weeks ago.
+  { id: '81 the compat branch for field-less events is dropped', why: 'every pre-change saved event loses its adjusted figure',
+    file: WHATIF, spec: PRICEROUND,
+    mutate: s => s.replace(
+      '                            : pricingAdjustedBlend(pe, baseArpu, monthVolumes(pe.month));',
+      '                            : null;') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

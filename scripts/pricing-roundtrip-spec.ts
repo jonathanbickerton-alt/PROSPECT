@@ -266,9 +266,13 @@ check('display: missing volumes yield ABSENCE, never the unweighted figure',
 // same arithmetic through the same function, so agreement is a property of the
 // wiring rather than of two implementations happening to match. Both call
 // sites in the apply path are counted, so losing one fails here.
-check('agreement: the apply path calls the shared weighting at BOTH its sites',
-  (tab.split('applyPricingToBlend(').length - 1) === 2,
-  `${tab.split('applyPricingToBlend(').length - 1} call sites, expected 2`);
+// THREE now, not two: the apply path's two sites plus the ROW's stored-volume
+// branch, which weights the same way from stored numbers. The count moved
+// because a real caller was added, and the check is re-aimed rather than
+// loosened — a >= would stop noticing a site disappearing.
+check('agreement: every weighting goes through the shared function',
+  (tab.split('applyPricingToBlend(').length - 1) === 3,
+  `${tab.split('applyPricingToBlend(').length - 1} call sites, expected 3 (2 apply path + 1 row)`);
 check('agreement: the apply path no longer inlines the weighting arithmetic',
   !tab.includes('(pricedVol * pricedARPU + (totalVol - pricedVol)'),
   'an inlined copy beside the shared call is how the two drift apart again');
@@ -437,6 +441,72 @@ check('names: all three Name headers share ONE label key, not a second vocabular
 // the summary table uses, so typing the fallback text does not fake a name.
 check('names: the fallback is chosen by presence, not by comparing the string',
   tab.includes("(pe.name || '').trim() ? 'text-slate-700' : 'italic text-slate-400'"));
+
+// -- 13. STORED WEIGHTING VOLUMES ------------------------------------------
+//
+// The row is the event's SAVE-TIME RECORD: baseline and weights from one
+// slice at one moment. Expectations are hand-written from the formula, never
+// produced by the functions under test.
+const withVols: PricingEvent = {
+  ...base, id: 'p-vols', amount: 10, cohortScope: 'retention', target: 'cohorts',
+  originalBaseArpu: 100, pricedVol: 400, totalVol: 2000,
+};
+const vRow = pricingEventExportRow(withVols);
+check('volumes: the real writer emits both columns',
+  'Priced_Vol' in vRow && 'Total_Vol' in vRow);
+check('volumes: with the stated figures',
+  vRow.Priced_Vol === 400 && vRow.Total_Vol === 2000,
+  `${vRow.Priced_Vol}/${vRow.Total_Vol}`);
+const vBack = pricingEventFromRow(vRow as Record<string, unknown>);
+check('volumes: both survive the round trip',
+  vBack.pricedVol === 400 && vBack.totalVol === 2000,
+  `${vBack.pricedVol}/${vBack.totalVol}`);
+
+// STATED ZERO vs ABSENCE. A slice that genuinely had no volume that month is
+// not the same as an event that never recorded one.
+const zeroVols = pricingEventFromRow(
+  pricingEventExportRow({ ...withVols, pricedVol: 0, totalVol: 0 }) as Record<string, unknown>);
+check('volumes: a stated ZERO round-trips as 0, not as absence',
+  zeroVols.pricedVol === 0 && zeroVols.totalVol === 0,
+  `${zeroVols.pricedVol}/${zeroVols.totalVol}`);
+const noVols = pricingEventFromRow(
+  pricingEventExportRow({ ...base, id: 'p-novols' }) as Record<string, unknown>);
+check('volumes: an event without them reads back ABSENT, never zero',
+  noVols.pricedVol === undefined && noVols.totalVol === undefined,
+  `${noVols.pricedVol}/${noVols.totalVol}`);
+check('volumes: and its columns are the empty-string absence carrier',
+  pricingEventExportRow({ ...base, id: 'p-novols' }).Priced_Vol === '');
+
+// THE WEIGHTED FIGURE FROM STORED VOLUMES, hand-computed:
+//   blend 100, +10% on 400 of 2000 = (400 x 110 + 1600 x 100) / 2000 = 102
+check('volumes: stored weights give the hand-computed blend',
+  applyPricingToBlend(400, 110, 2000, 100) === 102,
+  String(applyPricingToBlend(400, 110, 2000, 100)));
+check('volumes: and NOT the unweighted 110',
+  applyPricingToBlend(400, 110, 2000, 100) !== 110);
+
+// -- 14. WIRING: one invocation, stored-vs-compat, re-snapshot together -----
+check('save: the volumes come from the SAME series as the baseline',
+  tab.includes('volumesFromSeries(eventScopeSeries, newPricingEvent.month)'),
+  'a second slice run at save would reopen the two-moments problem inside one save');
+check('save: still EXACTLY TWO callers of the slice invocation',
+  (tab.split('eventScopeSeriesFor(').length - 1) === 2,
+  `${tab.split('eventScopeSeriesFor(').length - 1} call sites, expected 2 (save + Preview)`);
+check('save: baseline and volumes are written TOGETHER on the event',
+  tab.includes('pricedVol: savedVolumes.pricedVol, totalVol: savedVolumes.totalVol'),
+  'an edit refreshing one and not the other recreates the mixed-axes defect');
+check('save: volumes are ABSENT when the selection cannot be decomposed',
+  tab.includes('...(savedVolumes ? {'),
+  'base-only has no pool decomposition, and absent is not zero');
+
+check('row: stored volumes are used when present',
+  tab.includes('const storedVols = pe.pricedVol !== undefined && pe.totalVol !== undefined'));
+check('row: COMPAT — an event without them still weights via the cohort series',
+  tab.includes(': pricingAdjustedBlend(pe, baseArpu, monthVolumes(pe.month));'),
+  'the row must not fabricate save-time volumes it never had');
+check('row: the stored branch goes through the SHARED applyPricingToBlend',
+  tab.includes('return Math.max(0, applyPricingToBlend('),
+  'no row-local weighting arithmetic');
 
 console.log(`\npricing-roundtrip spec: ${pass} passed, ${fails.length} failed`);
 fails.forEach(f => console.log('  FAIL  ' + f));

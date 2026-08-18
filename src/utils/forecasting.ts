@@ -794,6 +794,11 @@ export function pricingEventExportRow(e: PricingEvent): Record<string, unknown> 
     Pricing_Mode: e.pricingMode ?? '',
     Dilution_Current_Pct: e.dilutionCurrentPct ?? '',
     Dilution_Target_Pct: e.dilutionTargetPct ?? '',
+    // The save-time weighting volumes. '' is the ABSENCE carrier, and 0 is a
+    // REAL stated volume — a slice that genuinely had none that month — so
+    // `?? ''` is doing load-bearing work and must not become `?? 0`.
+    Priced_Vol: e.pricedVol ?? '',
+    Total_Vol: e.totalVol ?? '',
     Comment: e.comment ?? '',
   };
 }
@@ -829,6 +834,8 @@ export function pricingEventFromRow(r: Record<string, unknown>): PricingEvent {
     ...(mode === 'dilution' ? { pricingMode: 'dilution' as const } : {}),
     dilutionCurrentPct: readOptionalNumber(r.Dilution_Current_Pct),
     dilutionTargetPct:  readOptionalNumber(r.Dilution_Target_Pct),
+    pricedVol:          readOptionalNumber(r.Priced_Vol),
+    totalVol:           readOptionalNumber(r.Total_Vol),
     comment:          String(r.Comment ?? ''),
   };
 }

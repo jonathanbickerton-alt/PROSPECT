@@ -6825,6 +6825,37 @@ From the 2026-08-17 walk on the edge fixture and its diagnosis
    "current, not stored" clause above, so re-deciding this means re-deciding
    that clause too.
 
+5. **SUPERSEDES DECISION 4's "CURRENT, NOT STORED" CLAUSE** (Jon, 2026-08-17).
+   The pricing row's weighting volumes are **STORED ON THE EVENT AT SAVE**,
+   taken from the same event-slice series the baseline snapshot comes from.
+
+   **This is a supersession, not a workaround.** Decision 4 chose current
+   volumes so the row would match the apply path; the measurement then showed
+   the only affordable way to get them is to store them. Rather than keep a
+   clause the implementation quietly violates, the clause is withdrawn here,
+   dated, with the reason.
+
+   **THE REASONING, on record.** The row is the event's **save-time record**:
+   baseline and weights from the same slice at the same moment, coherent on
+   BOTH axes — scope and time. The prior clause mixed them, pairing a
+   save-time baseline with current weights, which is a figure belonging to
+   neither moment.
+
+   **The CHART is the surface that carries current truth.** The division of
+   labour is the point: the chart recomputes and shows what is true now; the
+   row records what was true when the event was made. Two surfaces, two
+   honest jobs, rather than one surface trying to do both and doing neither.
+
+   **Preview is unchanged** — it describes a draft that has not been saved, so
+   it is live and event-scoped by its own decided semantics. Preview and the
+   row can therefore legitimately differ, but ONLY when the underlying data
+   changed between save and viewing. That pair is explainable; the previous
+   mixed-axes pair was not.
+
+   **COMPAT: events saved without the fields keep today's behaviour** — they
+   weight via the cohort series. The row does not fabricate save-time volumes
+   it never had. No stored event is rewritten.
+
 2. **OBSERVATION 3 IS CLOSED — there was no defect.** The apparent gap at the
    start of the forecast window was the **ARPU Outflow (Ref)** line, not the
    baseline. Jon's tooltips confirmed Baseline = Adjusted at July, and the

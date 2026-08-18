@@ -12,7 +12,7 @@ import { SKIP_REASON_KEY } from '../types/forecast';
 import { EventChangeConfirmModal } from './EventChangeConfirmModal';
 import type { MarketEvent } from '../utils/forecasting';
 import { rebalance, achievableTargetRange, solveForTarget, blendedArpu, conformsToTotal } from '../utils/mixConstraint';
-import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView } from '../utils/forecasting';
+import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope, PricingVolumes, ViewScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
@@ -2185,6 +2185,24 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const matchRow = eventScopeSeries.find((r: any) => r.month === newPricingEvent.month);
     const originalBaseArpu = matchRow ? (matchRow['ARPU (Adjusted)'] as number) : 0;
 
+    // THE WEIGHTING VOLUMES, FROM THE SAME INVOCATION AND THE SAME ROW as the
+    // baseline above. ONE slice run feeds both, deliberately: a second run here
+    // would reopen the two-moments problem inside a single save, which is the
+    // very defect this stores volumes to close.
+    //
+    // Absent when the selection cannot be decomposed (base-only), matching the
+    // em-dash the row already renders for that case. An absent pool is not an
+    // empty one, so this must never fall back to zero.
+    const savedVolumes = matchRow
+      ? pricedVolumesFor(
+          {
+            target: newPricingEvent.target ?? 'cohorts',
+            cohortScope: isDilution ? 'retention' : (newPricingEvent.cohortScope ?? 'both'),
+          },
+          volumesFromSeries(eventScopeSeries, newPricingEvent.month) ?? { inflow: 0, retention: 0, base: 0 },
+        )
+      : null;
+
     const event: PricingEvent = {
       id: Math.random().toString(36).substr(2, 9),
       segment:   newPricingEvent.segment   ?? 'All',
@@ -2205,6 +2223,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       cohortScope: isDilution ? 'retention' : (newPricingEvent.cohortScope ?? 'both'),
       duration:    newPricingEvent.duration    ?? 'one-off',
       originalBaseArpu,
+      // Written BY PRESENCE, together with the baseline they were measured
+      // beside. An edit re-runs this whole block, so baseline and volumes
+      // re-snapshot as a pair — refreshing one and not the other would
+      // recreate the mixed-axes defect at the moment of writing its fix.
+      ...(savedVolumes ? { pricedVol: savedVolumes.pricedVol, totalVol: savedVolumes.totalVol } : {}),
       // THE MODE AND BOTH STATED FIGURES ARE PERSISTED, not just the derived
       // amount — decision 3, and the yieldArpuMode lesson applied before it
       // bites. Absent entirely on a plain event, so nothing pre-R5 migrates.
@@ -4854,7 +4877,28 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           // engine moved only the retention share. The row now
                           // asks the engine's own weighting instead of having
                           // an opinion about it.
-                          const adjustedArpu = pricingAdjustedBlend(pe, baseArpu, monthVolumes(pe.month));
+                          // STORED WEIGHTS WHERE THE EVENT HAS THEM, through
+                          // the SAME shared applyPricingToBlend — no row-local
+                          // arithmetic. The row is the save-time record, so its
+                          // baseline and weights come from one slice at one
+                          // moment.
+                          //
+                          // COMPAT: an event saved before this change has no
+                          // stored volumes and keeps its previous behaviour,
+                          // weighting via the cohort series. The row does NOT
+                          // fabricate save-time volumes it never had.
+                          const storedVols = pe.pricedVol !== undefined && pe.totalVol !== undefined
+                            ? { pricedVol: pe.pricedVol, totalVol: pe.totalVol }
+                            : null;
+                          const adjustedArpu = storedVols
+                            ? (() => {
+                                const priced = pe.inputMode === 'percentage'
+                                  ? baseArpu * (1 + pe.amount / 100)
+                                  : baseArpu + pe.amount;
+                                return Math.max(0, applyPricingToBlend(
+                                  storedVols.pricedVol, priced, storedVols.totalVol, baseArpu));
+                              })()
+                            : pricingAdjustedBlend(pe, baseArpu, monthVolumes(pe.month));
                           const delta = adjustedArpu === null ? null : adjustedArpu - baseArpu;
                           return (
                             <tr key={pe.id} className={`transition-colors ${

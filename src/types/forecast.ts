@@ -403,6 +403,32 @@ export interface PricingEvent {
    */
   dilutionCurrentPct?: number;
   dilutionTargetPct?: number;
+  /**
+   * THE WEIGHTING VOLUMES AT SAVE — the priced pool and the total, for this
+   * event's month, selected by its own target/cohortScope through the shared
+   * `pricedVolumesFor` rule.
+   *
+   * STORED, and that is a superseding decision (2026-08-17). The row is the
+   * event's SAVE-TIME RECORD, so its baseline and its weights must come from
+   * the same slice at the same moment — coherent on scope AND on time. The
+   * previous arrangement paired a save-time baseline (`originalBaseArpu`)
+   * with volumes recomputed at render, producing a figure belonging to
+   * neither moment. The CHART is the surface that carries current truth.
+   *
+   * Recomputing them per row instead was measured and refused: 16.2 ms at
+   * three distinct slices, on every change to the events list — see
+   * `2026-08-17-1445-pricing-row-volume-scope.md`.
+   *
+   * PRESENCE IS THE CARRIER. Absent ENTIRELY when the selection cannot be
+   * decomposed — `base-only` prices the base pool against the event pools
+   * inside it, which month volumes cannot express — and absent on every event
+   * saved before this change, which keeps its old display behaviour rather
+   * than being handed volumes it never had. An absent pool is NOT an empty
+   * one, so 0 is a real stated volume (a slice that genuinely had none that
+   * month) and must never collapse into absence.
+   */
+  pricedVol?: number;
+  totalVol?: number;
   name?: string;
   comment?: string;
 }
