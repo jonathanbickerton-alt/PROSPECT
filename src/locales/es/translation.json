@@ -788,5 +788,7 @@
   "whatif_pricing_block_no_amount": "Introduzca un importe antes de añadir este evento.",
   "whatif_pricing_block_dilution_incomplete": "Introduzca la dilución actual y la objetivo antes de añadir este evento.",
   "whatif_pricing_block_dilution_range": "Las cifras de dilución deben ser 0 o más e inferiores a 100.",
-  "whatif_preview_not_available": "No hay cifra ponderada para este evento: los eventos solo sobre la base afectan a un grupo que esta vista no puede desglosar."
+  "whatif_preview_not_available": "No hay cifra ponderada para este evento: los eventos solo sobre la base afectan a un grupo que esta vista no puede desglosar.",
+  "restore_fell_back_to_first_cohort": "Se ha restaurado la primera cohorte disponible: este archivo no registró cuál estaba activa.",
+  "common_dismiss": "Descartar"
 }

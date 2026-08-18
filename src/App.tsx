@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import { FileSpreadsheet } from 'lucide-react';
+import { FileSpreadsheet, Info, XCircle } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, readStoredRateMap, marketEventExportRow, pricingEventExportRow, pricingEventFromRow, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, readStoredRateMap, marketEventExportRow, pricingEventExportRow, pricingEventFromRow, activeCohortMetaRows, readActiveCohortMeta, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
 import { filterToKey, cohortToFilter, forecastForView, forecastForStep1Selection, step1ResolveDecision, describeScope } from './utils/viewFilter';
@@ -669,6 +669,13 @@ export default function App() {
       { Field: 'Export_Timestamp',       Value: format(exportTs, 'dd MMM yyyy HH:mm') },
       { Field: 'PROSPECT_Version',       Value: '1.0.0' },
       { Field: 'Active_Step',            Value: activeView },
+      // THE ACTIVE COHORT, as a cohort. Is_Active on the baseline rows cannot
+      // express an AGGREGATE — it marks a match against a STORE key, and the
+      // store holds leaves — so a session viewing an aggregate recorded nothing
+      // active and restored to an arbitrary first leaf. Written through the
+      // shared seam so the reader cannot disagree about the field names, and
+      // omitted entirely when nothing is active.
+      ...activeCohortMetaRows(baseForecast?.cohort),
       { Field: 'Forecast_Period_Start',  Value: forecastMonths[0]?.month ?? (bfRows[0]?.Month as string ?? '') },
       { Field: 'Forecast_Period_End',    Value: forecastMonths[forecastMonths.length - 1]?.month ?? (bfRows[bfRows.length - 1]?.Month as string ?? '') },
       { Field: 'Baseline_Cohorts',       Value: forecastStore.size + Object.keys(savedForecasts).length },
@@ -850,15 +857,29 @@ export default function App() {
             //
             // resolveFromStore, not resolveForecast: setForecastStore above has
             // not committed yet, so that closure still holds the OLD store.
+            // THE RECORDED ACTIVE COHORT COMES FIRST. It may be an AGGREGATE —
+            // which is exactly what Is_Active could never express, because that
+            // flag marks a match against a STORE key and the store holds leaves.
+            // Resolving it goes through the SEAM, which derives an aggregate from
+            // its leaves; a store lookup is precisely what cannot find one.
+            const recordedActive = readActiveCohortMeta(getMetaValue);
             const rawBf = activeBf ?? (restoredStore.values().next().value as BaseForecast | undefined) ?? null;
             const restoredLeafMap = buildRestoredLeafIndex(restoredStore.keys());
-            const bf = rawBf
-              ? resolveFromStore(restoredStore, restoredLeafMap, makeForecastKey(
-                  rawBf.cohort.segment, rawBf.cohort.product, rawBf.cohort.productL2,
-                  rawBf.cohort.channel, rawBf.cohort.channelL2,
-                  rawBf.cohort.tariffL1, rawBf.cohort.tariffL2,
-                )).forecast
+            const keyFor = (c: { segment: string; product: string; productL2?: string;
+                                 channel: string; channelL2?: string;
+                                 tariffL1?: string; tariffL2?: string }) =>
+              makeForecastKey(c.segment, c.product, c.productL2, c.channel, c.channelL2,
+                              c.tariffL1, c.tariffL2);
+            const recordedBf = recordedActive
+              ? resolveFromStore(restoredStore, restoredLeafMap, keyFor(recordedActive)).forecast
               : null;
+            const bf = recordedBf
+              ?? (rawBf ? resolveFromStore(restoredStore, restoredLeafMap, keyFor(rawBf.cohort)).forecast : null);
+            // THE FALLBACK ANNOUNCES ITSELF. It fires when the save recorded no
+            // active cohort (an older file) or recorded one this store can no
+            // longer resolve. Landing a user on an arbitrary slice in silence is
+            // what made the last walk look like three separate defects.
+            if (bf && !recordedBf) setRestoreFellBack(true);
             if (bf) {
               setBaseForecast(bf);
               setForecastUpdatedAt(new Date().toISOString());
@@ -1225,6 +1246,10 @@ export default function App() {
 
   // Import Save result banner state
   const [importSaveResult, setImportSaveResult] = useState<{ success: boolean; timestamp?: string; error?: string } | null>(null);
+  /** Set when restore could not honour a recorded active cohort and fell back
+   *  to the first stored one. Dismissible, and shown on whatever view the save
+   *  restored to — the notice is useless on a surface the user never lands on. */
+  const [restoreFellBack, setRestoreFellBack] = useState(false);
 
   // ForecastContext state — owned here so App handlers can write to it
   const [baseForecast, setBaseForecast] = useState<BaseForecast | null>(null);
@@ -4448,6 +4473,24 @@ export default function App() {
             </button>
           </div>
         </div>
+
+        {/* THE FALLBACK NOTICE. In the shell rather than on Home, because a
+            restore navigates to the saved Active_Step — a notice on Home is one
+            the user may never see. */}
+        {restoreFellBack && (
+          <div
+            data-testid="restore-fellback-notice"
+            className="mb-4 p-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-sm flex items-start gap-3"
+          >
+            <Info className="shrink-0 mt-0.5" size={16} />
+            <p className="flex-1">{t('restore_fell_back_to_first_cohort')}</p>
+            <button
+              onClick={() => setRestoreFellBack(false)}
+              aria-label={t('common_dismiss')}
+              className="shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+            ><XCircle size={16} /></button>
+          </div>
+        )}
 
         {/* Step indicator row — always visible so users can see the journey */}
         <StepIndicator

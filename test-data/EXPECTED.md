@@ -6739,6 +6739,39 @@ From the 2026-08-17 walk on the edge fixture and its diagnosis
    where it is harder to find. The diagnosis counted FIVE blocking terms across
    two layers, none of which said anything.
 
+#### RESTORE: THE ACTIVE COHORT IS RECORDED (Jon, 2026-08-18)
+
+From the 2026-08-18 diagnosis
+(`2026-08-18-1406-restore-view-and-apply-diagnosis.md`), which read Jon's real
+save and found **all 1,728 baseline rows marked `Is_Active='No'`**.
+
+**THE ACTIVE COHORT IS WRITTEN AS A COHORT**, in `Metadata`, from
+`baseForecast.cohort` verbatim — `'All'`-bearing dimensions included, leaf and
+aggregate alike. Absent entirely when no forecast is active.
+
+**Why a cohort rather than a flag.** `Is_Active` is written by comparing each
+**store** key to the live forecast's key, and the store holds **leaves**. A
+derived AGGREGATE has no store row, so viewing one means nothing matches and
+every row is written `'No'` — after which restore falls through to the first
+store entry, an arbitrary leaf. The flag cannot express the thing it is being
+asked to record.
+
+**RESTORE READS IT FIRST**, and for an aggregate resolves **through the seam**
+(`resolveForecast`) rather than by store lookup — a store lookup is precisely
+what cannot find an aggregate. The existing `cohortToFilter` path then sets the
+viewing bar correctly for both shapes.
+
+**THE FALLBACK IS RETAINED AND ANNOUNCES ITSELF.** Older files have no block,
+so the first-entry fallback stays — but it now says so on screen: *"Restored
+the first available cohort; this save did not record which was active."*
+Silently landing a user on an arbitrary slice is the same class of failure as
+the refusals this arc has been fixing — the app made a choice the user cannot
+see, and then everything scoped to a different slice looks broken.
+
+**`Is_Active` STAYS AS IT IS.** It is compat, and it is the fifth site of the
+`'All'` marker-meaning distinction; DQ's single-source-of-truth work owns its
+future. This session does not touch the other four marker sites.
+
 #### PRICING RESIDUALS (Jon, 2026-08-17) — after the walk fixes
 
 1. **`originalBaseArpu` BECOMES EVENT-SCOPED.** The snapshot is the blend of

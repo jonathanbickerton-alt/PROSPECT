@@ -364,6 +364,84 @@ export function dilutionAmountPct(
   return ratio === null ? null : (ratio - 1) * 100;
 }
 
+// ---------------------------------------------------------------------------
+// THE ACTIVE COHORT, recorded in a save
+// ---------------------------------------------------------------------------
+
+/** The seven Metadata fields, in one place so the writer and the reader cannot
+ *  disagree about their names. */
+export const ACTIVE_COHORT_FIELDS = [
+  ['Active_Cohort_Segment',    'segment'],
+  ['Active_Cohort_Product',    'product'],
+  ['Active_Cohort_Product_L2', 'productL2'],
+  ['Active_Cohort_Channel',    'channel'],
+  ['Active_Cohort_Channel_L2', 'channelL2'],
+  ['Active_Cohort_Tariff_L1',  'tariffL1'],
+  ['Active_Cohort_Tariff_L2',  'tariffL2'],
+] as const;
+
+/** The cohort shape this seam reads and writes. Structural so neither side
+ *  takes a value import for one signature. */
+export interface ActiveCohortLike {
+  segment: string; product: string; productL2?: string;
+  channel: string; channelL2?: string;
+  tariffL1?: string; tariffL2?: string;
+}
+
+/**
+ * THE ACTIVE COHORT, AS METADATA ROWS — one writer.
+ *
+ * Written VERBATIM, `'All'`-bearing dimensions included, because an aggregate
+ * IS an 'All'-bearing cohort and recording it is the whole point. The previous
+ * arrangement marked the active forecast with a flag on a STORE row, and the
+ * store holds leaves — so viewing an aggregate marked nothing, and restore fell
+ * through to an arbitrary first leaf. A flag on a row that does not exist
+ * cannot record a cohort that has no row.
+ *
+ * Returns NO ROWS when nothing is active. Absence of the block is what tells a
+ * restore it is reading an older file and must fall back — so an empty string
+ * would be a claim ("the active segment was blank") rather than silence.
+ */
+export function activeCohortMetaRows(
+  cohort: ActiveCohortLike | null | undefined,
+): { Field: string; Value: string }[] {
+  if (!cohort) return [];
+  return ACTIVE_COHORT_FIELDS.map(([field, key]) => ({
+    Field: field,
+    Value: String((cohort as unknown as Record<string, unknown>)[key] ?? 'All'),
+  }));
+}
+
+/**
+ * THE ACTIVE COHORT, FROM METADATA — the inverse seam.
+ *
+ * Returns null when the block is ABSENT, which is the signal to fall back. The
+ * segment field is the sentinel: a save either wrote all seven or none.
+ *
+ * A literal `'All'` read back here is the cohort's own wildcard and is kept as
+ * such — this is a recorded scope, not a data row, so the ScopeDims rule that
+ * 'All' never comes from data does not apply to it.
+ */
+export function readActiveCohortMeta(
+  get: (field: string) => unknown,
+): ActiveCohortLike | null {
+  const seg = get('Active_Cohort_Segment');
+  if (seg === undefined || seg === null || String(seg) === '') return null;
+  const val = (f: string) => {
+    const v = get(f);
+    return v === undefined || v === null || String(v) === '' ? 'All' : String(v);
+  };
+  return {
+    segment:   String(seg),
+    product:   val('Active_Cohort_Product'),
+    productL2: val('Active_Cohort_Product_L2'),
+    channel:   val('Active_Cohort_Channel'),
+    channelL2: val('Active_Cohort_Channel_L2'),
+    tariffL1:  val('Active_Cohort_Tariff_L1'),
+    tariffL2:  val('Active_Cohort_Tariff_L2'),
+  };
+}
+
 /** An event's scope dimensions, normalised across the three carriers. A
  *  dimension a carrier does not have is simply absent, which reads the same as
  *  'All' — no filter on that dimension. */

@@ -65,6 +65,7 @@ const OVERRIDESPEC = 'scripts/override-arpu-spec.tsx';
 const YIELDROUND = 'scripts/yield-roundtrip-spec.ts';
 const PRICEROUND = 'scripts/pricing-roundtrip-spec.ts';
 const SUMMARYSPEC = 'scripts/events-summary-spec.ts';
+const ACTIVECOHORT = 'scripts/active-cohort-spec.ts';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE];
@@ -228,11 +229,18 @@ const TRAPS: Trap[] = [
   // change laundered it. This reverts the import site to that raw read.
   { id: '15 session import bypasses the seam again', why: 'an opened session shows the stale aggregate on Step 1',
     file: APP, spec: IMPORTSEAM,
+    // RE-AIMED 2026-08-18. The active-cohort work restructured this site: `bf`
+    // is now `recordedBf ?? (rawBf ? resolveFromStore(...) : null)`, so the old
+    // `const bf = rawBf` anchor stopped matching and the trap reported
+    // INCONCLUSIVE — correctly, and that is the signal it exists to give.
+    // Collapsing the whole expression to the raw stored forecast still
+    // reproduces the shipped defect: BOTH the recorded and the fallback paths
+    // bypass the seam.
     mutate: s => {
-      const start = s.indexOf('            const bf = rawBf');
-      const end = s.indexOf('              : null;', start);
+      const start = s.indexOf('            const bf = recordedBf');
+      const end = s.indexOf('.forecast : null);', start);
       if (start === -1 || end === -1) return s; // unchanged -> reported as MISSED, correctly
-      return s.slice(0, start) + '            const bf = rawBf;' + s.slice(end + '              : null;'.length);
+      return s.slice(0, start) + '            const bf = rawBf;' + s.slice(end + '.forecast : null);'.length);
     } },
   // Trap 16 reinstates ONE All-bearing write - the mirror control's whole
   // point. acceptPreviewForecast loses its decline and can once again store a
@@ -920,6 +928,24 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '                            : pricingAdjustedBlend(pe, baseArpu, monthVolumes(pe.month));',
       '                            : null;') },
+  // 82 drops the recorded-active-cohort read, so restore ALWAYS falls through
+  // to the first stored cohort — the pre-fix behaviour, restored. Nothing
+  // errors and a forecast still loads; it is simply the wrong one, and every
+  // event scoped elsewhere then looks broken. That is exactly how this arrived
+  // as three separate-looking observations on a walk.
+  { id: '82 restore stops reading the recorded active cohort', why: 'restore lands on an arbitrary first leaf again',
+    file: APP, spec: ACTIVECOHORT,
+    mutate: s => s.replace(
+      '            const recordedActive = readActiveCohortMeta(getMetaValue);',
+      '            const recordedActive = null;') },
+  // 83 drops the announcement, so the fallback fires in silence. The app is
+  // still WRONG in the same way as before, but now says nothing about it —
+  // which is the half of the fix that turns a mystery back into a mystery.
+  { id: '83 the fallback stops announcing itself', why: 'an arbitrary cohort is restored in silence',
+    file: APP, spec: ACTIVECOHORT,
+    mutate: s => s.replace(
+      '            if (bf && !recordedBf) setRestoreFellBack(true);',
+      '') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -930,7 +956,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

@@ -788,5 +788,7 @@
   "whatif_pricing_block_no_amount": "Geben Sie einen Betrag ein, bevor Sie dieses Ereignis hinzufügen.",
   "whatif_pricing_block_dilution_incomplete": "Geben Sie die aktuelle und die Ziel-Verwässerung ein, bevor Sie dieses Ereignis hinzufügen.",
   "whatif_pricing_block_dilution_range": "Verwässerungswerte müssen mindestens 0 und kleiner als 100 sein.",
-  "whatif_preview_not_available": "Kein gewichteter Wert für dieses Ereignis – reine Basis-Ereignisse betreffen einen Pool, den diese Ansicht nicht aufschlüsseln kann."
+  "whatif_preview_not_available": "Kein gewichteter Wert für dieses Ereignis – reine Basis-Ereignisse betreffen einen Pool, den diese Ansicht nicht aufschlüsseln kann.",
+  "restore_fell_back_to_first_cohort": "Es wurde die erste verfügbare Kohorte wiederhergestellt – diese Sicherung hat nicht festgehalten, welche aktiv war.",
+  "common_dismiss": "Schließen"
 }

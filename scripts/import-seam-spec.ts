@@ -212,8 +212,16 @@ const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails
     `found ${sites.length} — if this is intentional, classify the new site and update the count`);
 
   // The two import sites specifically, since they are the ones this fix moved.
-  const importWindow = app.slice(app.indexOf('Use Is_Active cohort as the active forecast'),
-                                 app.indexOf('Use Is_Active cohort as the active forecast') + 1600);
+  // BOUNDED STRUCTURALLY, not by a character count. This was `+ 1600`, and on
+  // 2026-08-18 the active-cohort work added a comment block that pushed
+  // `resolveFromStore(` past the cut — the check went red against correct code.
+  // A distance was never the property being asserted; the BRANCH is. The window
+  // now runs from the anchor to the legacy branch that follows it, so anything
+  // added inside the branch stays inside the window.
+  const importWindowStart = app.indexOf('Use Is_Active cohort as the active forecast');
+  const importWindowEnd = app.indexOf('Backward-compat: old format', importWindowStart);
+  const importWindow = app.slice(importWindowStart,
+    importWindowEnd > importWindowStart ? importWindowEnd : importWindowStart + 1600);
   check('WIRING: the Is_Active import site was located', importWindow.length > 100);
   const code = importWindow.replace(/\/\/[^\n]*/g, '');
   check('WIRING: the Is_Active import routes through resolveFromStore',

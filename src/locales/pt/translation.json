@@ -788,5 +788,7 @@
   "whatif_pricing_block_no_amount": "Introduza um valor antes de adicionar este evento.",
   "whatif_pricing_block_dilution_incomplete": "Introduza a diluição atual e a diluição alvo antes de adicionar este evento.",
   "whatif_pricing_block_dilution_range": "Os valores de diluição devem ser iguais ou superiores a 0 e inferiores a 100.",
-  "whatif_preview_not_available": "Sem valor ponderado para este evento: os eventos apenas sobre a base afetam um conjunto que esta vista não consegue decompor."
+  "whatif_preview_not_available": "Sem valor ponderado para este evento: os eventos apenas sobre a base afetam um conjunto que esta vista não consegue decompor.",
+  "restore_fell_back_to_first_cohort": "Foi restaurada a primeira coorte disponível — esta gravação não registou qual estava ativa.",
+  "common_dismiss": "Dispensar"
 }
