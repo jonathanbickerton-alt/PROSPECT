@@ -66,9 +66,11 @@ const YIELDROUND = 'scripts/yield-roundtrip-spec.ts';
 const PRICEROUND = 'scripts/pricing-roundtrip-spec.ts';
 const SUMMARYSPEC = 'scripts/events-summary-spec.ts';
 const ACTIVECOHORT = 'scripts/active-cohort-spec.ts';
+const SCENHELPER = 'src/utils/scenarioHelper.ts';
+const SCENPRICE = 'scripts/scenario-pricing-spec.ts';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
-const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE];
+const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -946,6 +948,25 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '            if (bf && !recordedBf) setRestoreFellBack(true);',
       '') },
+  // 84 disables Scenario Compare's scope filter, so every pricing event applies
+  // to every scenario — the shipped divergence, reproduced. Nothing errors and
+  // every number stays plausible; events simply reach slices they do not
+  // describe. This path had NO gate at all until this session, which is how it
+  // diverged from the What-If side unnoticed for the whole arc.
+  { id: '84 Scenario Compare stops filtering pricing events by scope', why: 'every pricing event applies to every scenario',
+    file: SCENHELPER, spec: SCENPRICE,
+    mutate: s => s.replace(
+      '      if (!eventScopeMatchesView({',
+      '      if (false && !eventScopeMatchesView({') },
+  // 85 drops the cohort weighting, so the full ratio hits the whole blend --
+  // the exact defect the R4 finding named. An out-of-scope event still does
+  // nothing, so the scope check stays green while the WEIGHTED check goes red:
+  // the two traps separate the two halves of the correction.
+  { id: '85 Scenario Compare stops weighting by target and cohortScope', why: 'a retention-scoped event moves the whole book again',
+    file: SCENHELPER, spec: SCENPRICE,
+    mutate: s => s.replace(
+      '      finalArpu = pools',
+      '      finalArpu = priced; void pools; const _unused = pools') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -956,7 +977,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

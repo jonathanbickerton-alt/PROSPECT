@@ -1,5 +1,6 @@
 import { format, addMonths, parse } from 'date-fns';
-import { eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume } from './forecasting';
+import { eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume,
+         eventScopeMatchesView, pricedVolumesFor, applyPricingToBlend } from './forecasting';
 import type { ProRataLeaf, ProRataScope } from './forecasting';
 
 export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod: any, vchan: any, vtariff?: any) {
@@ -426,13 +427,22 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
     // (aggregateArpu + delta). Scaling by a leaf's volume share would
     // under-apply the price change. Do not route this through eventShare().
     const applicablePricing = pricingEvents.filter((e: any) => {
-      const segOk = e.Segment === 'All' || vseg === 'All' || e.Segment === vseg;
-      const prodOk = e.Product === 'All' || !vprodL1 || e.Product === vprodL1;
-      const ch1Ok = e.Channel_L1 === 'All' || !vchanL1 || e.Channel_L1 === vchanL1;
-      const ch2Ok = e.Channel_L2 === 'All' || !vchanL2 || e.Channel_L2 === vchanL2;
-      const tar1Ok = !e.Tariff_L1 || e.Tariff_L1 === 'All' || !vtarL1 || e.Tariff_L1 === vtarL1;
-      const tar2Ok = !e.Tariff_L2 || e.Tariff_L2 === 'All' || !vtarL2 || e.Tariff_L2 === vtarL2;
-      if (!segOk || !prodOk || !ch1Ok || !ch2Ok || !tar1Ok || !tar2Ok) return false;
+      // THE SHARED PREDICATE, not a seventh private answer. These six inline
+      // comparisons were this file's own copy of a rule the What-If side also
+      // held — and they OMITTED Product_L2 entirely, so an event scoped to one
+      // value tier applied across every tier here. The predicate's handling of
+      // 'All' / null / absent is verified over all 46,656 combinations, and a
+      // literal 'All' from the sheet is a wildcard through it.
+      if (!eventScopeMatchesView({
+        segment: e.Segment, product: e.Product, productL2: e.Product_L2,
+        channelL1: e.Channel_L1, channelL2: e.Channel_L2,
+        tariffL1: e.Tariff_L1, tariffL2: e.Tariff_L2,
+      }, {
+        segment: vseg,
+        productL1: vprodL1, productL2: vprodL2,
+        channelL1: vchanL1, channelL2: vchanL2,
+        tariffL1: vtarL1, tariffL2: vtarL2,
+      })) return false;
       
       const startMs = parse(e.Month, 'yyyy-MM', new Date()).getTime();
       const currMs = parse(m.month, 'yyyy-MM', new Date()).getTime();
@@ -443,13 +453,36 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       return true;
     });
 
+    // WEIGHTED BY WHAT THE EVENT ACTUALLY PRICES, through the SAME functions
+    // the What-If side uses. This multiplied the WHOLE blended ARPU and read
+    // neither Target nor Cohort_Scope, so a retention-scoped event moved every
+    // subscriber here and only the retained ones there — one event, two
+    // different effects on two screens. Every dilution event is
+    // retention-scoped by construction, so the divergence was systematic.
+    //
+    // The volumes are this pass's own: m.uplifted's flows and the adjusted base
+    // pool, the same three quantities WhatIfTab weights over. Only the SHAPE is
+    // adapted at the call; the arithmetic is not forked.
     applicablePricing.forEach((pe: any) => {
       const amount = Number(pe.Amount || 0);
-      if (pe.Input_Mode === 'percentage') {
-        finalArpu *= (1 + amount / 100);
-      } else {
-        finalArpu += amount;
-      }
+      const priced = pe.Input_Mode === 'percentage'
+        ? finalArpu * (1 + amount / 100)
+        : finalArpu + amount;
+      const pools = pricedVolumesFor(
+        {
+          target: (pe.Target ?? 'cohorts') as 'cohorts' | 'cohorts+base' | 'base-only',
+          cohortScope: (pe.Cohort_Scope ?? 'both') as 'inflow' | 'retention' | 'both',
+        },
+        { inflow: m.uplifted.inflow, retention: m.uplifted.retention, base: newBAdj },
+      );
+      // base-only has no pool decomposition expressible in month volumes;
+      // pricedVolumesFor says so by returning null. The What-If side prices the
+      // base pool against the event pools there, which this pass does not model,
+      // so the unweighted application is KEPT for that target rather than
+      // replaced by a weight that belongs to neither.
+      finalArpu = pools
+        ? applyPricingToBlend(pools.pricedVol, priced, pools.totalVol, finalArpu)
+        : priced;
     });
 
     p_bBase = newBBase;

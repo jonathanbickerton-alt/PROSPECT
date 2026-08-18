@@ -6739,6 +6739,30 @@ From the 2026-08-17 walk on the edge fixture and its diagnosis
    where it is harder to find. The diagnosis counted FIVE blocking terms across
    two layers, none of which said anything.
 
+#### SCENARIO COMPARE HONOURS target AND cohortScope (Jon, 2026-08-18)
+
+From the 2026-08-17 R4 finding: `scenarioHelper`'s pricing pass read only
+`Input_Mode`, `Amount` and `Duration`, and multiplied the WHOLE blended ARPU.
+A repo-wide search for `Cohort_Scope`, `cohortScope`, `Target` or `pe.target`
+in that file returned nothing, while `WhatIfTab` honoured both.
+
+**THE PASS NOW HONOURS BOTH**, weighting through the SAME shared functions the
+What-If side uses — `eventScopeMatchesView` for scope, `pricedVolumesFor` plus
+`applyPricingToBlend` for the weighting. No `scenarioHelper`-local
+reimplementation: a second private answer is exactly how this divergence was
+born, and a third would be how it comes back.
+
+**THIS IS THE TARGETED CORRECTION, NOT THE CURE.** `scenarioHelper` remains a
+parallel apply path duplicating logic the What-If side owns. Full path
+unification stays BACKLOGGED as the durable fix; this session makes the two
+agree about pricing scope without pretending the duplication is gone.
+
+**SCENARIO COMPARE NUMBERS WILL MOVE**, for every pricing event narrower than
+the scenario's scope — and for every dilution event, which is retention-scoped
+by construction. **That movement is the correction working.** Recorded here so
+a later reader meets it as an intended change rather than as a regression, and
+so nobody apologises for it or "restores" the old figures.
+
 #### RESTORE: THE ACTIVE COHORT IS RECORDED (Jon, 2026-08-18)
 
 From the 2026-08-18 diagnosis
