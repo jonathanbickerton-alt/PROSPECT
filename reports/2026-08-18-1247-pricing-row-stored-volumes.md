@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-08-18 12:47 +0100 (UTC 2026-08-18 11:47)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: f6bd0b2 (body written PRE-commit; only these 2 lines added after)
+Repo: committed f6bd0b2, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before the base check.
 BASE: HEAD b3d64c6 vs the brief's 5a14872 — one commit, REPORT-ONLY.
 SUPERSESSION RECORDED, DATED, WITH THE REASON: decision 4's "current, not
