@@ -5,7 +5,7 @@
 ```
 Generated: 2026-08-18 14:06 +0100 (UTC 2026-08-18 13:06)
 Verified against: 8cef2ea, branch main, tree clean (bar this report).
-Repo: __PENDING__
+Repo: no source changed (read-only); this report committed f678be3, pushed
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before any check ran.
 BOTH OBSERVATIONS HAVE ONE ROOT CAUSE, AND IT IS NEITHER OF THE SUSPECTS.
   Jon's actual save file was on disk and read: every one of its 1,728 baseline
