@@ -8,9 +8,8 @@ Certifies: 3337b46 (this report filled one commit later)
 Repo: committed 3337b46, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before the base check.
 BASE: HEAD b5982ef vs the brief's 62923a3 — one commit, REPORT-ONLY.
-HOUSEKEEPING NOT DONE, SECOND SESSION RUNNING — v3.3.2 absent everywhere.
-  v3-3-1 deliberately NOT deleted: removing it without its successor would
-  leave the repo with no working agreement at all.
+HOUSEKEEPING NOT DONE, SECOND SESSION RUNNING — v3.3.2 absent everywhere;
+  v3-3-1 kept, since deleting it would leave NO working agreement at all.
 NEVER-WORKED, and the populate read ONE carrier: `sourceRows = s.marketEvents`.
   Yield and pricing never contributed a scope value. Jon's Mobile Voice lived
   only on a pricing event, so it was unselectable.
