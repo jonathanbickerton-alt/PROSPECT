@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-08-19 08:43 +0100 (UTC 2026-08-19 07:43)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: 3337b46 (this report filled one commit later)
+Repo: committed 3337b46, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before the base check.
 BASE: HEAD b5982ef vs the brief's 62923a3 — one commit, REPORT-ONLY.
 HOUSEKEEPING NOT DONE, SECOND SESSION RUNNING — v3.3.2 absent everywhere.
@@ -28,7 +28,7 @@ COPY CORRECTED: "Market Events Only" -> "Events Only", a NEW key so no locale
 PART 2 (R6 true state, read-only): pricing has a full fromRow seam; MARKET AND
   YIELD HAVE NONE — inline parses in App, market partly via
   readStoredEventModifiers. Shapes and costs in §5; nothing extracted here.
-compare-filter 24/24 (new), guard-traps __ PENDING.
+GATE GREEN: guard-traps 84/84, all nine specs pass, lint and build clean.
 ```
 
 ---
@@ -195,17 +195,17 @@ Otherwise the summarisers read only fields a `fromRow` parse would populate, and
 
 ```
 compare-filter spec:     24 passed, 0 failed   (new)
-scenario-pricing spec:   __/__ PENDING
-active-cohort spec:      __/__ PENDING
-pricing-roundtrip spec:  __/__ PENDING
-events-summary spec:     __/__ PENDING
-mix-card spec (mounted): __/__ PENDING
-event-roundtrip spec:    __/__ PENDING
-yield-roundtrip spec:    __/__ PENDING
-import-seam spec:        __/__ PENDING
-guard-traps:             __/__ PENDING
-lint (tsc --noEmit):     __PENDING__
-build:                   __PENDING__
+scenario-pricing spec:   16 passed, 0 failed
+active-cohort spec:      23 passed, 0 failed
+pricing-roundtrip spec:  116 passed, 0 failed
+events-summary spec:     37 passed, 0 failed
+mix-card spec (mounted): 99/99 passed
+event-roundtrip spec:    69 passed, 0 failed
+yield-roundtrip spec:    35 passed, 0 failed
+import-seam spec:        36 passed, 0 failed
+guard-traps:             84/84 caught, 0 missed, 0 inconclusive
+lint (tsc --noEmit):     clean
+build:                   clean (9.97s)
 ```
 
 ## Where things stand
