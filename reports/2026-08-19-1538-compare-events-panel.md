@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-08-19 15:38 +0100 (UTC 2026-08-19 14:38)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: ac141ca (this report filled one commit later)
+Repo: committed ac141ca, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before the base check.
 BASE: HEAD fc60a1a vs the brief's c426521 — one commit, REPORT-ONLY.
 SHIPPED: one collapsed panel per loaded file, below the file cards, reusing
@@ -15,11 +15,10 @@ THE SPEC WAS VACUOUS AND I CAUGHT IT BY ASKING WHAT TRAP (a) WOULD REDDEN.
   have been pointed at the merged list and all 20 separation checks would have
   stayed GREEN. Fixed by extracting buildPerFileEventPanels and driving THAT.
   A spec that mirrors the code under test certifies its own mirror.
-TAB, NOT WORKER — and measured, not asserted: the typed parse costs 0.50 ms
-  for 1,200 events across four files (3.24 ms at 12,000, far beyond real).
-  The expensive half (xlsx decode) is already in the worker; moving this half
-  would pull forecasting.ts into a second bundle to save half a millisecond.
-  This is against the brief's stated preference, on evidence.
+TAB, NOT WORKER — against the brief's preference, on a MEASUREMENT: the parse
+  costs 0.50 ms for 1,200 events across four files. The expensive half (xlsx
+  decode) is already in the worker; moving this half would pull forecasting.ts
+  into a second bundle to save half a millisecond.
 THE R4 TABLE IS NOW ONE COMPONENT WITH TWO CALLERS. Copying the markup was
   the alternative — the fifth-writer failure mode applied to a render, and it
   drifts more quietly, because two tables that look alike are never compared.
@@ -27,7 +26,8 @@ PARSED AS 'session': a Compare upload IS a PROSPECT save. 'workbook' would
   mint ids and negate already-signed Outflow volumes. Asserted both ways.
 LAYOUT CALL: below the cards, stacked — a table inside a 4-across card grid
   would render Scope, the widest and most load-bearing column, unreadable.
-__GATE_PENDING__
+GATE GREEN: 88/88 traps. FOUR ANCHORS RE-AIMED after the table moved — the
+  positive control fired first and refused to run, which is it working.
 ```
 
 ---
@@ -168,14 +168,48 @@ renders, still lists market and pricing rows, and silently omits an entire card'
 worth of events — the same shape as the Compare filter defect one surface along.
 Only a check naming a yield-exclusive value can tell.
 
+## The four stale anchors, and the control that caught them
+
+**The positive control fired on the first guard-traps run and refused to
+proceed** — a spec was red on the unmutated tree. That is the control doing
+exactly its job: without it, 88 traps would have run against an already-failing
+spec and reported catches none of them had earned.
+
+All four failures were **stale anchors from moving the table**, and all four
+were stale in the direction that FAILS rather than the direction that passes
+quietly:
+
+- three in `events-summary` grepped `WhatIfTab` for the order note, the empty
+  state and the height cap — all now in `EventsSummaryTable`;
+- one in `pricing-roundtrip` counted three Name headers sharing one label key
+  and found two, because the third moved with the table.
+
+Each was re-aimed to follow the code, and each keeps its exact count: the
+pricing check still demands **three**, now across both files the headers live
+in, because a fourth list arriving with its own vocabulary is precisely what it
+exists to catch. `events-summary` gained a check that the caller passes rows to
+the shared component, so a re-inlined table would fail there too.
+
+**The projection check deliberately stayed on `WhatIfTab`.** Building rows is
+the caller's job; the shared component renders and must never build.
+
 ## Gate
 
 ```
 compare-events-panel:    53 passed, 0 failed   (new)
-guard-traps:             __/__ PENDING
-full suite:              __/__ PENDING
-lint (tsc --noEmit):     __PENDING__
-build:                   __PENDING__
+guard-traps:             88/88 caught, 0 missed, 0 inconclusive
+events-summary:          38 passed, 0 failed  (was 37 — re-aimed +1)
+pricing-roundtrip:      116 passed, 0 failed  (re-aimed)
+compare-filter:          24 passed, 0 failed
+fromrow-equivalence:     49 passed, 0 failed
+yield-roundtrip:         56 passed, 0 failed
+event-roundtrip:         72 passed, 0 failed
+scenario-pricing:        16 passed, 0 failed
+active-cohort:           23 passed, 0 failed
+import-seam:             36 passed, 0 failed
+mix-card (mounted):      99/99 passed
+lint (tsc --noEmit):     clean
+build:                   clean (6.18s)
 ```
 
 ## Where things stand
