@@ -53,7 +53,8 @@
     "spec:events-summary": "tsx scripts/events-summary-spec.ts",
     "spec:active-cohort": "tsx scripts/active-cohort-spec.ts",
     "spec:scenario-pricing": "tsx scripts/scenario-pricing-spec.ts",
-    "spec:compare-filter": "tsx scripts/compare-filter-spec.ts"
+    "spec:compare-filter": "tsx scripts/compare-filter-spec.ts",
+    "spec:fromrow-equivalence": "tsx scripts/fromrow-equivalence-spec.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

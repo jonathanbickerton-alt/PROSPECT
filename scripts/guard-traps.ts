@@ -69,6 +69,7 @@ const ACTIVECOHORT = 'scripts/active-cohort-spec.ts';
 const SCENHELPER = 'src/utils/scenarioHelper.ts';
 const SCENPRICE = 'scripts/scenario-pricing-spec.ts';
 const CMPFILTER = 'scripts/compare-filter-spec.ts';
+const EQUIV = 'scripts/fromrow-equivalence-spec.ts';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER];
@@ -736,12 +737,18 @@ const TRAPS: Trap[] = [
   // unset bucket collapse, and a corrupted entry becomes a number. This is the
   // promo-field shape — one route quietly diverging — planted on the route the
   // enumeration says is the only one.
+  //
+  // RE-AIMED 2026-08-19. This was planted in APP, which was the only import
+  // route until yieldEventFromRow was extracted; the anchor then matched
+  // nothing and the trap reported INCONCLUSIVE rather than passing quietly.
+  // That is the harness working as designed — an anchor that goes stale must
+  // announce it — and the fix is to follow the code, not to relax the anchor.
   { id: '63 the yield override import hand-rolled beside the shared reader', why: 'absence rules drop on the only import route',
-    file: APP, spec: YIELDROUND,
+    file: ENGINE, spec: YIELDROUND,
     mutate: s => s.replace(
-      '              const tariffBaseArpuOverride = readStoredRateMap(r.Tariff_Base_ARPU_Override_JSON);',
-      '              let tariffBaseArpuOverride: any = {};' + nl +
-      "              try { tariffBaseArpuOverride = JSON.parse(String(r.Tariff_Base_ARPU_Override_JSON ?? '{}')); } catch {}") },
+      '  const tariffBaseArpuOverride = readStoredRateMap(r.Tariff_Base_ARPU_Override_JSON);',
+      '  let tariffBaseArpuOverride: any = {};' + nl +
+      "  try { tariffBaseArpuOverride = JSON.parse(String(r.Tariff_Base_ARPU_Override_JSON ?? '{}')); } catch {}") },
   // 64 severs the input from the carrier: clearing the box stores a zero
   // instead of deleting the key. It looks like a simplification and collapses
   // the two states the whole carrier exists to separate — a band the user
@@ -979,6 +986,37 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "  { key: 'pricingEvents', segment: 'Segment', product: 'Product', productL2: 'Product_L2',",
       "  { key: 'marketEvents', segment: 'Segment', product: 'Product', productL2: 'Product_L2',") },
+  // 87 drops the modifier spread from inside marketEventFromRow. Every promo
+  // and override field vanishes from a parsed event, and `isPromotion` — which
+  // the sheet stores as the STRING 'Yes'/'No' — stops being converted at all.
+  // The extraction's whole safety argument is that the spread rides along with
+  // the move, so this is the trap that proves it does.
+  //
+  // Anchored on TWO adjacent lines, not on the spread alone: the spread's text
+  // also appears in the yield reader's neighbourhood and in the spec's oracle,
+  // and a one-line anchor with more than one owner is how trap 64 came to
+  // report a catch it had not earned.
+  { id: '87 marketEventFromRow stops spreading the modifiers', why: 'promo fields and isPromotion vanish from every parsed event',
+    file: ENGINE, spec: EQUIV,
+    mutate: s => s.replace(
+      "    ...(source === 'workbook' ? marketFieldsFromWorkbookRow(r) : marketFieldsFromSessionRow(r))," + nl +
+      '    ...readStoredEventModifiers(r),',
+      "    ...(source === 'workbook' ? marketFieldsFromWorkbookRow(r) : marketFieldsFromSessionRow(r)),") },
+  // 88 points the yield reader at a column that does not exist. It still
+  // returns a well-formed YieldEvent — with an EMPTY mix, which renders as a
+  // card with no tiers rather than as an error, and is exactly the kind of
+  // silent degradation a round trip exists to catch.
+  //
+  // THIS TRAP IS THE PROOF THE PROMOTION BIT. Before spec:yield-roundtrip was
+  // promoted it drove its own COPY of the writer and, on the reading side,
+  // only readStoredRateMap — one field of thirteen, and no reader at all. A
+  // broken reader was invisible to it. If this catches, the spec is genuinely
+  // driving the real reader now rather than a copy of it.
+  { id: '88 yieldEventFromRow reads the wrong mix column', why: 'every yield event loads with an empty tariff mix',
+    file: ENGINE, spec: YIELDROUND,
+    mutate: s => s.replace(
+      "  try { tariffMix = JSON.parse(String(r.Tariff_Mix_JSON ?? '{}')); } catch {}",
+      "  try { tariffMix = JSON.parse(String(r.Tariff_Mix_Json ?? '{}')); } catch {}") },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -989,7 +1027,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(EQUIV)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

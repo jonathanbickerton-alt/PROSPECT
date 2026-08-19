@@ -6739,6 +6739,24 @@ From the 2026-08-17 walk on the edge fixture and its diagnosis
    where it is harder to find. The diagnosis counted FIVE blocking terms across
    two layers, none of which said anything.
 
+#### R6 IS TWO SESSIONS: SEAMS FIRST, INERT; THEN THE PANEL (Jon, 2026-08-19)
+
+**Session 1 = the fromRow seams plus the yield spec promotion, and it is
+INERT** — it extracts `marketEventFromRow` and `yieldEventFromRow` out of the
+inline parses in App, retires `spec:yield-roundtrip`'s `toRow` copy, and
+**changes no behaviour and adds no UI**. **Session 2 = the per-file panel**,
+which is the first thing a user sees.
+
+The split is deliberate. A pure extraction is checkable by an equivalence
+argument — same rows in, same typed event out — and that argument is only
+available while nothing else is moving. Bundling the panel into the same
+session would mean any diff in output could be the panel or the extraction,
+and the cheapest check R6 has would be gone.
+
+An inert seam with no consumer is a **coherent resting state**, not a
+half-applied change: the existing callers use it, the specs drive it, and
+nothing waits on session 2 to be correct.
+
 #### ORDER OF WORK: THE SCENARIO COMPARE ARC, THEN DQ (Jon, 2026-08-19)
 
 **The Scenario Compare arc runs first** — the dimension-filter fix and the

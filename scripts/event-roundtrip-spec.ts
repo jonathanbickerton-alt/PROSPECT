@@ -244,9 +244,20 @@ function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[]
 // ── WIRING: both import routes use the ONE reader, and the writer matches ──
 {
   const app = fs.readFileSync('src/App.tsx', 'utf8').replace(/\/\/[^\n]*/g, '');
-  const uses = (app.match(/\.\.\.readStoredEventModifiers\(r\)/g) ?? []).length;
+  // RE-AIMED 2026-08-19, and the re-aim is the whole point of the pin moving.
+  // This counted the SPREADS IN APP, which was the right thing to count while
+  // the parse lived in App. Extracting marketEventFromRow moved the spread out
+  // of App entirely, so the old count is now 0 and would have gone red — the
+  // stale-anchor lesson, caught by the harness failing rather than passing
+  // quietly. What must stay true is UNCHANGED in substance: both routes reach
+  // the modifiers through ONE function, so a field added there reaches both or
+  // neither. Only the location of that one function changed.
+  const uses = (app.match(/marketEventFromRow\(/g) ?? []).length;
   check('WIRING: BOTH import routines read the shared reader', uses === 2,
     `${uses} site(s) — the promo fields round-trip on one path only again`);
+  check('WIRING: App no longer parses market rows itself',
+    !app.includes('...readStoredEventModifiers(r)'),
+    'a parse back inside the component cannot be driven by this spec at all');
   check('WIRING: neither route hand-rolls the promo fields any more',
     !/promoMixAxis:\s+r[.[]/.test(app) && !/promoPricingMode:\s+r[.[]/.test(app),
     'a per-site copy is back, which is how the two routes drifted');
@@ -268,12 +279,36 @@ function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[]
       'the export dropped a column this spec round-trips');
   }
   // THE ROUTE COUNT, PINNED — the fifth-writer lesson. Market events have TWO
-  // import routes and both spread readStoredEventModifiers, so extending that
-  // one function reaches both or neither. A third route, or a route that stops
-  // spreading, is the shape this pin exists to catch.
-  const spreads = (app.match(/\.\.\.readStoredEventModifiers\(r\)/g) ?? []).length;
-  check('PIN: exactly TWO market-event import routes, both through the shared reader',
-    spreads === 2, `${spreads} — a field added to one route only is the promo-field defect`);
+  // import routes and both go through marketEventFromRow, so extending that one
+  // function reaches both or neither. A third route, or a route that parses for
+  // itself, is the shape this pin exists to catch.
+  //
+  // THE INVARIANT AFTER THE 2026-08-19 EXTRACTION, stated as exact counts and
+  // never as a lower bound — a `>=` here would pass while a route quietly
+  // stopped using the reader, which is the exact defect being pinned:
+  //
+  //   App.tsx              — exactly 2 marketEventFromRow call sites:
+  //                          the session restore (Market_Events sheet) and the
+  //                          workbook import (eventsSheetName). Exactly 0 spreads.
+  //   forecasting.ts       — exactly 1 ...readStoredEventModifiers(r) spread,
+  //                          inside marketEventFromRow, applied to whichever
+  //                          source branch produced the base fields.
+  //
+  // The two SOURCES are named rather than counted loosely: they are genuinely
+  // different parses (ids, `??` vs `||` defaults, Outflow sign), and the pin
+  // must fail if either route silently adopts the other's rules.
+  const sessionRoute  = (app.match(/marketEventFromRow\(r, 'session'\)/g) ?? []).length;
+  const workbookRoute = (app.match(/marketEventFromRow\(r, 'workbook'\)/g) ?? []).length;
+  check('PIN: exactly TWO market-event import routes, one per source',
+    sessionRoute === 1 && workbookRoute === 1,
+    `session=${sessionRoute} workbook=${workbookRoute} — a route added or dropped`);
+  check('PIN: App holds NO market-row parse of its own',
+    (app.match(/\.\.\.readStoredEventModifiers\(r\)/g) ?? []).length === 0,
+    'the parse moved to forecasting.ts; a spread back in App means a re-inlined route');
+  const fc = fs.readFileSync('src/utils/forecasting.ts', 'utf8').replace(/\/\/[^\n]*/g, '');
+  check('PIN: exactly ONE modifier spread, and it is inside the shared reader',
+    (fc.match(/\.\.\.readStoredEventModifiers\(r\)/g) ?? []).length === 1,
+    'two spreads means the source branches diverged on the modifiers too');
 
   check('WRITER: App uses the SHARED row builder, not a second literal',
     app.includes('map(marketEventExportRow)'),

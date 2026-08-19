@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet, Info, XCircle } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, readStoredRateMap, marketEventExportRow, pricingEventExportRow, pricingEventFromRow, activeCohortMetaRows, readActiveCohortMeta, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, readStoredRateMap, marketEventExportRow, marketEventFromRow, yieldEventExportRow, yieldEventFromRow, pricingEventExportRow, pricingEventFromRow, activeCohortMetaRows, readActiveCohortMeta, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
 import { filterToKey, cohortToFilter, forecastForView, forecastForStep1Selection, step1ResolveDecision, describeScope } from './utils/viewFilter';
@@ -601,26 +601,10 @@ export default function App() {
     );
 
     // ── Sheet 7: Yield_Events ─────────────────────────────────────────────────
-    const yieldRows = yieldEvents.map(e => ({
-      ID: e.id,
-      Name: e.name ?? '',
-      IBRO: e.ibro,
-      Segment: e.segment,
-      Product: e.product,
-      Channel_L1: e.channelL1,
-      Channel_L2: e.channelL2,
-      Month: e.month,
-      Roll_Forward: e.rollForward ? 'Yes' : 'No',
-      Mix_Axis: e.mixAxis ?? 'value',
-      Tariff_Mix_JSON: JSON.stringify(e.tariffMix),
-      Tariff_Base_ARPU_JSON: JSON.stringify(e.tariffBaseArpu),
-      // The user's STATED per-bucket rates. '' is the absence carrier — an
-      // empty object would claim "an override map with no members", which is a
-      // different thing from "no overrides" and is how promoMix already reads.
-      Tariff_Base_ARPU_Override_JSON: e.tariffBaseArpuOverride
-        ? JSON.stringify(e.tariffBaseArpuOverride) : '',
-      Comment: e.comment ?? '',
-    }));
+    // ONE writer, extracted for the reason the market and pricing rows were:
+    // spec:yield-roundtrip held a COPY of this literal and round-tripped that,
+    // so a column added here reached the sheet and not the check.
+    const yieldRows = yieldEvents.map(yieldEventExportRow);
     XLSX.utils.book_append_sheet(
       wb,
       XLSX.utils.json_to_sheet(yieldRows.length ? yieldRows : [{ Note: 'No yield events defined' }]),
@@ -972,35 +956,11 @@ export default function App() {
         const evtRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Market_Events']);
         let restoredEvents: MarketEvent[] = [];
         if (evtRaw.length > 0 && !evtRaw[0]?.Note) {
-          restoredEvents = evtRaw.map(r => ({
-            id:               String(r.ID ?? Math.random().toString(36).substr(2, 9)),
-            name:             String(r.Name ?? ''),
-            // Legacy fallback: pre-campaign saves used Name as the grouping label
-            campaignName:     String(r.Campaign_Name || r.Name || ''),
-            scenario:         r.Scenario,
-            segment:          r.Segment,
-            product:          r.Product,
-            productL2:        String(r.Product_L2 ?? 'All'),
-            channel:          r.Channel,
-            channelL2:        String(r.Channel_L2 ?? 'All'),
-            tariffL1:         String(r.Tariff_L1 ?? 'All'),
-            tariffL2:         String(r.Tariff_L2 ?? 'All'),
-            date:             String(r.Start_Month ?? ''),
-            subscriberVolume: Number(r.Subscriber_Volume ?? 0),
-            customerVolume:   Number(r.Customer_Volume   ?? 0),
-            revenue:          Number(r.Revenue           ?? 0),
-            arpu:             Number(r.ARPU              ?? 0),
-            contractLength:   Number(r.Contract_Length_Months ?? 24),
-            comment:          String(r.Comment ?? ''),
-            // Promo/override modifiers via the ONE shared reader — see
-            // readStoredEventModifiers. Hand-rolled here and absent entirely at
-            // the workbook route below, which is how the promo fields came to
-            // round-trip on one path only.
-            ...readStoredEventModifiers(r),
-            // Sessions exported before 2026-08-01 have no Sequence column;
-            // backfillSequences below assigns sheet order to those.
-            sequence:         r.Sequence !== undefined && r.Sequence !== '' ? Number(r.Sequence) : undefined as any,
-          }));
+          // THE SHARED READER. This literal used to live here; a reader inside a
+          // component cannot be driven by a spec and cannot be called from the
+          // parser worker, which is why the promo fields once round-tripped on
+          // one path only. See marketEventFromRow.
+          restoredEvents = evtRaw.map(r => marketEventFromRow(r, 'session'));
           setMarketEvents(backfillSequences(restoredEvents));
         }
 
@@ -1008,33 +968,7 @@ export default function App() {
         if (wb.SheetNames.includes('Yield_Events')) {
           const yieldRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Yield_Events']);
           if (yieldRaw.length > 0 && !yieldRaw[0]?.Note) {
-            setYieldEvents(yieldRaw.map(r => {
-              let tariffMix: Record<string, number> = {};
-              let tariffBaseArpu: Record<string, number> = {};
-              try { tariffMix = JSON.parse(String(r.Tariff_Mix_JSON ?? '{}')); } catch {}
-              try { tariffBaseArpu = JSON.parse(String(r.Tariff_Base_ARPU_JSON ?? '{}')); } catch {}
-              // Through the SHARED map reader, which reuses readOptionalNumber
-              // per value: presence is the carrier, a stated 0 survives as 0,
-              // a negative survives verbatim, and a corrupted entry is dropped
-              // rather than defaulted.
-              const tariffBaseArpuOverride = readStoredRateMap(r.Tariff_Base_ARPU_Override_JSON);
-              return {
-                id:            String(r.ID ?? Math.random().toString(36).substr(2, 9)),
-                name:          String(r.Name ?? ''),
-                ibro:          (r.IBRO ?? 'Inflow') as 'Inflow' | 'Retention',
-                segment:       String(r.Segment ?? 'All'),
-                product:       String(r.Product ?? 'All'),
-                channelL1:     String(r.Channel_L1 ?? 'All'),
-                channelL2:     String(r.Channel_L2 ?? 'All'),
-                month:         String(r.Month ?? ''),
-                rollForward:   r.Roll_Forward === 'Yes',
-                mixAxis:       (r.Mix_Axis === 'tariff' ? 'tariff' : 'value') as 'value' | 'tariff',
-                tariffMix,
-                tariffBaseArpu,
-                tariffBaseArpuOverride,
-                comment:       String(r.Comment ?? ''),
-              };
-            }));
+            setYieldEvents(yieldRaw.map(yieldEventFromRow));
           }
         }
 
@@ -1983,39 +1917,12 @@ export default function App() {
         // Restore market events if the file contains a Market_Events sheet
         const eventsSheetName = wb.SheetNames.find(n => n.toLowerCase() === 'market_events');
         if (eventsSheetName && sheetsData[eventsSheetName]?.length > 0) {
-          const restoredEvents: MarketEvent[] = sheetsData[eventsSheetName].map((r: any) => {
-            const scen = String(r['Scenario'] || 'Inflow') as MarketEvent['scenario'];
-            const isOut = scen === 'Outflow';
-            const neg = (v: number) => isOut ? -Math.abs(v) : v;
-            return {
-              id: Math.random().toString(36).substr(2, 9),
-              name: String(r['Name'] || ''),
-              // Legacy fallback: pre-campaign saves used Name as the grouping label
-              campaignName: String(r['Campaign_Name'] || r['Name'] || ''),
-              scenario: scen,
-              segment: String(r['Segment'] || 'All'),
-              product: String(r['Product'] || 'All'),
-              productL2: String(r['Product_L2'] || 'All'),
-              channel: String(r['Channel'] || 'All'),
-              channelL2: String(r['Channel_L2'] || 'All'),
-              tariffL1: String(r['Tariff_L1'] || 'All'),
-              tariffL2: String(r['Tariff_L2'] || 'All'),
-              date: String(r['Date'] || r['Start_Month'] || ''),
-              subscriberVolume: neg(Number(r['Subscriber_Volume']) || 0),
-              customerVolume:   neg(Number(r['Customer_Volume'])   || 0),
-              revenue:          neg(Number(r['Revenue'])           || 0),
-              arpu:             neg(Number(r['ARPU'])              || 0),
-              comment: String(r['Comment'] || ''),
-              contractLength: Number(r['Contract_Length'] || r['Contract_Length_Months']) || 24,
-              sequence: r['Sequence'] !== undefined && r['Sequence'] !== '' ? Number(r['Sequence']) : undefined as any,
-              // THE GAP THIS FIXES. The comment that used to sit here recorded
-              // that the promo fields were missing from this route and named it
-              // a pre-existing gap — correctly, and it stayed missing. Both
-              // routines now read the SAME function, so a field added to the
-              // promo card reaches both or neither.
-              ...readStoredEventModifiers(r),
-            };
-          });
+          // THE SAME READER, told which kind of sheet this is. A raw workbook has
+          // no ID column, treats a blank cell as unset, and states the SIZE of an
+          // Outflow rather than its sign — differences that are real and are now
+          // declared in one place instead of diverging across two literals.
+          const restoredEvents: MarketEvent[] = sheetsData[eventsSheetName]
+            .map((r: any) => marketEventFromRow(r, 'workbook'));
           setMarketEvents(backfillSequences(restoredEvents));
         }
       } catch (err) {

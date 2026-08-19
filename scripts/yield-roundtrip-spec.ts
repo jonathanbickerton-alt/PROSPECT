@@ -26,25 +26,23 @@
  */
 import * as fs from 'fs';
 import * as XLSX from 'xlsx';
-import { readStoredRateMap } from '../src/utils/forecasting';
+import { readStoredRateMap, yieldEventExportRow, yieldEventFromRow } from '../src/utils/forecasting';
 
 let pass = 0; const fails: string[] = [];
 const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails.push(n + (d ? `  [${d}]` : '')); };
 
-/** The Yield_Events writer, lifted from App.tsx. A wiring check below pins it
- *  in step, so this copy cannot quietly test a shape the app no longer emits. */
-const toRow = (e: any) => ({
-  ID: e.id, Name: e.name ?? '', IBRO: e.ibro,
-  Segment: e.segment, Product: e.product,
-  Channel_L1: e.channelL1, Channel_L2: e.channelL2,
-  Month: e.month, Roll_Forward: e.rollForward ? 'Yes' : 'No',
-  Mix_Axis: e.mixAxis ?? 'value',
-  Tariff_Mix_JSON: JSON.stringify(e.tariffMix),
-  Tariff_Base_ARPU_JSON: JSON.stringify(e.tariffBaseArpu),
-  Tariff_Base_ARPU_Override_JSON: e.tariffBaseArpuOverride
-    ? JSON.stringify(e.tariffBaseArpuOverride) : '',
-  Comment: e.comment ?? '',
-});
+/**
+ * PROMOTED 2026-08-19. This WAS a copy of the Yield_Events writer, lifted from
+ * App.tsx and pinned in step by a column-name grep — Finding 2 of the
+ * 2026-08-13 R2 diagnosis, and the last of the three carriers still certifying
+ * its own copy rather than the app's writer.
+ *
+ * `toRow` is now an alias of the REAL writer. The distinction matters exactly
+ * where it always did: a column the app fails to emit is now invisible to the
+ * app AND to this spec at the same moment, instead of the spec cheerfully
+ * round-tripping a shape nothing produces.
+ */
+const toRow = yieldEventExportRow as (e: any) => Record<string, unknown>;
 
 function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[] {
   const wb = XLSX.utils.book_new();
@@ -105,6 +103,57 @@ const BASE: any = {
     JSON.stringify(readStoredRateMap('{"a":5,"b":""}')) === JSON.stringify({ a: 5 }));
 }
 
+// ── BOTH DIRECTIONS THROUGH THE REAL SEAMS ────────────────────────────────
+//
+// THE POINT OF THE PROMOTION. Until now this file drove a COPY of the writer
+// and, on the reading side, only `readStoredRateMap` — one field of thirteen.
+// The whole event now goes out through the real writer, through a real xlsx
+// write/read, and back through the real reader, so any field either half drops
+// is visible here.
+{
+  const full: any = { ...BASE, tariffBaseArpuOverride: { 'Low Value': 12.5, 'Mid Value': 0 } };
+  const back: any = yieldEventFromRow(throughXlsx([yieldEventExportRow(full)])[0]);
+
+  for (const f of ['id', 'name', 'ibro', 'segment', 'product', 'channelL1',
+                   'channelL2', 'month', 'mixAxis', 'comment']) {
+    check(`ROUND TRIP: ${f} survives writer -> xlsx -> reader`,
+      String(back[f]) === String(full[f]), `${f}: ${String(back[f])} vs ${String(full[f])}`);
+  }
+  check('ROUND TRIP: rollForward survives as a BOOLEAN, not the string Yes',
+    back.rollForward === false, String(back.rollForward));
+  const rolling: any = yieldEventFromRow(throughXlsx([yieldEventExportRow({ ...full, rollForward: true })])[0]);
+  check('ROUND TRIP: and rollForward true comes back true',
+    rolling.rollForward === true, String(rolling.rollForward));
+
+  // THE TWO JSON MAPS. These are what guard-trap (b) breaks: a reader pointed
+  // at the wrong column still returns a well-formed event with an EMPTY mix,
+  // which renders as a card with no tiers rather than as an error.
+  check('ROUND TRIP: tariffMix survives with every bucket and value',
+    JSON.stringify(back.tariffMix) === JSON.stringify(full.tariffMix),
+    JSON.stringify(back.tariffMix));
+  check('ROUND TRIP: tariffBaseArpu survives with every bucket and value',
+    JSON.stringify(back.tariffBaseArpu) === JSON.stringify(full.tariffBaseArpu),
+    JSON.stringify(back.tariffBaseArpu));
+  check('ROUND TRIP: the override map survives, INCLUDING a stated zero',
+    back.tariffBaseArpuOverride?.['Low Value'] === 12.5
+      && back.tariffBaseArpuOverride?.['Mid Value'] === 0,
+    JSON.stringify(back.tariffBaseArpuOverride));
+  check('ROUND TRIP: an unset override map comes back ABSENT, not empty',
+    yieldEventFromRow(throughXlsx([yieldEventExportRow(BASE)])[0]).tariffBaseArpuOverride === undefined,
+    'an empty object claims a map with no members, which is a different thing');
+
+  // A row from nowhere — the reader must not throw and must not invent.
+  const bare: any = yieldEventFromRow({});
+  check('READER: a bare row yields empty maps rather than throwing',
+    JSON.stringify(bare.tariffMix) === '{}' && JSON.stringify(bare.tariffBaseArpu) === '{}');
+  check('READER: a corrupt mix JSON degrades to an empty mix, not a half-read one',
+    JSON.stringify(yieldEventFromRow({ Tariff_Mix_JSON: '{not json' }).tariffMix) === '{}');
+  check('READER: mixAxis defaults to value and only tariff overrides it',
+    yieldEventFromRow({}).mixAxis === 'value'
+      && yieldEventFromRow({ Mix_Axis: 'tariff' }).mixAxis === 'tariff'
+      && yieldEventFromRow({ Mix_Axis: 'sideways' }).mixAxis === 'value');
+}
+
 // ── THE WRITER COUNT, PINNED — verified 1/1/1 at dae586d ──────────────────
 {
   const app = fs.readFileSync('src/App.tsx', 'utf8');
@@ -117,19 +166,34 @@ const BASE: any = {
   const callers = (tab.match(/addYieldEvent\(/g) ?? []).length;
   check('PIN: exactly ONE addYieldEvent caller', callers === 1, `${callers}`);
 
-  const importRoutes = (app.match(/readStoredRateMap\(r\.Tariff_Base_ARPU_Override_JSON\)/g) ?? []).length;
+  // RE-AIMED 2026-08-19 with the extraction. These greppped APP for the reader
+  // and the writer, which was right while both literals lived there. They now
+  // live in forecasting.ts, so the old anchors would read 0 and false — stale
+  // in the direction that FAILS, which is the only acceptable direction for an
+  // anchor to go stale.
+  const fc = fs.readFileSync('src/utils/forecasting.ts', 'utf8');
+  const importRoutes = (fc.match(/readStoredRateMap\(r\.Tariff_Base_ARPU_Override_JSON\)/g) ?? []).length;
   check('PIN: exactly ONE import route reads it, through the SHARED map reader',
     importRoutes === 1, `${importRoutes}`);
+  const appRoutes = (app.match(/map\(yieldEventFromRow\)/g) ?? []).length;
+  check('PIN: App reaches yield rows through the seam, exactly once',
+    appRoutes === 1, `${appRoutes} — a second parse is the shape that diverged before`);
 
+  // MEASURED, NOT GREPPED. The writer is now callable, so the check exercises
+  // it instead of looking for its source text — the same move the market spec
+  // made when marketEventExportRow was extracted.
   check('WIRING: the export writes the column',
-    /Tariff_Base_ARPU_Override_JSON:/.test(app),
+    'Tariff_Base_ARPU_Override_JSON' in yieldEventExportRow(BASE),
     'the writer must emit it or this spec tests a shape the app does not produce');
   check('WIRING: the import does not hand-roll a parse beside the shared reader',
-    !/JSON\.parse\(String\(r\.Tariff_Base_ARPU_Override_JSON/.test(app),
+    !/JSON\.parse\(String\(r\.Tariff_Base_ARPU_Override_JSON/.test(fc),
     'a per-site copy is how the promo fields came to round-trip on one path only');
+  check('WIRING: App holds no yield row literal of its own',
+    !/Tariff_Mix_JSON:\s*JSON\.stringify/.test(app),
+    'a re-inlined writer would put this spec back to certifying a copy');
 
   // THE RATE-SIGN RULE, asserted at source as 03a08fe asserts it for arpuOverride.
-  const signed = (app + tab).match(/tariffBaseArpuOverride[^\n]*(?:neg\(|abs\(|Math\.abs\()/g) ?? [];
+  const signed = (app + tab + fc).match(/tariffBaseArpuOverride[^\n]*(?:neg\(|abs\(|Math\.abs\()/g) ?? [];
   check('SIGN: ZERO sign transforms touch the override anywhere',
     signed.length === 0,
     `${signed.length} — sign conventions belong to QUANTITIES; a rate is written verbatim`);

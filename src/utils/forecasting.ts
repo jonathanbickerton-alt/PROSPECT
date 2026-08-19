@@ -1,5 +1,5 @@
 import { addMonths, format, isValid } from 'date-fns';
-import type { BaseForecast, BaseForecastMonth, CohortKey, ForecastBand, ForecastModel, FittedParams, SkipReason, ArpuBand, PricingEvent } from '../types/forecast';
+import type { BaseForecast, BaseForecastMonth, CohortKey, ForecastBand, ForecastModel, FittedParams, SkipReason, ArpuBand, PricingEvent, YieldEvent } from '../types/forecast';
 // One direction only: mixConstraint imports nothing, so this cannot cycle.
 import { blendedArpu } from './mixConstraint';
 
@@ -952,6 +952,188 @@ export function readStoredEventModifiers(row: Record<string, unknown>): StoredEv
     // uses — extended, never forked. BOTH market-event import routes spread
     // this function's result, so the field reaches both or neither.
     promoBandArpuOverride: readStoredRateMap(row.Promo_Band_ARPU_Override_JSON),
+  };
+}
+
+/**
+ * WHICH KIND OF SHEET A MARKET-EVENT ROW CAME FROM.
+ *
+ * The two import routes were NEVER the same parse, and collapsing them into one
+ * would have been a behaviour change wearing the costume of a refactor. They
+ * read different inputs:
+ *
+ *   'session'  — a PROSPECT save, written by marketEventExportRow. IDs are
+ *                restored so an event keeps its identity across a reload;
+ *                defaults fall back on null/undefined ONLY (`??`), because a
+ *                stored empty string is a stored value; no sign transform,
+ *                since the save already holds signed quantities.
+ *
+ *   'workbook' — an arbitrary user spreadsheet. There is no ID column, so
+ *                identity is minted here; defaults fall back on any falsy cell
+ *                (`||`), because a blank cell in a hand-made sheet means
+ *                'unset' rather than 'the empty string'; and Outflow rows are
+ *                forced negative, because a human types the size of a loss and
+ *                not its sign.
+ *
+ * Naming the source is what lets ONE function serve both without either route
+ * quietly acquiring the other's rules.
+ */
+export type MarketRowSource = 'session' | 'workbook';
+
+/**
+ * ROW -> MarketEvent. The reader half of `marketEventExportRow`, extracted from
+ * two inline literals in App.
+ *
+ * WHY THIS EXISTS. `pricingEventFromRow` has been the only full reader seam of
+ * the three carriers; market had `readStoredEventModifiers`, which covers the
+ * MODIFIERS and not the event's own identity or scope, and yield had nothing.
+ * A reader that lives inside a component cannot be driven by a spec and cannot
+ * be called from a worker, which is both why the promo fields once round-tripped
+ * on one path only and why Scenario Compare cannot type its events today.
+ *
+ * THE MODIFIER SPREAD LIVES HERE, ONCE, and it carries the `Is_Promotion`
+ * conversion with it — the sheet stores the STRING 'Yes'/'No', and only
+ * `readStoredEventModifiers` turns it into a boolean. A parse that skipped it
+ * would set `isPromotion` to a truthy 'No' and route every market event to the
+ * promotion summariser.
+ *
+ * The spread is applied LAST and its key set is disjoint from the fields above
+ * it, so its position cannot change any value — asserted in the spec rather
+ * than assumed, because that disjointness is what made moving it safe.
+ */
+export function marketEventFromRow(
+  r: Record<string, any>,
+  source: MarketRowSource = 'session',
+): MarketEvent {
+  return {
+    ...(source === 'workbook' ? marketFieldsFromWorkbookRow(r) : marketFieldsFromSessionRow(r)),
+    ...readStoredEventModifiers(r),
+  } as MarketEvent;
+}
+
+/** A PROSPECT save's Market_Events row. Mirrors marketEventExportRow. */
+function marketFieldsFromSessionRow(r: Record<string, any>) {
+  return {
+    id:               String(r.ID ?? Math.random().toString(36).substr(2, 9)),
+    name:             String(r.Name ?? ''),
+    // Legacy fallback: pre-campaign saves used Name as the grouping label
+    campaignName:     String(r.Campaign_Name || r.Name || ''),
+    scenario:         r.Scenario,
+    segment:          r.Segment,
+    product:          r.Product,
+    productL2:        String(r.Product_L2 ?? 'All'),
+    channel:          r.Channel,
+    channelL2:        String(r.Channel_L2 ?? 'All'),
+    tariffL1:         String(r.Tariff_L1 ?? 'All'),
+    tariffL2:         String(r.Tariff_L2 ?? 'All'),
+    date:             String(r.Start_Month ?? ''),
+    subscriberVolume: Number(r.Subscriber_Volume ?? 0),
+    customerVolume:   Number(r.Customer_Volume   ?? 0),
+    revenue:          Number(r.Revenue           ?? 0),
+    arpu:             Number(r.ARPU              ?? 0),
+    contractLength:   Number(r.Contract_Length_Months ?? 24),
+    comment:          String(r.Comment ?? ''),
+    // Sessions exported before 2026-08-01 have no Sequence column;
+    // backfillSequences at the call site assigns sheet order to those.
+    sequence:         r.Sequence !== undefined && r.Sequence !== '' ? Number(r.Sequence) : undefined as any,
+  };
+}
+
+/** An arbitrary user workbook. Looser defaults, minted id, Outflow negated. */
+function marketFieldsFromWorkbookRow(r: Record<string, any>) {
+  const scen = String(r['Scenario'] || 'Inflow') as MarketEvent['scenario'];
+  const isOut = scen === 'Outflow';
+  const neg = (v: number) => isOut ? -Math.abs(v) : v;
+  return {
+    id: Math.random().toString(36).substr(2, 9),
+    name: String(r['Name'] || ''),
+    // Legacy fallback: pre-campaign saves used Name as the grouping label
+    campaignName: String(r['Campaign_Name'] || r['Name'] || ''),
+    scenario: scen,
+    segment: String(r['Segment'] || 'All'),
+    product: String(r['Product'] || 'All'),
+    productL2: String(r['Product_L2'] || 'All'),
+    channel: String(r['Channel'] || 'All'),
+    channelL2: String(r['Channel_L2'] || 'All'),
+    tariffL1: String(r['Tariff_L1'] || 'All'),
+    tariffL2: String(r['Tariff_L2'] || 'All'),
+    date: String(r['Date'] || r['Start_Month'] || ''),
+    subscriberVolume: neg(Number(r['Subscriber_Volume']) || 0),
+    customerVolume:   neg(Number(r['Customer_Volume'])   || 0),
+    revenue:          neg(Number(r['Revenue'])           || 0),
+    arpu:             neg(Number(r['ARPU'])              || 0),
+    comment: String(r['Comment'] || ''),
+    contractLength: Number(r['Contract_Length'] || r['Contract_Length_Months']) || 24,
+    sequence: r['Sequence'] !== undefined && r['Sequence'] !== '' ? Number(r['Sequence']) : undefined as any,
+  };
+}
+
+/**
+ * YieldEvent -> Yield_Events row. Extracted from App for the reason
+ * marketEventExportRow and pricingEventExportRow were: a spec cannot drive a
+ * writer that lives inside a component, so `spec:yield-roundtrip` held its own
+ * COPY of this literal and round-tripped that instead — Finding 2 of the
+ * 2026-08-13 R2 diagnosis, the last of the three carriers to be closed.
+ */
+export function yieldEventExportRow(e: YieldEvent): Record<string, unknown> {
+  return {
+    ID: e.id,
+    Name: e.name ?? '',
+    IBRO: e.ibro,
+    Segment: e.segment,
+    Product: e.product,
+    Channel_L1: e.channelL1,
+    Channel_L2: e.channelL2,
+    Month: e.month,
+    Roll_Forward: e.rollForward ? 'Yes' : 'No',
+    Mix_Axis: e.mixAxis ?? 'value',
+    Tariff_Mix_JSON: JSON.stringify(e.tariffMix),
+    Tariff_Base_ARPU_JSON: JSON.stringify(e.tariffBaseArpu),
+    // The user's STATED per-bucket rates. '' is the absence carrier — an
+    // empty object would claim "an override map with no members", which is a
+    // different thing from "no overrides" and is how promoMix already reads.
+    Tariff_Base_ARPU_Override_JSON: e.tariffBaseArpuOverride
+      ? JSON.stringify(e.tariffBaseArpuOverride) : '',
+    Comment: e.comment ?? '',
+  };
+}
+
+/**
+ * Row -> YieldEvent. The reader half of the above, extracted from App's single
+ * inline yield parse.
+ *
+ * THE TWO JSON PARSES ARE DELIBERATELY TOLERANT AND DELIBERATELY DIFFERENT
+ * FROM THE OVERRIDE MAP. `tariffMix` and `tariffBaseArpu` are REQUIRED fields
+ * on the type, so an unparseable cell yields `{}` — an event with no mix, which
+ * the card can show and the user can correct. `tariffBaseArpuOverride` is
+ * OPTIONAL and presence is its carrier, so it goes through the shared
+ * `readStoredRateMap`, where a corrupted entry is dropped rather than defaulted
+ * and an absent map stays absent rather than becoming an empty one.
+ */
+export function yieldEventFromRow(r: Record<string, any>): YieldEvent {
+  let tariffMix: Record<string, number> = {};
+  let tariffBaseArpu: Record<string, number> = {};
+  try { tariffMix = JSON.parse(String(r.Tariff_Mix_JSON ?? '{}')); } catch {}
+  try { tariffBaseArpu = JSON.parse(String(r.Tariff_Base_ARPU_JSON ?? '{}')); } catch {}
+  // Through the SHARED map reader, which reuses readOptionalNumber per value:
+  // presence is the carrier, a stated 0 survives as 0, a negative survives
+  // verbatim, and a corrupted entry is dropped rather than defaulted.
+  const tariffBaseArpuOverride = readStoredRateMap(r.Tariff_Base_ARPU_Override_JSON);
+  return {
+    id:            String(r.ID ?? Math.random().toString(36).substr(2, 9)),
+    name:          String(r.Name ?? ''),
+    ibro:          (r.IBRO ?? 'Inflow') as 'Inflow' | 'Retention',
+    segment:       String(r.Segment ?? 'All'),
+    product:       String(r.Product ?? 'All'),
+    channelL1:     String(r.Channel_L1 ?? 'All'),
+    channelL2:     String(r.Channel_L2 ?? 'All'),
+    month:         String(r.Month ?? ''),
+    rollForward:   r.Roll_Forward === 'Yes',
+    mixAxis:       (r.Mix_Axis === 'tariff' ? 'tariff' : 'value') as 'value' | 'tariff',
+    tariffMix,
+    tariffBaseArpu,
+    tariffBaseArpuOverride,
+    comment:       String(r.Comment ?? ''),
   };
 }
 
