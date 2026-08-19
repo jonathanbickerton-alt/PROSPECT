@@ -6739,6 +6739,24 @@ From the 2026-08-17 walk on the edge fixture and its diagnosis
    where it is harder to find. The diagnosis counted FIVE blocking terms across
    two layers, none of which said anything.
 
+#### R6 SESSION 2: ONE EVENTS SUMMARY PER LOADED FILE (Jon, 2026-08-19)
+
+Scenario Compare shows **one events summary panel per loaded file**, reusing
+the R4 summarisers **verbatim**. Not one merged table across files: the whole
+point of Scenario Compare is telling files apart, and a merged table would
+answer a question nobody asked while hiding the one they did.
+
+The R4 decisions carry over unchanged, because they are the same table: the
+pipeline order is **stated in words** rather than inferred from row order; the
+summarisers **describe and never re-derive**; a missing name is **flagged by
+presence** rather than blanked. A fifth copy of any summariser is the failure
+mode on record — if a gap appears, it is a finding, not an inline variant.
+
+MEASURED, 2026-08-19: the typed parse costs **0.50 ms** for 1,200 events across
+four files (3.24 ms at 12,000, far beyond anything real). It therefore runs in
+the TAB, memoised per file load — moving it to the worker would buy nothing
+measurable and would pull forecasting.ts into a second bundle.
+
 #### R6 IS TWO SESSIONS: SEAMS FIRST, INERT; THEN THE PANEL (Jon, 2026-08-19)
 
 **Session 1 = the fromRow seams plus the yield spec promotion, and it is

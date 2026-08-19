@@ -426,6 +426,7 @@ check('memo: it does not compute when no month is chosen',
   'the incomplete-draft placeholder must not be preceded by a pipeline run');
 
 // ── 12. NAME ON THE CARDS' OWN LISTS ───────────────────────────────────────
+const summaryTableSrc = fs.readFileSync('src/components/EventsSummaryTable.tsx', 'utf8');
 check('names: the pricing list renders a Name cell with the per-kind fallback',
   tab.includes("t('whatif_summary_unnamed_pricing')"),
   'the summary table named events while the card that owns them did not');
@@ -434,9 +435,15 @@ check('names: the yield list does too',
 // THREE, not two: the R4 summary table's own header is the third, and reusing
 // its key across all three is the point — one vocabulary, not a second. The
 // first expectation here was 2 and the run corrected it.
+//
+// RE-AIMED 2026-08-19: the third header moved out of WhatIfTab when the summary
+// table was extracted for Scenario Compare, so counting WhatIfTab alone found 2
+// and this went red. The invariant is unchanged — three headers, one key — so
+// the haystack now covers both files the headers live in. Still an EXACT count:
+// a fourth list appearing with its own vocabulary is what this exists to catch.
 check('names: all three Name headers share ONE label key, not a second vocabulary',
-  (tab.split("t('whatif_summary_col_name')").length - 1) === 3,
-  `${tab.split("t('whatif_summary_col_name')").length - 1} Name headers, expected 3 (summary + pricing + yield)`);
+  ((tab + summaryTableSrc).split("t('whatif_summary_col_name')").length - 1) === 3,
+  `${(tab + summaryTableSrc).split("t('whatif_summary_col_name')").length - 1} Name headers, expected 3 (summary + pricing + yield)`);
 // FLAGGED BY PRESENCE, not inferred from the rendered string — the same rule
 // the summary table uses, so typing the fallback text does not fake a name.
 check('names: the fallback is chosen by presence, not by comparing the string',

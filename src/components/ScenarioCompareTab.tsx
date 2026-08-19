@@ -1,5 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { collectEventScopeDims, hasAnyCarrierEvents } from '../utils/viewFilter';
+import { buildPerFileEventPanels } from '../utils/forecasting';
+import { EventsSummaryTable } from './EventsSummaryTable';
 import { useTranslation } from 'react-i18next';
 import { UploadCloud, X, AlertTriangle, FileSpreadsheet, ChevronDown } from 'lucide-react'; // ChevronDown used in Segment select
 import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Line, Brush } from 'recharts';
@@ -32,6 +34,10 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
 
   const [activeScenarios, setActiveScenarios] = useState<Record<string, boolean>>({});
   const [scenarioNames, setScenarioNames] = useState<Record<string, string>>({});
+  // COLLAPSED BY DEFAULT, and absence carries it: a file with no entry here is
+  // closed. Seeding a key per file on load would work too and would then need
+  // keeping in step with add/remove — this cannot fall out of step.
+  const [openPanels, setOpenPanels] = useState<Record<string, boolean>>({});
   const [showBaseline, setShowBaseline] = useState(false);
   
   const [chartView, setChartView] = useState<'volume' | 'value'>('volume');
@@ -104,6 +110,27 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
     
     e.target.value = '';
   };
+
+  /**
+   * THE TYPED PARSE, ONE PASS PER FILE LOAD.
+   *
+   * A Scenario Compare upload IS a PROSPECT save — the worker reads it by
+   * sheet name from a workbook this app wrote — so the market rows go through
+   * the seam with source 'session': stored ids are restored, a stored blank
+   * stays blank, and no sign transform is applied. Passing 'workbook' here
+   * would mint new ids and negate Outflow volumes that are already signed.
+   *
+   * IN THE TAB RATHER THAN THE WORKER, and measured rather than assumed: the
+   * parse costs 0.50 ms for 1,200 events across four files (3.24 ms at 12,000,
+   * far beyond anything real). The expensive half — the xlsx decode — is
+   * already in the worker; moving this half across would pull forecasting.ts
+   * into a second bundle to save half a millisecond.
+   *
+   * The memo depends on parsedSessions ALONE, so it runs once per file load
+   * and not on filter changes, chart toggles or renames.
+   */
+  const perFileSummaries = useMemo(
+    () => buildPerFileEventPanels(parsedSessions, t), [parsedSessions, t]);
 
   const removeSession = (name: string) => {
     setParsedSessions(prev => prev.filter(s => s.fileName !== name));
@@ -540,6 +567,41 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
                 </div>
               ))}
             </div>
+
+            {/* ── R6 — ONE EVENTS SUMMARY PER LOADED FILE ──────────────────
+                BELOW the file cards, stacked, one panel per file. Beside each
+                card was the alternative and was rejected: the cards sit in a
+                four-across grid, so a table inside one would be ~200px wide
+                and the Scope column — the widest and the one that says which
+                cohort an event hits — would be unreadable.
+
+                PER FILE, never merged. Telling files apart is the entire job
+                of this tab; one combined table would answer a question nobody
+                asked and hide the one they did.
+
+                It DESCRIBES. Every row comes from buildEventsSummaryRows —
+                the same builder the What-If tab uses, calling the same four
+                summarisers — so nothing here recomputes what an event does
+                and there is no fifth copy to drift. */}
+            {perFileSummaries.length > 0 && (
+              <div className="flex flex-col gap-2 shrink-0" data-testid="compare-events-panels">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  {t('compare_events_per_file')}
+                </span>
+                {perFileSummaries.map(f => (
+                  <EventsSummaryTable
+                    key={f.fileName}
+                    rows={f.rows}
+                    t={t}
+                    open={!!openPanels[f.fileName]}
+                    onToggle={() => setOpenPanels(o => ({ ...o, [f.fileName]: !o[f.fileName] }))}
+                    title={scenarioNames[f.fileName] || f.fileName}
+                    testIdPrefix={`compare-events-${f.fileName}`}
+                    dense
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

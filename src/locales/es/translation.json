@@ -791,5 +791,6 @@
   "whatif_preview_not_available": "No hay cifra ponderada para este evento: los eventos solo sobre la base afectan a un grupo que esta vista no puede desglosar.",
   "restore_fell_back_to_first_cohort": "Se ha restaurado la primera cohorte disponible: este archivo no registró cuál estaba activa.",
   "common_dismiss": "Descartar",
-  "compare_events_only": "Solo eventos"
+  "compare_events_only": "Solo eventos",
+  "compare_events_per_file": "Eventos por archivo"
 }

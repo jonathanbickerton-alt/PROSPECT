@@ -70,6 +70,7 @@ const SCENHELPER = 'src/utils/scenarioHelper.ts';
 const SCENPRICE = 'scripts/scenario-pricing-spec.ts';
 const CMPFILTER = 'scripts/compare-filter-spec.ts';
 const EQUIV = 'scripts/fromrow-equivalence-spec.ts';
+const CMPPANEL = 'scripts/compare-events-panel-spec.ts';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER];
@@ -1017,6 +1018,27 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "  try { tariffMix = JSON.parse(String(r.Tariff_Mix_JSON ?? '{}')); } catch {}",
       "  try { tariffMix = JSON.parse(String(r.Tariff_Mix_Json ?? '{}')); } catch {}") },
+  // 89 points every file's panel at the MERGED event list instead of its own.
+  // Each panel then shows every event from every loaded file — which looks
+  // busy and plausible rather than broken, and defeats the one thing Scenario
+  // Compare exists to do. The per-file build lives in buildPerFileEventPanels
+  // precisely so this trap has something to hit: while the composition sat in
+  // a component memo, the spec mirrored it and nothing here could reach it.
+  { id: '89 the per-file panels read the merged event list', why: 'every panel shows every file\'s events',
+    file: ENGINE, spec: CMPPANEL,
+    mutate: s => s.replace(
+      "      marketEvents:  (s.marketEvents  ?? []).map(r => marketEventFromRow(r, 'session')),",
+      "      marketEvents:  (sessions.flatMap(x => x.marketEvents ?? [])).map(r => marketEventFromRow(r, 'session')),") },
+  // 90 drops the YIELD carrier from the per-file parse. The panel still
+  // renders, still lists market and pricing rows, and simply omits an entire
+  // card's worth of events — the same silent-omission shape as the Compare
+  // filter defect, one surface along. Only a check naming a yield-exclusive
+  // value can tell, which is why every fixture event is carrier-unique.
+  { id: '90 the per-file parse drops the yield carrier', why: 'a whole card\'s events vanish from every panel',
+    file: ENGINE, spec: CMPPANEL,
+    mutate: s => s.replace(
+      '      yieldEvents:   (s.yieldEvents   ?? []).map(yieldEventFromRow),',
+      '      yieldEvents:   [],') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -1027,7 +1049,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(EQUIV)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(EQUIV) || specFails(CMPPANEL)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

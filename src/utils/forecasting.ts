@@ -838,6 +838,52 @@ export function buildEventsSummaryRows(
   return rows.sort((a, b) => a.pass - b.pass || a.month.localeCompare(b.month));
 }
 
+/** One file's worth of summary rows, keyed by the file it came from. */
+export interface FileEventPanel {
+  fileName: string;
+  rows: EventSummaryRow[];
+}
+
+/** The three raw sheet-row arrays a Scenario Compare upload yields per file. */
+export interface RawEventSession {
+  fileName: string;
+  marketEvents?: any[];
+  yieldEvents?: any[];
+  pricingEvents?: any[];
+}
+
+/**
+ * RAW SHEET ROWS -> ONE SUMMARY PER FILE. R6 session 2.
+ *
+ * PER FILE, NEVER MERGED. Telling loaded files apart is the entire job of
+ * Scenario Compare; one combined table would answer a question nobody asked
+ * and hide the one they did. Each file's rows are built from ITS OWN arrays
+ * and nothing else — the separation is the capability, not an implementation
+ * detail, so it lives in a function a spec can drive rather than in a memo
+ * inside a component where only a source-grep could reach it.
+ *
+ * source 'session', because A SCENARIO COMPARE UPLOAD IS A PROSPECT SAVE — the
+ * worker reads it by sheet name from a workbook this app wrote. 'workbook'
+ * would mint fresh ids and negate Outflow volumes that are already signed.
+ *
+ * It DESCRIBES: rows come from buildEventsSummaryRows, which calls the same
+ * four summarisers the What-If tab calls. Nothing here re-derives what an
+ * event does, and there is no fifth copy to drift.
+ */
+export function buildPerFileEventPanels(
+  sessions: RawEventSession[],
+  t: SummaryT,
+): FileEventPanel[] {
+  return sessions.map(s => ({
+    fileName: s.fileName,
+    rows: buildEventsSummaryRows({
+      marketEvents:  (s.marketEvents  ?? []).map(r => marketEventFromRow(r, 'session')),
+      yieldEvents:   (s.yieldEvents   ?? []).map(yieldEventFromRow),
+      pricingEvents: (s.pricingEvents ?? []).map(pricingEventFromRow),
+    }, t),
+  }));
+}
+
 /**
  * THE Pricing_Events export row — one definition, used by App's export AND by
  * spec:pricing-roundtrip.

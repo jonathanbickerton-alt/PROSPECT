@@ -54,7 +54,8 @@
     "spec:active-cohort": "tsx scripts/active-cohort-spec.ts",
     "spec:scenario-pricing": "tsx scripts/scenario-pricing-spec.ts",
     "spec:compare-filter": "tsx scripts/compare-filter-spec.ts",
-    "spec:fromrow-equivalence": "tsx scripts/fromrow-equivalence-spec.ts"
+    "spec:fromrow-equivalence": "tsx scripts/fromrow-equivalence-spec.ts",
+    "spec:compare-events-panel": "tsx scripts/compare-events-panel-spec.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

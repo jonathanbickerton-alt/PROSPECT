@@ -791,5 +791,6 @@
   "whatif_preview_not_available": "Sem valor ponderado para este evento: os eventos apenas sobre a base afetam um conjunto que esta vista não consegue decompor.",
   "restore_fell_back_to_first_cohort": "Foi restaurada a primeira coorte disponível — esta gravação não registou qual estava ativa.",
   "common_dismiss": "Dispensar",
-  "compare_events_only": "Apenas eventos"
+  "compare_events_only": "Apenas eventos",
+  "compare_events_per_file": "Eventos por ficheiro"
 }

@@ -791,5 +791,6 @@
   "whatif_preview_not_available": "Kein gewichteter Wert für dieses Ereignis – reine Basis-Ereignisse betreffen einen Pool, den diese Ansicht nicht aufschlüsseln kann.",
   "restore_fell_back_to_first_cohort": "Es wurde die erste verfügbare Kohorte wiederhergestellt – diese Sicherung hat nicht festgehalten, welche aktiv war.",
   "common_dismiss": "Schließen",
-  "compare_events_only": "Nur Ereignisse"
+  "compare_events_only": "Nur Ereignisse",
+  "compare_events_per_file": "Ereignisse nach Datei"
 }

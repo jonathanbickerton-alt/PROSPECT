@@ -206,14 +206,28 @@ check('partial: and no placeholder row is invented for the absent kinds',
 
 // ── 7. WIRING ──────────────────────────────────────────────────────────────
 const tab = fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8');
+// RE-AIMED 2026-08-19, R6 session 2. These three grepped WhatIfTab for the
+// TABLE'S MARKUP, which was right while the table lived inline there. Scenario
+// Compare needs the same table once per loaded file, so it was extracted to
+// EventsSummaryTable and these anchors went red — stale in the direction that
+// FAILS, which is the only acceptable direction for an anchor to go stale.
+//
+// What they guard is unchanged: the table states its order, has an empty state,
+// and is height-capped. Only its address changed. The projection check stays on
+// WhatIfTab, because building rows is still the CALLER's job — the shared
+// component renders and must never build.
+const table = fs.readFileSync('src/components/EventsSummaryTable.tsx', 'utf8');
 check('wiring: the card renders the table from the shared projection',
   (tab.split('buildEventsSummaryRows(').length - 1) === 1,
   'a second projection is how the table and the cards start disagreeing');
+check('wiring: the card passes those rows to the shared table component',
+  (tab.match(/<EventsSummaryTable/g) ?? []).length === 1,
+  'a re-inlined table would put Compare and What-If back on two copies');
 check('wiring: the panel states the order rather than leaving it inferred',
-  tab.includes('whatif_summary_order_note'));
-check('wiring: the panel has an empty state', tab.includes('whatif_summary_empty'));
+  table.includes('whatif_summary_order_note'));
+check('wiring: the panel has an empty state', table.includes('whatif_summary_empty'));
 check('wiring: the expanded table is height-capped so it cannot push the cards away',
-  tab.includes('max-h-[320px]'));
+  table.includes('max-h-[320px]'));
 
 // THE EXISTING CARD LISTS ARE NOT TOUCHED — decision 2. Their differing sorts
 // are deliberate, and this is what says so if a later change harmonises them
