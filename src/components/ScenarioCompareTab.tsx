@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { collectEventScopeDims, hasAnyCarrierEvents } from '../utils/viewFilter';
 import { useTranslation } from 'react-i18next';
 import { UploadCloud, X, AlertTriangle, FileSpreadsheet, ChevronDown } from 'lucide-react'; // ChevronDown used in Segment select
 import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Line, Brush } from 'recharts';
@@ -120,37 +121,50 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
     const channelTree = new Map<string, Set<string>>();
     const tariffTree = new Map<string, Set<string>>();
 
-    const hasNoEvents = parsedSessions.every(s => s.marketEvents.length === 0);
+    // ALL THREE CARRIERS, through the shared collector. This read
+    // `s.marketEvents` alone, so a scope value that existed only on a pricing
+    // or yield event was missing from the filter and could not be selected —
+    // Jon's files offered Mobile Data and Fixed Connectivity but not Mobile
+    // Voice, which lived on a pricing event. The three sheets disagree about
+    // their column names and about which dimensions they even have, and the
+    // collector owns that; the component does not repeat it.
+    const hasNoEvents = !hasAnyCarrierEvents(parsedSessions);
 
-    parsedSessions.forEach(s => {
-      const sourceRows = (dimSource === 'baseline' || hasNoEvents) ? s.baselineRows : s.marketEvents;
-      
-      sourceRows.forEach(r => {
-        if (r.Segment && r.Segment !== 'All') segs.add(r.Segment);
-        
-        if (r.Product && r.Product !== 'All') {
-          if (!productTree.has(r.Product)) productTree.set(r.Product, new Set());
-          if (r.Product_L2 && r.Product_L2 !== 'All') {
-            productTree.get(r.Product)!.add(r.Product_L2);
-          }
-        }
-        
-        if (r.Channel && r.Channel !== 'All') {
-          if (!channelTree.has(r.Channel)) channelTree.set(r.Channel, new Set());
-          if (r.Channel_L2 && r.Channel_L2 !== 'All') {
-            channelTree.get(r.Channel)!.add(r.Channel_L2);
-          }
-        }
-
-        if (r.Tariff_L1 && r.Tariff_L1 !== 'All') {
-          if (!tariffTree.has(r.Tariff_L1)) tariffTree.set(r.Tariff_L1, new Set());
-          if (r.Tariff_L2 && r.Tariff_L2 !== 'All') {
-            tariffTree.get(r.Tariff_L1)!.add(r.Tariff_L2);
-          }
-        }
+    if (!(dimSource === 'baseline' || hasNoEvents)) {
+      const fromEvents = collectEventScopeDims(parsedSessions);
+      fromEvents.segments.forEach(v => segs.add(v));
+      fromEvents.productTree.forEach((l2s, l1) => {
+        if (!productTree.has(l1)) productTree.set(l1, new Set());
+        l2s.forEach(l2 => productTree.get(l1)!.add(l2));
       });
-    });
-
+      fromEvents.channelTree.forEach((l2s, l1) => {
+        if (!channelTree.has(l1)) channelTree.set(l1, new Set());
+        l2s.forEach(l2 => channelTree.get(l1)!.add(l2));
+      });
+      fromEvents.tariffTree.forEach((l2s, l1) => {
+        if (!tariffTree.has(l1)) tariffTree.set(l1, new Set());
+        l2s.forEach(l2 => tariffTree.get(l1)!.add(l2));
+      });
+    } else {
+      // Baseline side, untouched: the cohort rows drive the options.
+      parsedSessions.forEach(s => {
+        s.baselineRows.forEach((r: any) => {
+          if (r.Segment && r.Segment !== 'All') segs.add(r.Segment);
+          if (r.Product && r.Product !== 'All') {
+            if (!productTree.has(r.Product)) productTree.set(r.Product, new Set());
+            if (r.Product_L2 && r.Product_L2 !== 'All') productTree.get(r.Product)!.add(r.Product_L2);
+          }
+          if (r.Channel && r.Channel !== 'All') {
+            if (!channelTree.has(r.Channel)) channelTree.set(r.Channel, new Set());
+            if (r.Channel_L2 && r.Channel_L2 !== 'All') channelTree.get(r.Channel)!.add(r.Channel_L2);
+          }
+          if (r.Tariff_L1 && r.Tariff_L1 !== 'All') {
+            if (!tariffTree.has(r.Tariff_L1)) tariffTree.set(r.Tariff_L1, new Set());
+            if (r.Tariff_L2 && r.Tariff_L2 !== 'All') tariffTree.get(r.Tariff_L1)!.add(r.Tariff_L2);
+          }
+        });
+      });
+    }
     if (dimSource === 'baseline' || hasNoEvents) {
       globalSegments.forEach(s => segs.add(s));
       globalProductTree.forEach((l2s, l1) => {
@@ -316,7 +330,7 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
                 </div>
               </div>
               
-              {parsedSessions.every(s => s.marketEvents.length === 0) && (
+              {!hasAnyCarrierEvents(parsedSessions) && (
                 <div className="flex items-center gap-4 bg-amber-50 border border-amber-200 p-2 rounded-lg mt-2">
                   <AlertTriangle className="text-amber-600" size={16} />
                   <span className="text-sm text-amber-800 font-medium">{t('compare_no_market_events_found_in_loaded_sessions')}</span>
@@ -324,7 +338,7 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
                   <div className="flex items-center gap-3 ml-auto">
                     <span className="text-xs font-semibold text-amber-700 uppercase">{t('compare_populate_filters_from')}</span>
                     <label className="flex items-center gap-1.5 text-xs text-amber-900 cursor-pointer">
-                      <input type="radio" value="baseline" checked={dimSource === 'baseline' || parsedSessions.every(s => s.marketEvents.length === 0)} onChange={() => setDimSource('baseline')} className="accent-amber-600 w-3.5 h-3.5" />{t('compare_baseline_forecasts')}</label>
+                      <input type="radio" value="baseline" checked={dimSource === 'baseline' || !hasAnyCarrierEvents(parsedSessions)} onChange={() => setDimSource('baseline')} className="accent-amber-600 w-3.5 h-3.5" />{t('compare_baseline_forecasts')}</label>
                   </div>
                 </div>
               )}
@@ -332,7 +346,7 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
                 <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
                   <span className="text-xs font-semibold text-slate-500 uppercase">{t('compare_populate_filters_from')}</span>
                   <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
-                    <input type="radio" value="events" checked={dimSource === 'events'} onChange={() => setDimSource('events')} className="accent-[#e60000] w-3.5 h-3.5" />{t('compare_market_events_only')}</label>
+                    <input type="radio" value="events" checked={dimSource === 'events'} onChange={() => setDimSource('events')} className="accent-[#e60000] w-3.5 h-3.5" />{t('compare_events_only')}</label>
                   <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer">
                     <input type="radio" value="baseline" checked={dimSource === 'baseline'} onChange={() => setDimSource('baseline')} className="accent-[#e60000] w-3.5 h-3.5" />{t('compare_baseline_forecasts_all')}</label>
                 </div>

@@ -52,7 +52,8 @@
     "spec:pricing-roundtrip": "tsx scripts/pricing-roundtrip-spec.ts",
     "spec:events-summary": "tsx scripts/events-summary-spec.ts",
     "spec:active-cohort": "tsx scripts/active-cohort-spec.ts",
-    "spec:scenario-pricing": "tsx scripts/scenario-pricing-spec.ts"
+    "spec:scenario-pricing": "tsx scripts/scenario-pricing-spec.ts",
+    "spec:compare-filter": "tsx scripts/compare-filter-spec.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

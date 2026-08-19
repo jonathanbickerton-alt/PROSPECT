@@ -71,6 +71,121 @@ export function describeScope(f: ViewFilter, allLabel: string): string {
 }
 
 /** The inverse: a stored cohort as a ViewFilter, 'All' becoming null. */
+/** The scope dimensions a filter can offer, as trees. */
+export interface ScopeDimTrees {
+  segments: string[];
+  productTree: Map<string, string[]>;
+  channelTree: Map<string, string[]>;
+  tariffTree: Map<string, string[]>;
+}
+
+/** One file's three event arrays, as raw sheet rows. */
+export interface EventCarriers {
+  marketEvents?: any[];
+  yieldEvents?: any[];
+  pricingEvents?: any[];
+}
+
+/**
+ * WHICH COLUMNS EACH CARRIER USES FOR ITS SCOPE.
+ *
+ * The three sheets do NOT agree: market events write `Channel`, while yield
+ * and pricing write `Channel_L1`. Yield carries no Product_L2 and no tariff
+ * dimensions at all, because YieldEvent has none — a dimension a carrier lacks
+ * contributes NOTHING here. That is absence, not an error, and it must not
+ * become an undefined creeping into an option list.
+ *
+ * Declared as data rather than three near-identical loops so adding a carrier
+ * is one row, and so the differences between them are visible in one place
+ * instead of being spread across code that looks the same but is not.
+ */
+const CARRIER_SCOPE_COLUMNS: {
+  key: keyof EventCarriers;
+  segment: string; product: string; productL2?: string;
+  channel: string; channelL2?: string;
+  tariffL1?: string; tariffL2?: string;
+}[] = [
+  { key: 'marketEvents',  segment: 'Segment', product: 'Product', productL2: 'Product_L2',
+    channel: 'Channel',    channelL2: 'Channel_L2', tariffL1: 'Tariff_L1', tariffL2: 'Tariff_L2' },
+  { key: 'yieldEvents',   segment: 'Segment', product: 'Product',
+    channel: 'Channel_L1', channelL2: 'Channel_L2' },
+  { key: 'pricingEvents', segment: 'Segment', product: 'Product', productL2: 'Product_L2',
+    channel: 'Channel_L1', channelL2: 'Channel_L2', tariffL1: 'Tariff_L1', tariffL2: 'Tariff_L2' },
+];
+
+/**
+ * THE SCOPE VALUES THE LOADED FILES ACTUALLY USE — across ALL THREE carriers.
+ *
+ * Scenario Compare's dimension filter read `marketEvents` alone, so a product
+ * that appeared only on a pricing or yield event was missing from the list and
+ * could not be selected: Jon's files offered Mobile Data and Fixed Connectivity
+ * (both market-scoped) but not Mobile Voice, which existed only on a pricing
+ * event. The filter described one carrier and claimed to describe the events.
+ *
+ * `'All'` IS EXCLUDED from the options. It is the CLEAR state of the control,
+ * not a value a user picks from a list — offering it twice, once as the empty
+ * selection and once as an item, would make the same choice mean two things.
+ *
+ * EXTRACTED so it can be driven directly. It was an inline `useMemo` in the
+ * component, which is exactly the shape that cannot be tested without a mount
+ * — and this defect shipped because nothing could reach it.
+ */
+export function collectEventScopeDims(sessions: EventCarriers[]): ScopeDimTrees {
+  const segs = new Set<string>();
+  const productTree = new Map<string, Set<string>>();
+  const channelTree = new Map<string, Set<string>>();
+  const tariffTree = new Map<string, Set<string>>();
+
+  const val = (row: any, col?: string): string | null => {
+    if (!col) return null;
+    const v = row?.[col];
+    if (v === undefined || v === null) return null;
+    const str = String(v).trim();
+    return str === '' || str === 'All' ? null : str;
+  };
+
+  const addTree = (tree: Map<string, Set<string>>, l1: string | null, l2: string | null) => {
+    if (!l1) return;
+    if (!tree.has(l1)) tree.set(l1, new Set());
+    if (l2) tree.get(l1)!.add(l2);
+  };
+
+  for (const session of sessions ?? []) {
+    for (const carrier of CARRIER_SCOPE_COLUMNS) {
+      for (const row of (session?.[carrier.key] ?? [])) {
+        const seg = val(row, carrier.segment);
+        if (seg) segs.add(seg);
+        addTree(productTree, val(row, carrier.product), val(row, carrier.productL2));
+        addTree(channelTree, val(row, carrier.channel), val(row, carrier.channelL2));
+        addTree(tariffTree, val(row, carrier.tariffL1), val(row, carrier.tariffL2));
+      }
+    }
+  }
+
+  const flatten = (tree: Map<string, Set<string>>) => {
+    const out = new Map<string, string[]>();
+    for (const [l1, l2s] of tree.entries()) out.set(l1, Array.from(l2s).sort());
+    return out;
+  };
+
+  return {
+    segments: Array.from(segs).sort(),
+    productTree: flatten(productTree),
+    channelTree: flatten(channelTree),
+    tariffTree: flatten(tariffTree),
+  };
+}
+
+/** Does any loaded file carry an event on ANY carrier? Drives the fallback to
+ *  the baseline dimensions, and reads all three for the same reason the
+ *  populate does: a file with only pricing events HAS events. */
+export function hasAnyCarrierEvents(sessions: EventCarriers[]): boolean {
+  return (sessions ?? []).some(s =>
+    (s?.marketEvents?.length ?? 0) > 0
+    || (s?.yieldEvents?.length ?? 0) > 0
+    || (s?.pricingEvents?.length ?? 0) > 0);
+}
+
 export function cohortToFilter(c: CohortLike): ViewFilter {
   return {
     segment: c.segment,

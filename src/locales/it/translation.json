@@ -790,5 +790,6 @@
   "whatif_pricing_block_dilution_range": "I valori di diluizione devono essere pari o superiori a 0 e inferiori a 100.",
   "whatif_preview_not_available": "Nessun valore ponderato per questo evento: gli eventi solo sulla base agiscono su un insieme che questa vista non può scomporre.",
   "restore_fell_back_to_first_cohort": "È stata ripristinata la prima coorte disponibile: questo salvataggio non registrava quale fosse attiva.",
-  "common_dismiss": "Chiudi"
+  "common_dismiss": "Chiudi",
+  "compare_events_only": "Solo eventi"
 }

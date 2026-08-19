@@ -68,6 +68,7 @@ const SUMMARYSPEC = 'scripts/events-summary-spec.ts';
 const ACTIVECOHORT = 'scripts/active-cohort-spec.ts';
 const SCENHELPER = 'src/utils/scenarioHelper.ts';
 const SCENPRICE = 'scripts/scenario-pricing-spec.ts';
+const CMPFILTER = 'scripts/compare-filter-spec.ts';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER];
@@ -967,6 +968,17 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '      finalArpu = pools',
       '      finalArpu = priced; void pools; const _unused = pools') },
+  // 86 drops the PRICING carrier from Scenario Compare's filter populate — the
+  // shipped defect, exactly as Jon met it: the list still populates, still
+  // looks complete, and simply omits every scope value that lives only on a
+  // pricing event. Nothing errors, so only a check that names a
+  // pricing-exclusive value can tell. The three carriers are declared as data
+  // precisely so dropping one is a single visible line.
+  { id: '86 the Compare filter stops reading pricing events', why: 'a pricing-only scope value cannot be selected',
+    file: VIEWFILTER, spec: CMPFILTER,
+    mutate: s => s.replace(
+      "  { key: 'pricingEvents', segment: 'Segment', product: 'Product', productL2: 'Product_L2',",
+      "  { key: 'marketEvents', segment: 'Segment', product: 'Product', productL2: 'Product_L2',") },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -977,7 +989,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

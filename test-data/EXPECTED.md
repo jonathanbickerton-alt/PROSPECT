@@ -6739,6 +6739,17 @@ From the 2026-08-17 walk on the edge fixture and its diagnosis
    where it is harder to find. The diagnosis counted FIVE blocking terms across
    two layers, none of which said anything.
 
+#### ORDER OF WORK: THE SCENARIO COMPARE ARC, THEN DQ (Jon, 2026-08-19)
+
+**The Scenario Compare arc runs first** — the dimension-filter fix and the
+per-file events summary. **DQ is next, no exceptions**, once that arc closes.
+
+Recorded because DQ has been "next" while user-visible Compare defects kept
+surfacing, and an order that is understood but unwritten is the one that keeps
+slipping. The filter fix is a defect Jon met on screen; the summary completes
+the arc; then DQ, whose single-source-of-truth work already owns the five
+`'All'` marker sites this programme keeps rediscovering.
+
 #### SCENARIO COMPARE HONOURS target AND cohortScope (Jon, 2026-08-18)
 
 From the 2026-08-17 R4 finding: `scenarioHelper`'s pricing pass read only

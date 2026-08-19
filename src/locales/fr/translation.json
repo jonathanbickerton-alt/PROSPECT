@@ -790,5 +790,6 @@
   "whatif_pricing_block_dilution_range": "Les valeurs de dilution doivent être supérieures ou égales à 0 et inférieures à 100.",
   "whatif_preview_not_available": "Aucune valeur pondérée pour cet événement : les événements portant uniquement sur la base concernent un pool que cette vue ne peut pas décomposer.",
   "restore_fell_back_to_first_cohort": "La première cohorte disponible a été restaurée — cette sauvegarde n’indiquait pas laquelle était active.",
-  "common_dismiss": "Fermer"
+  "common_dismiss": "Fermer",
+  "compare_events_only": "Événements uniquement"
 }

@@ -799,5 +799,6 @@
   "whatif_pricing_block_dilution_range": "Dilution figures must be 0 or more and below 100.",
   "whatif_preview_not_available": "No weighted figure for this event — base-only events price a pool this view cannot break down.",
   "restore_fell_back_to_first_cohort": "Restored the first available cohort — this save did not record which one was active.",
-  "common_dismiss": "Dismiss"
+  "common_dismiss": "Dismiss",
+  "compare_events_only": "Events Only"
 }
