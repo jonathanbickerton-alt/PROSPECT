@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-08-19 09:25 +0100 (UTC 2026-08-19 08:25)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: c426521 (this report filled one commit later)
+Repo: committed c426521, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before the base check.
 HOUSEKEEPING DONE: v3.3.2 committed, v3.3.1 removed, ONE commit (4bd703f).
 THE BRIEF ASSUMED ONE MARKET PARSE. THERE ARE TWO, AND THEY NEVER MATCHED:
@@ -23,11 +23,10 @@ YIELD SPEC PROMOTED: the toRow copy is retired; spec:yield-roundtrip now
 PIN RE-AIMED, exact counts, sites named: App has exactly 2 marketEventFromRow
   call sites (1 session, 1 workbook) and 0 spreads; forecasting.ts has
   exactly 1 spread, inside the reader. Old anchor would have read 0.
-WORKER-IMPORTABLE, CONFIRMED: forecasting.ts pulls only date-fns, a type-only
-  import and mixConstraint — no React, no DOM. The specs importing it under
-  plain Node ARE the proof. Not wired; that is session 2.
+WORKER-IMPORTABLE, CONFIRMED: no React, no DOM — and the specs importing the
+  seams under plain Node ARE the proof. Not wired; that is session 2.
 INERT BY DESIGN — no UI, no behaviour change. Recorded in EXPECTED.md.
-__GATE_PENDING__
+GATE GREEN: guard-traps 86/86 (trap 63 re-aimed after it went INCONCLUSIVE).
 ```
 
 ---
@@ -193,10 +192,16 @@ session 2's parse has both its input and its readers. Nothing was wired.
 fromrow-equivalence:     49 passed, 0 failed   (new)
 yield-roundtrip:         56 passed, 0 failed   (was 35 — promoted)
 event-roundtrip:         72 passed, 0 failed   (was 69 — pin re-aimed)
-guard-traps:             __/__ PENDING
-full suite:              __/__ PENDING
-lint (tsc --noEmit):     __PENDING__
-build:                   __PENDING__
+guard-traps:             86/86 caught, 0 missed, 0 inconclusive
+compare-filter:          24 passed, 0 failed
+scenario-pricing:        16 passed, 0 failed
+active-cohort:           23 passed, 0 failed
+import-seam:             36 passed, 0 failed
+pricing-roundtrip:      116 passed, 0 failed
+events-summary:          37 passed, 0 failed
+mix-card (mounted):      99/99 passed
+lint (tsc --noEmit):     clean
+build:                   clean (5.87s)
 ```
 
 ## Where things stand
