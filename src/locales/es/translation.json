@@ -813,5 +813,6 @@
   "whatif_churn_ramp": "Escalonar la reducción durante varios meses",
   "whatif_churn_breakdown": "salidas de {{month}} {{outflow}} ÷ base del mes anterior {{base}} × 12",
   "whatif_churn_block_no_forecast": "Ninguna previsión de referencia cubre esta cohorte ({{reason}}), así que no hay tasa de rotación que reducir.",
-  "whatif_churn_reason_unknown": "sin motivo indicado"
+  "whatif_churn_reason_unknown": "sin motivo indicado",
+  "whatif_churn_member_no_edit": "Este mes es un paso de una rampa de rotación: su objetivo es acumulativo, así que no puede editarse por separado. Elimine la campaña y vuelva a indicarla."
 }

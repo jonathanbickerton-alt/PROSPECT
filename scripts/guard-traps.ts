@@ -1193,6 +1193,34 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '            {!isChurnDraft && (' + nl + '            <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))]',
       '            {true && (' + nl + '            <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))]') },
+  // 105 drops the edit seeding, so a churn row reopens as a bare volume: no
+  // panel, no stated target, and the amount box showing a delta that means
+  // nothing without its statement. That is the first step of the corruption
+  // route — the second being a save that negates it.
+  { id: '105 a churn row reopens without its statement', why: 'the panel does not seed and the row becomes a bare volume',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      "      setStoredAmountControl('churn');" + nl + '      setChurnTargetPct(event.churnTargetPct ?? 0);',
+      '      setChurnTargetPct(event.churnTargetPct ?? 0);') },
+  // 106 routes a churn Save Changes through the ORDINARY save path, which
+  // applies neg to an Outflow amount. A stated REDUCTION is stored positive, so
+  // it returns NEGATIVE — the event silently inverted into its opposite. This
+  // is the exact corruption the 2026-08-20 diagnosis predicted from source, and
+  // the branch's POSITION above the neg is what closes it.
+  { id: '106 the churn edit-save falls through to the negating path', why: 'a reopened churn reduction is saved as an increase',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      '    if (isChurnDraft) {' + nl + '      if (churnBlockReason) return;' + nl + '      const m = churnFold.find(x => !x.absence);',
+      '    if (false) {' + nl + '      if (churnBlockReason) return;' + nl + '      const m = churnFold.find(x => !x.absence);') },
+  // 107 lets a ramp MEMBER be row-edited. Its cumulative target is meaningless
+  // alone — month 2 of a 1/3/6 ramp states six points against a base the first
+  // two months already moved — so editing it desyncs the member from its
+  // siblings and the ramp stops describing the rate it was stated as.
+  { id: '107 a churn ramp member can be row-edited', why: 'one member desyncs and the ramp stops meaning its stated rate',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      '      if (siblings.length > 1) {',
+      '      if (false) {') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

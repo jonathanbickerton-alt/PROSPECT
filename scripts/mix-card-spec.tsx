@@ -1124,6 +1124,145 @@ async function main() {
       hostR7.textContent?.includes('Contract Length') === true,
       'the hide is keyed on the derived control, so it must reverse');
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // R7 SESSION 2 — THE EDIT PATH
+    //
+    // The diagnosis found a CORRUPTION route here, not merely an omission:
+    // handleEditStart displayed abs(subscriberVolume) and handleSaveEdit
+    // re-applied neg, so a churn REDUCTION reopened and saved came back as an
+    // INCREASE. That route is closed structurally — the churn branch sits above
+    // the neg — and this is where that is observed rather than argued.
+    // ═══════════════════════════════════════════════════════════════════════
+    {
+      // A CLEAN, SINGLE churn event to reopen.
+      await (act as any)(async () => { (globalThis as any).__setEvents([]); });
+      await setDraft({ scenario: 'Outflow', date: DRAFT_MONTH, segment: SEG, product: 'All' });
+      const arm = q('[data-testid="volume-mode-churn"]');
+      if (arm) await (act as any)(async () => { arm.click(); });
+      const tgt = q('[data-testid="churn-target"]');
+      const setNum = async (el: any, v: string) => {
+        await (act as any)(async () => {
+          const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!;
+          setter.call(el, v);
+          el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+        });
+      };
+      // TARGETS BELOW THE SLICE'S ACTUAL RATE. The fixture's annualised churn
+      // here is ~1.73%, so a 2pt or 3pt reduction FLOORS the target at zero and
+      // the delta saturates at the whole outflow — correct behaviour (specced
+      // in churn-fold), and useless for a check that two statements must give
+      // two different deltas. 0.5 -> 1.0 keeps both inside the rate.
+      if (tgt) await setNum(tgt, '0.5');
+      const add = [...hostR7.querySelectorAll('button')].find((b: any) => /add event/i.test(b.textContent || '')) as any;
+      if (add) await (act as any)(async () => { add.click(); });
+
+      check('R7 edit: one churn event exists to reopen', stored.length === 1, `${stored.length}`);
+      const original = stored[0];
+      check('R7 edit: and it stored a POSITIVE delta before any edit',
+        Number(original?.subscriberVolume) > 0, `${original?.subscriberVolume}`);
+
+      // ── (a) REOPEN SEEDS THE PANEL ─────────────────────────────────────
+      const editBtns = () => [...hostR7.querySelectorAll('button')]
+        .filter((b: any) => /edit/i.test(b.getAttribute('title') || ''));
+      const openRow = async () => {
+        const b = editBtns()[0];
+        if (b) await (act as any)(async () => { b.click(); });
+        return !!b;
+      };
+      const opened = await openRow();
+      check('R7 edit (a): the row exposes an edit control', opened);
+      check('R7 edit (a): reopening SEEDS the churn panel',
+        !!q('[data-testid="churn-panel"]'),
+        'a churn row reopened as a bare volume is the corruption route\'s first step');
+      check('R7 edit (a): the stored target is shown, not a default',
+        Number(q('[data-testid="churn-target"]')?.value) === 0.5,
+        `${q('[data-testid="churn-target"]')?.value}`);
+      check('R7 edit (a): the breakdown renders against the current series',
+        (q('[data-testid="churn-breakdown"]')?.textContent || '').length > 0);
+      check('R7 edit (a): the ramp is OFF — a row reaching row-edit is single',
+        q('[data-testid="churn-ramp-toggle"]')?.checked === false);
+
+      // ── (b) SAVE CHANGES RE-STATES, AND THE SIGN SURVIVES ──────────────
+      const tgt2 = q('[data-testid="churn-target"]');
+      if (tgt2) await setNum(tgt2, '1');
+      const saveBtn = [...hostR7.querySelectorAll('button')]
+        .find((b: any) => /save changes/i.test(b.textContent || '')) as any;
+      check('R7 edit (b): a Save Changes control is present', !!saveBtn);
+      if (saveBtn) await (act as any)(async () => { saveBtn.click(); });
+      // THE EDIT COMMITS THROUGH A CONFIRM MODAL whose button reads exactly
+      // 'Save' for an edit — distinct from the form's 'Save Changes'. Matched
+      // exactly, because both the form and the modal also carry a 'Cancel'.
+      const confirmBtn = [...hostR7.querySelectorAll('button')]
+        .find((b: any) => (b.textContent || '').trim() === 'Save') as any;
+      check('R7 edit (b): the change routes through the confirm modal', !!confirmBtn);
+      if (confirmBtn) await (act as any)(async () => { confirmBtn.click(); });
+
+      const after = stored[0];
+      check('R7 edit (b): still exactly one event after the edit',
+        stored.length === 1, `${stored.length}`);
+      check('R7 edit (b): THE SIGN SURVIVES — the delta is still POSITIVE',
+        Number(after?.subscriberVolume) > 0,
+        `${after?.subscriberVolume} — negative is the inversion the diagnosis found`);
+      check('R7 edit (b): the stated target moved to the edited value',
+        Number(after?.churnTargetPct) === 1, `${after?.churnTargetPct}`);
+      check('R7 edit (b): the delta moved WITH it, not stale',
+        Number(after?.subscriberVolume) !== Number(original?.subscriberVolume),
+        `vol ${original?.subscriberVolume} -> ${after?.subscriberVolume}; ` +
+        `target ${original?.churnTargetPct} -> ${after?.churnTargetPct}; ` +
+        `prevBase ${original?.churnPrevBase} -> ${after?.churnPrevBase}`);
+      check('R7 edit (b): and it moved by the RATIO the statement changed by',
+        near(Number(after?.subscriberVolume) / Number(original?.subscriberVolume), 2, 1e-3),
+        `${Number(after?.subscriberVolume) / Number(original?.subscriberVolume)} — 0.5pt to 1pt on the same base is exactly double`);
+      check('R7 edit (b): current and prevBase re-snapshot together',
+        after?.churnCurrentPct !== undefined && after?.churnPrevBase !== undefined,
+        JSON.stringify([after?.churnCurrentPct, after?.churnPrevBase]));
+      check('R7 edit (b): the row is still an ordinary absolute Outflow event',
+        after?.scenario === 'Outflow' && after?.amountType === 'absolute'
+          && after?.churnMode === 'churn');
+
+      // ── (c) A RAMP MEMBER DECLINES ROW-EDIT ────────────────────────────
+      // A COMMITTED SAVE CLOSES THE EDIT, so the Add control is back. Asserted,
+      // because if it were not the ramp below could not be added at all and the
+      // failure would read as a churn defect rather than a stuck form.
+      check('R7 edit (b): a committed save returns the form to Add mode',
+        !!([...hostR7.querySelectorAll('button')].find((b: any) => /add event/i.test(b.textContent || ''))),
+        'the edit stayed open, so nothing below could add');
+      await (act as any)(async () => { (globalThis as any).__setEvents([]); });
+      await setDraft({ scenario: 'Outflow', date: DRAFT_MONTH, segment: SEG, product: 'All' });
+      const arm2 = q('[data-testid="volume-mode-churn"]');
+      if (arm2) await (act as any)(async () => { arm2.click(); });
+      const ramp2 = q('[data-testid="churn-ramp-toggle"]');
+      if (ramp2) await (act as any)(async () => { ramp2.click(); });
+      const add2 = [...hostR7.querySelectorAll('button')].find((b: any) => /add event/i.test(b.textContent || '')) as any;
+      if (add2) await (act as any)(async () => { add2.click(); });
+      check('R7 edit (c): a three-month ramp exists', stored.length === 3, `${stored.length}`);
+
+      await openRow();
+      check('R7 edit (c): a ramp MEMBER declines row-edit',
+        !!q('[data-testid="edit-decline-reason"]'),
+        'a cumulative target edited alone desyncs the member from its siblings');
+      check('R7 edit (c): and the panel does NOT open for it',
+        !q('[data-testid="churn-panel"]'));
+      check('R7 edit (c): the refusal is a stated REASON, not a dead click',
+        (q('[data-testid="edit-decline-reason"]')?.textContent || '').length > 20);
+
+      // ── (d) A PLAIN VOLUME EVENT STILL EDITS — the regression guard ─────
+      await (act as any)(async () => {
+        (globalThis as any).__setEvents([{
+          id: 'plain-1', scenario: 'Inflow', segment: SEG, product: 'All', productL2: 'All',
+          channel: 'All', channelL2: 'All', tariffL1: 'All', tariffL2: 'All',
+          date: DRAFT_MONTH, subscriberVolume: 500, customerVolume: 0, revenue: 0, arpu: 0,
+          name: 'plain', campaignName: '', comment: '', contractLength: 24, sequence: 1,
+          amountType: 'absolute', percentageBasis: 'baseline', retentionLinked: true,
+        }]);
+      });
+      await openRow();
+      check('R7 edit (d): a PLAIN volume event still opens for edit',
+        !q('[data-testid="edit-decline-reason"]'),
+        'the churn bar must not catch ordinary rows');
+      check('R7 edit (d): and does NOT open the churn panel',
+        !q('[data-testid="churn-panel"]'));
+    }
     void rerender;
   }
   report();

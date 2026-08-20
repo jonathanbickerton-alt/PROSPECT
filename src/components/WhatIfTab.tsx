@@ -1358,6 +1358,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   // null = add-new mode; a string id = editing that event
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  /** Why a row-edit was refused, or null. Feedback, not a disabled button. */
+  const [editDeclineReason, setEditDeclineReason] = useState<string | null>(null);
   // null = not editing a campaign; a string = editing all events sharing that campaignName
   const [editingCampaign, setEditingCampaign] = useState<string | null>(null);
 
@@ -2271,7 +2273,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const scoped = churnScopeResolution?.forecast ?? null;
     if (!scoped) return null;
     return computeAdjustedForecast({
-      baseForecast: scoped, marketEvents, yieldEvents, pricingEvents,
+      baseForecast: scoped,
+      // THE EVENT UNDER EDIT IS EXCLUDED — the eventScopeSeriesFor precedent.
+      //
+      // On Add the draft has no id, so nothing of it is in the list. On EDIT it
+      // is, and leaving it in makes the row re-state against its OWN effect:
+      // the churn it already reduced reads as the current rate, so a fresh
+      // target of the same size derives a delta of nearly zero. The mount found
+      // it as an edited 3pt statement storing a delta of 0.
+      marketEvents: editingEventId ? marketEvents.filter(e => e.id !== editingEventId) : marketEvents,
+      yieldEvents, pricingEvents,
       viewSegment: newEvent.segment ?? 'All',
       viewProduct: { l1: dimOrNull(newEvent.product), l2: dimOrNull(newEvent.productL2) },
       viewChannel: { l1: dimOrNull(newEvent.channel), l2: dimOrNull(newEvent.channelL2) },
@@ -2281,7 +2292,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
     }).chartData;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isChurnDraft, newEvent.date, churnScopeResolution,
+  }, [isChurnDraft, newEvent.date, churnScopeResolution, editingEventId,
       marketEvents, yieldEvents, pricingEvents, data]);
 
   /** The fold's output for the current draft — the per-month figures the grid
@@ -2613,6 +2624,28 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   };
 
   const handleEditStart = useCallback((event: MarketEvent) => {
+    setEditDeclineReason(null);
+
+    // ── RAMP MEMBERS DO NOT ROW-EDIT (Jon, 2026-08-20) ────────────────────
+    //
+    // A churn row's target is CUMULATIVE: month 2 of a 1/3/6 ramp states six
+    // points against a base the first two months already moved. Alone it means
+    // nothing, and editing it in isolation desyncs the member from its
+    // siblings — the ramp stops describing the rate it was stated as.
+    //
+    // A RULE at the entry point, not a guard downstream: this is the only place
+    // a single row can be opened, so it is the only place the refusal can fire.
+    // The :512 campaign bar answers a different question — it refuses to
+    // reverse-engineer a ramp from summed volumes.
+    if (event.churnMode === 'churn') {
+      const siblings = marketEvents.filter(
+        e => e.churnMode === 'churn' && (e.campaignName ?? '') === (event.campaignName ?? ''));
+      if (siblings.length > 1) {
+        setEditDeclineReason(t('whatif_churn_member_no_edit'));
+        return;
+      }
+    }
+
     const isOutflow = event.scenario === 'Outflow';
     // Display absolute values — the neg() convention is re-applied on save
     const abs = (v: number) => isOutflow ? Math.abs(v) : v;
@@ -2645,6 +2678,38 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       percentageBasis: event.percentageBasis ?? 'baseline',
       retentionLinked: event.retentionLinked ?? true,
     });
+    // ── CHURN SEEDING — the third mode joins the lesson three lines above ──
+    //
+    // The comment on amountType/percentageBasis says restoring them is not
+    // optional, because a percentage event reopened without them saves back as
+    // absolute and its amount changes meaning. Churn is the same shape: a row
+    // reopened without its statement is a bare volume, and saving it would
+    // write that volume back through the ordinary path — which negates it.
+    //
+    // Seeded through the ONE writer, so exclusivity holds: entering churn on
+    // edit is entering churn, and Subs must not stay lit beside it.
+    if (event.churnMode === 'churn') {
+      // SET THE STORED CONTROL DIRECTLY, not through the transition writer.
+      //
+      // `applyAmountControl` validates the arm against the CURRENT draft, and
+      // on edit the draft's scenario is set in this same batch — so the writer
+      // would see the OLD scenario, refuse churn, and leave the panel shut.
+      // The mount caught it on its first edit run.
+      //
+      // Exclusivity is untouched: there is still ONE stored value, and the
+      // derived control reports churn only once the restored scenario is
+      // Outflow. A restore is not a transition — it is the state arriving
+      // whole, which the transition writer has no business policing.
+      setStoredAmountControl('churn');
+      setChurnTargetPct(event.churnTargetPct ?? 0);
+      setChurnMonths(1);
+      // A row that reaches individual edit is SINGLE, by the bar above.
+      setChurnRampOn(false);
+      setChurnStated([event.churnTargetPct ?? 0]);
+    } else {
+      setStoredAmountControl(event.amountType === 'percentage' ? 'pct' : 'subs');
+      clearChurnDraft();
+    }
     setEditingEventId(event.id);
     setEditingCampaign(null);
     setSpreadEnabled(false);
@@ -2895,6 +2960,58 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   const handleSaveEdit = useCallback(() => {
     if (!editingEventId || !newEvent.date) return;
+
+    // ══ CHURN RE-STATES, AND THIS BRANCH IS ABOVE THE neg ═══════════════════
+    //
+    // EDIT RE-STATES (Jon, 2026-08-20). Reopening shows what was stored; saving
+    // RE-RUNS the emitter against the CURRENT series, so all four fields and the
+    // delta re-snapshot TOGETHER. A freshly stated target beside a stale delta
+    // would be a row whose figures came from two different moments — the
+    // mixed-axes defect, at this card.
+    //
+    // ITS POSITION CLOSES THE INVERSION STRUCTURALLY. Below, `neg` forces an
+    // Outflow amount negative, which is right for a hand-typed magnitude and
+    // catastrophic for a churn DELTA whose sign carries direction: a reduction
+    // reopened and saved would return as an increase. The churn draft never
+    // reaches that line rather than being excused by it — the same move fix B
+    // made on the add path, and the mount pins the unreachability.
+    if (isChurnDraft) {
+      if (churnBlockReason) return;
+      const m = churnFold.find(x => !x.absence);
+      if (!m) return;
+      const churnPatch: Partial<MarketEvent> = {
+        scenario: 'Outflow',
+        segment: newEvent.segment ?? 'All',
+        product: newEvent.product ?? 'All',
+        productL2: newEvent.productL2 ?? 'All',
+        channel: newEvent.channel ?? 'All',
+        channelL2: newEvent.channelL2 ?? 'All',
+        tariffL1: newEvent.tariffL1 ?? 'All',
+        tariffL2: newEvent.tariffL2 ?? 'All',
+        date: m.month,
+        // SIGNED VERBATIM. No neg on this path, at all.
+        subscriberVolume: m.delta,
+        customerVolume: 0, revenue: 0, arpu: 0,
+        name: newEvent.name ?? '',
+        campaignName: newEvent.campaignName ?? '',
+        comment: newEvent.comment ?? '',
+        contractLength: newEvent.contractLength ?? 24,
+        amountType: 'absolute',
+        percentageBasis: 'baseline',
+        retentionLinked: newEvent.retentionLinked ?? true,
+        // THE STATEMENT AND THE DELTA MOVE TOGETHER.
+        churnMode: 'churn',
+        churnTargetPct: m.statedReductionPct,
+        churnCurrentPct: m.currentPct,
+        churnPrevBase: m.prevBase,
+      };
+      setPendingChange({
+        kind: 'edit',
+        nextEvents: marketEvents.map(e => (e.id === editingEventId ? { ...e, ...churnPatch } : e)),
+      });
+      return;
+    }
+
     const isOutflow = newEvent.scenario === 'Outflow';
     // See addMarketEvent: percentage amounts keep their sign.
     const isPctEdit = newEvent.amountType === 'percentage';
@@ -2935,7 +3052,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       kind: 'edit',
       nextEvents: marketEvents.map(e => (e.id === editingEventId ? { ...e, ...patch } : e)),
     });
-  }, [editingEventId, newEvent, marketEvents, setNewEvent, cohortAvgArpu]);
+    // THE READ-SET IS THE DEPENDENCY SET — the lesson the add handler paid for
+    // one session ago. This branch reads isChurnDraft, churnFold and
+    // churnBlockReason, so it depends on them; omitting churnFold would re-state
+    // the row against a fold from before the user's last keystroke.
+  }, [editingEventId, newEvent, marketEvents, setNewEvent, cohortAvgArpu,
+      isChurnDraft, churnFold, churnBlockReason]);
 
   const handleCancelEdit = useCallback(() => {
     setEditingEventId(null);
@@ -4394,6 +4516,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 
                 {t('whatif_editing_campaign')}{editingCampaign}{t('whatif_saving_will_replace_all_of_its_events_with_th')}
               </div>
+            ) : editDeclineReason ? (
+              /* FEEDBACK, NOT A DISABLED BUTTON — the pricingDraftBlockReason
+                 precedent. A row that refuses to open must say why, or the
+                 click reads as a bug. */
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5"
+                 data-testid="edit-decline-reason">{editDeclineReason}</p>
             ) : editingEventId ? (
               <div className="mt-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 font-medium flex items-center gap-2">
                 <span className="inline-block w-2 h-2 rounded-full bg-amber-400 shrink-0" />{t('whatif_editing_event_modify_the_fields_above_then_cl')}</div>

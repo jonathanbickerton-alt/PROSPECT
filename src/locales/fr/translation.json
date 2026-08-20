@@ -813,5 +813,6 @@
   "whatif_churn_ramp": "Étaler la réduction sur plusieurs mois",
   "whatif_churn_breakdown": "sorties {{month}} {{outflow}} ÷ base du mois précédent {{base}} × 12",
   "whatif_churn_block_no_forecast": "Aucune prévision de référence ne couvre cette cohorte ({{reason}}) : il n'y a pas de taux d'attrition à réduire.",
-  "whatif_churn_reason_unknown": "aucune raison indiquée"
+  "whatif_churn_reason_unknown": "aucune raison indiquée",
+  "whatif_churn_member_no_edit": "Ce mois est une étape d'une rampe d'attrition : son objectif est cumulatif et ne peut être modifié isolément. Supprimez la campagne et rédéfinissez-la."
 }
