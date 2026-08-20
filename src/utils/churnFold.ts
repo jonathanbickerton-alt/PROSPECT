@@ -71,8 +71,16 @@ export interface ChurnFoldInput {
   startIndex: number;
   /** One CUMULATIVE stated reduction (points) per ramp month, in order. */
   statedReductions: number[];
-  /** The base at the month BEFORE series[0] — the seed rolled to that point. */
-  openingBase: number;
+  /**
+   * The base at the month immediately BEFORE `series[startIndex]`.
+   *
+   * TAKEN FROM THE SERIES, not rolled forward here from a seed. The scoped
+   * series already carries a per-month running base that the engine derived;
+   * re-deriving it in this function would create a second place for the same
+   * number to be computed, and therefore a second place for it to disagree.
+   * The caller reads `series[startIndex - 1]`'s base and passes it.
+   */
+  prevBaseAtStart: number;
   /** False when the slice's seed is unknown; every month is then absent. */
   seedBaseKnown: boolean;
 }
@@ -87,7 +95,8 @@ export function annualisedChurnPct(outflow: number, prevBase: number): number | 
  * THE FOLD.
  *
  * For ramp month i:
- *   prevBase_i  = base rolled forward through months 0..i-1 WITH their deltas
+ *   prevBase_0  = prevBaseAtStart, taken from the series
+ *   prevBase_i  = rolled forward through months 0..i-1 WITH their deltas
  *   current_i   = (seriesOutflow_i / prevBase_i) * 12 * 100
  *   target_i    = max(0, current_i - statedReduction_i)
  *   targetOut_i = (target_i / 100 / 12) * prevBase_i
@@ -99,16 +108,14 @@ export function annualisedChurnPct(outflow: number, prevBase: number): number | 
  * this function and a plausible wrong one.
  */
 export function foldChurnRamp(input: ChurnFoldInput): ChurnFoldMonth[] {
-  const { series, startIndex, statedReductions, openingBase, seedBaseKnown } = input;
+  const { series, startIndex, statedReductions, prevBaseAtStart, seedBaseKnown } = input;
   const out: ChurnFoldMonth[] = [];
   if (!Array.isArray(series) || series.length === 0) return out;
 
-  // Roll the base forward from the opening to the month BEFORE the ramp starts,
-  // using the series as-is: nothing this campaign does has happened yet there.
-  let base = Number.isFinite(openingBase) ? Math.max(0, openingBase) : 0;
-  for (let k = 0; k < startIndex && k < series.length; k++) {
-    base = Math.max(0, base + (series[k].inflow ?? 0) - (series[k].outflow ?? 0));
-  }
+  // The ramp's first denominator comes straight from the series. Everything
+  // after it is rolled forward HERE, because those months' bases depend on
+  // deltas that do not exist in the series yet.
+  let base = Number.isFinite(prevBaseAtStart) ? Math.max(0, prevBaseAtStart) : 0;
 
   for (let i = 0; i < statedReductions.length; i++) {
     const idx = startIndex + i;

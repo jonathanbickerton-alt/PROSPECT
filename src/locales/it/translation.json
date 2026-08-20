@@ -794,5 +794,20 @@
   "compare_events_only": "Solo eventi",
   "compare_events_per_file": "Eventi per file",
   "compare_events_scope_not_in_baseline": "Questi eventi riguardano un segmento, un prodotto o un canale non coperto dalle previsioni di base caricate, quindi non c’è nulla da tracciare. Gli eventi sono elencati di seguito.",
-  "compare_chart_too_short": "Non c’è spazio sufficiente per disegnare il grafico. Aumenta l’altezza della finestra oppure comprimi un pannello eventi qui sotto e ricomparirà."
+  "compare_chart_too_short": "Non c’è spazio sufficiente per disegnare il grafico. Aumenta l’altezza della finestra oppure comprimi un pannello eventi qui sotto e ricomparirà.",
+  "whatif_summary_churn": "Abbandono {{from}}% → {{to}}%",
+  "whatif_churn_mode": "Abbandono",
+  "whatif_churn_current": "Abbandono attuale (annualizzato)",
+  "whatif_churn_target": "Ridurre di (punti)",
+  "whatif_churn_months": "Nell’arco di (mesi)",
+  "whatif_churn_points": "Punti cumulati",
+  "whatif_churn_derived": "Tasso obiettivo · clienti trattenuti",
+  "whatif_churn_default_campaign": "Riduzione abbandono",
+  "whatif_churn_block_no_month": "Scegli un mese di inizio prima di aggiungere un obiettivo di abbandono.",
+  "whatif_churn_block_no_series": "Nessuna previsione copre questa coorte e questo mese, quindi non c’è un tasso di abbandono da ridurre.",
+  "whatif_churn_block_no_target": "Indica una riduzione superiore a zero punti in almeno un mese.",
+  "whatif_churn_absent_seed_unknown": "la base iniziale di questa coorte non è nota, quindi non si può indicare un tasso",
+  "whatif_churn_absent_no_prior_month": "il primo mese di previsione non ha un mese precedente su cui misurare l’abbandono",
+  "whatif_churn_absent_prev_base_zero": "la base di questa coorte raggiunge lo zero, quindi non c’è un tasso da ridurre",
+  "whatif_churn_absent_no_series": "nessuna serie di previsione disponibile per questa coorte"
 }

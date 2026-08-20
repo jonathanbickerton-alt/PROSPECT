@@ -707,6 +707,20 @@ export function pricingEventSummary(e: PricingEvent, t: SummaryT): string {
  * out loud rather than leaving to the column header.
  */
 export function volumeEventSummary(e: MarketEvent, t: SummaryT): string {
+  // R7 — A CHURN ROW DESCRIBES ITSELF FROM WHAT IT STORED.
+  //
+  // current and target both come off the event; nothing here recomputes a rate
+  // from volumes, because the row is a SAVE-TIME RECORD and the base it was
+  // computed against has moved since. Describe, never re-derive — the R4 rule,
+  // and the reason the R4 table and Compare's per-file panels inherit this
+  // sentence without knowing churn exists.
+  if (e.churnMode === 'churn' && e.churnCurrentPct !== undefined) {
+    const target = e.churnCurrentPct - (e.churnTargetPct ?? 0);
+    return t('whatif_summary_churn', {
+      from: e.churnCurrentPct.toFixed(1),
+      to: Math.max(0, target).toFixed(1),
+    });
+  }
   const pct = e.amountType === 'percentage';
   const sign = e.subscriberVolume > 0 ? '+' : '';
   const amount = pct ? `${sign}${e.subscriberVolume}%` : `${sign}${e.subscriberVolume.toLocaleString()}`;

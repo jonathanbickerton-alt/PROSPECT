@@ -794,5 +794,20 @@
   "compare_events_only": "Solo eventos",
   "compare_events_per_file": "Eventos por archivo",
   "compare_events_scope_not_in_baseline": "Estos eventos se aplican a un segmento, producto o canal que las previsiones de referencia cargadas no cubren, por lo que no hay nada que mostrar. Los eventos aparecen listados abajo.",
-  "compare_chart_too_short": "No hay espacio suficiente para dibujar el gráfico. Amplíe la altura de la ventana o contraiga un panel de eventos de abajo y volverá a aparecer."
+  "compare_chart_too_short": "No hay espacio suficiente para dibujar el gráfico. Amplíe la altura de la ventana o contraiga un panel de eventos de abajo y volverá a aparecer.",
+  "whatif_summary_churn": "Rotación {{from}} % → {{to}} %",
+  "whatif_churn_mode": "Rotación",
+  "whatif_churn_current": "Rotación actual (anualizada)",
+  "whatif_churn_target": "Reducir en (puntos)",
+  "whatif_churn_months": "Durante (meses)",
+  "whatif_churn_points": "Ptos acumulados",
+  "whatif_churn_derived": "Tasa objetivo · clientes retenidos",
+  "whatif_churn_default_campaign": "Reducción de rotación",
+  "whatif_churn_block_no_month": "Elija un mes de inicio antes de añadir un objetivo de rotación.",
+  "whatif_churn_block_no_series": "Ninguna previsión cubre esta cohorte y mes, así que no hay tasa de rotación que reducir.",
+  "whatif_churn_block_no_target": "Indique una reducción de más de cero puntos en al menos un mes.",
+  "whatif_churn_absent_seed_unknown": "la base inicial de esta cohorte se desconoce, así que no puede indicarse una tasa",
+  "whatif_churn_absent_no_prior_month": "el primer mes de previsión no tiene mes anterior con el que medir la rotación",
+  "whatif_churn_absent_prev_base_zero": "la base de esta cohorte llega a cero, así que no hay tasa que reducir",
+  "whatif_churn_absent_no_series": "no hay serie de previsión disponible para esta cohorte"
 }

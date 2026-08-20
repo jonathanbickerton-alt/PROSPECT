@@ -803,5 +803,20 @@
   "compare_events_only": "Events Only",
   "compare_events_per_file": "Events by file",
   "compare_events_scope_not_in_baseline": "These events are scoped to a segment, product or channel the loaded baseline forecasts do not cover, so there is nothing to plot. The events themselves are listed below.",
-  "compare_chart_too_short": "There is not enough room here to draw the chart. Make the window taller, or collapse an events panel below, and it will reappear."
+  "compare_chart_too_short": "There is not enough room here to draw the chart. Make the window taller, or collapse an events panel below, and it will reappear.",
+  "whatif_summary_churn": "Churn {{from}}% → {{to}}%",
+  "whatif_churn_mode": "Churn",
+  "whatif_churn_current": "Current churn (annualised)",
+  "whatif_churn_target": "Reduce by (points)",
+  "whatif_churn_months": "Over (months)",
+  "whatif_churn_points": "Cumulative pts",
+  "whatif_churn_derived": "Target rate · subscribers retained",
+  "whatif_churn_default_campaign": "Churn reduction",
+  "whatif_churn_block_no_month": "Choose a start month before adding a churn target.",
+  "whatif_churn_block_no_series": "No forecast covers this cohort and month, so there is no churn rate to reduce.",
+  "whatif_churn_block_no_target": "State a reduction of more than zero points in at least one month.",
+  "whatif_churn_absent_seed_unknown": "the opening base for this cohort is not known, so no rate can be stated",
+  "whatif_churn_absent_no_prior_month": "the first forecast month has no prior month to measure churn against",
+  "whatif_churn_absent_prev_base_zero": "the base for this cohort reaches zero, so there is no rate to reduce",
+  "whatif_churn_absent_no_series": "no forecast series is available for this cohort"
 }

@@ -72,11 +72,13 @@ const CMPFILTER = 'scripts/compare-filter-spec.ts';
 const CMPPANEL = 'scripts/compare-events-panel-spec.ts';
 const CMPWINDOW = 'scripts/compare-window-spec.ts';
 const CMPRENDER = 'scripts/compare-render-spec.ts';
+const CHURNFOLD = 'scripts/churn-fold-spec.ts';
+const CHURNENGINE = 'src/utils/churnFold.ts';
 const SHEETGUARD = 'src/utils/sheetGuards.ts';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const APP_COMPARE = 'src/components/ScenarioCompareTab.tsx';
-const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD];
+const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -1100,6 +1102,37 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "                  {drawability === 'too-short' && (",
       '                  {false && (') },
+  // 96 makes the fold read a STATIC previous base — the naive implementation,
+  // and the one that produces plausible numbers. It rolls forward on the
+  // SERIES outflow instead of the ADJUSTED one, so month 2 onwards no longer
+  // reflects what month 1's event actually did to the base.
+  //
+  // Month 1 is UNAFFECTED by this mutation, which is exactly why the spec's
+  // discriminating case is month 2: a fixture that stopped at one month would
+  // stay green under a fold that is wrong for every longer ramp.
+  { id: '96 the churn fold rolls on the unadjusted outflow', why: 'every ramp longer than one month drifts from the stated rate',
+    file: CHURNENGINE, spec: CHURNFOLD,
+    mutate: s => s.replace(
+      '    base = Math.max(0, base + (m.inflow ?? 0) - (seriesOutflow - delta));',
+      '    base = Math.max(0, base + (m.inflow ?? 0) - seriesOutflow);') },
+  // 97 drops the churn clause from the campaign group-edit rule. The group
+  // becomes editable and its reverse-engineering — summing |subscriberVolume|
+  // — SUCCEEDS on churn rows, producing a total that is not a churn statement
+  // and a re-spread that would not reproduce the stated rates.
+  { id: '97 churn rows leave the group-edit barred class', why: 'a plausible, wrong spread with nothing about it to look wrong',
+    file: WHATIF, spec: CHURNFOLD,
+    mutate: s => s.replace(
+      "    const anyChurn = g.rows.some(e => e.churnMode === 'churn');",
+      '    const anyChurn = false;') },
+  // 98 reinstates the forced-negative on churn rows in the workbook route. A
+  // stated REDUCTION arrives as an INCREASE — the event silently inverted into
+  // its opposite. The plain-row checks must stay green beside it, because the
+  // forced-negative is correct for rows a human typed.
+  { id: '98 the workbook route forces churn deltas negative', why: 'a stated churn reduction is imported as an increase',
+    file: ENGINE, spec: EVTROUND,
+    mutate: s => s.replace(
+      '  const neg = (v: number) => (isOut && !isChurn) ? -Math.abs(v) : v;',
+      '  const neg = (v: number) => isOut ? -Math.abs(v) : v;') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -1110,7 +1143,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

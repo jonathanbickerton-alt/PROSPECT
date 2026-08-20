@@ -794,5 +794,20 @@
   "compare_events_only": "Événements uniquement",
   "compare_events_per_file": "Événements par fichier",
   "compare_events_scope_not_in_baseline": "Ces événements portent sur un segment, un produit ou un canal que les prévisions de référence chargées ne couvrent pas : il n'y a donc rien à tracer. Les événements sont listés ci-dessous.",
-  "compare_chart_too_short": "La place manque ici pour tracer le graphique. Agrandissez la hauteur de la fenêtre, ou repliez un panneau d'événements ci-dessous, et il réapparaîtra."
+  "compare_chart_too_short": "La place manque ici pour tracer le graphique. Agrandissez la hauteur de la fenêtre, ou repliez un panneau d'événements ci-dessous, et il réapparaîtra.",
+  "whatif_summary_churn": "Attrition {{from}} % → {{to}} %",
+  "whatif_churn_mode": "Attrition",
+  "whatif_churn_current": "Attrition actuelle (annualisée)",
+  "whatif_churn_target": "Réduire de (points)",
+  "whatif_churn_months": "Sur (mois)",
+  "whatif_churn_points": "Pts cumulés",
+  "whatif_churn_derived": "Taux cible · abonnés retenus",
+  "whatif_churn_default_campaign": "Réduction de l’attrition",
+  "whatif_churn_block_no_month": "Choisissez un mois de début avant d’ajouter un objectif d’attrition.",
+  "whatif_churn_block_no_series": "Aucune prévision ne couvre cette cohorte et ce mois : il n’y a pas de taux d’attrition à réduire.",
+  "whatif_churn_block_no_target": "Indiquez une réduction supérieure à zéro point sur au moins un mois.",
+  "whatif_churn_absent_seed_unknown": "la base de départ de cette cohorte est inconnue : aucun taux ne peut être indiqué",
+  "whatif_churn_absent_no_prior_month": "le premier mois de prévision n’a pas de mois précédent pour mesurer l’attrition",
+  "whatif_churn_absent_prev_base_zero": "la base de cette cohorte atteint zéro : il n’y a pas de taux à réduire",
+  "whatif_churn_absent_no_series": "aucune série de prévision n’est disponible pour cette cohorte"
 }

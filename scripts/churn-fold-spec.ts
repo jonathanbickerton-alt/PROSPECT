@@ -19,6 +19,7 @@
  *    precedence between them is asserted too.
  */
 import { foldChurnRamp, linearChurnRamp, annualisedChurnPct } from '../src/utils/churnFold';
+import fs from 'fs';
 
 let pass = 0; const fails: string[] = [];
 const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails.push(n + (d ? `  [${d}]` : '')); };
@@ -33,7 +34,8 @@ const near = (a: number, b: number, eps = 1e-6) => Math.abs(a - b) < eps;
 const SERIES = ['2026-07', '2026-08', '2026-09', '2026-10'].map(month => ({
   month, outflow: 20, inflow: 0,
 }));
-const OPENING = 1000;
+/** The base immediately before the ramp's first month (series index 1). */
+const PREV_BASE_AT_START = 980;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. THE SEQUENTIAL CASE — the check that discriminates
@@ -73,7 +75,7 @@ const OPENING = 1000;
 {
   const r = foldChurnRamp({
     series: SERIES, startIndex: 1, statedReductions: [1, 3],
-    openingBase: OPENING, seedBaseKnown: true,
+    prevBaseAtStart: 980, seedBaseKnown: true,
   });
 
   check('SEQUENTIAL: two ramp months produced', r.length === 2, `${r.length}`);
@@ -123,7 +125,7 @@ const OPENING = 1000;
 {
   const r = foldChurnRamp({
     series: SERIES, startIndex: 1, statedReductions: [1],
-    openingBase: OPENING, seedBaseKnown: true,
+    prevBaseAtStart: 980, seedBaseKnown: true,
   });
   check('LENGTH 1: a single month is an ordinary ramp', r.length === 1);
   check('LENGTH 1: and matches the two-month ramp\'s FIRST month exactly',
@@ -137,7 +139,7 @@ const OPENING = 1000;
 {
   const r = foldChurnRamp({
     series: SERIES, startIndex: 1, statedReductions: [1, 3, 6],
-    openingBase: OPENING, seedBaseKnown: true,
+    prevBaseAtStart: 980, seedBaseKnown: true,
   });
   check('CUMULATIVE: each month records the reduction the user typed',
     r.map(m => m.statedReductionPct).join(',') === '1,3,6',
@@ -155,7 +157,7 @@ const OPENING = 1000;
 {
   const noSeed = foldChurnRamp({
     series: SERIES, startIndex: 1, statedReductions: [1],
-    openingBase: OPENING, seedBaseKnown: false,
+    prevBaseAtStart: 980, seedBaseKnown: false,
   });
   check('ABSENCE: an unknown seed is reported by NAME',
     noSeed[0].absence === 'seed-unknown', String(noSeed[0].absence));
@@ -163,9 +165,11 @@ const OPENING = 1000;
     noSeed[0].delta === 0 && noSeed[0].currentPct === 0,
     'the caller reads `absence`, never the figures, when it is set');
 
+  // startIndex 0 IS the first forecast month: there is no prior month inside
+  // the series, so no rate can be stated whatever base the caller passes.
   const firstMonth = foldChurnRamp({
     series: SERIES, startIndex: 0, statedReductions: [1],
-    openingBase: OPENING, seedBaseKnown: true,
+    prevBaseAtStart: 0, seedBaseKnown: true,
   });
   check('ABSENCE: the first forecast month has no prior base',
     firstMonth[0].absence === 'no-prior-month', String(firstMonth[0].absence));
@@ -173,7 +177,7 @@ const OPENING = 1000;
   const zeroBase = foldChurnRamp({
     series: [{ month: '2026-07', outflow: 1000, inflow: 0 },
              { month: '2026-08', outflow: 5, inflow: 0 }],
-    startIndex: 1, statedReductions: [1], openingBase: 1000, seedBaseKnown: true,
+    startIndex: 1, statedReductions: [1], prevBaseAtStart: 0, seedBaseKnown: true,
   });
   check('ABSENCE: a base rolled to zero is reported by NAME',
     zeroBase[0].absence === 'prev-base-zero', String(zeroBase[0].absence));
@@ -182,7 +186,7 @@ const OPENING = 1000;
   // first-month or zero-base reason would name the wrong one.
   const both = foldChurnRamp({
     series: SERIES, startIndex: 0, statedReductions: [1],
-    openingBase: OPENING, seedBaseKnown: false,
+    prevBaseAtStart: 0, seedBaseKnown: false,
   });
   check('ABSENCE: seed outranks the first-month reason',
     both[0].absence === 'seed-unknown', String(both[0].absence));
@@ -190,7 +194,7 @@ const OPENING = 1000;
   // An absent month must not silently move the base for later months.
   const mixed = foldChurnRamp({
     series: SERIES, startIndex: 0, statedReductions: [1, 1],
-    openingBase: OPENING, seedBaseKnown: true,
+    prevBaseAtStart: 1000, seedBaseKnown: true,
   });
   check('ABSENCE: an absent month still rolls the base on the UNADJUSTED series',
     mixed[0].absence === 'no-prior-month' && near(mixed[1].prevBase, 980),
@@ -203,7 +207,7 @@ const OPENING = 1000;
 {
   const overshoot = foldChurnRamp({
     series: SERIES, startIndex: 1, statedReductions: [99],
-    openingBase: OPENING, seedBaseKnown: true,
+    prevBaseAtStart: 980, seedBaseKnown: true,
   });
   check('EDGE: a reduction larger than the rate floors the target at zero',
     overshoot[0].targetPct === 0, `${overshoot[0].targetPct}`);
@@ -212,7 +216,7 @@ const OPENING = 1000;
 
   const zeroStated = foldChurnRamp({
     series: SERIES, startIndex: 1, statedReductions: [0],
-    openingBase: OPENING, seedBaseKnown: true,
+    prevBaseAtStart: 980, seedBaseKnown: true,
   });
   check('EDGE: a stated ZERO reduction is a real statement — delta 0, not absent',
     zeroStated[0].absence === null && near(zeroStated[0].delta, 0),
@@ -220,10 +224,10 @@ const OPENING = 1000;
 
   check('EDGE: an empty series yields no months',
     foldChurnRamp({ series: [], startIndex: 0, statedReductions: [1],
-      openingBase: 1000, seedBaseKnown: true }).length === 0);
+      prevBaseAtStart: 1000, seedBaseKnown: true }).length === 0);
   check('EDGE: a ramp running off the end stops at the series end',
     foldChurnRamp({ series: SERIES, startIndex: 3, statedReductions: [1, 1, 1],
-      openingBase: OPENING, seedBaseKnown: true }).length === 1);
+      prevBaseAtStart: 980, seedBaseKnown: true }).length === 1);
 
   check('EDGE: annualisedChurnPct declines a zero base rather than dividing',
     annualisedChurnPct(20, 0) === null && annualisedChurnPct(20, 1000) === 24);
@@ -243,6 +247,102 @@ const OPENING = 1000;
     linearChurnRamp(3, 0).length === 1 && linearChurnRamp(3, -2).length === 1);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 7. THE BAR, AND THE WIRING
+//
+// Source-level, and declared as such: campaignGroups is a module-level function
+// over component state, so the bar is pinned by reading it rather than by
+// running it. The rule's POSITION is the thing being asserted — the source
+// comment beside it records a mutation test proving a clause placed where it
+// cannot fire protects nothing.
+// ═══════════════════════════════════════════════════════════════════════════
+{
+  const tabRaw = fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8');
+  // Comments stripped — trap 93 MISSED once because a check matched the prose
+  // explaining the fix rather than the code implementing it.
+  const tab = tabRaw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+  check('BAR: churn rows are detected at the campaign-group rule',
+    /const anyChurn = g\.rows\.some\(e => e\.churnMode === 'churn'\);/.test(tab),
+    'the bar must read the carrier, not a proxy for it');
+  check('BAR: and the churn branch precedes the percentage branch',
+    tab.indexOf('if (anyChurn)') > 0
+      && tab.indexOf('if (anyChurn)') < tab.indexOf('anyPercentage) {'),
+    'a branch that never runs is the failure the source comment there records');
+  check('BAR: it declines with a STATED reason, using the existing mechanism',
+    /anyChurn\)[\s\S]{0,200}g\.editable = false;[\s\S]{0,200}g\.reason =/.test(tab),
+    'the group must say why, not merely refuse');
+  check('BAR: exactly ONE churn bar — no downstream twin',
+    (tab.match(/churnMode === 'churn'\);/g) ?? []).length === 1,
+    'a second guard elsewhere would be the unreachable-clause shape');
+
+  // ── THE ARM AND ITS SPREAD SEMANTICS ───────────────────────────────────
+  check('UI: the third arm renders only for Outflow',
+    /newEvent\.scenario === 'Outflow' && \(/.test(tab),
+    'the draft already knows its IBRO type');
+  check('UI: selecting churn CLEARS the spread explicitly',
+    /setIsChurnDraft\(true\);[\s\S]{0,600}setSpreadEnabled\(false\);/.test(tab),
+    'silence here reproduces the defect the percentage arm records');
+  check('UI: selecting an ordinary arm LEAVES churn mode',
+    /setIsChurnDraft\(false\);[\s\S]{0,120}setNewEvent\(\{/.test(tab),
+    'two lit arms would be two contradicting statements');
+  check('UI: the amount input is hidden in churn mode, not duplicated',
+    /\{!isChurnDraft && \(/.test(tab),
+    'a subscriber box beside a rate is a second way to say the same thing');
+  check('UI: churn is NOT a value of amountType',
+    !/amountType: 'churn'/.test(tab) && !/amountType === 'churn'/.test(tab),
+    'amountType is read by the ENGINE; churn is a way of SAYING (decision 1)');
+  check('UI: the stored event keeps amountType absolute and carries churnMode',
+    /amountType:\s+'absolute',[\s\S]{0,300}churnMode:\s+'churn',/.test(tab),
+    'an ordinary absolute outflow row that remembers how it was stated');
+
+  // ── SIGNED VERBATIM AT THE BUILDER ─────────────────────────────────────
+  // The churn branch must not pass its delta through neg(). Asserted
+  // structurally: the branch returns BEFORE neg is even defined.
+  check('BUILDER: the churn branch runs before neg() exists',
+    tab.indexOf('if (isChurnDraft) {') > 0
+      && tab.indexOf('if (isChurnDraft) {') < tab.indexOf('const neg = (v: number) => isOutflow'),
+    'a delta passed through neg would be inverted into its opposite');
+  check('BUILDER: the delta is stored as the fold produced it',
+    /subscriberVolume: m\.delta,/.test(tab),
+    'no transform on the way in');
+  check('BUILDER: each row carries its OWN three stated figures',
+    /churnTargetPct:\s+m\.statedReductionPct,[\s\S]{0,200}churnPrevBase:\s+m\.prevBase,/.test(tab));
+  check('BUILDER: the ramp shares one campaignName',
+    /campaignName:\s+campaign,/.test(tab));
+  check('BUILDER: absent months contribute no event',
+    /churnFold\.filter\(m => !m\.absence/.test(tab),
+    'a month that cannot state a rate must not silently store a zero delta');
+
+  // ── THE BLOCK REASON — feedback, not enablement ────────────────────────
+  check('BLOCK: a named reason exists and is rendered',
+    /churnBlockReason/.test(tab) && /data-testid="churn-block-reason"/.test(tabRaw));
+  check('BLOCK: Add refuses when the reason is set',
+    /if \(churnBlockReason\) return;/.test(tab));
+
+  const LOC = ['en','de','es','fr','it','pt'];
+  const KEYS = ['whatif_churn_mode','whatif_churn_current','whatif_churn_target',
+    'whatif_churn_months','whatif_churn_points','whatif_churn_derived',
+    'whatif_churn_block_no_month','whatif_churn_block_no_series','whatif_churn_block_no_target',
+    'whatif_churn_absent_seed_unknown','whatif_churn_absent_no_prior_month',
+    'whatif_churn_absent_prev_base_zero','whatif_churn_absent_no_series',
+    'whatif_churn_default_campaign'];
+  const missing: string[] = [];
+  for (const l of LOC) {
+    const d = JSON.parse(fs.readFileSync(`src/locales/${l}/translation.json`, 'utf8'));
+    for (const k of KEYS) if (typeof d[k] !== 'string') missing.push(`${l}/${k}`);
+  }
+  check('i18n: every churn key in all six locales', missing.length === 0, missing.slice(0, 5).join(', '));
+
+  // THE ABSENCE REASONS ARE REACHED BY NAME. The card derives the key from the
+  // ChurnAbsence value, so a renamed reason with no key would render a raw key.
+  const en = JSON.parse(fs.readFileSync('src/locales/en/translation.json', 'utf8'));
+  for (const a of ['seed-unknown', 'no-prior-month', 'prev-base-zero']) {
+    const key = `whatif_churn_absent_${a.replace(/-/g, '_')}`;
+    check(`i18n: the '${a}' absence has a reason to show`,
+      typeof en[key] === 'string' && en[key].length > 0, key);
+  }
+}
 console.log(`\nchurn-fold spec: ${pass} passed, ${fails.length} failed`);
 fails.forEach(f => console.log('  FAIL  ' + f));
 process.exit(fails.length ? 1 : 0);

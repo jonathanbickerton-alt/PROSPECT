@@ -241,6 +241,45 @@ check('wiring: the pricing and yield lists still sort by month (+ the apply pass
   (tab.split(".sort((a, b) => a.month.localeCompare(b.month))").length - 1) === 3,
   `${tab.split(".sort((a, b) => a.month.localeCompare(b.month))").length - 1} month sorts, expected 3`);
 
+// ── R7 — THE CHURN SENTENCE, from stored figures only ─────────────────────
+//
+// The row is a SAVE-TIME RECORD, so the summariser reads what it stored. Any
+// re-derivation here would describe a base that has since moved — the
+// describe-never-re-derive rule, which is why the expected string is written
+// out rather than computed.
+{
+  const churn = mkMarket({
+    id: 'ch1', scenario: 'Outflow', subscriberVolume: 2.4,
+    churnMode: 'churn', churnCurrentPct: 24.5, churnTargetPct: 3,
+  } as any);
+  check('R7 SUMMARY: a churn row reads as a rate moving, not a volume',
+    volumeEventSummary(churn as any, t) === 'Churn 24.5% → 21.5%',
+    volumeEventSummary(churn as any, t));
+
+  // A ZERO stated reduction is a real statement and must still read as one.
+  const zero = mkMarket({ id: 'ch2', scenario: 'Outflow', subscriberVolume: 0,
+    churnMode: 'churn', churnCurrentPct: 24.5, churnTargetPct: 0 } as any);
+  check('R7 SUMMARY: a zero-point month still states both rates',
+    volumeEventSummary(zero as any, t) === 'Churn 24.5% → 24.5%',
+    volumeEventSummary(zero as any, t));
+
+  // A reduction larger than the rate floors at zero rather than going negative.
+  const over = mkMarket({ id: 'ch3', scenario: 'Outflow', subscriberVolume: 20,
+    churnMode: 'churn', churnCurrentPct: 2, churnTargetPct: 9 } as any);
+  check('R7 SUMMARY: the target never reads negative',
+    over.churnMode === 'churn' && volumeEventSummary(over as any, t) === 'Churn 2.0% → 0.0%',
+    volumeEventSummary(over as any, t));
+
+  // A PLAIN outflow row is untouched by the churn branch.
+  const plain = mkMarket({ id: 'v1', scenario: 'Outflow', subscriberVolume: -500 } as any);
+  check('R7 SUMMARY: a plain outflow row keeps its ordinary sentence',
+    !volumeEventSummary(plain as any, t).startsWith('Churn'),
+    volumeEventSummary(plain as any, t));
+
+  check('R7 SUMMARY: the churn key exists in all six locales',
+    ['en','de','es','fr','it','pt'].every(l =>
+      typeof JSON.parse(fs.readFileSync(`src/locales/${l}/translation.json`,'utf8'))['whatif_summary_churn'] === 'string'));
+}
 console.log(`\nevents-summary spec: ${pass} passed, ${fails.length} failed`);
 fails.forEach(f => console.log('  FAIL  ' + f));
 process.exit(fails.length ? 1 : 0);

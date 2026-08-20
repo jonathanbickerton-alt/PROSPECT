@@ -29,7 +29,7 @@
  */
 import * as fs from 'fs';
 import * as XLSX from 'xlsx';
-import { readStoredEventModifiers, bySequence, marketEventExportRow } from '../src/utils/forecasting';
+import { readStoredEventModifiers, bySequence, marketEventExportRow, marketEventFromRow } from '../src/utils/forecasting';
 import type { MarketEvent } from '../src/utils/forecasting';
 
 let pass = 0; const fails: string[] = [];
@@ -271,7 +271,11 @@ function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[]
   // actually carries each column. That cannot go stale on a move, and it
   // exercises the writer instead of grepping for it.
   const emitted = marketEventExportRow(EVENT);
-  for (const col of ['Is_Promotion', 'Promo_Rebanded', 'Promo_Mix_Axis',
+  // R7 adds four columns. The list grows with the writer or a dropped column
+  // is invisible — which is the whole reason this check enumerates rather than
+  // counts.
+  for (const col of ['Churn_Mode', 'Churn_Target_Pct', 'Churn_Current_Pct', 'Churn_Prev_Base',
+                     'Is_Promotion', 'Promo_Rebanded', 'Promo_Mix_Axis',
                      'Promo_Mix_JSON', 'Promo_Pricing_Mode', 'Promo_Pricing_Amount',
                      'Amount_Type', 'Percentage_Basis', 'Retention_Linked',
                      'Arpu_Override', 'Promo_Band_ARPU_Override_JSON']) {
@@ -387,6 +391,66 @@ function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[]
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// R7 — CHURN ROWS ARE SIGNED VERBATIM, and round-trip their four fields
+//
+// A churn delta's sign carries DIRECTION: positive is a REDUCTION, because
+// applyEventsToMonth does `outflow -= vol`. The workbook route's
+// forced-negative exists for HAND-TYPED outflow rows, which state a size — and
+// applying it to a churn row would invert the event into the opposite of what
+// the user stated. Both halves are asserted: churn exempt, plain unchanged.
+// ═══════════════════════════════════════════════════════════════════════════
+{
+  const churnRow = {
+    ID: 'c1', Scenario: 'Outflow', Segment: 'Corporate', Product: 'Mobile Voice',
+    Channel: 'Direct', Start_Month: '2026-08', Subscriber_Volume: 500,
+    Is_Promotion: 'No',
+    Churn_Mode: 'churn', Churn_Target_Pct: 3, Churn_Current_Pct: 24.5, Churn_Prev_Base: 980,
+  };
+
+  for (const source of ['session', 'workbook'] as const) {
+    const e: any = marketEventFromRow(churnRow, source);
+    check(`R7 SIGN/${source}: a churn REDUCTION stays POSITIVE`,
+      e.subscriberVolume === 500,
+      `${e.subscriberVolume} — a forced negative would invert the event`);
+    check(`R7 FIELDS/${source}: all four churn fields survive`,
+      e.churnMode === 'churn' && e.churnTargetPct === 3
+        && e.churnCurrentPct === 24.5 && e.churnPrevBase === 980,
+      JSON.stringify([e.churnMode, e.churnTargetPct, e.churnCurrentPct, e.churnPrevBase]));
+  }
+
+  // THE OTHER HALF. A plain outflow row must STILL be forced negative on the
+  // workbook route — the exemption is for churn rows and nothing else.
+  const plainRow = { ...churnRow, ID: 'p1', Churn_Mode: '', Churn_Target_Pct: '',
+                     Churn_Current_Pct: '', Churn_Prev_Base: '' };
+  check('R7 SIGN: a PLAIN outflow row is still forced negative on the workbook route',
+    (marketEventFromRow(plainRow, 'workbook') as any).subscriberVolume === -500,
+    `${(marketEventFromRow(plainRow, 'workbook') as any).subscriberVolume}`);
+  check('R7 SIGN: and is untouched on the session route, as before',
+    (marketEventFromRow(plainRow, 'session') as any).subscriberVolume === 500);
+  check('R7: a plain row carries NO churn fields — absence, not zero',
+    (marketEventFromRow(plainRow, 'session') as any).churnMode === undefined
+      && (marketEventFromRow(plainRow, 'session') as any).churnTargetPct === undefined,
+    'blank cells must not read as a stated zero');
+
+  // ABSENCE vs ZERO on the stated reduction: 0 points is a real statement.
+  const zeroStated: any = marketEventFromRow({ ...churnRow, Churn_Target_Pct: 0 }, 'session');
+  check('R7: a stated ZERO reduction survives as 0, not as absent',
+    zeroStated.churnTargetPct === 0, String(zeroStated.churnTargetPct));
+
+  // FULL ROUND TRIP through the real writer and the real xlsx.
+  const back: any = marketEventFromRow(
+    throughXlsx([marketEventExportRow({ ...EVENT, churnMode: 'churn', churnTargetPct: 0,
+      churnCurrentPct: 24.5, churnPrevBase: 980 } as any)])[0], 'session');
+  check('R7 ROUND TRIP: churn fields survive writer -> xlsx -> reader',
+    back.churnMode === 'churn' && back.churnTargetPct === 0
+      && back.churnCurrentPct === 24.5 && back.churnPrevBase === 980,
+    JSON.stringify([back.churnMode, back.churnTargetPct, back.churnCurrentPct, back.churnPrevBase]));
+  const plainBack: any = marketEventFromRow(throughXlsx([marketEventExportRow(EVENT)])[0], 'session');
+  check('R7 ROUND TRIP: a non-churn event comes back with churn ABSENT',
+    plainBack.churnMode === undefined && plainBack.churnPrevBase === undefined,
+    'the absence carrier must survive the sheet');
+}
 console.log(`event-roundtrip spec: ${pass} passed, ${fails.length} failed`);
 fails.forEach(f => console.log('  FAIL ' + f));
 process.exit(fails.length ? 1 : 0);

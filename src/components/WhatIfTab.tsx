@@ -13,6 +13,8 @@ import { EventChangeConfirmModal } from './EventChangeConfirmModal';
 import type { MarketEvent } from '../utils/forecasting';
 import { rebalance, achievableTargetRange, solveForTarget, blendedArpu, conformsToTotal } from '../utils/mixConstraint';
 import { EventsSummaryTable } from './EventsSummaryTable';
+import { foldChurnRamp, linearChurnRamp, type ChurnFoldMonth } from '../utils/churnFold';
+import { canShowBaseForecast } from '../utils/forecasting';
 import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope, PricingVolumes, ViewScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
@@ -510,7 +512,23 @@ export function groupByCampaign(events: MarketEvent[]): Map<string, { rows: Mark
     const dN = parse(g.rows[g.rows.length - 1].date, 'yyyy-MM', new Date());
     const span = isValid(d0) && isValid(dN) ? differenceInCalendarMonths(dN, d0) + 1 : 0;
     const anyPercentage = g.rows.some(e => e.amountType === 'percentage');
-    if (anyPercentage) {
+    // R7 — CHURN ROWS JOIN THE BARRED CLASS (Jon, 2026-08-20), and they join it
+    // HERE, at the rule, for the reason the comment below already gives: this
+    // is the branch that fires, and a guard placed anywhere downstream would
+    // read as protection while providing none.
+    //
+    // A churn row is barred for a SHARPER reason than a percentage row. The
+    // group edit sums Math.abs(subscriberVolume) to reverse-engineer a ramp.
+    // On a percentage row that arithmetic is meaningless and fails loudly in
+    // the reading. On a churn row it SUCCEEDS: the figures are quantities, so
+    // it yields a total — one that is not a churn statement, and which
+    // re-spread by shares would not reproduce the rates the user typed. A
+    // plausible, wrong spread with nothing about it to look wrong.
+    const anyChurn = g.rows.some(e => e.churnMode === 'churn');
+    if (anyChurn) {
+      g.editable = false;
+      g.reason = 'Churn-targeted events are edited individually — a campaign spread cannot restate their rates';
+    } else if (anyPercentage) {
       // Barred by RULE, and checked before homogeneity so it is the reason the
       // user sees. Campaign group edit reverse-engineers a ramp by summing
       // Math.abs(subscriberVolume) across the rows (handleEditCampaignStart) —
@@ -2140,6 +2158,85 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
      newPricingEvent.tariffL1, newPricingEvent.tariffL2,
      editingPricingId, eventScopeSeriesFor]);
 
+  // ══ R7 — CHURN-TARGETED OUTFLOW ══════════════════════════════════════════
+  //
+  // Draft-only state. None of it is a MarketEvent field: the card states a
+  // target and the FOLD turns it into the per-month deltas the events carry.
+  const [churnTargetPct, setChurnTargetPct] = useState<number>(1);
+  const [churnMonths, setChurnMonths] = useState<number>(3);
+  /** CUMULATIVE stated reductions, one per ramp month. Prefilled linear and
+   *  then editable — 1/3/6 stays 1/3/6, because nothing renormalises them. */
+  const [churnStated, setChurnStated] = useState<number[]>(() => linearChurnRamp(1, 3));
+  /**
+   * THE ARM IS DRAFT-LOCAL, and deliberately NOT a value of `amountType`.
+   *
+   * `amountType` is read by the ENGINE; adding 'churn' to it would make churn
+   * an engine behaviour, which is exactly what decision 1 says it is not. A
+   * churn event is stored with amountType 'absolute' and churnMode 'churn':
+   * an ordinary absolute outflow row that remembers how it was stated.
+   */
+  const [isChurnDraft, setIsChurnDraft] = useState(false);
+
+  /**
+   * THE SCOPED SERIES THE FOLD READS — the SAME machinery the pricing preview
+   * uses, memoised on the same key shape (dims + month), so choosing a slice
+   * costs one pipeline run and typing a target costs nothing.
+   *
+   * This campaign is excluded by construction: the draft has no id yet, so
+   * nothing of it is in `marketEvents` to exclude.
+   */
+  const churnScopeSeries = useMemo(() => {
+    if (!isChurnDraft || !newEvent.date) return null;
+    return computeAdjustedForecast({
+      baseForecast, marketEvents, yieldEvents, pricingEvents,
+      viewSegment: newEvent.segment ?? 'All',
+      viewProduct: { l1: dimOrNull(newEvent.product), l2: dimOrNull(newEvent.productL2) },
+      viewChannel: { l1: dimOrNull(newEvent.channel), l2: dimOrNull(newEvent.channelL2) },
+      viewTariff:  { l1: dimOrNull(newEvent.tariffL1), l2: dimOrNull(newEvent.tariffL2) },
+      data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
+      wiTariffL1Col, wiTariffL2Col, wiValueCol,
+      wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
+    }).chartData;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isChurnDraft, newEvent.date, newEvent.segment, newEvent.product, newEvent.productL2,
+      newEvent.channel, newEvent.channelL2, newEvent.tariffL1, newEvent.tariffL2,
+      baseForecast, marketEvents, yieldEvents, pricingEvents, data]);
+
+  /** The fold's output for the current draft — the per-month figures the grid
+   *  shows and the Add handler stores. Cheap: arithmetic over a cached series. */
+  const churnFold: ChurnFoldMonth[] = useMemo(() => {
+    if (!churnScopeSeries || !newEvent.date) return [];
+    const idx = churnScopeSeries.findIndex((r: any) => r.month === newEvent.date);
+    if (idx < 0) return [];
+    const series = churnScopeSeries.map((r: any) => ({
+      month: r.month,
+      outflow: Number(r['Outflow (Adjusted)']) || 0,
+      inflow:  Number(r['Inflow (Adjusted)'])  || 0,
+    }));
+    // THE DENOMINATOR COMES FROM THE SERIES, never re-derived here — see the
+    // fold's prevBaseAtStart. idx 0 has no prior row and the fold names that.
+    const prevBaseAtStart = idx > 0 ? Number(churnScopeSeries[idx - 1]['Base (Adjusted)']) || 0 : 0;
+    return foldChurnRamp({
+      series, startIndex: idx, statedReductions: churnStated.slice(0, churnMonths),
+      prevBaseAtStart, seedBaseKnown: canShowBaseForecast(baseForecast),
+    });
+  }, [churnScopeSeries, newEvent.date, churnStated, churnMonths, baseForecast]);
+
+  /**
+   * THE ONE REASON THE CHURN DRAFT CANNOT BE ADDED, or null — the
+   * pricingDraftBlockReason precedent: a NAMED reason the user can read, not a
+   * disabled button with no explanation.
+   */
+  const churnBlockReason = useMemo((): string | null => {
+    if (!isChurnDraft) return null;
+    if (!newEvent.date) return t('whatif_churn_block_no_month');
+    if (!churnFold.length) return t('whatif_churn_block_no_series');
+    const absent = churnFold.find(m => m.absence);
+    if (absent) return t(`whatif_churn_absent_${absent.absence!.replace(/-/g, '_')}`);
+    if (!churnFold.some(m => m.statedReductionPct !== 0)) return t('whatif_churn_block_no_target');
+    return null;
+  }, [isChurnDraft, newEvent.date, churnFold, t]);
+
   /** The ONE reason the pricing draft cannot be added, or null. Read by the
    *  button, by the message beside it, and by the handler's guard. */
   const pricingBlockReason = useMemo(
@@ -2260,6 +2357,63 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
     if (!spreadEnabled || newEvent.scenario === 'ARPU') {
       addMarketEvent();
+      return;
+    }
+
+    // ══ R7 — THE CHURN RAMP ═════════════════════════════════════════════════
+    //
+    // Emitted per the ramp precedent: N events sharing a campaignName, each
+    // with its own date, its own delta and consecutive sequence slots. The
+    // storage and apply shapes are the ordinary ones — this is a way of SAYING,
+    // so the engine never learns that churn exists.
+    //
+    // NO neg() ANYWHERE HERE. A churn delta's sign carries DIRECTION: positive
+    // is a reduction, and applyEventsToMonth's `outflow -= vol` removes it.
+    // Forcing it negative would invert the event into the opposite of what the
+    // user stated. Signed verbatim, on write as on read.
+    if (isChurnDraft) {
+      if (churnBlockReason) return;
+      const usable = churnFold.filter(m => !m.absence && m.delta !== 0);
+      if (!usable.length) return;
+      const campaign = newEvent.campaignName || newEvent.name || t('whatif_churn_default_campaign');
+      const churnEvents: MarketEvent[] = usable.map((m, i) => ({
+        id: Math.random().toString(36).substr(2, 9),
+        scenario:        'Outflow',
+        segment:         newEvent.segment   || 'All',
+        product:         newEvent.product   || 'All',
+        productL2:       newEvent.productL2 || 'All',
+        channel:         newEvent.channel   || 'All',
+        channelL2:       newEvent.channelL2 || 'All',
+        tariffL1:        newEvent.tariffL1  || 'All',
+        tariffL2:        newEvent.tariffL2  || 'All',
+        date:            m.month,
+        subscriberVolume: m.delta,
+        customerVolume:  0,
+        revenue:         0,
+        arpu:            0,
+        name:            newEvent.name || '',
+        campaignName:    campaign,
+        comment:         newEvent.comment || '',
+        contractLength:  newEvent.contractLength ?? 24,
+        sequence:        nextSequence(marketEvents) + i,
+        // An ORDINARY absolute outflow row that remembers how it was stated.
+        amountType:      'absolute',
+        percentageBasis: 'baseline',
+        retentionLinked: newEvent.retentionLinked ?? true,
+        churnMode:       'churn',
+        churnTargetPct:  m.statedReductionPct,
+        churnCurrentPct: m.currentPct,
+        churnPrevBase:   m.prevBase,
+      } as MarketEvent));
+      setMarketEvents([...marketEvents, ...churnEvents]);
+      setIsChurnDraft(false);
+      setNewEvent({
+        scenario: 'Inflow', segment: 'All', product: 'All', productL2: 'All',
+        channel: 'All', channelL2: 'All', tariffL1: 'All', tariffL2: 'All',
+        date: format(new Date(), 'yyyy-MM'),
+        subscriberVolume: 0, customerVolume: 0, revenue: 0, arpu: 0,
+        name: '', campaignName: '', comment: '', contractLength: 24,
+      });
       return;
     }
 
@@ -3488,11 +3642,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 </label>
                 {/* Toggle and input share one bordered container, as Pricing does. */}
                 <div className="flex rounded-lg border border-slate-200 overflow-hidden bg-white">
+                  {/* R7 — THE THIRD ARM, Outflow only. The draft already knows
+                      its IBRO type, so no new plumbing is needed to decide
+                      whether to offer it. Selecting an ORDINARY arm leaves
+                      churn mode, so the two cannot both be lit. */}
                   {(['absolute', 'percentage'] as const).map(mode => (
                     <button
                       key={mode}
                       type="button"
                       onClick={() => {
+                        setIsChurnDraft(false);
                         setNewEvent({
                           ...newEvent,
                           amountType: mode,
@@ -3516,6 +3675,36 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       {mode === 'absolute' ? 'Subs' : '%'}
                     </button>
                   ))}
+                  {newEvent.scenario === 'Outflow' && (
+                    <button
+                      type="button"
+                      data-testid="volume-mode-churn"
+                      onClick={() => {
+                        setIsChurnDraft(true);
+                        // THE STALE AMOUNT GOES, per the :3490 precedent: a
+                        // figure typed as subscribers does not mean the same
+                        // thing under a mode that states a RATE.
+                        setNewEvent({ ...newEvent, amountType: 'absolute', subscriberVolume: 0, revenue: 0 });
+                        // CHURN MODE REPLACES THE SPREAD with its own months
+                        // control, so the spread is cleared EXPLICITLY. The
+                        // percentage arm's comment records what silence here
+                        // costs: a spread left enabled from an earlier draft
+                        // persists invisibly and still applies on Add.
+                        setSpreadEnabled(false);
+                        setChurnStated(linearChurnRamp(churnTargetPct, churnMonths));
+                      }}
+                      className={`px-3 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
+                        isChurnDraft ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                      }`}
+                    >{t('whatif_churn_mode')}</button>
+                  )}
+                  {/* THE AMOUNT INPUT RENDERS ONLY WHEN IT MEANS SOMETHING.
+                      In churn mode the panel below replaces it: the user states
+                      a rate and the volumes are derived, so a subscriber box
+                      here would be a second, contradicting way to say the same
+                      thing. */}
+                  {!isChurnDraft && (
+
                   <input
                     type="number"
                     step={isPercentageDraft ? 0.1 : 1}
@@ -3532,7 +3721,127 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     }}
                     className="flex-1 min-w-0 text-sm p-2 bg-white outline-none focus:border-[#e60000]"
                   />
+                  )}
                 </div>
+
+                {/* ── R7 — THE CHURN PANEL ───────────────────────────────────
+                    Replaces the amount input entirely: in this mode the user
+                    states a RATE and the volumes are DERIVED, which is R5's
+                    dilution inversion applied to volume. The derived column is
+                    display-only for the same reason the ramp's is. */}
+                {isChurnDraft && (
+                  <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 flex flex-col gap-3"
+                       data-testid="churn-panel">
+
+                    {/* CURRENT RATE — read from the SAME series the fold reads.
+                        One series, two uses: what the card shows and what the
+                        events store cannot disagree. */}
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                        {t('whatif_churn_current')}
+                      </span>
+                      <span className="text-sm font-semibold text-slate-800 tabular-nums"
+                            data-testid="churn-current">
+                        {(() => {
+                          const first = churnFold[0];
+                          // ABSENT WITH A REASON — never a zero, never a blank.
+                          if (!first || first.absence) {
+                            const key = first?.absence
+                              ? `whatif_churn_absent_${first.absence.replace(/-/g, '_')}`
+                              : 'whatif_churn_absent_no_series';
+                            return (
+                              <span className="text-xs font-normal text-slate-400 italic" title={t(key)}>
+                                — {t(key)}
+                              </span>
+                            );
+                          }
+                          return `${first.currentPct.toFixed(1)}%`;
+                        })()}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                          {t('whatif_churn_target')}
+                        </label>
+                        <input
+                          type="number" step={0.1} min={0}
+                          data-testid="churn-target"
+                          value={churnTargetPct}
+                          onChange={e => {
+                            const v = Number(e.target.value);
+                            setChurnTargetPct(v);
+                            setChurnStated(linearChurnRamp(v, churnMonths));
+                          }}
+                          className="border border-slate-200 rounded px-2 py-1 text-sm outline-none focus:border-[#e60000]"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                          {t('whatif_churn_months')}
+                        </label>
+                        <input
+                          type="number" step={1} min={1} max={24}
+                          data-testid="churn-months"
+                          value={churnMonths}
+                          onChange={e => {
+                            const n = Math.max(1, Math.min(24, Math.floor(Number(e.target.value)) || 1));
+                            setChurnMonths(n);
+                            setChurnStated(linearChurnRamp(churnTargetPct, n));
+                          }}
+                          className="border border-slate-200 rounded px-2 py-1 text-sm outline-none focus:border-[#e60000]"
+                        />
+                      </div>
+                    </div>
+
+                    {/* THE PER-MONTH GRID. The bound figures are CUMULATIVE
+                        stated reductions in POINTS — prefilled linear, then
+                        editable, and nothing renormalises them: 1/3/6 stays
+                        1/3/6. There is no sum-to-100 machinery because there is
+                        nothing to normalise. */}
+                    <div className="grid gap-1.5" style={{ gridTemplateColumns: '110px 90px 1fr' }}>
+                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_month')}</span>
+                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('whatif_churn_points')}</span>
+                      <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('whatif_churn_derived')}</span>
+                      {Array.from({ length: churnMonths }, (_, i) => {
+                        const m = churnFold[i];
+                        return (
+                          <React.Fragment key={i}>
+                            <span className="text-xs text-slate-600 py-1">
+                              {m?.month ?? t('whatif_month', { p0: i + 1 })}
+                            </span>
+                            <input
+                              type="number" step={0.1} min={0}
+                              data-testid={`churn-stated-${i}`}
+                              value={churnStated[i] ?? 0}
+                              onChange={e => {
+                                const next = [...churnStated];
+                                next[i] = Math.max(0, Number(e.target.value));
+                                setChurnStated(next);
+                              }}
+                              className="text-xs border border-slate-200 rounded px-2 py-1 w-20 outline-none focus:border-[#e60000]"
+                            />
+                            <span className="text-xs py-1 tabular-nums text-slate-600"
+                                  data-testid={`churn-derived-${i}`}>
+                              {!m || m.absence
+                                ? <span className="text-slate-400 italic">—</span>
+                                : `${m.targetPct.toFixed(1)}%  ·  ${m.delta >= 0 ? '−' : '+'}${Math.abs(Math.round(m.delta)).toLocaleString()}`}
+                            </span>
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
+
+                    {/* THE NAMED BLOCK REASON — feedback, not enablement. The
+                        pricingDraftBlockReason precedent: say why, do not just
+                        grey something out. */}
+                    {churnBlockReason && (
+                      <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5"
+                         data-testid="churn-block-reason">{churnBlockReason}</p>
+                    )}
+                  </div>
+                )}
                 <p className="text-[10px] text-slate-400 mt-1 leading-snug">
                   {isPercentageDraft
                     ? `Applied to each cohort's own ${String(newEvent.scenario ?? 'Inflow').toLowerCase()}. Negative reduces it.`

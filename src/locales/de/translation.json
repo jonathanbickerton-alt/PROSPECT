@@ -794,5 +794,20 @@
   "compare_events_only": "Nur Ereignisse",
   "compare_events_per_file": "Ereignisse nach Datei",
   "compare_events_scope_not_in_baseline": "Diese Ereignisse sind auf ein Segment, Produkt oder einen Kanal ausgerichtet, den die geladenen Basisprognosen nicht abdecken. Es gibt daher nichts darzustellen. Die Ereignisse selbst sind unten aufgeführt.",
-  "compare_chart_too_short": "Hier ist nicht genug Platz, um das Diagramm darzustellen. Vergrößern Sie das Fenster in der Höhe oder klappen Sie unten eine Ereignisübersicht ein, dann erscheint es wieder."
+  "compare_chart_too_short": "Hier ist nicht genug Platz, um das Diagramm darzustellen. Vergrößern Sie das Fenster in der Höhe oder klappen Sie unten eine Ereignisübersicht ein, dann erscheint es wieder.",
+  "whatif_summary_churn": "Abwanderung {{from}} % → {{to}} %",
+  "whatif_churn_mode": "Abwanderung",
+  "whatif_churn_current": "Aktuelle Abwanderung (annualisiert)",
+  "whatif_churn_target": "Reduzieren um (Punkte)",
+  "whatif_churn_months": "Über (Monate)",
+  "whatif_churn_points": "Kumulierte Pkt.",
+  "whatif_churn_derived": "Zielrate · gehaltene Kunden",
+  "whatif_churn_default_campaign": "Abwanderungsreduktion",
+  "whatif_churn_block_no_month": "Wählen Sie einen Startmonat, bevor Sie ein Abwanderungsziel hinzufügen.",
+  "whatif_churn_block_no_series": "Keine Prognose deckt diese Kohorte und diesen Monat ab, daher gibt es keine Abwanderungsrate zu senken.",
+  "whatif_churn_block_no_target": "Geben Sie in mindestens einem Monat eine Reduktion von mehr als null Punkten an.",
+  "whatif_churn_absent_seed_unknown": "die Ausgangsbasis dieser Kohorte ist unbekannt, daher kann keine Rate angegeben werden",
+  "whatif_churn_absent_no_prior_month": "der erste Prognosemonat hat keinen Vormonat, gegen den die Abwanderung gemessen werden kann",
+  "whatif_churn_absent_prev_base_zero": "die Basis dieser Kohorte erreicht null, daher gibt es keine Rate zu senken",
+  "whatif_churn_absent_no_series": "für diese Kohorte ist keine Prognosereihe verfügbar"
 }
