@@ -5,7 +5,7 @@
 ```
 Generated: 2026-08-20 22:33 +0100 (UTC 2026-08-20 21:33)
 Verified against: 46377e8
-Repo: __PENDING__
+Repo: committed 293485f, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before any check ran.
 STOPPED AT ITEM 1 BY THE BRIEF'S OWN CONDITION. The confirmation CONTRADICTS
   session 1's measurement, so nothing was built. NO SOURCE CHANGED, and no
