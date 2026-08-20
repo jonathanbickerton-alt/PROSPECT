@@ -28,6 +28,7 @@
  */
 import fs from 'fs';
 import { buildPerFileEventPanels } from '../src/utils/forecasting';
+import { isPlaceholderSheet, rowsOrEmpty } from '../src/utils/sheetGuards';
 
 let pass = 0; const fails: string[] = [];
 const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails.push(n + (d ? `  [${d}]` : '')); };
@@ -349,6 +350,104 @@ const textOf = (rows: any[]) => rows.map(r => `${r.card}|${r.name}|${r.adjusts}|
   check('i18n: the section label exists in all six locales', missing.length === 0, missing.join(', '));
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 9. THE PLACEHOLDER SHEETS — no phantom events
+//
+// When this app exports a sheet with nothing in it, it writes ONE row holding
+// a single `Note` cell. App has guarded that at nine import sites forever;
+// Compare's per-file parse arrived without the knowledge and fed the
+// placeholder to marketEventFromRow, producing an event with
+// scenario=undefined and date='' — which the panel rendered to the user as
+// the literal text "undefined 0". Measured on Jon's real 1349 and 1351 saves,
+// 2026-08-20.
+// ═══════════════════════════════════════════════════════════════════════════
+{
+  const NOTE_MARKET = [{ Note: 'No market events defined' }];
+  const NOTE_YIELD  = [{ Note: 'No yield events defined' }];
+
+  check('PLACEHOLDER: a single Note row is recognised',
+    isPlaceholderSheet(NOTE_MARKET) === true);
+  check('PLACEHOLDER: recognised by SHAPE, not by the message text',
+    isPlaceholderSheet([{ Note: 'anything at all' }]) === true,
+    'matching eight English strings would break on the first rewording');
+  check('PLACEHOLDER: a real event row is NOT a placeholder',
+    isPlaceholderSheet([{ ID: 'm1', Name: 'Real', Note: 'a comment' }]) === false,
+    'every event sheet writes an ID, so a real row can never look like one');
+  check('PLACEHOLDER: two rows are never a placeholder',
+    isPlaceholderSheet([{ Note: 'a' }, { Note: 'b' }]) === false);
+  check('PLACEHOLDER: an empty sheet is not a placeholder — it is just empty',
+    isPlaceholderSheet([]) === false);
+  check('PLACEHOLDER: a blank trailing cell does not defeat the test',
+    isPlaceholderSheet([{ Note: 'No market events defined', __EMPTY: '' }]) === true,
+    'the sheet reader can surface a trailing blank the writer never meant');
+  check('PLACEHOLDER: rowsOrEmpty yields absence, not an error',
+    JSON.stringify(rowsOrEmpty(NOTE_MARKET)) === '[]'
+      && rowsOrEmpty([{ ID: 'm1' }]).length === 1);
+
+  // ── THE 1349-SHAPED REGRESSION CASE ──────────────────────────────────────
+  //
+  // Two Note sheets and one REAL pricing event, exactly as Jon's save. The
+  // panel must hold ONE row and no phantoms.
+  const asWorkerWouldParse = {
+    fileName: '1349-shaped.xlsx',
+    marketEvents: rowsOrEmpty(NOTE_MARKET),
+    yieldEvents: rowsOrEmpty(NOTE_YIELD),
+    pricingEvents: rowsOrEmpty([{
+      ID: 'p1', Name: 'test dilution narrow', Segment: 'Corporate',
+      Product: 'Mobile Voice', Channel_L1: 'Direct', Month: '2026-08',
+      Input_Mode: 'percentage', Amount: 6.6, Target: 'cohorts',
+      Cohort_Scope: 'both', Duration: 'recurring', Original_Base_ARPU: 20,
+      Pricing_Mode: 'dilution', Dilution_Current_Pct: 25, Dilution_Target_Pct: 20,
+    }]),
+  };
+  const rows1349 = panelsFor([asWorkerWouldParse])[0].rows;
+
+  check('1349-SHAPED: the panel holds exactly ONE row',
+    rows1349.length === 1, `${rows1349.length} rows: ${rows1349.map(r => r.name).join(', ')}`);
+  check('1349-SHAPED: and it is the REAL pricing event',
+    rows1349[0]?.name === 'test dilution narrow' && rows1349[0]?.adjusts === '25% → 20% dilution',
+    JSON.stringify(rows1349[0]));
+
+  // THE PHANTOMS, NAMED. These exact strings reached the user.
+  const text1349 = textOf(rows1349);
+  check('1349-SHAPED: no "undefined" reaches the panel',
+    !text1349.includes('undefined'),
+    'the phantom market event rendered the literal string undefined to the user');
+  check('1349-SHAPED: no phantom VOLUME row',
+    !rows1349.some(r => r.card === en['whatif_volume']),
+    'a Note sheet must contribute no market event at all');
+  check('1349-SHAPED: no phantom VALUE row',
+    !rows1349.some(r => r.card === en['whatif_summary_card_value']),
+    'a Note sheet must contribute no yield event at all');
+  check('1349-SHAPED: no unnamed rows survive',
+    rows1349.every(r => r.unnamed === false),
+    'both phantoms arrived as fallback-named rows');
+
+  // NEGATIVE CONTROL: unguarded, the phantoms DO appear. Without this the
+  // four checks above could pass on a fixture that never had phantoms in it.
+  const unguarded = panelsFor([{
+    fileName: 'unguarded.xlsx',
+    marketEvents: NOTE_MARKET, yieldEvents: NOTE_YIELD, pricingEvents: [],
+  }])[0].rows;
+  check('NEGATIVE CONTROL: WITHOUT the guard the placeholders DO become events',
+    unguarded.length === 2, `${unguarded.length} — if 0, the fixture proves nothing`);
+  check('NEGATIVE CONTROL: and one of them renders the literal "undefined"',
+    textOf(unguarded).includes('undefined'),
+    'this is the exact string Jon saw; the guard is what removes it');
+
+  // BOTH CONSUMERS INHERIT IT — the duplicate-predicates rule.
+  const worker = fs.readFileSync('src/workers/scenarioParser.worker.ts', 'utf8');
+  const app = fs.readFileSync('src/App.tsx', 'utf8');
+  check('INHERITANCE: the worker parse consults the shared guard',
+    worker.includes('rowsOrEmpty(') && worker.includes("from '../utils/sheetGuards'"),
+    'the worker is the one boundary every Compare consumer reads through');
+  check('INHERITANCE: App consults the SAME predicate, not a local twin',
+    (app.match(/isPlaceholderSheet\(/g) ?? []).length === 9,
+    'nine import sites; a tenth or a ninth missing is a consumer going its own way');
+  check('INHERITANCE: no inline ?.Note twin survives anywhere',
+    !app.includes('?.Note') && !worker.includes('?.Note'),
+    'the convention had nine copies and one gap — that gap was the defect');
+}
 console.log(`\ncompare-events-panel spec: ${pass} passed, ${fails.length} failed`);
 fails.forEach(f => console.log('  FAIL  ' + f));
 process.exit(fails.length ? 1 : 0);

@@ -72,10 +72,12 @@ const CMPFILTER = 'scripts/compare-filter-spec.ts';
 const EQUIV = 'scripts/fromrow-equivalence-spec.ts';
 const CMPPANEL = 'scripts/compare-events-panel-spec.ts';
 const CMPWINDOW = 'scripts/compare-window-spec.ts';
+const CMPRENDER = 'scripts/compare-render-spec.ts';
+const SHEETGUARD = 'src/utils/sheetGuards.ts';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const APP_COMPARE = 'src/components/ScenarioCompareTab.tsx';
-const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE];
+const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -1062,6 +1064,37 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '  useEffect(() => { setWindowOffset(0); }, [chartData.length]);',
       '  useEffect(() => { /* reset removed */ }, [chartData.length]);') },
+  // 93 puts the chart card back on min-h-0 — the exact 2026-08-20 mechanism.
+  // The card is the SOLE flex-1 among shrink-0 siblings in a height-capped
+  // column, so min-h-0 lets it reach ZERO and the region then shows nothing at
+  // all: no lines, no axis, no message, no scrollbar. A third loaded file was
+  // enough to cross it.
+  //
+  // THE ANCHOR IS SOURCE-LEVEL BECAUSE THE PROPERTY IS. A CSS min-height
+  // cannot be measured from Node, so the spec pins the class and this trap
+  // removes it. Declared rather than dressed up as a measurement.
+  { id: '93 the chart card loses its minimum height', why: 'the region can collapse to zero and show nothing at all',
+    file: APP_COMPARE, spec: CMPRENDER,
+    mutate: s => s.replace(
+      'shadow-sm flex flex-col min-h-[320px]"',
+      'shadow-sm flex flex-col min-h-0"') },
+  // 94 drops the placeholder guard at its one definition. Every consumer
+  // inherits the loss at once, which is the point of putting it there: the
+  // phantom market event returns with scenario=undefined, and the panel
+  // renders the literal string "undefined" to the user again.
+  { id: '94 the placeholder sheet guard stops recognising Note rows', why: 'phantom events return and the panel prints "undefined"',
+    file: SHEETGUARD, spec: CMPPANEL,
+    mutate: s => s.replace(
+      "  return keys.length === 1 && keys[0] === 'Note';",
+      '  return false;') },
+  // 95 severs the named condition from the state that triggers it. The
+  // predicate still computes 'too-short' and nothing is rendered for it — the
+  // silent blank restored, which is the whole failure this arc closed.
+  { id: '95 the undrawable chart region stops saying so', why: 'a chart that cannot draw goes back to showing nothing',
+    file: APP_COMPARE, spec: CMPRENDER,
+    mutate: s => s.replace(
+      "                  {drawability === 'too-short' && (",
+      '                  {false && (') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -1072,7 +1105,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(EQUIV) || specFails(CMPPANEL) || specFails(CMPWINDOW)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(EQUIV) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

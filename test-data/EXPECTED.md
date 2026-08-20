@@ -6739,6 +6739,47 @@ From the 2026-08-17 walk on the edge fixture and its diagnosis
    where it is harder to find. The diagnosis counted FIVE blocking terms across
    two layers, none of which said anything.
 
+#### THE CHART KEEPS A FLOOR, AND NEVER FAILS SILENTLY (Jon, 2026-08-20)
+
+**1. The render fix, per the third-file diagnosis §6a.** The chart card is the
+sole `flex-1` among `shrink-0` siblings in a height-capped column, and `min-h-0`
+lets it reach zero — at which point the SVG has no height and the region shows
+nothing at all: no lines, no axis, no message, no scrollbar. It takes a minimum
+height, and the column then overflows into the existing `overflow-auto`, which
+is a stated condition (a scrollbar) rather than an absence.
+
+**Nothing adjacent is touched.** `computeScenarioForFilter`, the worker parse
+and `windowBounds` were all exonerated by measurement in that diagnosis — six
+file-count states, every one structurally identical and wholly finite.
+Changing any of them would be fixing what is not broken.
+
+**2. The Note-placeholder skip lives at the SHARED parse boundary.** A sheet
+whose only row carries `Note` is a PLACEHOLDER, not data — the convention this
+app has written into eight export sheets since forever. One exported predicate
+is consulted before rows reach any `fromRow` seam, and every consumer inherits
+it: Compare's per-file parse and App's import alike. No consumer-local twins.
+
+A skipped placeholder contributes an **EMPTY event array** — absence, never an
+error and never a phantom. The defect it closes is on record: a `['Note']`
+sheet parsed into a MarketEvent with `scenario=undefined`, and the panel row
+read `"undefined 0"` to the user.
+
+**Why the boundary and not the seam.** `marketEventFromRow` converts A ROW;
+"this sheet is a placeholder" is a property of THE SHEET. Putting the test
+inside the seam would ask a row-level function a sheet-level question, and the
+next consumer to read a sheet without going through that seam would miss it.
+
+**3. The chart region never fails silently.** An undrawable state renders a
+NAMED condition. This is the design principle's third application this arc,
+after the two-meanings-of-null empty state and the brush window's stated empty
+— and it is the same lesson each time: a surface that cannot do its job must
+say so, because a silent blank is indistinguishable from a broken app.
+
+The floor in (1) PREVENTS the collapse; the named condition REPORTS it if the
+floor is ever defeated — a shorter viewport, a browser zoom, or a future
+sibling added to the column. Prevention and detection are different jobs and
+the arc has already paid for conflating them once, on the brush.
+
 #### THE COMPARE BRUSH WINDOW CLAMPS AND RESETS (Jon, 2026-08-20)
 
 **The window is derived once, and both ends are clamped.** `endIndex` was

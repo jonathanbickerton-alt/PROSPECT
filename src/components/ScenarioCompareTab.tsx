@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { collectEventScopeDims, hasAnyCarrierEvents, windowBounds, selectionUncoveredByBaseline } from '../utils/viewFilter';
+import { collectEventScopeDims, hasAnyCarrierEvents, windowBounds, selectionUncoveredByBaseline, chartDrawability, MIN_DRAWABLE_CHART_PX } from '../utils/viewFilter';
 import { buildPerFileEventPanels } from '../utils/forecasting';
 import { EventsSummaryTable } from './EventsSummaryTable';
 import { useTranslation } from 'react-i18next';
@@ -276,6 +276,26 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
    * unclamped while endIndex was clamped, which is how a stale offset produced
    * a chart with axes and no lines.
    */
+  /**
+   * THE MEASURED HEIGHT OF THE PLOTTING AREA.
+   *
+   * Null until the observer first fires. The predicate treats that as
+   * drawable on purpose — see chartDrawability — so nothing flashes a fault
+   * on the first paint.
+   */
+  const chartAreaRef = useRef<HTMLDivElement | null>(null);
+  const [chartAreaPx, setChartAreaPx] = useState<number | null>(null);
+
+  useEffect(() => {
+    const el = chartAreaRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(entries => {
+      for (const e of entries) setChartAreaPx(e.contentRect.height);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [chartData.length > 0]);
+
   const brush = useMemo(
     () => windowBounds(windowOffset, windowSize, chartData.length),
     [windowOffset, windowSize, chartData.length]);
@@ -305,6 +325,9 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
       { segment: viewSegment, product: viewProduct.l1, channel: viewChannel.l1 },
       parsedSessions),
     [viewSegment, viewProduct.l1, viewChannel.l1, parsedSessions]);
+
+  /** The fourth state: enough data to draw, not enough room to draw it in. */
+  const drawability = chartDrawability(chartData.length, chartAreaPx);
 
   const COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b'];
 
@@ -482,10 +505,29 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
               </div>
             </div>
 
-            <div className="flex-1 bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-0">
+            {/* THE FLOOR. This card is the ONLY flex-1 among shrink-0 siblings
+                in a height-capped column, so every pixel they take comes out of
+                it — and min-h-0 let it reach ZERO, at which point the SVG had no
+                height and the region showed nothing at all: no lines, no axis,
+                no message, no scrollbar. A third loaded file was enough.
+                min-h-[320px] stops the collapse; the column then overflows into
+                the root's overflow-auto, so the user gets a SCROLLBAR — a stated
+                condition — instead of an absence. See the 2026-08-20 diagnosis. */}
+            <div className="flex-1 bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col min-h-[320px]">
               <h3 className="font-semibold text-slate-800 mb-4 shrink-0">{chartView === 'volume' ? t('compare_subscriber_volumes') : 'ARPU'}</h3>
               {chartData.length > 0 ? (
-                <div className="flex-1 min-h-0">
+                <div className="flex-1 min-h-0 relative" ref={chartAreaRef}>
+                  {/* THE FOURTH STATE. The other three describe an empty
+                      RESULT; this one describes an undrawable REGION — the data
+                      is fine and there is no room to show it. It must be said
+                      out loud, because the failure it replaces was invisible. */}
+                  {drawability === 'too-short' && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/95 text-center px-4">
+                      <p className="text-xs text-slate-500 max-w-md" data-testid="compare-chart-too-short">
+                        {t('compare_chart_too_short')}
+                      </p>
+                    </div>
+                  )}
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />

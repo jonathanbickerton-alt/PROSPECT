@@ -793,5 +793,6 @@
   "common_dismiss": "Descartar",
   "compare_events_only": "Solo eventos",
   "compare_events_per_file": "Eventos por archivo",
-  "compare_events_scope_not_in_baseline": "Estos eventos se aplican a un segmento, producto o canal que las previsiones de referencia cargadas no cubren, por lo que no hay nada que mostrar. Los eventos aparecen listados abajo."
+  "compare_events_scope_not_in_baseline": "Estos eventos se aplican a un segmento, producto o canal que las previsiones de referencia cargadas no cubren, por lo que no hay nada que mostrar. Los eventos aparecen listados abajo.",
+  "compare_chart_too_short": "No hay espacio suficiente para dibujar el gráfico. Amplíe la altura de la ventana o contraiga un panel de eventos de abajo y volverá a aparecer."
 }

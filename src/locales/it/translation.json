@@ -793,5 +793,6 @@
   "common_dismiss": "Chiudi",
   "compare_events_only": "Solo eventi",
   "compare_events_per_file": "Eventi per file",
-  "compare_events_scope_not_in_baseline": "Questi eventi riguardano un segmento, un prodotto o un canale non coperto dalle previsioni di base caricate, quindi non c’è nulla da tracciare. Gli eventi sono elencati di seguito."
+  "compare_events_scope_not_in_baseline": "Questi eventi riguardano un segmento, un prodotto o un canale non coperto dalle previsioni di base caricate, quindi non c’è nulla da tracciare. Gli eventi sono elencati di seguito.",
+  "compare_chart_too_short": "Non c’è spazio sufficiente per disegnare il grafico. Aumenta l’altezza della finestra oppure comprimi un pannello eventi qui sotto e ricomparirà."
 }

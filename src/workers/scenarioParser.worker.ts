@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { rowsOrEmpty } from '../utils/sheetGuards';
 
 export interface ParseRequest {
   fileBuffers: ArrayBuffer[];
@@ -33,9 +34,14 @@ self.onmessage = (e: MessageEvent<ParseRequest>) => {
       sheets: ['Baseline_Forecasts', 'Market_Events', 'Yield_Events', 'Pricing_Events'] 
     });
     
+    // THE SHARED PARSE BOUNDARY. Every Compare consumer reads its rows from
+    // here — the chart series, the filter populate and the per-file events
+    // panels — so the placeholder skip belongs at this one point rather than
+    // in each of them. A sheet the app exported as a placeholder yields an
+    // EMPTY array: absence, not an error, and not a phantom event.
     const parseSheet = (sheetName: string): any[] => {
       if (!wb.Sheets[sheetName]) return [];
-      return XLSX.utils.sheet_to_json(wb.Sheets[sheetName]);
+      return rowsOrEmpty(XLSX.utils.sheet_to_json(wb.Sheets[sheetName]) as any[]);
     };
     
     const baselineRows = parseSheet('Baseline_Forecasts');

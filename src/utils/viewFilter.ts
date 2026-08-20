@@ -186,6 +186,48 @@ export function hasAnyCarrierEvents(sessions: EventCarriers[]): boolean {
     || (s?.pricingEvents?.length ?? 0) > 0);
 }
 
+/**
+ * THE SMALLEST HEIGHT A LINE CHART CAN SAY ANYTHING IN.
+ *
+ * Below this an axis has no room for two labels and a line has no room to
+ * have a shape, so what renders is decoration rather than information.
+ */
+export const MIN_DRAWABLE_CHART_PX = 120;
+
+export type ChartDrawability = 'no-data' | 'too-short' | 'drawable';
+
+/**
+ * CAN THE CHART REGION ACTUALLY DRAW? — the fourth state.
+ *
+ * The 2026-08-20 third-file diagnosis proved a failure mode that no data check
+ * can see: the chart card is the sole `flex-1` among `shrink-0` siblings in a
+ * height-capped column, and `min-h-0` lets it reach ZERO. At zero the SVG has
+ * no height, so the region shows no lines, NO AXIS, and no message — the
+ * empty-state gate passed, because the data was 24 complete rows. Adding a
+ * third file was enough to cross it.
+ *
+ * A minimum height on the card now PREVENTS that. This predicate REPORTS it,
+ * and the two are different jobs: a floor can be defeated by a shorter
+ * viewport, a browser zoom, or the next sibling somebody adds to the column,
+ * and the failure it leaves behind is invisible by construction. The arc has
+ * already paid once for treating prevention as if it were detection.
+ *
+ * `measuredPx` is null before the first measurement, which is NOT a failure:
+ * on the first paint nothing has been observed yet, and reporting a fault
+ * there would flash a fault on every mount. Absence of a measurement is
+ * treated as drawable and the observer corrects it a frame later.
+ */
+export function chartDrawability(
+  dataLength: number,
+  measuredPx: number | null,
+  minPx: number = MIN_DRAWABLE_CHART_PX,
+): ChartDrawability {
+  if (!Number.isFinite(dataLength) || dataLength <= 0) return 'no-data';
+  // Not yet measured — see above. Also covers a non-finite reading.
+  if (measuredPx === null || measuredPx === undefined || !Number.isFinite(measuredPx)) return 'drawable';
+  return measuredPx < minPx ? 'too-short' : 'drawable';
+}
+
 /** A brush window, always valid: 0 <= start <= end <= length-1, or empty. */
 export interface WindowBounds {
   start: number;

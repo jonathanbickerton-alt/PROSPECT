@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { FileSpreadsheet, Info, XCircle } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
+import { isPlaceholderSheet } from './utils/sheetGuards';
 import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, readStoredRateMap, marketEventExportRow, marketEventFromRow, yieldEventExportRow, yieldEventFromRow, pricingEventExportRow, pricingEventFromRow, activeCohortMetaRows, readActiveCohortMeta, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
@@ -730,14 +731,14 @@ export default function App() {
 
         // ── Actuals ───────────────────────────────────────────────────────────
         const actualsRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Actuals']);
-        if (actualsRaw.length > 0 && !actualsRaw[0]?.Note) {
+        if (actualsRaw.length > 0 && !isPlaceholderSheet(actualsRaw)) {
           setData(actualsRaw);
           setColumns(Object.keys(actualsRaw[0] as object));
         }
 
         // ── Baseline Forecasts ────────────────────────────────────────────────
         const bfRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Baseline_Forecasts']);
-        if (bfRaw.length > 0 && !bfRaw[0]?.Note) {
+        if (bfRaw.length > 0 && !isPlaceholderSheet(bfRaw)) {
 
           // ── New format: ForecastStore rows (one row per cohort-month) ─────────
           const storeRows = bfRaw.filter(r => r.Source === 'ForecastStore');
@@ -955,7 +956,7 @@ export default function App() {
         // ── Market Events ─────────────────────────────────────────────────────
         const evtRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Market_Events']);
         let restoredEvents: MarketEvent[] = [];
-        if (evtRaw.length > 0 && !evtRaw[0]?.Note) {
+        if (evtRaw.length > 0 && !isPlaceholderSheet(evtRaw)) {
           // THE SHARED READER. This literal used to live here; a reader inside a
           // component cannot be driven by a spec and cannot be called from the
           // parser worker, which is why the promo fields once round-tripped on
@@ -967,7 +968,7 @@ export default function App() {
         // ── Yield Events ──────────────────────────────────────────────────────
         if (wb.SheetNames.includes('Yield_Events')) {
           const yieldRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Yield_Events']);
-          if (yieldRaw.length > 0 && !yieldRaw[0]?.Note) {
+          if (yieldRaw.length > 0 && !isPlaceholderSheet(yieldRaw)) {
             setYieldEvents(yieldRaw.map(yieldEventFromRow));
           }
         }
@@ -975,7 +976,7 @@ export default function App() {
         // ── Pricing Events ────────────────────────────────────────────────────
         if (wb.SheetNames.includes('Pricing_Events')) {
           const pricingRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Pricing_Events']);
-          if (pricingRaw.length > 0 && !pricingRaw[0]?.Note) {
+          if (pricingRaw.length > 0 && !isPlaceholderSheet(pricingRaw)) {
             setPricingEvents(pricingRaw.map(pricingEventFromRow));
           }
         }
@@ -983,7 +984,7 @@ export default function App() {
         // ── One-Off Months (P10) ──────────────────────────────────────────────
         if (wb.SheetNames.includes('One_Off_Months')) {
           const oneOffRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['One_Off_Months']);
-          if (oneOffRaw.length > 0 && !oneOffRaw[0]?.Note) {
+          if (oneOffRaw.length > 0 && !isPlaceholderSheet(oneOffRaw)) {
             const restored: Record<string, { month: string; reason: string }[]> = {};
             oneOffRaw.forEach(r => {
               const key = makeForecastKey(
@@ -1009,7 +1010,7 @@ export default function App() {
 
         // ── Adjusted Forecasts ────────────────────────────────────────────────
         const adjRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Adjusted_Forecasts']);
-        if (adjRaw.length > 0 && !adjRaw[0]?.Note) {
+        if (adjRaw.length > 0 && !isPlaceholderSheet(adjRaw)) {
           // We need a baseForecast reference — use the one we just reconstructed above.
           // Since React state is async, reconstruct inline from bfRaw.
           const typedRows = bfRaw.filter(r => r.Source === 'Typed BaseForecast');
@@ -1066,7 +1067,7 @@ export default function App() {
 
         // ── Bulk Generation History ───────────────────────────────────────────
         const bulkRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Bulk_Generation_History']);
-        if (bulkRaw.length > 0 && !bulkRaw[0]?.Note) {
+        if (bulkRaw.length > 0 && !isPlaceholderSheet(bulkRaw)) {
           setBulkRuns(bulkRaw.map(r => ({
             id:        String(r.Run_ID ?? Math.random().toString(36).substr(2, 9)),
             name:      String(r.Run_Name ?? ''),
@@ -1087,7 +1088,7 @@ export default function App() {
 
         // ── Model Acceptance Log ──────────────────────────────────────────────
         const logRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Model_Acceptance_Log']);
-        if (logRaw.length > 0 && !logRaw[0]?.Note) {
+        if (logRaw.length > 0 && !isPlaceholderSheet(logRaw)) {
           setModelAcceptanceLog(logRaw.map(r => ({
             cohortKey:      String(r.Cohort_Key      ?? ''),
             previousModel:  String(r.Previous_Model  ?? ''),
