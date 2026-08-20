@@ -9,25 +9,25 @@ Repo: committed 24cbc6e, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before any check ran.
 READ-ONLY on source — the only commits are the docs swap and this report.
 BASE: HEAD 71e2a21 vs the report's e351d64 — one commit, --stat REPORT-ONLY.
-PART 1: 36 claims checked, 36 VERIFIED, 0 CONTRADICTED. All six seams real,
-  market reader carries SOURCE; placeholder guard at 9 App sites + worker
-  with ZERO twins; both window ends clamped; four empty-states distinct.
-  Drift control (3 earlier-arc claims, incl. the 2/1/1 route counts) holds.
-RETIREMENT NOT DONE — REPORTED, per the brief's own escape hatch. Deleting
-  spec:fromrow-equivalence would strand GUARD-TRAP 87 (`spec: EQUIV`), whose
-  defect nothing else currently guards. A clean re-home exists — see Decisions.
-R7-2 THE DENOMINATOR IS ALREADY REACHABLE AND MEMOISED: eventScopeSeriesFor
-  runs the pipeline scoped to the draft's dims with this event EXCLUDED;
-  previewScopeSeries caches on dims+month. ADJUSTED-SO-FAR, the harder half.
+PART 1: 36 claims checked, 36 VERIFIED, 0 CONTRADICTED. Six seams real, market
+  reader carries SOURCE; placeholder guard at 9 App sites + worker, ZERO twins;
+  both window ends clamped; 4 empty-states distinct. Drift control holds.
+RETIREMENT NOT DONE — REPORTED per the escape hatch: deleting it would strand
+  GUARD-TRAP 87 (`spec: EQUIV`). A clean re-home exists — see Decisions.
+R7-2 DENOMINATOR ALREADY REACHABLE AND MEMOISED: eventScopeSeriesFor runs the
+  pipeline on the draft's dims, event EXCLUDED. ADJUSTED-SO-FAR, the hard half.
 R7-3 ZERO ENGINE CHANGE CONFIRMED: applyEventsToMonth does `outflow -= vol`
   with Outflow STORED NEGATIVE, so a REDUCTION is a POSITIVE stored volume.
 R7-3 THE SIGN BITES IN ONE PLACE: marketEventFromRow(r,'workbook') forces
-  Outflow to -Math.abs(v), which would FLIP a stated reduction. The 'session'
-  route does not, so saves round-trip correctly. Named, not fixed.
+  -Math.abs(v) and would FLIP a stated reduction. 'session' does not.
 R7-4 MarketEvent HAS NO recurring FIELD — "one row is one month"; the SPREAD
   already materialises N rows each with its OWN amount, so a per-month
   derived-delta series needs NO new storage and NO apply change.
-DECISIONS: 4 — the retirement re-home, and three R7 scoping questions.
+R7-7 THE RAMP IS N EVENTS, NOT ONE ROW: storage and apply carry churn as-is.
+  HARD BLOCKER NAMED — campaign group-edit reverse-engineers a ramp by summing
+  |subscriberVolume|; on churn rows that SUCCEEDS and is wrong. Same barred
+  class as percentage rows, and the bar belongs at the same rule site.
+DECISIONS: 5 — the retirement re-home, three R7 scoping questions, the bar.
 ```
 
 ---
@@ -316,6 +316,119 @@ carrier):
 the describe-never-re-derive rule means it must read the stored figures rather
 than recompute the rate.
 
+## 7. The ramp precedent — the shape churn would ride
+
+### The stored shape: N events, not one event with month rows
+
+**Two builders, the same output shape.** The Volume card ramps inline
+(`WhatIfTab.tsx:2266-2320`); the Promotion card ramps through the shared
+`buildPromoEvents` (`:403`). Both compute a share vector and `map` it:
+
+```ts
+const pcts = spreadDistType === 'even'
+  ? Array.from({ length: spreadMonths }, () => 100 / spreadMonths)
+  : customDist.slice(0, spreadMonths);
+const total = pcts.reduce((s, p) => s + p, 0);
+...
+const events: MarketEvent[] = pcts.map((pct, i) => {
+  const fraction = pct / total;
+  const monthStr = format(addMonths(baseDate, i), 'yyyy-MM');
+  const vol      = Math.round((newEvent.subscriberVolume || 0) * fraction);
+  ...
+  date: monthStr, subscriberVolume: neg(vol), sequence: nextSequence(...) + i,
+});
+```
+
+**A ramp is N independent MarketEvents**, one per month, each carrying its own
+`date`, its own absolute `subscriberVolume`, and a consecutive `sequence` slot.
+There is no month-rows array and no parent row: after Add, nothing in the
+stored data says these rows were ever one gesture except a **shared
+`campaignName`**.
+
+That matters for R7 in one direction only, and it is the good direction: the
+**apply path** already does exactly what a per-month churn series needs — one
+stored delta per month, applied verbatim at its own month, with no
+cross-month reference. §4's conclusion is this fact seen from the other end.
+
+### How the card edits per-month values — shares, never volumes
+
+The editor (`:3846-3882`) is a three-column grid: month label, **derived**
+volume, and — in `custom` mode only — an editable **percentage** input bound
+to `customDist[i]`.
+
+**The user never types a per-month volume.** They type shares; the volumes are
+`Math.round(totalVol * pcts[i] / pctTotal)` and are display-only. Shares that
+do not sum to 100 are accepted with a warning and **normalised on Add**.
+
+So the ramp's mental model is *distribute a stated total*. That is the one
+place churn does not fit the precedent as-is — see the structural notes below.
+
+### What the summariser and the table show
+
+`buildEventsSummaryRows` pushes **one row per market event** (`forecasting.ts:793`),
+with no grouping. A three-month ramp is therefore **three rows** in the R4
+events summary and in Scenario Compare's per-file panels — three months, three
+volumes, one shared name.
+
+The card's OWN list groups them: `campaignGroups` collapses rows sharing a
+`campaignName` into a single editable campaign with a computed `span`
+(`:509-511`).
+
+### Structural reasons — one soft, one hard
+
+**No blocker on storage or apply.** A churn-mode ramp would emit exactly what a
+volume ramp emits: N rows, one per month, each an absolute delta. Nothing in
+the carrier, the writer, the readers or `applyEventsToMonth` needs to change to
+hold it.
+
+**Soft: `map` must become a fold.** The share vector is knowable upfront, so the
+builder is a pure `map`. A constant-churn-rate ramp is **sequentially
+dependent** — month *i*'s delta needs the base rolled forward through months
+*0..i-1*, which needs their deltas. Same output type, different body: an
+accumulator instead of a `fraction`. §4 established the arithmetic; this names
+where it would sit.
+
+**Soft: the stated total inverts.** The ramp derives per-month volumes from a
+stated TOTAL; a churn ramp derives them from a stated RATE, and the total
+becomes an OUTPUT. That is the same inversion R5's dilution made on the Pricing
+card — state the outcome, derive the amount — so the precedent for it exists
+one card over. Two consequences fall out: the `even`/`custom` share control has
+no meaning for a constant rate, and the "percentages sum to 100" normalisation
+warning has nothing to normalise.
+
+**HARD, and this is the one to name: campaign group-edit cannot reverse-engineer
+a churn ramp.** `handleEditCampaignStart` (`:2397-2418`) reconstructs a ramp by
+summing `Math.abs(subscriberVolume)` across the group's rows and redistributing
+that total by offset. The codebase already bars **percentage** rows from this
+path by RULE rather than by defensive handling (`:512-517`), with the reason
+stated in source: the summation is *"arithmetic that is meaningless for a row
+storing a percent rather than a quantity, and would produce a plausible, wrong
+spread."*
+
+A churn row stores a **quantity**, so the sum would not be meaningless — it
+would be **worse**. It succeeds arithmetically and produces a total that is not
+a churn statement, and re-spreading it by shares would not reproduce the rates
+the user typed. **A plausible, wrong spread with nothing to make it look
+wrong.** Churn rows therefore belong in the same barred class as percentage
+rows, and the bar must be a rule at `:512`, not a guard downstream.
+
+The same source comment carries a second lesson worth honouring here: the
+homogeneity test below that bar deliberately does *not* also compare
+`amountType`, because the branch above already catches every affected campaign —
+and a mutation test proved the extra clause could be deleted with every
+assertion still green. **An unreachable guard reads as protection while
+providing none.** A churn bar should be placed where it can actually fire, and
+a trap should prove it does.
+
+### One more fact, stated because it is easy to trip over
+
+Selecting `amountType: 'percentage'` **force-clears `spreadEnabled`**
+(`:3508`), because the spread control is hidden for percentages and a spread
+left enabled from an earlier draft would otherwise persist invisibly and still
+apply on Add. A third mode inherits that question: whichever way churn goes, it
+must state explicitly whether it clears the spread, keeps it, or redefines it —
+silence there reproduces exactly the defect that comment records.
+
 ## Decisions for Jon
 
 1. **The retirement re-home.** Point trap 87 at `spec:compare-events-panel`
@@ -332,6 +445,12 @@ than recompute the rate.
    one-off needs no apply change and recurring needs either a card-side rollforward
    or an engine mode. Alessandro's question is on record; a first session could
    ship one-off with recurring explicitly held.
+5. **Where does the churn bar on campaign group-edit go, and is it a rule or a
+   guard?** §7 says rule, at `:512` beside the percentage bar, because that is
+   the only place it can fire — and the source comment there records a mutation
+   test proving an unreachable clause provides nothing. A trap should prove the
+   bar bites.
+
 4. **The workbook-route sign hazard (§3): fold into R7, or file separately?** It
    is a real defect for hand-made imports and is currently unreachable through
    normal save/reload. It touches `marketEventFromRow`'s workbook branch, which
