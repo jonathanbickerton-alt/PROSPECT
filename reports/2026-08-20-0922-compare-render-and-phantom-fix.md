@@ -4,34 +4,29 @@
 
 ```
 Generated: 2026-08-20 09:22 +0100 (UTC 2026-08-20 08:22)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: e351d64 (this report filled one commit later)
+Repo: committed e351d64, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before the base check.
 BASE: HEAD 76a68ee vs the diagnosis Repo line 135bc62 — one commit, --stat
   confirms REPORT-ONLY (one line: that report's own Repo fill).
 FIX 1, THE FLOOR: the chart card takes min-h-[320px], so the sole flex-1 among
-  shrink-0 siblings can no longer reach zero. The column then overflows into
-  the existing overflow-auto — a SCROLLBAR, which is a stated condition.
-  CAUGHT WHILE WRITING IT: min-h-0 and min-h-[320px] on ONE element leaves the
-  winner to CSS source order, not attribute order. One class now, and pinned.
-FIX 2, THE PLACEHOLDER SKIP, at the shared boundary: isPlaceholderSheet tests
-  the sheet's SHAPE (one row, only Note populated), never the message text —
-  matching eight English strings would break on the first rewording. The
-  worker consults it, and App's NINE inline twins collapsed into it. Zero
-  `?.Note` remain anywhere. A placeholder yields an EMPTY array: absence.
-FIX 3, THE FOURTH STATE: chartDrawability(dataLength, measuredPx) + a
-  ResizeObserver on the plotting area. Undrawable now renders a NAMED
-  condition. Unmeasured is DRAWABLE on purpose — a fault on first paint would
-  be a false alarm on every mount.
-PREVENTION AND DETECTION ARE SEPARATE, deliberately: the floor stops the
-  collapse, the predicate reports it if the floor is ever defeated by a
-  shorter viewport, a zoom, or the next sibling added to that column.
-THE PHANTOM NEGATIVE CONTROL IS THE LOAD-BEARING CHECK: unguarded, the same
-  fixture DOES produce two phantom rows and the literal string "undefined".
-  Without it the four regression checks could pass on a clean fixture.
+  shrink-0 siblings cannot reach zero; the column overflows into the existing
+  overflow-auto — a SCROLLBAR, a stated condition, replaces an absence.
+FIX 2, THE PLACEHOLDER SKIP at the shared boundary: isPlaceholderSheet tests
+  the sheet's SHAPE (one row, only Note populated), never the message text.
+  The worker consults it; App's NINE inline twins collapsed into it and ZERO
+  `?.Note` remain. A placeholder yields an EMPTY array: absence.
+FIX 3, THE FOURTH STATE: chartDrawability + a ResizeObserver on the plotting
+  area — undrawable renders a NAMED condition. Unmeasured is DRAWABLE on
+  purpose: a fault on first paint would be a false alarm on every mount.
+PREVENTION AND DETECTION ARE SEPARATE: the floor stops the collapse, the
+  predicate reports it if a viewport, a zoom or a future sibling defeats it.
+THE PHANTOM NEGATIVE CONTROL IS LOAD-BEARING: unguarded, the same fixture DOES
+  produce two phantom rows and the literal "undefined". Without it, vacuous.
 NOTHING EXONERATED WAS TOUCHED — computeScenarioForFilter, windowBounds and
   the worker's matching are asserted unchanged.
-__GATE_PENDING__
+TRAP 93 MISSED FIRST RUN: the floor check matched the explanatory COMMENT,
+  not the className. Re-aimed at the card class, comments stripped. 93/93.
 ```
 
 ---
@@ -128,7 +123,7 @@ an undrawable *region* — the data is fine and there is no room to show it.
 
 ## 4. The specs
 
-**`spec:compare-render` — 39 checks, new.**
+**`spec:compare-render` — 40 checks, new.**
 
 The **count transition** is driven, not assumed: `chartData` is built through the
 real merge at 1, 2, 3 and 4 files, and the three-file shape — the one that broke
@@ -170,15 +165,47 @@ plants there, and a trap in a file outside `TARGETS` cannot be restored after th
 run — the same gap found on `scenarioHelper.ts` and again on
 `ScenarioCompareTab.tsx`.
 
+## The trap that missed, and why it mattered
+
+**Guard-trap 93 MISSED on the first run.** It removed `min-h-[320px]` from the
+chart card's className, and the floor check stayed green.
+
+The check was a whole-file regex for `min-h-\[\d+px\]`. The **explanatory
+comment above the card** — the one describing the fix — contains that exact
+text, so the regex matched the prose after the trap had deleted the class. **A
+check that reads prose as code certifies the prose.**
+
+This is the second time this session pair has hit that shape: the events-panel
+spec tripped the same way on a comment naming the builder it asserts is not
+called. The difference is that this one failed in the direction that HIDES a
+defect rather than reports one, which is the direction that matters, and only
+the trap found it — the spec had been green from the moment it was written.
+
+Re-aimed at the **card element's own className**, with comments stripped first,
+and widened while there: the floor must be on the element that is the sole
+`flex-1`, must not co-exist with `min-h-0`, and must be **at least the
+drawability threshold** — a floor below it would report a fault about itself.
+39 checks became 40.
+
 ## Gate
 
 ```
-compare-render:          39 passed, 0 failed   (new)
+compare-render:          40 passed, 0 failed   (new)
 compare-events-panel:    71 passed, 0 failed   (was 53)
-guard-traps:             __/__ PENDING
-full suite:              __/__ PENDING
-lint (tsc --noEmit):     __PENDING__
-build:                   __PENDING__
+guard-traps:             93/93 caught, 0 missed, 0 inconclusive
+compare-window:          45 passed, 0 failed
+compare-filter:          24 passed, 0 failed
+events-summary:          38 passed, 0 failed
+fromrow-equivalence:     49 passed, 0 failed
+yield-roundtrip:         56 passed, 0 failed
+event-roundtrip:         72 passed, 0 failed
+scenario-pricing:        16 passed, 0 failed
+active-cohort:           23 passed, 0 failed
+import-seam:             36 passed, 0 failed
+pricing-roundtrip:      116 passed, 0 failed
+mix-card (mounted):      99/99 passed
+lint (tsc --noEmit):     clean
+build:                   clean (5.98s)
 ```
 
 ## Where things stand
