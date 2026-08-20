@@ -15,9 +15,8 @@ BASE: HEAD a7e3b5c vs the card-state report's b85ea0e — one, REPORT-ONLY.
   documented "FIFTH WRITER" — emitting ONE event from the cleared amount
   (hence 0), no churn fields. One flag doing two jobs: clear-flag AND gate.
 (A) IS A MISUSE OF A DOCUMENTED BOUNDARY: computeAdjustedForecast uses the view
-  dims for EVENT MATCHING ONLY — its own comment says so — and the base series
-  is the LOADED COHORT's. The recorded 8.2% divergence sits behind exactly
-  this. Hence ~293k at every slice.
+  dims for EVENT MATCHING ONLY — its own comment says so — so the base is the
+  LOADED COHORT's. The recorded 8.2% divergence sits here. Hence ~293k.
 (A) HAS A CLEAN FIX, NO NEW MACHINERY: ForecastContext exposes
   resolveForecast(key) — "THE seam" — so the panel resolves the DRAFT'S key
   and feeds that; its `reason` gives the absence when a slice has none.
@@ -25,8 +24,7 @@ ADJACENT EXPOSURE, REPORTED NOT FIXED: the PRICING card's stored weighting
   volumes read Base off the same cohort-scoped series (volumesFromSeries).
 (C) EDIT RESTORES EVERYTHING EXCEPT CHURN — and the comment three lines above
   the gap documents this exact lesson, learned once for percentage.
-(D) THE ENGINE READS ONLY subscriberVolume. customerVolume and revenue are
-  stored, displayed, and INERT on an outflow event.
+(D) THE ENGINE READS ONLY subscriberVolume — customerVolume/revenue are inert.
 (5) NO CUSTOMER SERIES EXISTS. wiCustomerCol is auto-mapped at upload and read
   by NOTHING; no forecast type carries customers. The ratio is not derivable.
 MOUNT NOW JUSTIFIED ON DATA — see Decisions.
