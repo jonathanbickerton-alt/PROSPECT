@@ -5,7 +5,7 @@
 ```
 Generated: 2026-08-20 20:23 +0100 (UTC 2026-08-20 19:23)
 Verified against: a7e3b5c
-Repo: __PENDING__
+Repo: committed 734786a, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before any check ran.
 READ-ONLY DIAGNOSIS — no source changed.
 BASE: HEAD a7e3b5c vs the card-state report's b85ea0e — one, REPORT-ONLY.
