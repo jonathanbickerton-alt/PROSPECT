@@ -5,7 +5,7 @@
 ```
 Generated: 2026-08-20 11:36 +0100 (UTC 2026-08-20 10:36)
 Verified against: a767a30
-Repo: __PENDING__
+Repo: committed 24cbc6e, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before any check ran.
 READ-ONLY on source — the only commits are the docs swap and this report.
 BASE: HEAD 71e2a21 vs the report's e351d64 — one commit, --stat REPORT-ONLY.
