@@ -20,8 +20,7 @@ R7-2 THE DENOMINATOR IS ALREADY REACHABLE AND MEMOISED: eventScopeSeriesFor
   runs the pipeline scoped to the draft's dims with this event EXCLUDED;
   previewScopeSeries caches on dims+month. ADJUSTED-SO-FAR, the harder half.
 R7-3 ZERO ENGINE CHANGE CONFIRMED: applyEventsToMonth does `outflow -= vol`
-  and Outflow volumes are STORED NEGATIVE, so a churn REDUCTION is simply a
-  POSITIVE stored volume. Both directions already work.
+  with Outflow STORED NEGATIVE, so a REDUCTION is a POSITIVE stored volume.
 R7-3 THE SIGN BITES IN ONE PLACE: marketEventFromRow(r,'workbook') forces
   Outflow to -Math.abs(v), which would FLIP a stated reduction. The 'session'
   route does not, so saves round-trip correctly. Named, not fixed.
