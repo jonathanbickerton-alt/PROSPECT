@@ -4,33 +4,30 @@
 
 ```
 Generated: 2026-08-20 14:25 +0100 (UTC 2026-08-20 13:25)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: b85ea0e (this report filled one commit later)
+Repo: committed b85ea0e, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before the base check.
 BASE: HEAD 0240104 vs the R7 report's da92622 — one commit, --stat REPORT-ONLY.
-ROOT CAUSE, ONE DEFECT NOT FOUR: the card had TWO SOURCES OF TRUTH for one
-  control — amountType lit Subs/%, a boolean lit Churn — and a churn draft
-  legitimately stores amountType 'absolute'. Hence both lit. The panel then
-  keyed on the boolean ALONE, so it survived a scenario change. Same root.
+ROOT CAUSE, ONE DEFECT NOT THREE: TWO SOURCES OF TRUTH for one control —
+  amountType lit Subs/%, a boolean lit Churn, and a churn draft stores
+  amountType 'absolute'. Both lit; and the panel keyed on the boolean alone.
 THE INVALID STATE IS NOW UNREPRESENTABLE, not guarded: effectiveAmountControl
   never REPORTS churn off Outflow, so no render between a scenario change and
   its cleanup effect can show a churn panel on an Inflow draft.
-ONE WRITER: every arm click and every scenario change goes through
-  nextAmountControlState — "what happens when you leave churn" is answered
-  once rather than at each place that can leave it.
+ONE WRITER: every arm click and scenario change goes through
+  nextAmountControlState — leaving churn is answered once, not per exit.
 RAMP NOW OPT-IN, default OFF; unchecked states a SINGLE month through the SAME
   fold as a one-month ramp — asserted with the literal (delta 2.45), because a
   special case would be a second arithmetic for one statement.
 THE BREAKDOWN READS THE FOLD'S OWN OUTPUT, never a re-derivation, so the
   figure and the inputs beneath it cannot disagree. Absent with the figure.
 91-CHECK TRANSITION SPEC, EXHAUSTIVE over every arm-from-arm and every
-  scenario-from-control, with a postcondition sweep and a NEGATIVE CONTROL
-  replicating the shipped two-flag model to prove the sweep can fail.
-THESE WERE THE SOURCE-READ GAP THE R7 REPORT DECLARED. Each half was
-  individually correct; only the transitions were wrong. The spec is pure and
-  exhaustive for that reason — a mount was not needed to catch them.
+  scenario-from-control, with a NEGATIVE CONTROL proving the sweep can fail.
+THESE WERE THE SOURCE-READ GAP THE R7 REPORT DECLARED — each half correct,
+  only the transitions wrong. Hence a pure, exhaustive spec, not a mount.
 STILL NOT MOUNTED: that the arm renders and the panel unmounts is source-read.
-__GATE_PENDING__
+GATE GREEN 99/99. The POSITIVE CONTROL fired first: two anchors in
+  spec:churn-fold grepped the arm handlers I replaced. Re-aimed, not relaxed.
 ```
 
 ---
@@ -156,8 +153,9 @@ never mounted, and these defects are precisely that gap.
 asserted to light two arms — because a sweep that could not fail on the reported
 defect would prove nothing about the fix.
 
-`spec:churn-fold` and the rest are unchanged and still green; the single-month
-literal (`delta 2.45 = 3/1200 × 980`) is hand-written like the others.
+`spec:churn-fold` gained two **re-aimed** anchors (see below) and is otherwise
+unchanged; every other spec is untouched and green. The single-month literal
+(`delta 2.45 = 3/1200 × 980`) is hand-written like the others.
 
 ## 6. The traps
 
@@ -171,14 +169,46 @@ it still prints a plausible line, which is exactly the danger.
 `src/utils/amountControl.ts` was added to guard-traps' `TARGETS`, or traps 99 and
 100 could not have been restored.
 
+## The control that caught the stale anchors
+
+**The positive control fired on the first guard-traps run** and refused to
+proceed: `spec:churn-fold` was red on the unmutated tree. Without it, 99 traps
+would have run against an already-failing spec and reported catches none of
+them had earned.
+
+Two of the R7 build's own checks grepped the **arm handlers' bodies** —
+`setIsChurnDraft(true)` followed by `setSpreadEnabled(false)`, and
+`setIsChurnDraft(false)` followed by `setNewEvent`. Both bodies are gone: the
+arms now call one writer.
+
+**The semantics did not move — they moved home.** Clearing the spread and
+clearing the churn draft are now decided inside `nextAmountControlState`, which
+`spec:amount-control` drives exhaustively against the real function rather than
+by reading a handler. So the two checks were re-aimed at what belongs in that
+file: the card still routes through the one writer, and **no handler sets the
+churn flag directly any more** — a direct setter is precisely what would let two
+arms light at once again.
+
 ## Gate
 
 ```
 amount-control:          91 passed, 0 failed   (new)
-guard-traps:             __/__ PENDING
-full suite:              __/__ PENDING
-lint (tsc --noEmit):     __PENDING__
-build:                   __PENDING__
+guard-traps:             99/99 caught, 0 missed, 0 inconclusive
+churn-fold:              53 passed, 0 failed  (2 anchors re-aimed)
+event-roundtrip:         86 passed, 0 failed
+events-summary:          43 passed, 0 failed
+compare-render:          40 passed, 0 failed
+compare-events-panel:    71 passed, 0 failed
+compare-window:          45 passed, 0 failed
+compare-filter:          24 passed, 0 failed
+yield-roundtrip:         56 passed, 0 failed
+scenario-pricing:        16 passed, 0 failed
+active-cohort:           23 passed, 0 failed
+import-seam:             36 passed, 0 failed
+pricing-roundtrip:      116 passed, 0 failed
+mix-card (mounted):      99/99 passed
+lint (tsc --noEmit):     clean
+build:                   clean (5.87s)
 ```
 
 ## Where things stand
