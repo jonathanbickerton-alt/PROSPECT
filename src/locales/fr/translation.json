@@ -811,5 +811,7 @@
   "whatif_churn_absent_prev_base_zero": "la base de cette cohorte atteint zéro : il n’y a pas de taux à réduire",
   "whatif_churn_absent_no_series": "aucune série de prévision n’est disponible pour cette cohorte",
   "whatif_churn_ramp": "Étaler la réduction sur plusieurs mois",
-  "whatif_churn_breakdown": "sorties {{month}} {{outflow}} ÷ base du mois précédent {{base}} × 12"
+  "whatif_churn_breakdown": "sorties {{month}} {{outflow}} ÷ base du mois précédent {{base}} × 12",
+  "whatif_churn_block_no_forecast": "Aucune prévision de référence ne couvre cette cohorte ({{reason}}) : il n'y a pas de taux d'attrition à réduire.",
+  "whatif_churn_reason_unknown": "aucune raison indiquée"
 }

@@ -144,6 +144,11 @@ async function main() {
     baseForecast, setBaseForecast: noop,
     adjustedForecast: null, setAdjustedForecast: noop,
     forecastStore: new Map(), setForecastStore: noop,
+    // REQUIRED PROP, and this harness never passed it — `ForecastProvider as
+    // any` hid that from tsc until R7's churn panel became the first consumer
+    // to call it. Supplied here as the REAL seam over this provider's store.
+    resolveForecast: (k: string) => fc.resolveFromStore(new Map(), new Map(), k),
+    canResolve: () => false,
     hasLegacyBaseline: !!baseForecast, updatedAt: new Date().toISOString(),
     bulkRuns: [], setBulkRuns: noop,
   }, child);
@@ -828,6 +833,284 @@ async function main() {
     await (act as any)(async () => { root6.unmount(); });
   }
 
+  // ═════════════════════════════════════════════════════════════════════════
+  // R7 — THE CHURN CARD, MOUNTED (commissioned 2026-08-20)
+  //
+  // Commissioned on data, not principle: three walk rounds produced NINE
+  // defects and the pure specs caught NONE. That is not a failure of
+  // spec:churn-fold or spec:amount-control — both are exhaustive over the
+  // arithmetic and the transitions, and neither can reach handler ROUTING or
+  // what a memo was FED. Those are properties of the mounted component.
+  //
+  // EXTENDED HERE rather than given its own file, per the recovery report's
+  // Finding D: the mount, the provider and the card-opening already exist in
+  // this harness, and two harnesses for one card drift.
+  //
+  // WHAT IS DRIVEN AND WHAT IS STUBBED, stated because the distinction is the
+  // whole value of a mount:
+  //   DRIVEN — the real WhatIfTab, the real churn panel, the real fold, the
+  //            real amountControl writer, the real Add handler, and a real
+  //            ForecastProvider whose store holds TWO slices with DIFFERENT
+  //            numbers so a scope change has something to change TO.
+  //   STUBBED — the draft dims are set through `setNewEvent`, which is exactly
+  //            how the real dropdowns set them; and `addMarketEvent` (App's
+  //            fifth writer) is a SPY, because the assertion that matters is
+  //            that a churn add never reaches it.
+  // ═════════════════════════════════════════════════════════════════════════
+  {
+    const mkSeries = (mult: number) => seriesArr.map((r: any) => ({
+      ...r, inflow: r.inflow * mult, outflow: r.outflow * mult, retention: r.retention * mult,
+    }));
+    const bfFor = (cohort: any, mult: number, seed: number) =>
+      fc.calculateBaseForecast(mkSeries(mult), cohort, seed, 12, 1.0, 1.5, 3, 'Holt Linear');
+
+    // TWO LEAVES, AND THE AGGREGATE DERIVES FROM THEM — the production shape.
+    //
+    // A stored FITTED forecast under an All-bearing key is IGNORED by
+    // resolveFromStore by design (the retired fit-on-aggregate rule), so
+    // stashing an aggregate would have resolved to null and this whole section
+    // would have tested an absence. Storing LEAVES and supplying a leafMap is
+    // both what App does and what makes the two slices genuinely different:
+    // the All draft derives from BOTH leaves, the product-scoped draft from ONE.
+    // FOUND WHILE WIRING THIS: `C.prod` is 'Product_Category', which does NOT
+    // exist in this fixture — the column is 'Product_L1'. The harness has
+    // therefore always fed WhatIfTab an EMPTY product tree; the promotion
+    // section never depended on it and never noticed. Reported, not repaired:
+    // changing C.prod would move the existing checks' inputs.
+    const PROD_COL = 'Product_L1';
+    const PRODS = [...treeOf(PROD_COL, C.prodL2).keys()]
+      .filter(k => k && k !== 'All' && k !== 'undefined');
+    const PRODB = PRODS[0] ?? 'All';
+    const PRODC = PRODS[1] ?? PRODB;
+    check('R7 mount: the fixture yields two distinct products',
+      PRODB !== PRODC && PRODB !== 'All', `${PRODB} / ${PRODC}`);
+
+    const leafCohort = (prod: string) => ({
+      segment: SEG, product: prod, productL2: 'Standard', channel: 'Direct',
+      channelL2: 'Direct Sales', tariffL1: 'T1', tariffL2: 'T2', scenario: 'Base Case',
+    });
+    const leafKey = (prod: string) =>
+      fc.makeForecastKey(SEG, prod, 'Standard', 'Direct', 'Direct Sales', 'T1', 'T2');
+
+    const storeR7 = new Map<string, any>([
+      // SEEDS LARGE ENOUGH THAT THE BASE CANNOT COLLAPSE across a three-month
+      // ramp. A base that rolls to zero is a legitimate absence the fold names
+      // ('prev-base-zero'), but a fixture that hits it would be testing the
+      // absence path while claiming to test the ramp.
+      [leafKey(PRODB), bfFor(leafCohort(PRODB), 1, 10_000_000)],
+      [leafKey(PRODC), bfFor(leafCohort(PRODC), 0.25, 2_500_000)],
+    ]);
+
+    // THE DRAFT'S KEYS. Unset dims default to 'All', so an unscoped draft asks
+    // for the aggregate and a product-scoped one asks for a narrower aggregate.
+    const keyA = fc.makeForecastKey(SEG, 'All', 'All', 'All', 'All', 'All', 'All');
+    const keyB = fc.makeForecastKey(SEG, PRODB, 'All', 'All', 'All', 'All', 'All');
+    const leafMapR7 = new Map<string, string[]>([
+      [keyA, [leafKey(PRODB), leafKey(PRODC)]],
+      [keyB, [leafKey(PRODB)]],
+    ]);
+    check('R7 mount: the two fixture slices are DISTINCT keys', keyA !== keyB, `${keyA} / ${keyB}`);
+
+    let draft: any = {};
+    let stored: any[] = [];
+    let fifthWriterCalls = 0;
+    let rerender: (() => void) | null = null;
+
+    const Harness = () => {
+      const [ev, setEv] = React.useState<any>({});
+      const [evs, setEvs] = React.useState<any[]>([]);
+      draft = ev; stored = evs;
+      rerender = () => { setEv((d: any) => ({ ...d })); };
+      (globalThis as any).__setDraft = setEv;
+      (globalThis as any).__setEvents = setEvs;
+      return React.createElement(M, {
+        ...whatIfProps(),
+        newEvent: ev,
+        setNewEvent: (e: any) => setEv(e),
+        marketEvents: evs,
+        setMarketEvents: (e: any) => setEvs(e),
+        // THE SPY. A churn add must never reach App's fifth writer — it emits
+        // ONE event from the amount field and knows none of the churn fields.
+        addMarketEvent: () => { fifthWriterCalls++; },
+      });
+    };
+
+    const hostR7 = document.createElement('div');
+    document.getElementById('root')!.appendChild(hostR7);
+    const rootR7 = createRoot(hostR7);
+    const providerR7 = (child: any) => React.createElement(ForecastProvider as any, {
+      baseForecast: fc.resolveFromStore(storeR7, leafMapR7, keyA).forecast, setBaseForecast: noop,
+      adjustedForecast: null, setAdjustedForecast: noop,
+      forecastStore: storeR7, setForecastStore: noop,
+      // THE REAL SEAM over the two-slice store, not a stub: resolveFromStore is
+      // what App passes, so the panel resolves exactly as it does in the app.
+      resolveForecast: (k: string) => fc.resolveFromStore(storeR7, leafMapR7, k),
+      canResolve: (k: string) => leafMapR7.has(k) || storeR7.has(k),
+      hasLegacyBaseline: true, updatedAt: new Date().toISOString(),
+      bulkRuns: [], setBulkRuns: noop,
+    }, child);
+    await (act as any)(async () => { rootR7.render(providerR7(React.createElement(Harness))); });
+
+    const q = (sel: string) => hostR7.querySelector(sel) as any;
+    const qa = (sel: string) => [...hostR7.querySelectorAll(sel)] as any[];
+    const setDraft = async (patch: any) => {
+      await (act as any)(async () => { (globalThis as any).__setDraft((d: any) => ({ ...d, ...patch })); });
+    };
+
+    // ── (d) THE ARM ONLY EXISTS ON OUTFLOW ────────────────────────────────
+    // THE SECOND forecast month: the first has no prior month inside the
+    // series, which the fold correctly reports as an absence rather than a rate.
+    const MONTHS_A = (fc.resolveFromStore(storeR7, leafMapR7, keyA).forecast?.months ?? []).map((m: any) => m.month);
+    const DRAFT_MONTH = MONTHS_A[1] ?? MONTHS_A[0];
+    check('R7 mount: the fixture yields a forecast month to draft against',
+      !!DRAFT_MONTH, `${MONTHS_A.length} months`);
+    await setDraft({ scenario: 'Inflow', date: DRAFT_MONTH, subscriberVolume: 0, segment: SEG });
+    check('R7 mount: the churn arm is absent on an Inflow draft',
+      !q('[data-testid="volume-mode-churn"]'));
+
+    await setDraft({ scenario: 'Outflow' });
+    const churnArm = q('[data-testid="volume-mode-churn"]');
+    check('R7 mount: the churn arm appears on an Outflow draft', !!churnArm);
+    if (!churnArm) { report(); return; }
+
+    await (act as any)(async () => { churnArm.click(); });
+    check('R7 mount (d): selecting churn renders the panel', !!q('[data-testid="churn-panel"]'));
+
+    // ── (c) THE COMPANIONS ARE ABSENT IN CHURN MODE ───────────────────────
+    const companionCount = () => hostR7.textContent?.includes('Contract Length') ? 1 : 0;
+    check('R7 mount (c): Contract Length is absent from the DOM in churn mode',
+      companionCount() === 0, 'the engine reads none of the companions on this path');
+    check('R7 mount (c): the volume spread control is absent too',
+      !hostR7.textContent?.includes('Spread over'),
+      'churn replaces the spread rather than configuring it');
+
+    // ── (a) THE BREAKDOWN FOLLOWS THE DRAFT'S DIMS ────────────────────────
+    const breakdown = () => (q('[data-testid="churn-breakdown"]')?.textContent || '').trim();
+    const atAll = breakdown();
+    check('R7 mount (a): a breakdown renders for the All slice', atAll.length > 0, atAll);
+
+    await setDraft({ product: PRODB });
+    const atProd = breakdown();
+    check('R7 mount (a): changing the PRODUCT dim CHANGES the breakdown',
+      atProd.length > 0 && atProd !== atAll,
+      `All: "${atAll}"  ${PRODB}: "${atProd}" — identical text is the reported defect`);
+
+    // ── (b) ADD REACHES THE RAMP EMITTER ──────────────────────────────────
+    await setDraft({ product: 'All' });
+    const targetInput = q('[data-testid="churn-target"]');
+    check('R7 mount: the target input is present', !!targetInput);
+    if (targetInput) {
+      await (act as any)(async () => {
+        const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!;
+        setter.call(targetInput, '2');
+        targetInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+      });
+    }
+
+    const addBtn = [...hostR7.querySelectorAll('button')].find(
+      (b: any) => /add event/i.test(b.textContent || '')) as any;
+    check('R7 mount: the Add button is reachable', !!addBtn);
+    if (!addBtn) { report(); return; }
+
+    await (act as any)(async () => { addBtn.click(); });
+
+    check('R7 mount (b): the ramp OFF stores exactly ONE event',
+      stored.length === 1, `${stored.length} stored`);
+    check('R7 mount (b): App\'s FIFTH WRITER is never reached by a churn add',
+      fifthWriterCalls === 0,
+      `${fifthWriterCalls} calls — it emits one zero-volume event and drops the churn fields`);
+
+    const row = stored[0] ?? {};
+    check('R7 mount (b): the stored volume is NON-ZERO',
+      Number(row.subscriberVolume) !== 0, `${row.subscriberVolume}`);
+    check('R7 mount (b): and POSITIVE, because a reduction removes outflow',
+      Number(row.subscriberVolume) > 0,
+      `${row.subscriberVolume} — negative would be an INCREASE in churn`);
+    check('R7 mount (b): all four churn fields reached the row',
+      row.churnMode === 'churn' && row.churnTargetPct !== undefined
+        && row.churnCurrentPct !== undefined && row.churnPrevBase !== undefined,
+      JSON.stringify([row.churnMode, row.churnTargetPct, row.churnCurrentPct, row.churnPrevBase]));
+    check('R7 mount (b): the row is an ordinary absolute Outflow event',
+      row.scenario === 'Outflow' && row.amountType === 'absolute',
+      'churn is a way of SAYING; the engine must not learn it exists');
+
+    // ── (b) THE RAMP ON STORES N ──────────────────────────────────────────
+    // ADD RESETS THE DRAFT — control back to Subs, churn state cleared — so the
+    // panel is gone by now and the ramp must be reached through a FRESH churn
+    // selection. That reset is itself worth asserting: a form that kept its
+    // last statement would re-add it on the next click.
+    check('R7 mount: Add resets the control, so the panel closes',
+      !q('[data-testid="churn-panel"]'),
+      'a churn statement must not survive its own Add');
+    // Add resets the DIMS as well as the control, so the slice must be restated
+    // before the ramp run — otherwise the draft asks for All|All, which this
+    // fixture's leafMap does not enumerate. The block reason said exactly that,
+    // which is the absence machinery working.
+    // A CLEAN STORE FOR THE RAMP RUN. The first Add's event is a real churn
+    // reduction and the next draft's series correctly INCLUDES it — which is
+    // the feature working, and which makes two Adds interfere. Each assertion
+    // starts from a known state instead.
+    await (act as any)(async () => { (globalThis as any).__setEvents([]); });
+    await setDraft({ scenario: 'Outflow', date: DRAFT_MONTH, segment: SEG });
+    const churnArm2 = q('[data-testid="volume-mode-churn"]');
+    if (churnArm2) await (act as any)(async () => { churnArm2.click(); });
+
+    const rampBox = q('[data-testid="churn-ramp-toggle"]');
+    check('R7 mount: the ramp radio is present and OFF by default',
+      !!rampBox && rampBox.checked === false);
+    if (rampBox) {
+      await (act as any)(async () => { rampBox.click(); });
+      // THE TOGGLE MUST ACTUALLY TOGGLE. Asserted rather than assumed: a
+      // checkbox nested in a <label> can receive the click twice and land back
+      // where it started, which would make every ramp assertion below test the
+      // single-month path while appearing to test the ramp.
+      check('R7 mount: clicking the ramp radio turns it ON',
+        q('[data-testid="churn-ramp-toggle"]')?.checked === true,
+        `checked=${q('[data-testid="churn-ramp-toggle"]')?.checked}`);
+      const monthsInput = q('[data-testid="churn-months"]');
+      if (monthsInput) {
+        await (act as any)(async () => {
+          const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!;
+          setter.call(monthsInput, '3');
+          monthsInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+        });
+      }
+      // THE GRID IS THE RAMP'S STATE MADE VISIBLE: one editable cumulative
+      // figure per ramp month. If this is 1 the ramp is not really on, whatever
+      // the checkbox says.
+      check('R7 mount: the ramp grid shows one row per month',
+        qa('[data-testid^="churn-stated-"]').length === 3,
+        `${qa('[data-testid^="churn-stated-"]').length} rows, stated=` +
+        qa('[data-testid^="churn-stated-"]').map((e: any) => e.value).join(','));
+      const before = stored.length;
+      const addBtn2 = [...hostR7.querySelectorAll('button')].find(
+        (b: any) => /add event/i.test(b.textContent || '')) as any;
+      if (addBtn2) await (act as any)(async () => { addBtn2.click(); });
+      check('R7 mount (b): the ramp ON stores THREE events, not one',
+        stored.length - before === 3,
+        `${stored.length - before} added; derived column read ` +
+        JSON.stringify(qa('[data-testid^="churn-derived-"]').map((e: any) => e.textContent.trim())));
+      const added = stored.slice(before);
+      check('R7 mount (b): the ramp rows share ONE campaign name',
+        new Set(added.map((e: any) => e.campaignName)).size === 1);
+      check('R7 mount (b): and carry THREE DISTINCT months',
+        new Set(added.map((e: any) => e.date)).size === 3,
+        added.map((e: any) => e.date).join(','));
+      check('R7 mount (b): every ramp row stores a non-zero positive delta',
+        added.every((e: any) => Number(e.subscriberVolume) > 0),
+        added.map((e: any) => e.subscriberVolume).join(','));
+    }
+
+    // ── (d) LEAVING OUTFLOW UNMOUNTS THE PANEL ────────────────────────────
+    await setDraft({ scenario: 'Inflow' });
+    check('R7 mount (d): flipping to Inflow removes the churn panel',
+      !q('[data-testid="churn-panel"]'));
+    check('R7 mount (d): and the companions come back',
+      hostR7.textContent?.includes('Contract Length') === true,
+      'the hide is keyed on the derived control, so it must reverse');
+
+    void rerender;
+  }
   report();
 }
 

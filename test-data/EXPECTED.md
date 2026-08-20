@@ -6739,6 +6739,46 @@ From the 2026-08-17 walk on the edge fixture and its diagnosis
    where it is harder to find. The diagnosis counted FIVE blocking terms across
    two layers, none of which said anything.
 
+#### R7 WIRING: FIVE DECISIONS (Jon, 2026-08-20)
+
+**1. Two sessions: A+B, then C+companions.** The scope feed and the add
+routing are what make the capability do anything at all; edit-restore and the
+companion design follow.
+
+**2. THE MOUNTED CHURN-CARD HARNESS IS COMMISSIONED**, on the data rather than
+on principle: nine walk-found defects across three rounds, **zero** caught by
+the pure specs. That is not a failure of those specs — `spec:churn-fold` and
+`spec:amount-control` are exhaustive over the arithmetic and the transitions,
+and neither can reach handler ROUTING or what a memo was FED. Those are
+properties of the mounted component. `spec:mix-card` is the precedent.
+
+**3. On a churn row ALL FOUR companion fields HIDE** — Customer Volume,
+Revenue, ARPU, Contract Length — along with the volume spread radio.
+
+The engine reads none of them on this path (measured: `applyEventsToMonth`
+reads `subscriberVolume` alone for an Outflow event). And **Revenue would
+double-count**: the revenue effect of subscribers who did not leave is already
+carried by the base × ARPU recursion, so a Revenue field here would state the
+same money twice.
+
+**An editable field the engine ignores is the silent-handling defect as an
+INPUT.** The design principle has been applied three times to outputs that
+could not speak; this is the same rule pointed at a control that accepts a
+number and does nothing with it.
+
+**The hide keys on the ONE derived control value**, never on a second flag.
+The two-sources-of-truth root cause is one session old and must not be
+reintroduced by the fix for its own symptom.
+
+**4. The customer series is NOT commissioned.** `wiCustomerCol` is auto-mapped
+at upload and read by nothing — it joins the mapped-but-read-by-nothing class
+beside `Avg_Unit_Price_GBP`, on **DQ's** list. The derived Customer Volume
+field returns only if that pipeline is ever built.
+
+**5. The pricing-card weighting-volume exposure is MEASURED, not fixed.** One
+read of a real stored row against its slice, reported; the fix decision waits
+on the finding rather than being taken in advance of it.
+
 #### R7 CARD STATE: FOUR DECISIONS FROM THE WALK (Jon, 2026-08-20)
 
 **1. The amount control is ONE EXCLUSIVE TRI-STATE.** Exactly one of Subs / %

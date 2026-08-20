@@ -820,5 +820,7 @@
   "whatif_churn_absent_prev_base_zero": "the base for this cohort reaches zero, so there is no rate to reduce",
   "whatif_churn_absent_no_series": "no forecast series is available for this cohort",
   "whatif_churn_ramp": "Ramp the reduction over multiple months",
-  "whatif_churn_breakdown": "{{month}} outflow {{outflow}} ÷ prior-month base {{base}} × 12"
+  "whatif_churn_breakdown": "{{month}} outflow {{outflow}} ÷ prior-month base {{base}} × 12",
+  "whatif_churn_block_no_forecast": "No baseline forecast covers this cohort ({{reason}}), so there is no churn rate to reduce.",
+  "whatif_churn_reason_unknown": "no reason given"
 }

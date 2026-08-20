@@ -1161,6 +1161,38 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       'outflow: Math.round(churnFold[0].targetOutflow + churnFold[0].delta).toLocaleString(),',
       'outflow: Math.round(Number(churnScopeSeries?.[0]?.[String.fromCharCode(79) + "utflow (Adjusted)"]) || 0).toLocaleString(),') },
+  // 102 puts the churn branch back BELOW the spread gate — the exact shape the
+  // 2026-08-20 wiring diagnosis found. Churn force-clears spreadEnabled, so the
+  // gate always fires and every churn Add falls through to App's fifth writer:
+  // ONE event, built from the amount field churn had just zeroed, carrying none
+  // of the four churn fields.
+  //
+  // Only a MOUNT can see this. The pure specs cover the fold's arithmetic and
+  // the control's transitions exhaustively, and neither can reach routing.
+  { id: '102 the churn add falls behind the spread gate', why: 'every churn Add emits one zero-volume event with no churn fields',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      '    if (isChurnDraft) {',
+      '    if (false && isChurnDraft) {') },
+  // 103 feeds the LOADED COHORT's forecast back into the churn series, undoing
+  // the scope fix. The panel then reads the same base whatever the draft's dims
+  // say — the walk's ~293k at every slice — and the breakdown stops moving when
+  // the product changes.
+  { id: '103 the churn panel reads the loaded cohort again', why: 'the breakdown shows the same base at every slice',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      '    const scoped = churnScopeResolution?.forecast ?? null;',
+      '    const scoped = baseForecast;') },
+  // 104 stops the companion hide keying on the derived control, so the fields
+  // render in churn mode again. They are inert there — applyEventsToMonth reads
+  // subscriberVolume alone on this path — and Revenue would double-count the
+  // money the base x ARPU recursion already carries. An editable field the
+  // engine ignores is the silent-handling defect as an INPUT.
+  { id: '104 the churn companions stop hiding', why: 'inert, double-counting fields become editable on a churn row',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      '            {!isChurnDraft && (' + nl + '            <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))]',
+      '            {true && (' + nl + '            <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))]') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

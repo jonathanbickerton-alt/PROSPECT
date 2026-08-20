@@ -811,5 +811,7 @@
   "whatif_churn_absent_prev_base_zero": "a base desta coorte chega a zero, pelo que não há taxa a reduzir",
   "whatif_churn_absent_no_series": "não há série de previsão disponível para esta coorte",
   "whatif_churn_ramp": "Escalonar a redução ao longo de vários meses",
-  "whatif_churn_breakdown": "saídas de {{month}} {{outflow}} ÷ base do mês anterior {{base}} × 12"
+  "whatif_churn_breakdown": "saídas de {{month}} {{outflow}} ÷ base do mês anterior {{base}} × 12",
+  "whatif_churn_block_no_forecast": "Nenhuma previsão de base cobre esta coorte ({{reason}}), pelo que não há taxa de rotatividade a reduzir.",
+  "whatif_churn_reason_unknown": "sem motivo indicado"
 }

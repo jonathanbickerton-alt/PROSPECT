@@ -811,5 +811,7 @@
   "whatif_churn_absent_prev_base_zero": "la base de esta cohorte llega a cero, así que no hay tasa que reducir",
   "whatif_churn_absent_no_series": "no hay serie de previsión disponible para esta cohorte",
   "whatif_churn_ramp": "Escalonar la reducción durante varios meses",
-  "whatif_churn_breakdown": "salidas de {{month}} {{outflow}} ÷ base del mes anterior {{base}} × 12"
+  "whatif_churn_breakdown": "salidas de {{month}} {{outflow}} ÷ base del mes anterior {{base}} × 12",
+  "whatif_churn_block_no_forecast": "Ninguna previsión de referencia cubre esta cohorte ({{reason}}), así que no hay tasa de rotación que reducir.",
+  "whatif_churn_reason_unknown": "sin motivo indicado"
 }

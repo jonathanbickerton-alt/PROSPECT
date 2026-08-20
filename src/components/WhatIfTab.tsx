@@ -14,7 +14,7 @@ import type { MarketEvent } from '../utils/forecasting';
 import { rebalance, achievableTargetRange, solveForTarget, blendedArpu, conformsToTotal } from '../utils/mixConstraint';
 import { EventsSummaryTable } from './EventsSummaryTable';
 import { foldChurnRamp, linearChurnRamp, type ChurnFoldMonth } from '../utils/churnFold';
-import { canShowBaseForecast } from '../utils/forecasting';
+import { canShowBaseForecast, makeForecastKey } from '../utils/forecasting';
 import { nextAmountControlState, effectiveAmountControl, churnAvailableFor,
          type AmountControl } from '../utils/amountControl';
 import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor } from '../utils/forecasting';
@@ -1347,7 +1347,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   setActiveView,
 }) => {
   const { t } = useTranslation();
-  const { baseForecast, setAdjustedForecast, forecastStore, hasBaseline } = useForecast();
+  const { baseForecast, setAdjustedForecast, forecastStore, hasBaseline, resolveForecast } = useForecast();
 
   // KPI selection is PER TAB. One shared set produced two wrong behaviours in
   // turn: re-defaulting on every tab change silently discarded a hand-picked
@@ -2233,10 +2233,45 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
    * This campaign is excluded by construction: the draft has no id yet, so
    * nothing of it is in `marketEvents` to exclude.
    */
+  /**
+   * THE DRAFT'S OWN FORECAST — the fix for the panel reading the wrong slice.
+   *
+   * The panel used to feed `baseForecast`, the LOADED COHORT's forecast, and
+   * pass the draft's dims as view filters. That looked right and was not:
+   * computeAdjustedForecast uses the view dims for EVENT MATCHING only — its
+   * own comment says so — so the base series stayed the loaded cohort's
+   * whatever the form said. Hence ~293k at every slice, and a breakdown that
+   * did not move when the dims did.
+   *
+   * `resolveForecast` is THE seam for this question, and its own contract says
+   * why: a bare store lookup answers "is it stored", which stopped being the
+   * question once aggregates became derivable. It returns a stored fit, or one
+   * derived from the leaves in scope, or null WITH A REASON.
+   */
+  const churnScopeResolution = useMemo(() => {
+    if (!isChurnDraft) return null;
+    const key = makeForecastKey(
+      newEvent.segment ?? 'All',
+      newEvent.product ?? 'All',
+      newEvent.productL2 ?? 'All',
+      newEvent.channel ?? 'All',
+      newEvent.channelL2 ?? 'All',
+      newEvent.tariffL1 ?? 'All',
+      newEvent.tariffL2 ?? 'All',
+    );
+    return resolveForecast(key);
+  }, [isChurnDraft, newEvent.segment, newEvent.product, newEvent.productL2,
+      newEvent.channel, newEvent.channelL2, newEvent.tariffL1, newEvent.tariffL2,
+      resolveForecast]);
+
   const churnScopeSeries = useMemo(() => {
     if (!isChurnDraft || !newEvent.date) return null;
+    // A slice with no resolvable forecast yields no series, and the fold's
+    // absence machinery names it — the seam's own `reason` is carried below.
+    const scoped = churnScopeResolution?.forecast ?? null;
+    if (!scoped) return null;
     return computeAdjustedForecast({
-      baseForecast, marketEvents, yieldEvents, pricingEvents,
+      baseForecast: scoped, marketEvents, yieldEvents, pricingEvents,
       viewSegment: newEvent.segment ?? 'All',
       viewProduct: { l1: dimOrNull(newEvent.product), l2: dimOrNull(newEvent.productL2) },
       viewChannel: { l1: dimOrNull(newEvent.channel), l2: dimOrNull(newEvent.channelL2) },
@@ -2246,9 +2281,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
     }).chartData;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isChurnDraft, newEvent.date, newEvent.segment, newEvent.product, newEvent.productL2,
-      newEvent.channel, newEvent.channelL2, newEvent.tariffL1, newEvent.tariffL2,
-      baseForecast, marketEvents, yieldEvents, pricingEvents, data]);
+  }, [isChurnDraft, newEvent.date, churnScopeResolution,
+      marketEvents, yieldEvents, pricingEvents, data]);
 
   /** The fold's output for the current draft — the per-month figures the grid
    *  shows and the Add handler stores. Cheap: arithmetic over a cached series. */
@@ -2270,9 +2304,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       // same statement, and the two would drift.
       series, startIndex: idx,
       statedReductions: churnRampOn ? churnStated.slice(0, churnMonths) : [churnTargetPct],
-      prevBaseAtStart, seedBaseKnown: canShowBaseForecast(baseForecast),
+      // THE SCOPED forecast's seed, not the loaded cohort's: a slice can be
+      // seed-unknown while the aggregate is not, and the absence must belong
+      // to the slice the user is stating a rate for.
+      prevBaseAtStart, seedBaseKnown: canShowBaseForecast(churnScopeResolution?.forecast),
     });
-  }, [churnScopeSeries, newEvent.date, churnStated, churnMonths, churnRampOn, churnTargetPct, baseForecast]);
+  }, [churnScopeSeries, newEvent.date, churnStated, churnMonths, churnRampOn, churnTargetPct, churnScopeResolution]);
 
   /**
    * THE ONE REASON THE CHURN DRAFT CANNOT BE ADDED, or null — the
@@ -2282,12 +2319,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const churnBlockReason = useMemo((): string | null => {
     if (!isChurnDraft) return null;
     if (!newEvent.date) return t('whatif_churn_block_no_month');
+    // THE SEAM'S OWN REASON, carried rather than replaced. resolveForecast
+    // returns null WITH a reason; discarding it and substituting a generic
+    // sentence would be the two-meanings-of-null defect at a third site.
+    if (churnScopeResolution && !churnScopeResolution.forecast) {
+      return t('whatif_churn_block_no_forecast', {
+        reason: churnScopeResolution.reason ?? t('whatif_churn_reason_unknown'),
+      });
+    }
     if (!churnFold.length) return t('whatif_churn_block_no_series');
     const absent = churnFold.find(m => m.absence);
     if (absent) return t(`whatif_churn_absent_${absent.absence!.replace(/-/g, '_')}`);
     if (!churnFold.some(m => m.statedReductionPct !== 0)) return t('whatif_churn_block_no_target');
     return null;
-  }, [isChurnDraft, newEvent.date, churnFold, t]);
+  }, [isChurnDraft, newEvent.date, churnFold, churnScopeResolution, t]);
 
   /** The ONE reason the pricing draft cannot be added, or null. Read by the
    *  button, by the message beside it, and by the handler's guard. */
@@ -2407,11 +2452,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const handleAddMarketEvent = useCallback(() => {
     if (!newEvent.date || newEvent.subscriberVolume === undefined) return;
 
-    if (!spreadEnabled || newEvent.scenario === 'ARPU') {
-      addMarketEvent();
-      return;
-    }
-
+    // ══ THE CHURN BRANCH RUNS FIRST, AND THE ORDER IS THE FIX ═══════════════
+    //
+    // It used to sit BELOW the spread gate, which made it dead code: churn
+    // force-clears `spreadEnabled` — correctly, since churn replaces the spread
+    // with its own ramp radio — and `spreadEnabled` is ALSO the routing gate to
+    // the N-events emitter. One flag doing two jobs. Every churn Add therefore
+    // fell through to App's addMarketEvent, the FIFTH WRITER, which emitted one
+    // event from the amount field churn had just zeroed and knew nothing of the
+    // four churn fields.
+    //
+    // Placing it above both returns is not defensive ordering — it is the
+    // statement that a churn draft is not a spread question at all. A spec pins
+    // the ordering, because a routing fact that lives only in line numbers is
+    // one refactor from being dead again.
     // ══ R7 — THE CHURN RAMP ═════════════════════════════════════════════════
     //
     // Emitted per the ramp precedent: N events sharing a campaignName, each
@@ -2467,6 +2521,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         subscriberVolume: 0, customerVolume: 0, revenue: 0, arpu: 0,
         name: '', campaignName: '', comment: '', contractLength: 24,
       });
+      return;
+    }
+
+
+    if (!spreadEnabled || newEvent.scenario === 'ARPU') {
+      addMarketEvent();
       return;
     }
 
@@ -2528,7 +2588,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setSpreadMonths(3);
     setSpreadDistType('even');
     setCustomDist([34, 33, 33]);
-  }, [newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, addMarketEvent, setMarketEvents, marketEvents, setNewEvent, cohortAvgArpu]);
+    // THE READ-SET IS THE DEPENDENCY SET. The churn branch READS churnFold,
+    // isChurnDraft and churnBlockReason, and omitting them left the handler
+    // holding a STALE fold: turning the ramp on and clicking Add emitted the
+    // events of the fold as it stood BEFORE the toggle — one month, not three.
+    // Found by the mounted harness on its first full run; no source reading had
+    // caught it, because every individual line was right.
+  }, [newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, addMarketEvent,
+      setMarketEvents, marketEvents, setNewEvent, cohortAvgArpu,
+      isChurnDraft, churnFold, churnBlockReason, clearChurnDraft, t]);
 
   /** Is the draft a percentage event? Read in several places in the form,
    *  so derived once rather than re-tested. */
@@ -4032,6 +4100,24 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 on a toggle — the reflow the band structure exists to avoid.
                 mt-2 pt-2 border-t border-slate-100 is this file own nesting
                 divider, used for the percentage basis block and Cohort type. */}
+            {/* ── THE COMPANIONS HIDE ON A CHURN ROW (Jon, 2026-08-20) ───────
+                Customer Volume, Revenue, ARPU and Contract Length: the engine
+                reads NONE of them on this path — applyEventsToMonth takes
+                subscriberVolume alone for an Outflow event.
+
+                Revenue would do worse than nothing: the money from subscribers
+                who did not leave is ALREADY carried by the base x ARPU
+                recursion, so a Revenue field here would state it twice.
+
+                An editable field the engine ignores is the silent-handling
+                defect as an INPUT — the same rule this codebase has applied
+                three times to outputs that could not speak, pointed at a
+                control that accepts a number and does nothing with it.
+
+                KEYED ON THE ONE DERIVED CONTROL, never a second flag. The
+                two-sources-of-truth root cause is one session old and must not
+                come back through the fix for its own symptom. */}
+            {!isChurnDraft && (
             <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4 items-start mt-2 pt-2 border-t border-slate-100">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_customer_volume')}</label>
@@ -4177,13 +4263,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 <p className="text-[10px] text-slate-400 mt-1 leading-snug">{t('whatif_months_protected_from_churn_default_24')}</p>
               </div>
             </div>
+            )}
 
             {/* Volume spread section — non-ARPU scenarios only, and not for
                 percentage events: spreading a percentage is ambiguous (is 10%
                 over three months a total of 10%, or 10% in each month?) and no
                 answer to that was settled. Hidden rather than guarded, so the
                 question is not raised in the UI at all. */}
-            {newEvent.scenario !== 'ARPU' && !isPercentageDraft && (
+            {/* Churn replaces the spread with its own ramp radio, so the
+                spread control is hidden as well as force-cleared. Hiding it
+                without clearing it, or clearing without hiding, each leave one
+                half of the question visible. */}
+            {newEvent.scenario !== 'ARPU' && !isPercentageDraft && !isChurnDraft && (
               <div className="mt-4">
                 {/* Toggle */}
                 <button
