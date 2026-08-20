@@ -6739,6 +6739,45 @@ From the 2026-08-17 walk on the edge fixture and its diagnosis
    where it is harder to find. The diagnosis counted FIVE blocking terms across
    two layers, none of which said anything.
 
+#### R7 EDIT: THREE DECISIONS (Jon, 2026-08-20)
+
+**1. EDIT RE-STATES — the save-time-record semantic, applied to reopening.**
+Reopening a churn event seeds the panel from the STORED statement, and Save
+Changes **re-runs the churn emitter against the CURRENT series**: all four
+fields and the delta re-snapshot TOGETHER.
+
+A stale delta beside a freshly stated target would be the mixed-axes defect at
+this card — a row whose figures came from two different moments, which is
+exactly what the R5 edit-re-snapshot precedent exists to prevent. Either every
+figure on the row belongs to the save, or none of them do.
+
+**The churn save path applies NO `neg`.** The inversion route the diagnosis
+found — edit displays `abs(subscriberVolume)`, the ordinary save re-applies
+`neg`, so a reopened REDUCTION returns as an INCREASE — is closed
+STRUCTURALLY, by the churn draft never reaching that path, rather than by a
+guard bolted onto it.
+
+**2. RAMP MEMBERS DO NOT ROW-EDIT.** An individual row of a multi-row churn
+campaign declines edit with a named reason. Its cumulative target is
+meaningless alone — month 2 of a 1/3/6 ramp states SIX points against a base
+the first two months already moved — so desyncing one member corrupts the
+ramp. The whole campaign is recreated instead.
+
+**SINGLE churn events edit fully**, and the `:512` group-edit bar continues to
+stand for campaign-level edit. Two bars, two questions: `:512` refuses to
+reverse-engineer a ramp from summed volumes; this one refuses to let one
+member drift from its siblings.
+
+**3. The mount's product-column defect is FIXED THIS SESSION, GUARDED.** The
+harness's `C.prod` is `'Product_Category'`, a column absent from its own
+fixture, so every mounted check since the harness existed has run against an
+EMPTY product tree.
+
+**The guard**: if correcting it re-baselines more than a handful of stated
+expectations, the column fix REVERTS and the session reports instead. A
+harness whose inputs change under a hundred existing assertions is not a
+housekeeping item — and discovering that is an outcome, not a failure.
+
 #### R7 WIRING: FIVE DECISIONS (Jon, 2026-08-20)
 
 **1. Two sessions: A+B, then C+companions.** The scope feed and the add

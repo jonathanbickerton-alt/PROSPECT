@@ -77,7 +77,11 @@ async function main() {
   const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
 
   const C = {
-    date: 'Month', seg: 'Customer_Segment', prod: 'Product_Category',
+    // CORRECTED 2026-08-20. `prod` was 'Product_Category', a column this
+    // fixture does NOT contain — so every mounted check since this harness was
+    // written ran against an EMPTY product tree. Found while wiring the churn
+    // section, which was the first check to depend on the tree being populated.
+    date: 'Month', seg: 'Customer_Segment', prod: 'Product_L1',
     prodL2: 'Product_L2_Value_Tier', chan: 'Channel_Level_1', chanL2: 'Channel_Level_2',
     metric: 'IBRO_Scenario_Type', val: 'Subscriber_Volume', rev: 'Monthly_Revenue_GBP',
   };
@@ -165,6 +169,17 @@ async function main() {
   const norm = (s: string) => (s || '').replace(/»/g, '').trim();
   const btnByText = (txt: string) =>
     [...container.querySelectorAll('button')].find(b => norm(b.textContent || '') === txt) as any;
+
+  // THE PRODUCT TREE IS NON-EMPTY, and this check is the reason the column
+  // defect could live: NOTHING asserted the harness's own inputs were real.
+  // Correcting C.prod re-baselined ZERO expectations — every existing check
+  // passed against an empty tree and still passes against a populated one,
+  // which says plainly that none of them exercised it.
+  {
+    const tree = whatIfProps().productTree as Map<string, string[]>;
+    check('harness: the product tree fed to the card is POPULATED',
+      tree.size > 0, `${tree.size} products — an empty tree means C.prod names a column the fixture lacks`);
+  }
 
   const promoBtn = btnByText('Promotion');
   check('mount: the Promotion card is reachable', !!promoBtn);
@@ -877,7 +892,7 @@ async function main() {
     // therefore always fed WhatIfTab an EMPTY product tree; the promotion
     // section never depended on it and never noticed. Reported, not repaired:
     // changing C.prod would move the existing checks' inputs.
-    const PROD_COL = 'Product_L1';
+    const PROD_COL = C.prod;   // corrected at the source above
     const PRODS = [...treeOf(PROD_COL, C.prodL2).keys()]
       .filter(k => k && k !== 'All' && k !== 'undefined');
     const PRODB = PRODS[0] ?? 'All';
