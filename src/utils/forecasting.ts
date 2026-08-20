@@ -29,6 +29,11 @@ export interface MarketEvent {
    * each other, so the maths is order-independent by construction.
    */
   sequence: number;
+  /** R7 — churn mode. Presence-as-carrier; see StoredEventModifiers. */
+  churnMode?: 'churn';
+  churnTargetPct?: number;
+  churnCurrentPct?: number;
+  churnPrevBase?: number;
   subscriberVolume: number;
   /**
    * How subscriberVolume is to be read. 'absolute' (the default, and the only
@@ -217,6 +222,26 @@ export interface StoredEventModifiers {
   promoPricingAmount?: number;
   arpuOverride?: number;
   promoBandArpuOverride?: Record<string, number>;
+  /**
+   * R7 — CHURN MODE. Presence is the carrier: absent means an ordinary volume
+   * event, and there is no 'plain' value to confuse with an unset one.
+   *
+   * The mode is a WAY OF SAYING, not an engine behaviour (Jon, 2026-08-20).
+   * `subscriberVolume` still holds an ordinary signed outflow delta and
+   * `applyEventsToMonth` is untouched; these three figures record WHAT THE USER
+   * STATED and what it was computed against, so the row can explain itself
+   * without re-deriving anything.
+   */
+  churnMode?: 'churn';
+  /** This row's stated CUMULATIVE reduction in POINTS of annualised churn.
+   *  0 is a real statement — 'no reduction this month' — not an unset field. */
+  churnTargetPct?: number;
+  /** The annualised churn rate for this slice AT SAVE. Stored, never
+   *  recomputed: the row is its save-time record. */
+  churnCurrentPct?: number;
+  /** The previous-month base the delta was computed against, so the stored
+   *  quantity is reconstructible and auditable. */
+  churnPrevBase?: number;
 }
 
 /**
@@ -315,6 +340,12 @@ export function marketEventExportRow(e: MarketEvent): Record<string, unknown> {
     // same rule Promo_Mix_JSON and the yield override already follow.
     Promo_Band_ARPU_Override_JSON: e.promoBandArpuOverride
       ? JSON.stringify(e.promoBandArpuOverride) : '',
+    // R7 — churn. '' is the absence carrier throughout, and it must not become
+    // 0: a stated reduction of zero points is a real statement about a month.
+    Churn_Mode:        e.churnMode ?? '',
+    Churn_Target_Pct:  e.churnTargetPct  ?? '',
+    Churn_Current_Pct: e.churnCurrentPct ?? '',
+    Churn_Prev_Base:   e.churnPrevBase   ?? '',
   };
 }
 
@@ -998,6 +1029,14 @@ export function readStoredEventModifiers(row: Record<string, unknown>): StoredEv
     // uses — extended, never forked. BOTH market-event import routes spread
     // this function's result, so the field reaches both or neither.
     promoBandArpuOverride: readStoredRateMap(row.Promo_Band_ARPU_Override_JSON),
+    // R7's churn fields ride HERE for the same reason R3's band map does: both
+    // market import routes spread this one function, so a field added here
+    // reaches both or neither. Hand-rolling them per route is precisely how the
+    // promo fields came to round-trip on one path only.
+    churnMode: row.Churn_Mode === 'churn' ? 'churn' as const : undefined,
+    churnTargetPct:  readOptionalNumber(row.Churn_Target_Pct),
+    churnCurrentPct: readOptionalNumber(row.Churn_Current_Pct),
+    churnPrevBase:   readOptionalNumber(row.Churn_Prev_Base),
   };
 }
 
@@ -1089,7 +1128,18 @@ function marketFieldsFromSessionRow(r: Record<string, any>) {
 function marketFieldsFromWorkbookRow(r: Record<string, any>) {
   const scen = String(r['Scenario'] || 'Inflow') as MarketEvent['scenario'];
   const isOut = scen === 'Outflow';
-  const neg = (v: number) => isOut ? -Math.abs(v) : v;
+  // R7 — CHURN ROWS ARE SIGNED VERBATIM (Jon, 2026-08-20).
+  //
+  // The forced-negative exists because a human writing an Outflow row in a
+  // spreadsheet types the SIZE of a loss, not its sign. A churn row is not
+  // hand-typed: its subscriberVolume is a delta this app computed, and its
+  // sign carries DIRECTION — positive is a reduction in churn. Forcing it
+  // negative would silently invert the event into the opposite of what the
+  // user stated, which is the rate-sign rule applied to a signed quantity.
+  //
+  // Plain outflow rows are untouched, and both halves are asserted.
+  const isChurn = r['Churn_Mode'] === 'churn';
+  const neg = (v: number) => (isOut && !isChurn) ? -Math.abs(v) : v;
   return {
     id: Math.random().toString(36).substr(2, 9),
     name: String(r['Name'] || ''),

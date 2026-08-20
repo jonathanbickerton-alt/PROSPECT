@@ -6739,6 +6739,48 @@ From the 2026-08-17 walk on the edge fixture and its diagnosis
    where it is harder to find. The diagnosis counted FIVE blocking terms across
    two layers, none of which said anything.
 
+#### R7 — CHURN-TARGETED OUTFLOW: SIX DECISIONS (Jon, 2026-08-20)
+
+**1. Churn mode is a WAY OF SAYING, not an engine behaviour.** Per-month deltas
+are precomputed at save and the engine is untouched. This is R5's dilution
+precedent, not `amountType`'s: `amountType` selects how the engine resolves an
+amount, while `pricingMode` selects how the USER states something the engine
+already does. The true-state pass established that `applyEventsToMonth` already
+applies a signed outflow delta verbatim, so there is nothing for an engine mode
+to add.
+
+**2. A stated churn target is a SAVE-TIME STATEMENT.** Deltas are fixed at save
+against the adjusted-so-far series with THIS campaign excluded. The row is the
+event's record; the chart carries current truth. Same shape as the pricing
+row's stored baseline and weighting volumes, and the same reason: a figure
+recomputed later belongs to a different moment than the one the user stated.
+
+**3. The per-month figures are CUMULATIVE stated reductions, in POINTS of
+annualised churn** — prefilled linear to the target and editable per month, so
+1/3/6 stays 1/3/6 rather than being renormalised. **A single month is a ramp of
+length 1**: one mode, no one-off/recurring fork. The HELD TAIL is open pending
+Alessandro — whether the last stated reduction simply persists, or more fold
+months can be added. There is no cliff either way.
+
+**4. CHURN ROWS ARE SIGNED VERBATIM.** The forced-negative that Outflow rows
+normally receive never applies to a churn row, on write or on read. A reduction
+is a POSITIVE stored volume and must survive both import routes intact. Plain
+outflow rows keep the forced-negative unchanged, and both halves are asserted —
+the rate-sign rule extended to a quantity that carries a direction.
+
+**5. Churn rows join the group-edit BARRED CLASS** at the `:512` rule, beside
+percentage rows. Campaign group-edit reverse-engineers a ramp by summing
+`|subscriberVolume|`; on a churn row that arithmetic SUCCEEDS and is wrong,
+producing a plausible spread that would not reproduce the stated rates. The bar
+is a RULE at the site that already fires, never a downstream guard — the source
+comment there records a mutation test proving an unreachable clause protects
+nothing.
+
+**6. Trap 87 re-homes to `spec:compare-events-panel`, and
+`spec:fromrow-equivalence` retires**, its own header's condition met. The
+re-home is proved by a guard-traps run, not by the source reading that
+predicted it.
+
 #### THE CHART KEEPS A FLOOR, AND NEVER FAILS SILENTLY (Jon, 2026-08-20)
 
 **1. The render fix, per the third-file diagnosis §6a.** The chart card is the

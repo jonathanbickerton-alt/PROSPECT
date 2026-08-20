@@ -69,7 +69,6 @@ const ACTIVECOHORT = 'scripts/active-cohort-spec.ts';
 const SCENHELPER = 'src/utils/scenarioHelper.ts';
 const SCENPRICE = 'scripts/scenario-pricing-spec.ts';
 const CMPFILTER = 'scripts/compare-filter-spec.ts';
-const EQUIV = 'scripts/fromrow-equivalence-spec.ts';
 const CMPPANEL = 'scripts/compare-events-panel-spec.ts';
 const CMPWINDOW = 'scripts/compare-window-spec.ts';
 const CMPRENDER = 'scripts/compare-render-spec.ts';
@@ -1002,7 +1001,13 @@ const TRAPS: Trap[] = [
   // and a one-line anchor with more than one owner is how trap 64 came to
   // report a catch it had not earned.
   { id: '87 marketEventFromRow stops spreading the modifiers', why: 'promo fields and isPromotion vanish from every parsed event',
-    file: ENGINE, spec: EQUIV,
+    // RE-HOMED 2026-08-20. spec:fromrow-equivalence retires here, its own
+    // header's condition met. spec:compare-events-panel drives
+    // buildPerFileEventPanels -> marketEventFromRow and asserts isPromotion
+    // routing BOTH ways, so dropping the spread makes isPromotion undefined,
+    // both market events take the Volume card, and those checks go red.
+    // The 1136 true-state report PREDICTED this from source; the run proves it.
+    file: ENGINE, spec: CMPPANEL,
     mutate: s => s.replace(
       "    ...(source === 'workbook' ? marketFieldsFromWorkbookRow(r) : marketFieldsFromSessionRow(r))," + nl +
       '    ...readStoredEventModifiers(r),',
@@ -1105,7 +1110,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(EQUIV) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');
