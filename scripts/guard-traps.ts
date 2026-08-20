@@ -71,9 +71,11 @@ const SCENPRICE = 'scripts/scenario-pricing-spec.ts';
 const CMPFILTER = 'scripts/compare-filter-spec.ts';
 const EQUIV = 'scripts/fromrow-equivalence-spec.ts';
 const CMPPANEL = 'scripts/compare-events-panel-spec.ts';
+const CMPWINDOW = 'scripts/compare-window-spec.ts';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
-const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER];
+const APP_COMPARE = 'src/components/ScenarioCompareTab.tsx';
+const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -1039,6 +1041,27 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '      yieldEvents:   (s.yieldEvents   ?? []).map(yieldEventFromRow),',
       '      yieldEvents:   [],') },
+  // 91 removes the START clamp — the exact asymmetry that shipped. endIndex
+  // stays clamped, startIndex does not, and a stale offset then produces
+  // start > end: a chart with axes and NO LINES, on both views, immune to the
+  // time-range buttons. The data is untouched and correct throughout, which is
+  // what made the original so hard to place: the 2026-08-20 diagnosis measured
+  // 360 matching rows and 24 months of finite values behind a blank screen.
+  { id: '91 the brush start index loses its clamp', why: 'a stale offset gives start > end — axes, no lines, intact data',
+    file: VIEWFILTER, spec: CMPWINDOW,
+    mutate: s => s.replace(
+      '  const start = Math.min(Math.max(0, Math.floor(offset) || 0), last);',
+      '  const start = Math.floor(offset) || 0;') },
+  // 92 drops the reset. The clamp still keeps the window VALID, so nothing
+  // breaks and nothing blanks — the view simply lands on the final month of
+  // every new series, which reads as a quirk rather than a defect. That is
+  // precisely why it needs a guard: a symptom nobody reports is a symptom
+  // nobody fixes.
+  { id: '92 the brush offset survives a data-length change', why: 'every filter change lands the view on the last month',
+    file: APP_COMPARE, spec: CMPWINDOW,
+    mutate: s => s.replace(
+      '  useEffect(() => { setWindowOffset(0); }, [chartData.length]);',
+      '  useEffect(() => { /* reset removed */ }, [chartData.length]);') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -1049,7 +1072,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(EQUIV) || specFails(CMPPANEL)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(EQUIV) || specFails(CMPPANEL) || specFails(CMPWINDOW)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

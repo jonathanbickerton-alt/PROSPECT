@@ -792,5 +792,6 @@
   "restore_fell_back_to_first_cohort": "La première cohorte disponible a été restaurée — cette sauvegarde n’indiquait pas laquelle était active.",
   "common_dismiss": "Fermer",
   "compare_events_only": "Événements uniquement",
-  "compare_events_per_file": "Événements par fichier"
+  "compare_events_per_file": "Événements par fichier",
+  "compare_events_scope_not_in_baseline": "Ces événements portent sur un segment, un produit ou un canal que les prévisions de référence chargées ne couvrent pas : il n'y a donc rien à tracer. Les événements sont listés ci-dessous."
 }

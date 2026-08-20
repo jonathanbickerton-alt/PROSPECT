@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { collectEventScopeDims, hasAnyCarrierEvents } from '../utils/viewFilter';
+import { collectEventScopeDims, hasAnyCarrierEvents, windowBounds, selectionUncoveredByBaseline } from '../utils/viewFilter';
 import { buildPerFileEventPanels } from '../utils/forecasting';
 import { EventsSummaryTable } from './EventsSummaryTable';
 import { useTranslation } from 'react-i18next';
@@ -270,6 +270,42 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
     return Array.from(monthMap.values()).sort((a, b) => a.month.localeCompare(b.month));
   }, [parsedSessions, viewSegment, viewProduct, viewChannel, viewTariff, activeScenarios, showBaseline]);
 
+  /**
+   * THE WINDOW, DERIVED ONCE from the shared function rather than as two
+   * disagreeing JSX expressions. See windowBounds: startIndex used to be
+   * unclamped while endIndex was clamped, which is how a stale offset produced
+   * a chart with axes and no lines.
+   */
+  const brush = useMemo(
+    () => windowBounds(windowOffset, windowSize, chartData.length),
+    [windowOffset, windowSize, chartData.length]);
+
+  /**
+   * AN OFFSET BELONGS TO THE DATASET IT WAS DRAGGED ON.
+   *
+   * The trigger is the DATA LENGTH, not the filter identity, and the weaker
+   * trigger is the correct one: an offset valid for a 24-month series stays
+   * valid for any other 24-month series, so resetting on every filter touch
+   * would throw away a window the user had set for no reason at all. Length is
+   * exactly the condition under which an offset can stop being meaningful.
+   *
+   * windowBounds already makes a stale offset SAFE by clamping it. This makes
+   * it PREDICTABLE: without the reset a clamped offset pins the view to the
+   * final month, which is a strange place to land after changing a filter.
+   */
+  useEffect(() => { setWindowOffset(0); }, [chartData.length]);
+
+  /**
+   * WHICH BLANK IS THIS? Computed once, read by the empty state. The selection
+   * came from the events vocabulary and the baseline does not cover it — a
+   * different situation from an ordinary empty result, and a different sentence.
+   */
+  const uncoveredByBaseline = useMemo(
+    () => selectionUncoveredByBaseline(
+      { segment: viewSegment, product: viewProduct.l1, channel: viewChannel.l1 },
+      parsedSessions),
+    [viewSegment, viewProduct.l1, viewChannel.l1, parsedSessions]);
+
   const COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b'];
 
   return (
@@ -514,8 +550,8 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
                         dataKey="month"
                         height={28}
                         stroke="#cbd5e1"
-                        startIndex={windowOffset}
-                        endIndex={windowSize === 'all' ? chartData.length - 1 : Math.min(chartData.length - 1, windowOffset + windowSize - 1)}
+                        startIndex={brush.start}
+                        endIndex={brush.end}
                         onChange={(obj: any) => {
                           if (obj && typeof obj.startIndex === 'number' && typeof obj.endIndex === 'number') {
                             setWindowOffset(obj.startIndex);
@@ -529,7 +565,15 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
                 </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
-                  {parsedSessions.some(s => activeScenarios[s.fileName]) ? t('compare_no_data_for_selected_filters') : t('compare_check_at_least_one_scenario_below_to_display')}
+                  {/* THREE CAUSES, THREE SENTENCES. Nothing plotted at all is
+                      one thing; a selection the baseline cannot cover is
+                      another, and it is the one a user cannot diagnose alone
+                      — the events are real, the forecast rows are not there. */}
+                  {!parsedSessions.some(s => activeScenarios[s.fileName])
+                    ? t('compare_check_at_least_one_scenario_below_to_display')
+                    : uncoveredByBaseline
+                      ? t('compare_events_scope_not_in_baseline')
+                      : t('compare_no_data_for_selected_filters')}
                 </div>
               )}
             </div>

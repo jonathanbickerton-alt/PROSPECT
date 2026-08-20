@@ -792,5 +792,6 @@
   "restore_fell_back_to_first_cohort": "Foi restaurada a primeira coorte disponível — esta gravação não registou qual estava ativa.",
   "common_dismiss": "Dispensar",
   "compare_events_only": "Apenas eventos",
-  "compare_events_per_file": "Eventos por ficheiro"
+  "compare_events_per_file": "Eventos por ficheiro",
+  "compare_events_scope_not_in_baseline": "Estes eventos aplicam-se a um segmento, produto ou canal que as previsões de base carregadas não abrangem, pelo que não há nada para representar. Os eventos estão listados abaixo."
 }

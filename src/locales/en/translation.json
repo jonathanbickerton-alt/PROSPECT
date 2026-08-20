@@ -801,5 +801,6 @@
   "restore_fell_back_to_first_cohort": "Restored the first available cohort — this save did not record which one was active.",
   "common_dismiss": "Dismiss",
   "compare_events_only": "Events Only",
-  "compare_events_per_file": "Events by file"
+  "compare_events_per_file": "Events by file",
+  "compare_events_scope_not_in_baseline": "These events are scoped to a segment, product or channel the loaded baseline forecasts do not cover, so there is nothing to plot. The events themselves are listed below."
 }

@@ -792,5 +792,6 @@
   "restore_fell_back_to_first_cohort": "Es wurde die erste verfügbare Kohorte wiederhergestellt – diese Sicherung hat nicht festgehalten, welche aktiv war.",
   "common_dismiss": "Schließen",
   "compare_events_only": "Nur Ereignisse",
-  "compare_events_per_file": "Ereignisse nach Datei"
+  "compare_events_per_file": "Ereignisse nach Datei",
+  "compare_events_scope_not_in_baseline": "Diese Ereignisse sind auf ein Segment, Produkt oder einen Kanal ausgerichtet, den die geladenen Basisprognosen nicht abdecken. Es gibt daher nichts darzustellen. Die Ereignisse selbst sind unten aufgeführt."
 }

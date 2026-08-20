@@ -6739,6 +6739,37 @@ From the 2026-08-17 walk on the edge fixture and its diagnosis
    where it is harder to find. The diagnosis counted FIVE blocking terms across
    two layers, none of which said anything.
 
+#### THE COMPARE BRUSH WINDOW CLAMPS AND RESETS (Jon, 2026-08-20)
+
+**The window is derived once, and both ends are clamped.** `endIndex` was
+clamped and `startIndex` was not, which is the asymmetry that lets a window go
+degenerate: `start > end` renders axes with no lines, on every view, immune to
+the time-range buttons — a silent blank on a chart whose data is intact.
+
+**`windowOffset` resets when the data length changes.** An offset belongs to the
+dataset it was dragged on; carrying it into a shorter one is how a stale index
+lands past the end. The trigger is LENGTH, not filter identity — see the report
+for why the weaker trigger is the correct one here.
+
+**The no-data message distinguishes its two causes.** A selection that finds no
+baseline rows means one thing when the values came from the baseline vocabulary
+and another when they came from the EVENTS vocabulary: in the second case the
+events exist and the baseline does not cover them, which is a different
+sentence and a different user action. Two meanings of null, one message, is the
+rule this closes.
+
+**Two items are INHERITED, not resolved here.** The populate/render vocabulary
+contract — options drawn from event sheets, series matched against baseline
+rows, with nothing guaranteeing agreement — is **DQ inheritance**, the same
+species as the `'All'` marker sites DQ already owns. The **Compare/What-If
+matcher split** — two row sources, two hand-rolled predicates — is a **recorded
+divergence feeding path unification**, not a defect to fix in isolation.
+
+**`computeScenarioForFilter`'s matching is NOT to be touched.** The 2026-08-20
+diagnosis exonerated it by measurement against four real saves: 360 matching
+rows and 24 months of finite data where the symptom was reported. Changing it
+would be fixing what is not broken.
+
 #### R6 SESSION 2: ONE EVENTS SUMMARY PER LOADED FILE (Jon, 2026-08-19)
 
 Scenario Compare shows **one events summary panel per loaded file**, reusing

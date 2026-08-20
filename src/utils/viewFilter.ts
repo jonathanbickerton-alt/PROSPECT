@@ -186,6 +186,125 @@ export function hasAnyCarrierEvents(sessions: EventCarriers[]): boolean {
     || (s?.pricingEvents?.length ?? 0) > 0);
 }
 
+/** A brush window, always valid: 0 <= start <= end <= length-1, or empty. */
+export interface WindowBounds {
+  start: number;
+  end: number;
+  /** True when there is no data to window. `start`/`end` are 0 and mean nothing. */
+  empty: boolean;
+}
+
+/**
+ * THE CHART'S VISIBLE WINDOW, DERIVED ONCE.
+ *
+ * This was two inline JSX expressions on the Brush, and the two disagreed:
+ * `endIndex` was clamped to the data length and `startIndex` was not. A
+ * `windowOffset` left over from a longer dataset therefore produced
+ * `start > end` — a degenerate window that Recharts renders as AXES WITH NO
+ * LINES, on both the volume and value views, and which the time-range buttons
+ * cannot rescue because they set the SIZE and leave the offset alone.
+ *
+ * That is a SILENT BLANK on a chart whose data is intact, which is the failure
+ * this codebase treats as worse than an error: the 2026-08-20 diagnosis
+ * measured the data path as correct — 360 matching rows, 24 months of finite
+ * values — while the user saw nothing at all.
+ *
+ * WHY A FUNCTION AND NOT TIGHTER JSX. Inline props cannot be driven by a spec,
+ * so the asymmetry between the two expressions was unreachable by anything but
+ * reading them side by side. One derivation, one place to clamp, one thing to
+ * test.
+ *
+ * THE POSTCONDITION IS THE POINT: for ANY inputs, including a negative offset,
+ * an offset past the end, a zero or negative size, and a zero-length dataset,
+ * the result is either `empty` or satisfies 0 <= start <= end <= length-1.
+ * `start > end` is not representable as an output.
+ */
+export function windowBounds(
+  offset: number,
+  size: number | 'all',
+  dataLength: number,
+): WindowBounds {
+  // NO DATA IS A STATED EMPTY, not a window over nothing. A caller that
+  // rendered {start:0,end:-1} would be back to start > end by another route.
+  if (!Number.isFinite(dataLength) || dataLength <= 0) return { start: 0, end: 0, empty: true };
+
+  const last = dataLength - 1;
+
+  // THE CLAMP THAT WAS MISSING. An offset is only meaningful against the data
+  // it was dragged on; past the end it is stale, and the honest reading of a
+  // stale offset is the last window that exists, never a window that does not.
+  const start = Math.min(Math.max(0, Math.floor(offset) || 0), last);
+
+  if (size === 'all') return { start, end: last, empty: false };
+
+  // A size below 1 would invert the window. One month is the smallest thing a
+  // window can honestly show.
+  const span = Math.max(1, Math.floor(Number(size)) || 1);
+  const end = Math.min(last, start + span - 1);
+
+  return { start, end, empty: false };
+}
+
+/** The three view values the Compare chart filters on, as the tab holds them. */
+export interface ScopeSelection {
+  segment: string | null;
+  product: string | null;
+  channel: string | null;
+}
+
+/**
+ * WHICH BLANK IS THIS? — the two meanings of an empty chart.
+ *
+ * An empty result means one thing when the selected values came from the
+ * BASELINE vocabulary (this cohort genuinely has no forecast rows) and quite
+ * another when they came from the EVENTS vocabulary (the events exist; the
+ * baseline does not cover the scope they were written against). Same blank,
+ * two different situations, two different things for the user to do — which is
+ * the two-meanings-of-null rule, and the reason one message cannot serve both.
+ *
+ * Returns true for the second case: at least one selected value is offered by
+ * the events vocabulary and is ABSENT from the baseline rows.
+ *
+ * IT REUSES THE COLLECTOR. `collectEventScopeDims` is the one function that
+ * knows what the events vocabulary contains — it is what populates the filter
+ * in the first place — so the message and the dropdown cannot disagree about
+ * what 'came from the events' means. A second derivation here would be a
+ * vocabulary about a vocabulary, and the first thing to drift.
+ *
+ * ONE VALUE IS ENOUGH. If the product is event-only, the selection cannot
+ * render whatever the segment and channel do, so the specific message is the
+ * right one even when the other two are ordinary.
+ */
+export function selectionUncoveredByBaseline(
+  sel: ScopeSelection,
+  sessions: (EventCarriers & { baselineRows?: any[] })[],
+): boolean {
+  const dims = collectEventScopeDims(sessions);
+
+  const baseSeg = new Set<string>();
+  const baseProd = new Set<string>();
+  const baseChan = new Set<string>();
+  for (const s of sessions) {
+    for (const r of s.baselineRows ?? []) {
+      if (r?.Segment) baseSeg.add(String(r.Segment));
+      if (r?.Product) baseProd.add(String(r.Product));
+      if (r?.Channel) baseChan.add(String(r.Channel));
+    }
+  }
+
+  // 'All' and absent are wildcards, not values — a wildcard cannot be
+  // uncovered, and testing one would report the specific message for a
+  // selection the user never narrowed.
+  const live = (v: string | null | undefined) => !!v && v !== 'All';
+
+  const uncovered = (v: string | null | undefined, offered: boolean, covered: Set<string>) =>
+    live(v) && offered && !covered.has(String(v));
+
+  return uncovered(sel.segment, dims.segments.includes(String(sel.segment)), baseSeg)
+    || uncovered(sel.product, dims.productTree.has(String(sel.product)), baseProd)
+    || uncovered(sel.channel, dims.channelTree.has(String(sel.channel)), baseChan);
+}
+
 export function cohortToFilter(c: CohortLike): ViewFilter {
   return {
     segment: c.segment,
