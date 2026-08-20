@@ -809,5 +809,7 @@
   "whatif_churn_absent_seed_unknown": "die Ausgangsbasis dieser Kohorte ist unbekannt, daher kann keine Rate angegeben werden",
   "whatif_churn_absent_no_prior_month": "der erste Prognosemonat hat keinen Vormonat, gegen den die Abwanderung gemessen werden kann",
   "whatif_churn_absent_prev_base_zero": "die Basis dieser Kohorte erreicht null, daher gibt es keine Rate zu senken",
-  "whatif_churn_absent_no_series": "für diese Kohorte ist keine Prognosereihe verfügbar"
+  "whatif_churn_absent_no_series": "für diese Kohorte ist keine Prognosereihe verfügbar",
+  "whatif_churn_ramp": "Reduktion über mehrere Monate steigern",
+  "whatif_churn_breakdown": "{{month}} Abgang {{outflow}} ÷ Vormonatsbasis {{base}} × 12"
 }

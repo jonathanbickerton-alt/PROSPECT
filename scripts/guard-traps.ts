@@ -74,11 +74,13 @@ const CMPWINDOW = 'scripts/compare-window-spec.ts';
 const CMPRENDER = 'scripts/compare-render-spec.ts';
 const CHURNFOLD = 'scripts/churn-fold-spec.ts';
 const CHURNENGINE = 'src/utils/churnFold.ts';
+const AMTCTRL = 'scripts/amount-control-spec.ts';
+const AMTENGINE = 'src/utils/amountControl.ts';
 const SHEETGUARD = 'src/utils/sheetGuards.ts';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const APP_COMPARE = 'src/components/ScenarioCompareTab.tsx';
-const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE];
+const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -1133,6 +1135,32 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '  const neg = (v: number) => (isOut && !isChurn) ? -Math.abs(v) : v;',
       '  const neg = (v: number) => isOut ? -Math.abs(v) : v;') },
+  // 99 removes the scenario reset — the walk's defect (c). Leaving Outflow no
+  // longer defaults the control or discards the churn draft, so a target
+  // stated against an Outflow rate survives onto an Inflow event.
+  { id: '99 leaving Outflow no longer resets the amount control', why: 'a churn draft outlives the mode it was stated in',
+    file: AMTENGINE, spec: AMTCTRL,
+    mutate: s => s.replace(
+      "    if (prev === 'churn' && !churnAvailableFor(action.scenario)) {",
+      '    if (false) {') },
+  // 100 lets the invalid combination back into the DERIVED value — the walk's
+  // defect (a). A stored 'churn' then reports as churn on an Inflow draft, and
+  // the panel renders where it has no meaning. This is the exclusivity itself:
+  // the state stops being unrepresentable and becomes merely unlikely.
+  { id: '100 the derived control reports churn off Outflow', why: 'the churn panel renders on a non-Outflow draft',
+    file: AMTENGINE, spec: AMTCTRL,
+    mutate: s => s.replace(
+      "  if (stored === 'churn' && !churnAvailableFor(scenario)) return 'subs';",
+      '  return stored;') },
+  // 101 re-derives the breakdown instead of reading the fold's own output. It
+  // still prints a plausible line — that is the danger — but the figure above
+  // it and the inputs beneath it are then computed in two places, which is the
+  // shape that lets a displayed number stop explaining the number beside it.
+  { id: '101 the churn breakdown re-derives its inputs', why: 'the figure and its stated inputs can disagree',
+    file: WHATIF, spec: AMTCTRL,
+    mutate: s => s.replace(
+      'outflow: Math.round(churnFold[0].targetOutflow + churnFold[0].delta).toLocaleString(),',
+      'outflow: Math.round(Number(churnScopeSeries?.[0]?.[String.fromCharCode(79) + "utflow (Adjusted)"]) || 0).toLocaleString(),') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -1143,7 +1171,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

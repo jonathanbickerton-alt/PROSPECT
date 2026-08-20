@@ -6739,6 +6739,34 @@ From the 2026-08-17 walk on the edge fixture and its diagnosis
    where it is harder to find. The diagnosis counted FIVE blocking terms across
    two layers, none of which said anything.
 
+#### R7 CARD STATE: FOUR DECISIONS FROM THE WALK (Jon, 2026-08-20)
+
+**1. The amount control is ONE EXCLUSIVE TRI-STATE.** Exactly one of Subs / %
+/ Churn is lit, always. The shipped card had TWO independent sources of truth
+for one control — `amountType` lit Subs and `%`, a separate boolean lit Churn —
+and because a churn draft stores `amountType: 'absolute'`, Subs and Churn were
+both lit at once. One derived value with one writer; the both-lit state is
+UNREPRESENTABLE, not merely unstyled.
+
+**2. Leaving Outflow DESELECTS churn and defaults to Subs.** Never a
+no-selection state. The stale churn draft — target, months, grid edits — is
+CLEARED with it, on the stale-draft precedent: a figure that no longer belongs
+to the mode must not outlive it. The same rule the pricing card applies when
+leaving dilution, and the same rule the percentage arm applies to the spread.
+
+**3. The ramp is OPT-IN**, via a radio mirroring the volume spread's. Unchecked
+= a single-month churn impact, and that single month goes through the SAME fold
+as a one-month ramp — asserted, because a special case would be a second
+arithmetic for the same statement. Checked = the months control and the
+cumulative grid as shipped.
+
+**4. The current-churn figure SURFACES ITS INPUTS.** A breakdown line renders
+beside it naming the outflow, the previous-month base and the annualisation.
+The walk found 118.4% at All/All/All untriageable — not because it was wrong,
+but because nothing on screen said what it was made of. A figure a user cannot
+check is a figure a user cannot trust, and this is also the hand-check surface
+the next walk needs.
+
 #### R7 — CHURN-TARGETED OUTFLOW: SIX DECISIONS (Jon, 2026-08-20)
 
 **1. Churn mode is a WAY OF SAYING, not an engine behaviour.** Per-month deltas

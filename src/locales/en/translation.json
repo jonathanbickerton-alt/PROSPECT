@@ -818,5 +818,7 @@
   "whatif_churn_absent_seed_unknown": "the opening base for this cohort is not known, so no rate can be stated",
   "whatif_churn_absent_no_prior_month": "the first forecast month has no prior month to measure churn against",
   "whatif_churn_absent_prev_base_zero": "the base for this cohort reaches zero, so there is no rate to reduce",
-  "whatif_churn_absent_no_series": "no forecast series is available for this cohort"
+  "whatif_churn_absent_no_series": "no forecast series is available for this cohort",
+  "whatif_churn_ramp": "Ramp the reduction over multiple months",
+  "whatif_churn_breakdown": "{{month}} outflow {{outflow}} ÷ prior-month base {{base}} × 12"
 }

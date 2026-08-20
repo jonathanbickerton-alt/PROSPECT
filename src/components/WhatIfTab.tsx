@@ -15,6 +15,8 @@ import { rebalance, achievableTargetRange, solveForTarget, blendedArpu, conforms
 import { EventsSummaryTable } from './EventsSummaryTable';
 import { foldChurnRamp, linearChurnRamp, type ChurnFoldMonth } from '../utils/churnFold';
 import { canShowBaseForecast } from '../utils/forecasting';
+import { nextAmountControlState, effectiveAmountControl, churnAvailableFor,
+         type AmountControl } from '../utils/amountControl';
 import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope, PricingVolumes, ViewScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
@@ -2164,18 +2166,64 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // target and the FOLD turns it into the per-month deltas the events carry.
   const [churnTargetPct, setChurnTargetPct] = useState<number>(1);
   const [churnMonths, setChurnMonths] = useState<number>(3);
+  /** THE RAMP IS OPT-IN, mirroring the volume spread's radio. Unchecked means
+   *  a single month, which goes through the SAME fold as a one-month ramp. */
+  const [churnRampOn, setChurnRampOn] = useState(false);
   /** CUMULATIVE stated reductions, one per ramp month. Prefilled linear and
    *  then editable — 1/3/6 stays 1/3/6, because nothing renormalises them. */
   const [churnStated, setChurnStated] = useState<number[]>(() => linearChurnRamp(1, 3));
   /**
-   * THE ARM IS DRAFT-LOCAL, and deliberately NOT a value of `amountType`.
+   * THE AMOUNT CONTROL — ONE STORED VALUE, ONE DERIVED VALUE.
    *
-   * `amountType` is read by the ENGINE; adding 'churn' to it would make churn
-   * an engine behaviour, which is exactly what decision 1 says it is not. A
-   * churn event is stored with amountType 'absolute' and churnMode 'churn':
-   * an ordinary absolute outflow row that remembers how it was stated.
+   * The shipped version kept the lit arm in two places: `amountType` for Subs
+   * and %, a boolean for Churn. Since a churn draft stores amountType
+   * 'absolute' — churn is a way of SAYING, not an engine behaviour — SUBS AND
+   * CHURN WERE BOTH LIT. Jon's walk found it immediately.
+   *
+   * `amountControl` is what actually lights an arm and renders the panel. It
+   * can never be 'churn' on a non-Outflow draft, so no render between a
+   * scenario change and the effect below can show a churn panel on an Inflow
+   * event. The state is not guarded against; it is not expressible.
    */
-  const [isChurnDraft, setIsChurnDraft] = useState(false);
+  const [storedAmountControl, setStoredAmountControl] = useState<AmountControl>('subs');
+  const amountControl = effectiveAmountControl(storedAmountControl, newEvent.scenario);
+  const isChurnDraft = amountControl === 'churn';
+
+  /** Everything the churn draft holds, discarded together. */
+  const clearChurnDraft = useCallback(() => {
+    setChurnTargetPct(1);
+    setChurnMonths(3);
+    setChurnRampOn(false);
+    setChurnStated(linearChurnRamp(1, 1));
+  }, []);
+
+  /** ONE WRITER. Every arm click and every scenario change goes through here. */
+  const applyAmountControl = useCallback((action: Parameters<typeof nextAmountControlState>[1]) => {
+    const next = nextAmountControlState(storedAmountControl, action, newEvent.scenario);
+    setStoredAmountControl(next.control);
+    if (next.clearChurnDraft) clearChurnDraft();
+    if (next.clearSpread) setSpreadEnabled(false);
+    setNewEvent({
+      ...newEvent,
+      amountType: next.amountType,
+      ...(next.clearAmount ? { subscriberVolume: 0, revenue: 0 } : {}),
+    });
+  }, [storedAmountControl, newEvent, setNewEvent, clearChurnDraft, setSpreadEnabled]);
+
+  /**
+   * LEAVING OUTFLOW. The derived control has already stopped reporting churn,
+   * so nothing is mis-rendered in the meantime; this discards the draft state
+   * and settles the stored value, so returning to Outflow starts clean rather
+   * than resuming a target the user set for a different event.
+   */
+  useEffect(() => {
+    if (storedAmountControl === 'churn' && !churnAvailableFor(newEvent.scenario)) {
+      setStoredAmountControl('subs');
+      clearChurnDraft();
+      setNewEvent({ ...newEvent, amountType: 'absolute', subscriberVolume: 0, revenue: 0 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newEvent.scenario]);
 
   /**
    * THE SCOPED SERIES THE FOLD READS — the SAME machinery the pricing preview
@@ -2217,10 +2265,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // fold's prevBaseAtStart. idx 0 has no prior row and the fold names that.
     const prevBaseAtStart = idx > 0 ? Number(churnScopeSeries[idx - 1]['Base (Adjusted)']) || 0 : 0;
     return foldChurnRamp({
-      series, startIndex: idx, statedReductions: churnStated.slice(0, churnMonths),
+      // A SINGLE MONTH IS A RAMP OF LENGTH 1 — the same fold, the same
+      // arithmetic. A special case here would be a second way to compute the
+      // same statement, and the two would drift.
+      series, startIndex: idx,
+      statedReductions: churnRampOn ? churnStated.slice(0, churnMonths) : [churnTargetPct],
       prevBaseAtStart, seedBaseKnown: canShowBaseForecast(baseForecast),
     });
-  }, [churnScopeSeries, newEvent.date, churnStated, churnMonths, baseForecast]);
+  }, [churnScopeSeries, newEvent.date, churnStated, churnMonths, churnRampOn, churnTargetPct, baseForecast]);
 
   /**
    * THE ONE REASON THE CHURN DRAFT CANNOT BE ADDED, or null — the
@@ -2406,7 +2458,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         churnPrevBase:   m.prevBase,
       } as MarketEvent));
       setMarketEvents([...marketEvents, ...churnEvents]);
-      setIsChurnDraft(false);
+      setStoredAmountControl('subs');
+      clearChurnDraft();
       setNewEvent({
         scenario: 'Inflow', segment: 'All', product: 'All', productL2: 'All',
         channel: 'All', channelL2: 'All', tariffL1: 'All', tariffL2: 'All',
@@ -3651,23 +3704,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       key={mode}
                       type="button"
                       onClick={() => {
-                        setIsChurnDraft(false);
-                        setNewEvent({
-                          ...newEvent,
-                          amountType: mode,
-                          // The number means something different under each mode,
-                          // so carrying it across would reinterpret it silently:
-                          // 5000 subscribers becoming 5000 per cent.
-                          subscriberVolume: 0,
-                          revenue: 0,
-                        });
-                        // The spread control is hidden for percentages, so a
-                        // spread left enabled from an earlier draft would
-                        // otherwise persist invisibly and still apply on Add.
-                        if (mode === 'percentage') setSpreadEnabled(false);
+                        // ONE WRITER. Selecting an ordinary arm deselects churn,
+                        // clears its draft, zeroes the amount (5000 subscribers
+                        // must not become 5000 per cent) and force-clears the
+                        // spread where the arm hides it — all decided in one
+                        // place rather than at each of the arms that can do it.
+                        applyAmountControl({ kind: 'select', arm: mode === 'percentage' ? 'pct' : 'subs' });
                       }}
                       className={`px-3 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
-                        (newEvent.amountType ?? 'absolute') === mode
+                        // LIT FROM THE ONE DERIVED VALUE. Reading amountType
+                        // here is what lit Subs beside Churn: a churn draft
+                        // legitimately stores amountType 'absolute'.
+                        amountControl === (mode === 'percentage' ? 'pct' : 'subs')
                           ? 'bg-[#e60000] text-white'
                           : 'bg-white text-slate-500 hover:bg-slate-50'
                       }`}
@@ -3680,17 +3728,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       type="button"
                       data-testid="volume-mode-churn"
                       onClick={() => {
-                        setIsChurnDraft(true);
-                        // THE STALE AMOUNT GOES, per the :3490 precedent: a
-                        // figure typed as subscribers does not mean the same
-                        // thing under a mode that states a RATE.
-                        setNewEvent({ ...newEvent, amountType: 'absolute', subscriberVolume: 0, revenue: 0 });
-                        // CHURN MODE REPLACES THE SPREAD with its own months
-                        // control, so the spread is cleared EXPLICITLY. The
-                        // percentage arm's comment records what silence here
-                        // costs: a spread left enabled from an earlier draft
-                        // persists invisibly and still applies on Add.
-                        setSpreadEnabled(false);
+                        // THE SAME ONE WRITER. It clears the stale amount and
+                        // force-clears the spread — churn replaces the spread
+                        // with its own ramp radio rather than configuring it.
+                        applyAmountControl({ kind: 'select', arm: 'churn' });
                         setChurnStated(linearChurnRamp(churnTargetPct, churnMonths));
                       }}
                       className={`px-3 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
@@ -3729,6 +3770,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     states a RATE and the volumes are DERIVED, which is R5's
                     dilution inversion applied to volume. The derived column is
                     display-only for the same reason the ramp's is. */}
+                {/* THE PANEL'S CONDITION IS THE ONE DERIVED VALUE. It cannot
+                    be true on a non-Outflow draft, because
+                    effectiveAmountControl never reports churn there — so this
+                    is the DEFINITION of when the panel belongs, not a guard
+                    against a bug elsewhere. */}
                 {isChurnDraft && (
                   <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 flex flex-col gap-3"
                        data-testid="churn-panel">
@@ -3760,6 +3806,25 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       </span>
                     </div>
 
+                    {/* THE BREAKDOWN — decision 4. The walk found 118.4% at
+                        All/All/All untriageable: not wrong, but with nothing on
+                        screen saying what it was made of. These are THE SAME
+                        VALUES THE FOLD READ — taken off the fold's own output,
+                        never recomputed — so the line and the figure above it
+                        cannot disagree. Absent with the figure: when there is
+                        no rate, there are no inputs to show, and the reason
+                        line already says why. */}
+                    {churnFold[0] && !churnFold[0].absence && (
+                      <p className="text-[10px] text-slate-400 -mt-2 tabular-nums"
+                         data-testid="churn-breakdown">
+                        {t('whatif_churn_breakdown', {
+                          month: churnFold[0].month,
+                          outflow: Math.round(churnFold[0].targetOutflow + churnFold[0].delta).toLocaleString(),
+                          base: Math.round(churnFold[0].prevBase).toLocaleString(),
+                        })}
+                      </p>
+                    )}
+
                     <div className="grid grid-cols-2 gap-3">
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
@@ -3777,7 +3842,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           className="border border-slate-200 rounded px-2 py-1 text-sm outline-none focus:border-[#e60000]"
                         />
                       </div>
-                      <div className="flex flex-col gap-1">
+                      <div className={`flex flex-col gap-1 ${churnRampOn ? '' : 'opacity-40 pointer-events-none'}`}>
                         <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                           {t('whatif_churn_months')}
                         </label>
@@ -3795,6 +3860,32 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       </div>
                     </div>
 
+                    {/* THE RAMP IS OPT-IN, mirroring the volume spread's radio.
+                        Shipped always-on with months defaulting to 3, which is
+                        a multi-month commitment nobody asked for — and
+                        inconsistent with the control one card-section away.
+                        Unchecked states a single month, through the SAME fold
+                        as a one-month ramp. */}
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        data-testid="churn-ramp-toggle"
+                        checked={churnRampOn}
+                        onChange={e => {
+                          const on = e.target.checked;
+                          setChurnRampOn(on);
+                          // Re-prefill for the length now in play, so the grid
+                          // never shows a distribution belonging to the other
+                          // shape.
+                          setChurnStated(linearChurnRamp(churnTargetPct, on ? churnMonths : 1));
+                        }}
+                        className="rounded border-slate-300 text-[#e60000] focus:ring-[#e60000]"
+                      />
+                      <span className="text-[11px] font-medium text-slate-600">{t('whatif_churn_ramp')}</span>
+                    </label>
+
+                    {churnRampOn && (
+                    <>
                     {/* THE PER-MONTH GRID. The bound figures are CUMULATIVE
                         stated reductions in POINTS — prefilled linear, then
                         editable, and nothing renormalises them: 1/3/6 stays
@@ -3832,6 +3923,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         );
                       })}
                     </div>
+                    </>
+                    )}
 
                     {/* THE NAMED BLOCK REASON — feedback, not enablement. The
                         pricingDraftBlockReason precedent: say why, do not just

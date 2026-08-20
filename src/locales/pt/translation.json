@@ -809,5 +809,7 @@
   "whatif_churn_absent_seed_unknown": "a base inicial desta coorte é desconhecida, pelo que não é possível indicar uma taxa",
   "whatif_churn_absent_no_prior_month": "o primeiro mês de previsão não tem mês anterior para medir a rotatividade",
   "whatif_churn_absent_prev_base_zero": "a base desta coorte chega a zero, pelo que não há taxa a reduzir",
-  "whatif_churn_absent_no_series": "não há série de previsão disponível para esta coorte"
+  "whatif_churn_absent_no_series": "não há série de previsão disponível para esta coorte",
+  "whatif_churn_ramp": "Escalonar a redução ao longo de vários meses",
+  "whatif_churn_breakdown": "saídas de {{month}} {{outflow}} ÷ base do mês anterior {{base}} × 12"
 }

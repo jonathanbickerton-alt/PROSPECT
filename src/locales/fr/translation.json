@@ -809,5 +809,7 @@
   "whatif_churn_absent_seed_unknown": "la base de départ de cette cohorte est inconnue : aucun taux ne peut être indiqué",
   "whatif_churn_absent_no_prior_month": "le premier mois de prévision n’a pas de mois précédent pour mesurer l’attrition",
   "whatif_churn_absent_prev_base_zero": "la base de cette cohorte atteint zéro : il n’y a pas de taux à réduire",
-  "whatif_churn_absent_no_series": "aucune série de prévision n’est disponible pour cette cohorte"
+  "whatif_churn_absent_no_series": "aucune série de prévision n’est disponible pour cette cohorte",
+  "whatif_churn_ramp": "Étaler la réduction sur plusieurs mois",
+  "whatif_churn_breakdown": "sorties {{month}} {{outflow}} ÷ base du mois précédent {{base}} × 12"
 }

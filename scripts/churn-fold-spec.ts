@@ -280,12 +280,24 @@ const PREV_BASE_AT_START = 980;
   check('UI: the third arm renders only for Outflow',
     /newEvent\.scenario === 'Outflow' && \(/.test(tab),
     'the draft already knows its IBRO type');
-  check('UI: selecting churn CLEARS the spread explicitly',
-    /setIsChurnDraft\(true\);[\s\S]{0,600}setSpreadEnabled\(false\);/.test(tab),
-    'silence here reproduces the defect the percentage arm records');
-  check('UI: selecting an ordinary arm LEAVES churn mode',
-    /setIsChurnDraft\(false\);[\s\S]{0,120}setNewEvent\(\{/.test(tab),
-    'two lit arms would be two contradicting statements');
+  // RE-AIMED 2026-08-20, the card-state session. These two grepped for the
+  // ARM HANDLERS' bodies — setIsChurnDraft followed by setSpreadEnabled, and
+  // setIsChurnDraft(false) followed by setNewEvent. Both bodies are gone: the
+  // arms now call ONE writer, nextAmountControlState, which decides clearing
+  // for every arm and every scenario change in one place.
+  //
+  // Stale in the direction that FAILS, which is the only acceptable direction.
+  // The SEMANTICS they guarded did not move — they moved HOME, and
+  // spec:amount-control drives them exhaustively against the real function
+  // rather than by reading a handler. What belongs here is only that the card
+  // still routes through that writer.
+  check('UI: every arm goes through the ONE control writer',
+    (tab.match(/applyAmountControl\(\{ kind: 'select'/g) ?? []).length === 2
+      && (tab.match(/nextAmountControlState\(/g) ?? []).length === 1,
+    'a handler that sets the arm itself is a second source of truth');
+  check('UI: no arm handler sets the churn flag directly any more',
+    !/setIsChurnDraft\(/.test(tab),
+    'the lit arm is DERIVED; a direct setter would let two arms light at once');
   check('UI: the amount input is hidden in churn mode, not duplicated',
     /\{!isChurnDraft && \(/.test(tab),
     'a subscriber box beside a rate is a second way to say the same thing');

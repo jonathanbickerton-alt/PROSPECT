@@ -809,5 +809,7 @@
   "whatif_churn_absent_seed_unknown": "la base iniziale di questa coorte non è nota, quindi non si può indicare un tasso",
   "whatif_churn_absent_no_prior_month": "il primo mese di previsione non ha un mese precedente su cui misurare l’abbandono",
   "whatif_churn_absent_prev_base_zero": "la base di questa coorte raggiunge lo zero, quindi non c’è un tasso da ridurre",
-  "whatif_churn_absent_no_series": "nessuna serie di previsione disponibile per questa coorte"
+  "whatif_churn_absent_no_series": "nessuna serie di previsione disponibile per questa coorte",
+  "whatif_churn_ramp": "Distribuire la riduzione su più mesi",
+  "whatif_churn_breakdown": "uscite {{month}} {{outflow}} ÷ base del mese precedente {{base}} × 12"
 }
