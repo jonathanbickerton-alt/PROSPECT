@@ -5,7 +5,7 @@
 ```
 Generated: 2026-08-20 08:39 +0100 (UTC 2026-08-20 07:39)
 Verified against: 9c61095
-Repo: __PENDING__
+Repo: committed 135bc62, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before any check ran.
 READ-ONLY DIAGNOSIS — no source changed.
 BASE: HEAD 9c61095 vs the brief's 5e91b73 — one commit, REPORT-ONLY.
