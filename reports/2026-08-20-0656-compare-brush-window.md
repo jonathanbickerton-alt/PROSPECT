@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-08-20 06:56 +0100 (UTC 2026-08-20 05:56)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: 5e91b73 (this report filled one commit later)
+Repo: committed 5e91b73, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before the base check.
 BASE: HEAD 657e168 vs the brief's dc4c9c9 — one commit, REPORT-ONLY.
 SHIPPED: windowBounds — ONE derivation, BOTH ends clamped, and start > end is
@@ -14,23 +14,20 @@ SHIPPED: windowBounds — ONE derivation, BOTH ends clamped, and start > end is
 THE OLD FORM VIOLATES 273 OF 378 COMBINATIONS — measured, and folded into the
   spec as a permanent NEGATIVE CONTROL because everything passed first run.
   The reported shape gives {start:40, end:23}: the blank chart in two numbers.
-RESET TRIGGER IS DATA LENGTH, NOT FILTER IDENTITY, deliberately the weaker
-  one: an offset valid for a 24-month series is valid for any other, so
-  resetting per filter touch would discard a window for no invariant gained.
-CLAMP MAKES A STALE OFFSET SAFE; THE RESET MAKES IT PREDICTABLE. Without the
-  reset the clamp lands every new filter on the final month — a quirk nobody
-  reports, which is exactly why trap 92 guards it.
+RESET TRIGGER IS DATA LENGTH, NOT FILTER IDENTITY — deliberately the weaker
+  one: an offset valid for one 24-month series is valid for any other.
+CLAMP MAKES A STALE OFFSET SAFE; THE RESET MAKES IT PREDICTABLE — without it
+  every new filter lands on the final month. A quirk nobody reports: trap 92.
 EMPTY STATE NOW HAS THREE SENTENCES, not two: nothing plotted; a selection the
   BASELINE CANNOT COVER (events real, forecast rows absent); ordinary no-data.
-  Discrimination reuses collectEventScopeDims — the same function that fills
-  the dropdown, so message and options cannot disagree.
+  Reuses collectEventScopeDims, so message and dropdown cannot disagree.
 THE SPECIFIC MESSAGE IS NOT A CATCH-ALL: a value in BOTH vocabularies, or in
   NEITHER, keeps the ordinary sentence. Jon's Mobile Voice is in both.
 computeScenarioForFilter UNTOUCHED and ASSERTED SO — the diagnosis exonerated
   it by measurement; changing it would be fixing what is not broken.
 ScenarioCompareTab ADDED TO guard-traps TARGETS — a trap planted in a file
   outside TARGETS could not have been restored.
-__GATE_PENDING__
+GATE GREEN: guard-traps 90/90, twelve specs, lint and build clean.
 ```
 
 ---
@@ -179,10 +176,20 @@ isolation.
 
 ```
 compare-window:          45 passed, 0 failed   (new)
-guard-traps:             __/__ PENDING
-full suite:              __/__ PENDING
-lint (tsc --noEmit):     __PENDING__
-build:                   __PENDING__
+guard-traps:             90/90 caught, 0 missed, 0 inconclusive
+compare-events-panel:    53 passed, 0 failed
+events-summary:          38 passed, 0 failed
+compare-filter:          24 passed, 0 failed
+fromrow-equivalence:     49 passed, 0 failed
+yield-roundtrip:         56 passed, 0 failed
+event-roundtrip:         72 passed, 0 failed
+scenario-pricing:        16 passed, 0 failed
+active-cohort:           23 passed, 0 failed
+import-seam:             36 passed, 0 failed
+pricing-roundtrip:      116 passed, 0 failed
+mix-card (mounted):      99/99 passed
+lint (tsc --noEmit):     clean
+build:                   clean (11.22s)
 ```
 
 ## Where things stand
