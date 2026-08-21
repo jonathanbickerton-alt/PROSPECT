@@ -1221,6 +1221,39 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '      if (siblings.length > 1) {',
       '      if (false) {') },
+  // 108 feeds the LOADED COHORT back into the pricing series, which is exactly
+  // what the code did before this session. Both weighting volumes and the
+  // baseline ARPU then belong to whatever cohort Step 1 happens to hold, and
+  // the mount MEASURED that: 20.40 / 32,760.06 for the wide cohort where the
+  // draft's own slice was 24.00 / 26,208.05.
+  //
+  // THE INVARIANCE CHECK STAYS GREEN UNDER THIS TRAP, deliberately: with the
+  // slice loaded, C = S and the wrong feed gives the right answer. That is what
+  // makes the mount's WIDE-loaded configuration the load-bearing one, and why
+  // an invariance check alone would not have protected this.
+  { id: '108 the pricing series is fed the loaded cohort, not the draft slice',
+    why: 'baseline ARPU and both weighting volumes revert to whatever Step 1 loaded',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      '    if (!resolution.forecast) return { series: null, reason: resolution.reason ?? null };' + nl +
+      '    return { series: computeAdjustedForecast({' + nl +
+      '    baseForecast: resolution.forecast, marketEvents, yieldEvents,',
+      '    if (!resolution.forecast) return { series: null, reason: resolution.reason ?? null };' + nl +
+      '    return { series: computeAdjustedForecast({' + nl +
+      '    baseForecast, marketEvents, yieldEvents,') },
+  // 109 forks the shared helper into a card-local copy. The count is what
+  // catches it: the behaviour is IDENTICAL the moment it is planted, so no
+  // figure moves and only the exactly-two-callers pin can see it. That is the
+  // point — this trap guards against the shape that produces a divergence
+  // later, not one that produces a wrong number now.
+  { id: '109 the scope helper is forked into a third, card-local call site',
+    why: 'a third resolution site is how two implementations that agree today diverge tomorrow',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      '  const pricingScopeReason = useMemo((): string | null => {',
+      '  const _forkedScope = () => resolveEventScopeForecast({ segment: newPricingEvent.segment }, resolveForecast);' + nl +
+      '  void _forkedScope;' + nl +
+      '  const pricingScopeReason = useMemo((): string | null => {') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

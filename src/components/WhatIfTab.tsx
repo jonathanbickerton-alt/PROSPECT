@@ -14,7 +14,7 @@ import type { MarketEvent } from '../utils/forecasting';
 import { rebalance, achievableTargetRange, solveForTarget, blendedArpu, conformsToTotal } from '../utils/mixConstraint';
 import { EventsSummaryTable } from './EventsSummaryTable';
 import { foldChurnRamp, linearChurnRamp, type ChurnFoldMonth } from '../utils/churnFold';
-import { canShowBaseForecast, makeForecastKey } from '../utils/forecasting';
+import { canShowBaseForecast, resolveEventScopeForecast } from '../utils/forecasting';
 import { nextAmountControlState, effectiveAmountControl, churnAvailableFor,
          type AmountControl } from '../utils/amountControl';
 import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor } from '../utils/forecasting';
@@ -2123,8 +2123,34 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const eventScopeSeriesFor = useCallback((
     draft: Partial<PricingEvent>,
     excludeId: string | null,
-  ): any[] => computeAdjustedForecast({
-    baseForecast, marketEvents, yieldEvents,
+  ): { series: any[] | null; reason: string | null } => {
+    // CALLER 2 OF TWO — and the fix this returns is the whole point.
+    //
+    // This used to pass `baseForecast`, the LOADED COHORT's forecast, and hand
+    // the draft's dims in as view filters. That reads as scoping and is not:
+    // computeAdjustedForecast's view dims drive EVENT MATCHING only, so the
+    // baseline series — the ARPU column AND all three volume columns — stayed
+    // the loaded cohort's however narrow the draft was.
+    //
+    // MEASURED ON THE MOUNTED HARNESS, wide cohort loaded and a narrow draft:
+    // baseline ARPU 20.40 and pricedVol 32,760.06 were the WIDE cohort's to the
+    // penny, where the draft's own slice was 24.00 and 26,208.05. Loading that
+    // slice changed all four figures — which is the definition of a scoping
+    // bug, and why the walks never saw it: they had the slice loaded.
+    //
+    // Decisions 1 and 3 of 2026-08-17 both name this surface as event-scoped:
+    // "the blend of the event's own dimensions at its month". Now it is.
+    const resolution = resolveEventScopeForecast({
+      segment: draft.segment, product: draft.product, productL2: draft.productL2,
+      channelL1: draft.channelL1, channelL2: draft.channelL2,
+      tariffL1: draft.tariffL1, tariffL2: draft.tariffL2,
+    }, resolveForecast);
+    // A SLICE NO FORECAST COVERS IS A STATE, NOT A ZERO. The seam's own reason
+    // travels back to the card verbatim; substituting a generic sentence here
+    // would be the two-meanings-of-null defect at another site.
+    if (!resolution.forecast) return { series: null, reason: resolution.reason ?? null };
+    return { series: computeAdjustedForecast({
+    baseForecast: resolution.forecast, marketEvents, yieldEvents,
     pricingEvents: excludeId ? pricingEvents.filter(p => p.id !== excludeId) : pricingEvents,
     viewSegment: draft.segment ?? 'All',
     viewProduct: { l1: dimOrNull(draft.product), l2: dimOrNull(draft.productL2) },
@@ -2133,7 +2159,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
     wiTariffL1Col, wiTariffL2Col, wiValueCol,
     wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
-  }).chartData, [baseForecast, marketEvents, yieldEvents, pricingEvents, data,
+    }).chartData, reason: null };
+    // `baseForecast` is NO LONGER READ HERE and is therefore not a dependency —
+    // the read-set rule, applied in the direction that usually gets missed.
+    // `resolveForecast` replaces it, and is what must retrigger this.
+  }, [resolveForecast, marketEvents, yieldEvents, pricingEvents, data,
     wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
     wiTariffL1Col, wiTariffL2Col, wiValueCol,
     wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal]);
@@ -2154,13 +2184,33 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
    * Null when no month is chosen, so the memo never computes for a draft that
    * has nothing to preview.
    */
-  const previewScopeSeries = useMemo(
+  const previewScopeResolution = useMemo(
     () => (newPricingEvent.month ? eventScopeSeriesFor(newPricingEvent, editingPricingId ?? null) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [newPricingEvent.month, newPricingEvent.segment, newPricingEvent.product,
      newPricingEvent.productL2, newPricingEvent.channelL1, newPricingEvent.channelL2,
      newPricingEvent.tariffL1, newPricingEvent.tariffL2,
      editingPricingId, eventScopeSeriesFor]);
+  const previewScopeSeries = previewScopeResolution?.series ?? null;
+
+  /**
+   * THE SLICE THE DRAFT ASKS FOR HAS NO FORECAST — the seam's own words.
+   *
+   * A NEW failure mode, and an honest one: while the card read the loaded
+   * cohort there was always a series, because something is always loaded. Now
+   * that it resolves the draft's own slice, a never-enumerated slice resolves
+   * to null — and the user has to be told which slice and why, rather than
+   * shown a baseline belonging to a different cohort.
+   *
+   * Carried VERBATIM from `resolveForecast`, exactly as the churn panel carries
+   * it. Same seam, same reason, same sentence.
+   */
+  const pricingScopeReason = useMemo((): string | null => {
+    if (!previewScopeResolution || previewScopeResolution.series) return null;
+    return t('whatif_pricing_block_no_forecast', {
+      reason: previewScopeResolution.reason ?? t('whatif_churn_reason_unknown'),
+    });
+  }, [previewScopeResolution, t]);
 
   // ══ R7 — CHURN-TARGETED OUTFLOW ══════════════════════════════════════════
   //
@@ -2252,16 +2302,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
    */
   const churnScopeResolution = useMemo(() => {
     if (!isChurnDraft) return null;
-    const key = makeForecastKey(
-      newEvent.segment ?? 'All',
-      newEvent.product ?? 'All',
-      newEvent.productL2 ?? 'All',
-      newEvent.channel ?? 'All',
-      newEvent.channelL2 ?? 'All',
-      newEvent.tariffL1 ?? 'All',
-      newEvent.tariffL2 ?? 'All',
-    );
-    return resolveForecast(key);
+    // CALLER 1 OF TWO. A MarketEvent draft spells its channel field `channel`;
+    // the mapping happens here, where that name is visible, and the shared
+    // helper takes the normalised shape.
+    return resolveEventScopeForecast({
+      segment: newEvent.segment, product: newEvent.product, productL2: newEvent.productL2,
+      channelL1: newEvent.channel, channelL2: newEvent.channelL2,
+      tariffL1: newEvent.tariffL1, tariffL2: newEvent.tariffL2,
+    }, resolveForecast);
   }, [isChurnDraft, newEvent.segment, newEvent.product, newEvent.productL2,
       newEvent.channel, newEvent.channelL2, newEvent.tariffL1, newEvent.tariffL2,
       resolveForecast]);
@@ -2387,7 +2435,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // THIS EVENT IS EXCLUDED on the edit path, so the basis is genuinely
     // pre-this-event rather than a figure that already contains it — a subtlety
     // the chartData version got wrong on every edit.
-    const eventScopeSeries = eventScopeSeriesFor(newPricingEvent, editingPricingId);
+    const eventScopeSeries = eventScopeSeriesFor(newPricingEvent, editingPricingId).series;
+    // NO SERIES, NO ROW. A slice no forecast covers cannot produce a baseline,
+    // and writing a zero into `originalBaseArpu` would store a figure that
+    // reads as "the ARPU was nothing" rather than "we could not say" — the
+    // two-meanings-of-null defect, written to disk. The button is already
+    // disabled with the seam's reason in this state; this is the handler's
+    // matching guard, on the same rule the mode predicate follows.
+    if (!eventScopeSeries) return;
     const matchRow = eventScopeSeries.find((r: any) => r.month === newPricingEvent.month);
     const originalBaseArpu = matchRow ? (matchRow['ARPU (Adjusted)'] as number) : 0;
 
@@ -5277,6 +5332,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         // event-scoped last session, so for an event narrower
                         // than the cohort the previewed figure and the row's
                         // disagreed. They now agree by construction.
+                        // TWO ABSENCES, TWO SENTENCES. "No month chosen yet" and
+                        // "no forecast covers this slice" are different user
+                        // situations, and collapsing them into one message is
+                        // the failure this card has already been corrected for
+                        // twice. The scope reason comes first because it is the
+                        // one the user cannot resolve by finishing the form.
+                        if (pricingScopeReason) {
+                          return <p data-testid="pricing-preview-scope-reason" className="text-xs text-amber-700">{pricingScopeReason}</p>;
+                        }
                         const matchRow = previewScopeSeries?.find((r: any) => r.month === newPricingEvent.month);
                         const baseArpu = matchRow ? (matchRow['ARPU (Adjusted)'] as number) : null;
                         if (baseArpu === null) return <p className="text-xs text-slate-400">{t('whatif_select_a_month_to_preview')}</p>;
@@ -5377,8 +5441,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       silence into the handler. */}
                   <button
                     onClick={handleAddPricingEvent}
-                    disabled={pricingBlockReason !== null}
-                    title={pricingBlockReason ? t(pricingBlockReason) : undefined}
+                    disabled={pricingBlockReason !== null || pricingScopeReason !== null}
+                    title={pricingBlockReason ? t(pricingBlockReason) : (pricingScopeReason ?? undefined)}
                     className="px-6 py-2 bg-[#e60000] text-white text-sm font-semibold rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
                   >{editingPricingId ? t('whatif_save_changes') : t('whatif_add_pricing_event')}</button>
                   {pricingBlockReason && (
@@ -5386,6 +5450,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       data-testid="pricing-block-reason"
                       className="w-full text-[11px] text-amber-700 mt-1"
                     >{t(pricingBlockReason)}</p>
+                  )}
+                  {/* ALREADY TRANSLATED, unlike pricingBlockReason which is a
+                      key. The two conventions differ because this one embeds
+                      the seam's own reason string; rendering it through t()
+                      again would look for a key that is really a sentence. */}
+                  {!pricingBlockReason && pricingScopeReason && (
+                    <p
+                      data-testid="pricing-scope-reason"
+                      className="w-full text-[11px] text-amber-700 mt-1"
+                    >{pricingScopeReason}</p>
                   )}
                   {editingPricingId && (
                     <button

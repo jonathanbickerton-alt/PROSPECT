@@ -3159,6 +3159,59 @@ export function makeForecastKey(
 }
 
 /**
+ * A DRAFT EVENT'S OWN DIMENSIONS, in one shape.
+ *
+ * The three event carriers spell their channel field differently — a
+ * MarketEvent draft calls it `channel`, a PricingEvent draft `channelL1` — so
+ * the helper below takes a normalised object rather than a raw draft. Callers
+ * do the one-line mapping at their own site, where the field name is visible.
+ */
+export interface EventScopeDims {
+  segment?: string;
+  product?: string;
+  productL2?: string;
+  channelL1?: string;
+  channelL2?: string;
+  tariffL1?: string;
+  tariffL2?: string;
+}
+
+/**
+ * THE FORECAST A DRAFT EVENT IS SCOPED TO — one definition, two callers.
+ *
+ * WHY THIS EXISTS AS A FUNCTION AND NOT AS TWO MEMOS. Passing a draft's dims to
+ * `computeAdjustedForecast` as view filters looks like scoping and is not: that
+ * function uses the view dims for EVENT MATCHING only, so the baseline series
+ * stays whatever forecast was handed in. Every card that wants its own slice
+ * must therefore RESOLVE that slice's forecast and pass it as `baseForecast`.
+ *
+ * The churn panel learned this first (it showed the same ~293k at every slice).
+ * The pricing card had the identical defect and was measured on the mounted
+ * harness: with a wide cohort loaded and a narrow draft, its stored baseline
+ * ARPU and both weighting volumes were the LOADED COHORT's, to the penny.
+ * Rather than fix it twice, the resolution is this one function.
+ *
+ * `resolveForecast` is THE seam for the question — it returns a stored fit, one
+ * derived from the leaves in scope, or null WITH A REASON. The reason is
+ * returned to the caller rather than swallowed, because a slice no forecast
+ * covers is a state the user must be told about, not a silent zero.
+ */
+export function resolveEventScopeForecast<T extends { forecast: unknown | null }>(
+  dims: EventScopeDims,
+  resolve: (key: string) => T,
+): T {
+  return resolve(makeForecastKey(
+    dims.segment ?? 'All',
+    dims.product ?? 'All',
+    dims.productL2 ?? 'All',
+    dims.channelL1 ?? 'All',
+    dims.channelL2 ?? 'All',
+    dims.tariffL1 ?? 'All',
+    dims.tariffL2 ?? 'All',
+  ));
+}
+
+/**
  * Every roll-up key each leaf contributes to, and which leaves each roll-up is
  * made of.
  *

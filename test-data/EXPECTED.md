@@ -7114,6 +7114,58 @@ future. This session does not touch the other four marker sites.
    the volumes are **current, not stored** — matching the apply path, which
    weights against the month's current volumes rather than a snapshot.
 
+   **CLOSED 2026-08-21, and it had never actually been true.** Decisions 1 and
+   3 above say the pricing baseline is the blend of *the event's own
+   dimensions*. It was not. `eventScopeSeriesFor` passed the LOADED cohort's
+   forecast to `computeAdjustedForecast` and handed the draft's dims in as view
+   filters — and those dims drive **event matching only**, so the baseline
+   series stayed the loaded cohort's however narrow the draft was. The dims
+   changed which events applied; they never changed what the series was.
+
+   **MEASURED ON THE MOUNTED HARNESS, not argued.** Wide cohort loaded, narrow
+   draft, the real tab click and the real Add button:
+
+   ```
+                     baseline ARPU   pricedVol      totalVol
+     WIDE loaded         20.40       32,760.06   12,536,313.96
+     NARROW loaded       24.00       26,208.05   10,029,051.17
+     the draft slice     24.00       26,208.05
+   ```
+
+   All four figures followed **whatever Step 1 held**. Two earlier sessions
+   tried to settle this from source readings and both got it wrong — one by
+   comparing quantities that were not the same *named* quantity, one by
+   proposing a mechanism the code cannot produce. Driving the card settled it
+   in one run.
+
+#### PRICING BASELINE SCOPE (Jon, 2026-08-21) — the fix
+
+1. **ALL FOUR PRICING BASELINE FIGURES ARE EVENT-SCOPED** — baseline ARPU,
+   `pricedVol`, `totalVol`, and therefore the weighting ratio — through **one
+   shared resolved-forecast helper**, `resolveEventScopeForecast`, with
+   **exactly two callers**: the churn panel's feed and the pricing series feed.
+   The count is pinned at exactly two, not at least two: a third resolution
+   site is how two implementations that agree today diverge tomorrow.
+
+   The four figures were never separable. They are columns of **one row** of
+   **one series**, so scoping the series corrects all four in one move — and
+   equally, no fix could have corrected the volumes while leaving the ARPU
+   alone without forking a second series for one draft.
+
+2. **STORED ROWS STAND VERBATIM.** The save-time-record semantic is unchanged
+   and no legacy-display machinery is built. Pre-fix pricing events exist only
+   in Jon's test saves; he recreates them or accepts them. Old and new rows for
+   the same slice will therefore show different volumes, which is the price of
+   not rewriting user data.
+
+3. **A SLICE NO FORECAST COVERS IS A STATED ABSENCE**, carrying
+   `resolveForecast`'s own reason verbatim — in the Preview panel and beside a
+   disabled Add button, with the handler guarded to match. This is a **new**
+   state created by the fix: while the card read the loaded cohort there was
+   always a series, because something is always loaded. Writing a zero baseline
+   for an unresolvable slice would be the two-meanings-of-null defect
+   persisted to disk.
+
    The **baseline stays the save-time snapshot** (`originalBaseArpu`), unchanged
    — that semantics was decided separately and is not reopened here. So the row
    pairs a stored baseline with current weights, which is exactly what the apply

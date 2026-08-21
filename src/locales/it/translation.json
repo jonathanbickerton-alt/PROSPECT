@@ -786,6 +786,7 @@
   "whatif_summary_col_when": "Quando",
   "whatif_pricing_block_no_month": "Scegli un mese prima di aggiungere questo evento.",
   "whatif_pricing_block_no_amount": "Inserisci un importo prima di aggiungere questo evento.",
+  "whatif_pricing_block_no_forecast": "Nessuna previsione di base copre l’ambito di questo evento ({{reason}}), quindi non esiste una base su cui applicare il prezzo.",
   "whatif_pricing_block_dilution_incomplete": "Inserisci la diluizione attuale e quella obiettivo prima di aggiungere questo evento.",
   "whatif_pricing_block_dilution_range": "I valori di diluizione devono essere pari o superiori a 0 e inferiori a 100.",
   "whatif_preview_not_available": "Nessun valore ponderato per questo evento: gli eventi solo sulla base agiscono su un insieme che questa vista non può scomporre.",

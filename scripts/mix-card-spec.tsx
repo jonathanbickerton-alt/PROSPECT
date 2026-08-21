@@ -873,11 +873,26 @@ async function main() {
   //            that a churn add never reaches it.
   // ═════════════════════════════════════════════════════════════════════════
   {
-    const mkSeries = (mult: number) => seriesArr.map((r: any) => ({
+    // ARPU IS CARRIED, AND THE TWO LEAVES DISAGREE ON IT.
+    //
+    // It used to be absent — the accumulator above sums the three volume
+    // metrics and leaves `arpu: 0`, so every forecast in this store had an ARPU
+    // of exactly zero. That was invisible while nothing asserted on ARPU, and
+    // it made the pricing-scope section's first run VACUOUS: `near(0, 0)` holds
+    // whatever the scoping does, so a baseline check would have passed against
+    // a card reading the wrong slice. The DISTINCT-ARPU guard below is what
+    // caught it, which is the whole argument for asserting that a fixture can
+    // tell its own cases apart before asserting anything about them.
+    //
+    // Same species as the scenarioHelper session's `typeof baseArpu !== 'number'`
+    // guard admitting 0 — the one value that makes everything downstream
+    // trivially true.
+    const mkSeries = (mult: number, arpu: number) => seriesArr.map((r: any) => ({
       ...r, inflow: r.inflow * mult, outflow: r.outflow * mult, retention: r.retention * mult,
+      arpu, inflowArpu: arpu, outflowArpu: arpu, retentionArpu: arpu, baseArpu: arpu,
     }));
-    const bfFor = (cohort: any, mult: number, seed: number) =>
-      fc.calculateBaseForecast(mkSeries(mult), cohort, seed, 12, 1.0, 1.5, 3, 'Holt Linear');
+    const bfFor = (cohort: any, mult: number, seed: number, arpu: number) =>
+      fc.calculateBaseForecast(mkSeries(mult, arpu), cohort, seed, 12, 1.0, 1.5, 3, 'Holt Linear');
 
     // TWO LEAVES, AND THE AGGREGATE DERIVES FROM THEM — the production shape.
     //
@@ -912,8 +927,11 @@ async function main() {
       // ramp. A base that rolls to zero is a legitimate absence the fold names
       // ('prev-base-zero'), but a fixture that hits it would be testing the
       // absence path while claiming to test the ramp.
-      [leafKey(PRODB), bfFor(leafCohort(PRODB), 1, 10_000_000)],
-      [leafKey(PRODC), bfFor(leafCohort(PRODC), 0.25, 2_500_000)],
+      // The ARPUs are FAR APART (24 vs 6) so the wide aggregate's blend cannot
+      // land near either leaf by accident — the coincidence that wrecked two
+      // earlier readings of this same question.
+      [leafKey(PRODB), bfFor(leafCohort(PRODB), 1, 10_000_000, 24)],
+      [leafKey(PRODC), bfFor(leafCohort(PRODC), 0.25, 2_500_000, 6)],
     ]);
 
     // THE DRAFT'S KEYS. Unset dims default to 'All', so an unscoped draft asks
@@ -1263,6 +1281,208 @@ async function main() {
       check('R7 edit (d): and does NOT open the churn panel',
         !q('[data-testid="churn-panel"]'));
     }
+    // ═══════════════════════════════════════════════════════════════════════
+    // PRICING BASELINE SCOPE — all four figures, driven on the real path.
+    //
+    // WHY THIS EXISTS. Two sessions argued this question from source readings
+    // and both got it wrong: one by comparing two quantities that were not the
+    // same NAMED quantity, one by proposing a mechanism the code cannot
+    // produce. The settled decision (Jon, 2026-08-17) says the pricing
+    // baseline is "the blend of THE EVENT'S OWN DIMENSIONS at its month", and
+    // the weighting volumes come from the same row. This DRIVES the card and
+    // reads what the engine actually produced, so the question stops being
+    // arguable.
+    //
+    // THE CONFIGURATION IS THE WHOLE POINT: a WIDE cohort loaded in Step 1 and
+    // a NARROW draft. When the loaded cohort equals the draft's scope every
+    // scoping bug is invisible — which is exactly why the walks did not see it.
+    //
+    // EXPECTATIONS COME FROM resolveForecast, NOT FROM THE CARD. The narrow
+    // slice's own forecast is what "event-scoped" MEANS, and it is reached by a
+    // different route than the card's — so this measures rather than
+    // reimplements, and cannot pass by agreeing with itself.
+    // ═══════════════════════════════════════════════════════════════════════
+    {
+      const priceProvider = (loadedKey: string, child: any) =>
+        React.createElement(ForecastProvider as any, {
+          baseForecast: fc.resolveFromStore(storeR7, leafMapR7, loadedKey).forecast,
+          setBaseForecast: noop,
+          adjustedForecast: null, setAdjustedForecast: noop,
+          forecastStore: storeR7, setForecastStore: noop,
+          resolveForecast: (k: string) => fc.resolveFromStore(storeR7, leafMapR7, k),
+          canResolve: (k: string) => leafMapR7.has(k) || storeR7.has(k),
+          hasLegacyBaseline: true, updatedAt: new Date().toISOString(),
+          bulkRuns: [], setBulkRuns: noop,
+        }, child);
+
+      const clickEl = async (el: any) => {
+        await (act as any)(async () => {
+          el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+        });
+      };
+
+      /** Drive one configuration end to end and return what the ENGINE built. */
+      const drivePricing = async (loadedKey: string) => {
+        let captured: any = null;
+        const host = document.createElement('div');
+        document.getElementById('root')!.appendChild(host);
+        const rootP = createRoot(host);
+        const H = () => {
+          const [pe, setPe] = React.useState<any>({});
+          (globalThis as any).__setP = setPe;
+          return React.createElement(M, {
+            ...whatIfProps(),
+            newPricingEvent: pe,
+            setNewPricingEvent: (e: any) => setPe(e),
+            pricingEvents: [],
+            addPricingEvent: (e: any) => { captured = e; },
+          });
+        };
+        await (act as any)(async () => { rootP.render(priceProvider(loadedKey, React.createElement(H))); });
+
+        // THE REAL TAB CLICK. The pricing card lives behind activeTab, which is
+        // internal state — reaching it any other way would be testing a render
+        // the user cannot actually get to.
+        const tabBtn = [...host.querySelectorAll('button')]
+          .find((b: any) => (b.textContent || '').trim() === 'Pricing');
+        if (tabBtn) await clickEl(tabBtn);
+
+        // A PLAIN PERCENTAGE EVENT over target 'cohorts', scope 'both', so
+        // pricedVol is inflow+retention and totalVol adds base — all three
+        // volume terms exercised, and none of dilution's extra state involved.
+        await (act as any)(async () => {
+          (globalThis as any).__setP((d: any) => ({
+            ...d, segment: SEG, product: PRODB, productL2: 'All',
+            channelL1: 'All', channelL2: 'All', tariffL1: 'All', tariffL2: 'All',
+            month: DRAFT_MONTH, amount: 10, inputMode: 'percentage',
+            target: 'cohorts', cohortScope: 'both', duration: 'one-off',
+          }));
+        });
+
+        // The PREVIEW's rendered baseline, read as TEXT — the figure a user
+        // actually sees, not the state behind it.
+        const previewText = [...host.querySelectorAll('p')]
+          .map((p: any) => (p.textContent || '').trim())
+          .find((s: string) => s.startsWith('Baseline ARPU')) ?? '';
+
+        const addBtn = [...host.querySelectorAll('button')]
+          .find((b: any) => (b.textContent || '').trim() === 'Add Pricing Event');
+        if (addBtn) await clickEl(addBtn);
+
+        return { captured, previewText, hasAdd: !!addBtn, hasTab: !!tabBtn };
+      };
+
+      // WHAT EVENT-SCOPED MEANS, derived independently of the card.
+      const monthsOf = (k: string) =>
+        (fc.resolveFromStore(storeR7, leafMapR7, k).forecast?.months ?? []);
+      const idxOf = (k: string) => monthsOf(k).findIndex((m: any) => m.month === DRAFT_MONTH);
+      const arpuOf = (k: string) => monthsOf(k)[idxOf(k)]?.arpu?.mean ?? NaN;
+      const flowsOf = (k: string) => {
+        const mm = monthsOf(k)[idxOf(k)];
+        return mm ? (mm.inflow.mean + mm.retention.mean) : NaN;
+      };
+
+      const A_ARPU = arpuOf(keyA), B_ARPU = arpuOf(keyB);
+      const A_FLOWS = flowsOf(keyA), B_FLOWS = flowsOf(keyB);
+
+      // THE FIXTURE MUST BE ABLE TO TELL THE TWO APART. Without this the whole
+      // section could pass while proving nothing — the vacuous-result trap.
+      check('pricing scope: the wide and narrow slices have DISTINCT ARPU',
+        Number.isFinite(A_ARPU) && Number.isFinite(B_ARPU) && Math.abs(A_ARPU - B_ARPU) > 0.01,
+        `wide ${A_ARPU} vs narrow ${B_ARPU}`);
+      check('pricing scope: the wide and narrow slices have DISTINCT flows',
+        Number.isFinite(A_FLOWS) && Number.isFinite(B_FLOWS) && Math.abs(A_FLOWS - B_FLOWS) > 1,
+        `wide ${A_FLOWS} vs narrow ${B_FLOWS}`);
+
+      // ── CONFIGURATION 1: WIDE loaded, NARROW draft ──────────────────────
+      const wide = await drivePricing(keyA);
+      check('pricing scope: the Pricing tab is reachable by click', wide.hasTab);
+      check('pricing scope: the Add button is present', wide.hasAdd);
+      check('pricing scope: a row was built by the real handler', !!wide.captured);
+
+      const w: any = wide.captured ?? {};
+
+      // ── CONFIGURATION 2: NARROW loaded (C = S) ──────────────────────────
+      const narrow = await drivePricing(keyB);
+      const n: any = narrow.captured ?? {};
+
+      console.log('\n  PRICING BASELINE SCOPE — measured on the real path');
+      console.log(`    draft slice        : ${SEG} / ${PRODB}   month ${DRAFT_MONTH}`);
+      console.log(`    narrow slice OWN   : arpu ${Number(B_ARPU).toFixed(4)}   flows ${Number(B_FLOWS).toFixed(2)}`);
+      console.log(`    wide  cohort OWN   : arpu ${Number(A_ARPU).toFixed(4)}   flows ${Number(A_FLOWS).toFixed(2)}`);
+      console.log(`    WIDE   loaded -> baseArpu ${w.originalBaseArpu}  pricedVol ${w.pricedVol}  totalVol ${w.totalVol}`);
+      console.log(`    WIDE   loaded -> preview "${wide.previewText}"`);
+      console.log(`    NARROW loaded -> baseArpu ${n.originalBaseArpu}  pricedVol ${n.pricedVol}  totalVol ${n.totalVol}`);
+      console.log(`    NARROW loaded -> preview "${narrow.previewText}"\n`);
+
+      // ── THE ASSERTIONS ──────────────────────────────────────────────────
+      //
+      // THE SETTLED DECISION, TESTED DIRECTLY. The baseline is the blend of the
+      // EVENT'S OWN dimensions, so it must equal the narrow slice's own ARPU
+      // whatever cohort happens to be loaded. This assertion INVERTS the
+      // constraint the previous brief carried (leave the ARPU alone and pin it
+      // unchanged); that premise was withdrawn, and the settled 2026-08-17
+      // decision names this surface as event-scoped.
+      check('pricing scope: baseline ARPU is the EVENT SLICE, not the loaded cohort',
+        near(Number(w.originalBaseArpu), Number(B_ARPU), 5e-3),
+        `stored ${w.originalBaseArpu} vs slice ${B_ARPU} (loaded cohort is ${A_ARPU})`);
+
+      check('pricing scope: pricedVol is the EVENT SLICE flows',
+        near(Number(w.pricedVol), Number(B_FLOWS), 5e-3),
+        `stored ${w.pricedVol} vs slice ${B_FLOWS} (loaded cohort is ${A_FLOWS})`);
+
+      // totalVol adds the slice's BASE to the same flows, so it must exceed
+      // pricedVol and stay below the WIDE cohort's flows-plus-base. Stated as a
+      // band rather than a literal because the base is a roll-forward the card
+      // does not expose; the two literals above are the discriminating ones.
+      check('pricing scope: totalVol adds the slice base to the same flows',
+        Number(w.totalVol) > Number(w.pricedVol),
+        `totalVol ${w.totalVol}, pricedVol ${w.pricedVol}`);
+
+      // THE PREVIEW AND THE ROW ARE ONE QUANTITY (decision 3, 2026-08-17):
+      // "Preview and the saved row then agree BY CONSTRUCTION." Read from the
+      // rendered TEXT, so a divergence between what is shown and what is stored
+      // cannot hide behind shared state.
+      check('pricing scope: the PREVIEW shows the same baseline the row stored',
+        wide.previewText.includes(Number(w.originalBaseArpu).toFixed(2)),
+        `preview "${wide.previewText}" vs stored ${w.originalBaseArpu}`);
+
+      // INVARIANCE. Loading the narrow slice must change nothing, because the
+      // draft already asked for that slice. This is the check that catches the
+      // defect from the other side.
+      check('pricing scope: C = S is INVARIANT — baseline unchanged',
+        near(Number(w.originalBaseArpu), Number(n.originalBaseArpu), 5e-3),
+        `wide-loaded ${w.originalBaseArpu} vs narrow-loaded ${n.originalBaseArpu}`);
+      check('pricing scope: C = S is INVARIANT — pricedVol unchanged',
+        near(Number(w.pricedVol), Number(n.pricedVol), 5e-3),
+        `wide-loaded ${w.pricedVol} vs narrow-loaded ${n.pricedVol}`);
+      check('pricing scope: C = S is INVARIANT — totalVol unchanged',
+        near(Number(w.totalVol), Number(n.totalVol), 5e-3),
+        `wide-loaded ${w.totalVol} vs narrow-loaded ${n.totalVol}`);
+
+      // ── ONE DEFINITION, EXACTLY TWO CALLERS ─────────────────────────────
+      //
+      // The churn panel and the pricing series feed. The count is pinned at
+      // EXACTLY two rather than "at least two" because the failure this guards
+      // is a THIRD site appearing — a card resolving its own slice locally,
+      // which is how the two implementations that agree today become the two
+      // that disagree tomorrow. A >= test would pass through exactly that.
+      //
+      // COMMENTS ARE STRIPPED FIRST. A prose mention of the helper's name in a
+      // comment would inflate the count, and this file's own history contains a
+      // trap that matched an explanatory comment instead of the code it
+      // described.
+      const srcRaw = (await import('node:fs')).readFileSync('src/components/WhatIfTab.tsx', 'utf8');
+      const src = srcRaw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+      const callers = (src.match(/resolveEventScopeForecast\s*\(/g) ?? []).length;
+      check('pricing scope: the shared helper has EXACTLY two callers',
+        callers === 2, `found ${callers}`);
+      check('pricing scope: and it is IMPORTED, not redefined locally',
+        /import\s*\{[^}]*resolveEventScopeForecast/.test(src)
+          && !/function\s+resolveEventScopeForecast/.test(src),
+        'a local redefinition would satisfy the count while forking the definition');
+    }
+
     void rerender;
   }
   report();

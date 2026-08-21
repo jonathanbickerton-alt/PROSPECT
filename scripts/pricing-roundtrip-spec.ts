@@ -411,8 +411,16 @@ check('baseline: dims go through dimOrNull, so All and absent both mean no filte
 // the dependency array is the key, and a call-count probe would need a mount.
 // Stated plainly rather than implied, per the standing rule about what is and
 // is not machine-checked.
-const memoStart = tab.indexOf('const previewScopeSeries = useMemo(');
+// RE-AIMED 2026-08-21, following the code rather than relaxed. The memo now
+// carries the whole RESOLUTION — forecast-or-reason — because the series alone
+// cannot say why it is absent, and a null series with no reason is the
+// two-meanings-of-null defect. `previewScopeSeries` still exists, derived from
+// it; the memo that holds the KEY is this one.
+const memoStart = tab.indexOf('const previewScopeResolution = useMemo(');
 const memoDeps = tab.slice(memoStart, tab.indexOf(']);', memoStart));
+check('memo: the anchor names a memo that EXISTS',
+  memoStart !== -1,
+  'a moved anchor silently slices from index -1 and tests the whole file');
 check('memo: the key covers the draft dims and month',
   ['month', 'segment', 'product', 'productL2', 'channelL1', 'channelL2', 'tariffL1', 'tariffL2']
     .every(d => memoDeps.includes(`newPricingEvent.${d}`)),

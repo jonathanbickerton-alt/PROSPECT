@@ -795,6 +795,7 @@
   "whatif_summary_col_when": "When",
   "whatif_pricing_block_no_month": "Choose a month before adding this event.",
   "whatif_pricing_block_no_amount": "Enter an amount before adding this event.",
+  "whatif_pricing_block_no_forecast": "No baseline forecast covers this event’s slice ({{reason}}), so there is no baseline to price against.",
   "whatif_pricing_block_dilution_incomplete": "Enter both the current and target dilution before adding this event.",
   "whatif_pricing_block_dilution_range": "Dilution figures must be 0 or more and below 100.",
   "whatif_preview_not_available": "No weighted figure for this event — base-only events price a pool this view cannot break down.",
