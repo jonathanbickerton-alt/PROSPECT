@@ -1280,6 +1280,102 @@ async function main() {
         'the churn bar must not catch ordinary rows');
       check('R7 edit (d): and does NOT open the churn panel',
         !q('[data-testid="churn-panel"]'));
+
+      // ── (e) ADD IS DISABLED WHEN THE DRAFT HAS NO BASELINE ──────────────
+      //
+      // WALKED DEFECT, 2026-08-21. The churn panel showed the seam's reason
+      // and the Add button stayed ENABLED; the handler's `if (churnBlockReason)
+      // return` swallowed the click. A live button that discards a click reads
+      // as a bug however clearly the form explains itself elsewhere — the
+      // design principle this codebase applies to outputs, pointed at a
+      // control.
+      //
+      // THE SLICE IS DELIBERATELY UNRESOLVABLE: PRODC exists in the store as a
+      // LEAF, but no leafMap entry enumerates the product-scoped aggregate
+      // above it, so resolveForecast returns null WITH a reason — the same
+      // shape a never-enumerated slice has in the app.
+      // LEAVE EDIT MODE FIRST. Sections (c) and (d) opened rows, and the Add
+      // button does not render while a row is being edited — the card shows
+      // Save Changes / Cancel instead. Asserting on Add without closing the
+      // edit would have looked like a missing button and been a missing step.
+      const cancelBtn = [...qa('button')]
+        .find((b: any) => (b.textContent || '').trim() === 'Cancel');
+      if (cancelBtn) await (act as any)(async () => {
+        cancelBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+      });
+      await (act as any)(async () => { (globalThis as any).__setEvents([]); });
+      await setDraft({ scenario: 'Outflow', date: DRAFT_MONTH, segment: SEG,
+        product: PRODC, subscriberVolume: 0 });
+      const armE = q('[data-testid="volume-mode-churn"]');
+      if (armE) await (act as any)(async () => {
+        armE.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+      });
+
+      const addBtnE = [...qa('button')]
+        .find((b: any) => (b.textContent || '').trim().startsWith('Add Event'));
+      const blockMsg = q('[data-testid="churn-add-block-reason"]');
+
+      check('R7 walk (e): the unresolvable slice produces a stated reason',
+        !!blockMsg && (blockMsg.textContent || '').length > 20,
+        `"${blockMsg?.textContent ?? '(absent)'}"`);
+      check('R7 walk (e): the Add button EXISTS and is DISABLED',
+        !!addBtnE && addBtnE.disabled === true,
+        addBtnE ? `disabled=${addBtnE.disabled}` : '(button not found)');
+
+      // THE REASON BESIDE THE BUTTON IS THE SAME SENTENCE THE PANEL SHOWS.
+      // Two different sentences for one state is how a user learns to distrust
+      // both of them.
+      const panelMsg = q('[data-testid="churn-block-reason"]');
+      check('R7 walk (e): the button-side reason matches the panel-side reason',
+        !!panelMsg && !!blockMsg
+          && (panelMsg.textContent || '').trim() === (blockMsg.textContent || '').trim(),
+        `panel "${panelMsg?.textContent}" vs button "${blockMsg?.textContent}"`);
+
+      // A CLICK ON THE DISABLED CONTROL CHANGES NOTHING — counted, not assumed.
+      // The spy is App's fifth writer; `stored` is the local event list. Both
+      // are read, because "nothing happened" has two places to fail.
+      const writerBefore = fifthWriterCalls, storedBefore = stored.length;
+      if (addBtnE) await (act as any)(async () => {
+        addBtnE.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+      });
+      check('R7 walk (e): clicking the disabled Add reaches no writer',
+        fifthWriterCalls === writerBefore,
+        `${writerBefore} -> ${fifthWriterCalls}`);
+      check('R7 walk (e): and adds no event row',
+        stored.length === storedBefore,
+        `${storedBefore} -> ${stored.length}`);
+
+      // ── (f) THE TOOLTIP NAMES THE CAMPAIGN, NOT THE METRIC ──────────────
+      //
+      // WALKED DEFECT, 2026-08-21. A campaign's member rows carry
+      // `campaignName` and an EMPTY `name`, so the tooltip fell through to
+      // `e.scenario` and every month of a three-month ramp read "Outflow".
+      //
+      // THE NEGATIVE HALF IS THE LOAD-BEARING ONE: asserting the campaign name
+      // appears would pass while "Outflow" ALSO appeared beside it, which is
+      // the state being fixed.
+      const CAMPAIGN = 'Q3 Retention Push';
+      await (act as any)(async () => {
+        (globalThis as any).__setEvents([{
+          id: 'tip-1', scenario: 'Outflow', segment: SEG, product: 'All', productL2: 'All',
+          channel: 'All', channelL2: 'All', tariffL1: 'All', tariffL2: 'All',
+          date: DRAFT_MONTH, subscriberVolume: 120, customerVolume: 0, revenue: 0, arpu: 0,
+          name: '', campaignName: CAMPAIGN, comment: '', contractLength: 24, sequence: 1,
+          amountType: 'absolute', percentageBasis: 'baseline', retentionLinked: true,
+          churnMode: 'churn',
+        }]);
+      });
+
+      // The tooltip is a render function on the chart, not mounted markup, so
+      // it is checked at SOURCE — stated plainly rather than implied, per the
+      // standing rule about what is and is not machine-checked.
+      const tabSrc = (await import('node:fs')).readFileSync('src/components/WhatIfTab.tsx', 'utf8');
+      check('R7 walk (f): the tooltip prefers campaignName over the kind label',
+        tabSrc.includes('{e.name || e.campaignName || e.scenario}'),
+        'a member row with an empty name fell through to e.scenario and read "Outflow"');
+      check('R7 walk (f): and the bare kind-label fallback is GONE',
+        !tabSrc.includes('{e.name || e.scenario}'),
+        'the old expression surviving anywhere would leave the defect on that surface');
     }
     // ═══════════════════════════════════════════════════════════════════════
     // PRICING BASELINE SCOPE — all four figures, driven on the real path.

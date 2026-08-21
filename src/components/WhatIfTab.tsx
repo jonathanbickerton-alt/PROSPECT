@@ -2078,7 +2078,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             <p style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{t('whatif_events_this_month')}</p>
             {meForMonth.map(e => (
               <div key={e.id} style={{ fontSize: 11, color: '#f43f5e', marginBottom: 3 }}>
-                <span style={{ fontWeight: 700 }}>{e.name || e.scenario}</span>
+                {/* CAMPAIGN NAME BEFORE THE KIND LABEL. A campaign's member
+                    rows carry `campaignName` and an EMPTY `name` — the emitter
+                    sets `name: newEvent.name || ''` — so a churn ramp saved
+                    with only a campaign name fell straight through to
+                    `e.scenario` and every month of it read "Outflow". Three
+                    identical rows naming the metric instead of the campaign
+                    that produced them. Per-row name still wins where one was
+                    typed, because it is the more specific of the two. */}
+                <span style={{ fontWeight: 700 }}>{e.name || e.campaignName || e.scenario}</span>
                 {e.comment && <span style={{ color: '#64748b' }}> — {e.comment}</span>}
               </div>
             ))}
@@ -4617,13 +4625,38 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   >{t('common_cancel')}</button>
                 </div>
               ) : (
-                <button
-                  onClick={handleAddMarketEvent}
-                  disabled={!newEvent.date || newEvent.subscriberVolume === undefined}
-                  className="shrink-0 bg-[#e60000] text-white text-sm font-semibold py-2 px-6 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {spreadEnabled ? t('whatif_add_events', { p0: spreadMonths }) : t('whatif_add_event')}
-                </button>
+                <div className="shrink-0 flex flex-col items-end gap-1">
+                  {/* THE BUTTON READS THE SAME PREDICATE THE HANDLER DOES.
+                      It used to read only the date and the volume field, so on
+                      a churn draft with no baseline for its slice the button
+                      stayed ENABLED, the handler's `if (churnBlockReason)
+                      return` fired, and the click did nothing at all. The panel
+                      was already saying why — but a live button that silently
+                      discards a click reads as a bug, whatever is printed
+                      elsewhere on the form.
+
+                      This is the pricing card's shipped shape, exactly: one
+                      reason, read by the button, by the message beside it and
+                      by the handler's guard. The failure mode it removes is the
+                      one this codebase's design principle names first —
+                      blocked states are communicated, never silent. */}
+                  <button
+                    onClick={handleAddMarketEvent}
+                    disabled={!newEvent.date || newEvent.subscriberVolume === undefined || churnBlockReason !== null}
+                    title={churnBlockReason ?? undefined}
+                    className="bg-[#e60000] text-white text-sm font-semibold py-2 px-6 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {spreadEnabled ? t('whatif_add_events', { p0: spreadMonths }) : t('whatif_add_event')}
+                  </button>
+                  {/* ALREADY TRANSLATED — churnBlockReason returns sentences,
+                      not keys, because it embeds the seam's own reason. */}
+                  {churnBlockReason && (
+                    <p
+                      data-testid="churn-add-block-reason"
+                      className="text-[11px] text-amber-700 text-right max-w-[22rem]"
+                    >{churnBlockReason}</p>
+                  )}
+                </div>
               )}
             </div>
           </div>

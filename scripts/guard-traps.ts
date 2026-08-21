@@ -1254,6 +1254,18 @@ const TRAPS: Trap[] = [
       '  const _forkedScope = () => resolveEventScopeForecast({ segment: newPricingEvent.segment }, resolveForecast);' + nl +
       '  void _forkedScope;' + nl +
       '  const pricingScopeReason = useMemo((): string | null => {') },
+  // 110 re-enables the churn Add on a draft the handler will refuse. The
+  // handler's own guard still fires, so NOTHING BREAKS and no wrong figure is
+  // produced — the click is simply swallowed. That is the walked defect
+  // exactly, and the reason this trap targets the BUTTON rather than the
+  // handler: the failure is that the surface does not communicate, not that
+  // the logic is wrong.
+  { id: '110 the churn Add is enabled on a draft the handler will refuse',
+    why: 'a live button that silently discards a click reads as a bug, whatever the form prints elsewhere',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      'disabled={!newEvent.date || newEvent.subscriberVolume === undefined || churnBlockReason !== null}',
+      'disabled={!newEvent.date || newEvent.subscriberVolume === undefined}') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
