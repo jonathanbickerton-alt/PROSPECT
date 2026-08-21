@@ -5,7 +5,7 @@
 ```
 Generated: 2026-08-21 09:06 +0100 (UTC 2026-08-21 08:06)
 Certifies: none (no source file changed)
-Repo: committed <filled below>, pushed (origin in sync)
+Repo: committed 8b7bdc1, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before the base check.
 STOPPED AT ITEM 1 BY THE SHED ORDER'S OWN CLAUSE. The mechanism makes the fix
   unsafe for the ARPU constraint, which the brief names as an outcome.
