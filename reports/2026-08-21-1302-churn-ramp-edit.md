@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-08-21 13:02 +0100 (UTC 2026-08-21 12:02)
-Certifies: __HASH__
-Repo: __REPO__
+Certifies: 4a1d110 (report filled one commit later)
+Repo: committed 4a1d110, pushed (origin in sync)
 SKELETON FIRST. BASE: HEAD 8d6f260 vs 1200's cf4a610 — one, REPORT-ONLY.
 PART 1: the pencil DOES route through handleEditStart and the gate IS there —
   but it is memoised on [setNewEvent] while READING marketEvents, and App's
