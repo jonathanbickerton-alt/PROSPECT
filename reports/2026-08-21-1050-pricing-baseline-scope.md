@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-08-21 10:50 +0100 (UTC 2026-08-21 09:50)
-Certifies: __HASH__
-Repo: __REPO__
+Certifies: 7b456a1 (this report filled one commit later)
+Repo: committed 7b456a1, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before the base check.
 BASE: HEAD e54286f vs 0906's 8b7bdc1 — one commit, REPORT-ONLY.
 ITEM 1: the settled decision (Jon, 2026-08-17) names THIS surface. Decision 1
