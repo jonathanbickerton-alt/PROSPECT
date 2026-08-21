@@ -1121,15 +1121,12 @@ const TRAPS: Trap[] = [
   // becomes editable and its reverse-engineering — summing |subscriberVolume|
   // — SUCCEEDS on churn rows, producing a total that is not a churn statement
   // and a re-spread that would not reproduce the stated rates.
-  { id: '97 churn rows leave the group-edit barred class', why: 'a plausible, wrong spread with nothing about it to look wrong',
-    file: WHATIF, spec: CHURNFOLD,
-    mutate: s => s.replace(
-      "    const anyChurn = g.rows.some(e => e.churnMode === 'churn');",
-      '    const anyChurn = false;') },
-  // 98 reinstates the forced-negative on churn rows in the workbook route. A
-  // stated REDUCTION arrives as an INCREASE — the event silently inverted into
-  // its opposite. The plain-row checks must stay green beside it, because the
-  // forced-negative is correct for rows a human typed.
+  // 97 RETIRED 2026-08-21 by D5-revised. It planted the removal of the
+  // `anyChurn` group-edit bar — which is now the WANTED behaviour, so the trap
+  // was asserting the opposite of the decision. Retired rather than re-aimed:
+  // the property it guarded (a churn campaign never reaching the summed-volume
+  // spread path) is now guarded by spec:churn-fold's re-aimed BAR checks and
+  // by trap 112 below, which plants the members being left in the re-state.
   { id: '98 the workbook route forces churn deltas negative', why: 'a stated churn reduction is imported as an increase',
     file: ENGINE, spec: EVTROUND,
     mutate: s => s.replace(
@@ -1266,6 +1263,54 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       'disabled={!newEvent.date || newEvent.subscriberVolume === undefined || churnBlockReason !== null}',
       'disabled={!newEvent.date || newEvent.subscriberVolume === undefined}') },
+  // 111 restores the stale dependency array on handleEditStart — the exact
+  // defect found this session. The callback reads `marketEvents` but would be
+  // memoised on `[setNewEvent]` alone, and App's setNewEvent is a raw useState
+  // setter, so the closure captures an EMPTY event list for the component's
+  // lifetime and the ramp-member decline never fires.
+  //
+  // THE MOUNT CAN ONLY SEE THIS BECAUSE ITS PROPS ARE NOW STABLE. While the
+  // harness passed an inline arrow, the dependency changed every render, the
+  // callback was rebuilt every render, and this trap would have MISSED.
+  { id: '111 handleEditStart is memoised without the events it reads',
+    why: 'the ramp-member decline becomes structurally unreachable and the pencil opens a partial statement',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      '  }, [setNewEvent, marketEvents, t]);',
+      '  }, [setNewEvent]);') },
+  // 112 puts the campaign's own member rows back into the series the re-state
+  // folds against. The campaign then re-states against its own effect: the
+  // churn it already removed reads as the current rate, so currentPct and
+  // prevBase both move and the deltas do not reproduce.
+  { id: '112 the churn re-state sees the campaign rows it is replacing',
+    why: 'a campaign re-stated against its own effect derives a trajectory nobody stated',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      '      marketEvents: churnExcludedIds.size > 0' + nl +
+      '        ? marketEvents.filter(e => !churnExcludedIds.has(e.id))' + nl +
+      '        : marketEvents,',
+      '      marketEvents,') },
+  // 113 moves the sign flip from the DISPLAY site to the STORAGE path. The Δ
+  // column still reads correctly — so the display literal stays GREEN — while
+  // D4's signed-verbatim pins go red. That pairing is the point: it is what
+  // distinguishes "the figure looks right" from "the fix is on the right
+  // layer", and only a trap that leaves one half green can prove it.
+  { id: '113 the churn sign is flipped on the storage path, not the display',
+    why: 'the Δ column still reads right while every stored row carries an inverted delta',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      '        subscriberVolume: m.delta,' + nl +
+      '        customerVolume:  0,' + nl +
+      '        revenue:         0,' + nl +
+      '        arpu:            0,' + nl +
+      '        name:            \'\',' + nl +
+      '        campaignName:    editingCampaign,',
+      '        subscriberVolume: -m.delta,' + nl +
+      '        customerVolume:  0,' + nl +
+      '        revenue:         0,' + nl +
+      '        arpu:            0,' + nl +
+      '        name:            \'\',' + nl +
+      '        campaignName:    editingCampaign,') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

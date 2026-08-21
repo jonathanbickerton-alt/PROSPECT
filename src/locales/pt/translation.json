@@ -815,5 +815,5 @@
   "whatif_churn_breakdown": "saídas de {{month}} {{outflow}} ÷ base do mês anterior {{base}} × 12",
   "whatif_churn_block_no_forecast": "Nenhuma previsão de base cobre esta coorte ({{reason}}), pelo que não há taxa de rotatividade a reduzir.",
   "whatif_churn_reason_unknown": "sem motivo indicado",
-  "whatif_churn_member_no_edit": "Este mês é um passo de uma rampa de rotatividade — o seu objetivo é cumulativo, pelo que não pode ser editado isoladamente. Remova a campanha e volte a indicá-la."
+  "whatif_churn_member_no_edit": "Este mês é um passo de uma rampa de churn — o seu objetivo é cumulativo, pelo que não pode ser editado isoladamente. Edite antes a campanha."
 }

@@ -262,19 +262,44 @@ const PREV_BASE_AT_START = 980;
   // explaining the fix rather than the code implementing it.
   const tab = tabRaw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 
-  check('BAR: churn rows are detected at the campaign-group rule',
-    /const anyChurn = g\.rows\.some\(e => e\.churnMode === 'churn'\);/.test(tab),
-    'the bar must read the carrier, not a proxy for it');
-  check('BAR: and the churn branch precedes the percentage branch',
-    tab.indexOf('if (anyChurn)') > 0
-      && tab.indexOf('if (anyChurn)') < tab.indexOf('anyPercentage) {'),
-    'a branch that never runs is the failure the source comment there records');
-  check('BAR: it declines with a STATED reason, using the existing mechanism',
-    /anyChurn\)[\s\S]{0,200}g\.editable = false;[\s\S]{0,200}g\.reason =/.test(tab),
-    'the group must say why, not merely refuse');
-  check('BAR: exactly ONE churn bar — no downstream twin',
-    (tab.match(/churnMode === 'churn'\);/g) ?? []).length === 1,
-    'a second guard elsewhere would be the unreachable-clause shape');
+  // ── RE-AIMED FOR D5-REVISED (Jon, 2026-08-21) ─────────────────────────
+  //
+  // These four checks pinned the `anyChurn` BAR at the campaign-group rule.
+  // The decision reversed: churn campaigns are group-editable now. Re-aimed at
+  // the new behaviour rather than deleted, because the property worth pinning
+  // did not disappear — it moved. What must still be true is that the group
+  // edit NEVER reaches the volume-spread path, which is the hazard the bar was
+  // standing in for. The bar was one way to guarantee that; a dedicated branch
+  // is another, and it is the one now in place.
+  check('BAR: the anyChurn group-edit bar is GONE',
+    !/const anyChurn = g\.rows\.some/.test(tab),
+    'D5-revised — churn campaigns are group-editable');
+  check('BAR: campaign reopen has a CHURN branch, before the spread derivation',
+    tab.indexOf("if (first.churnMode === 'churn')") > 0
+      && tab.indexOf("if (first.churnMode === 'churn')") < tab.indexOf('const volByOffset'),
+    'reaching volByOffset with churn rows is the summed-|volume| hazard itself');
+  check('BAR: the churn reopen seeds from the STORED STATEMENT, not the deltas',
+    /first\.churnMode === 'churn'\)[\s\S]{0,400}rows\.map\(e => e\.churnTargetPct/.test(tab),
+    'seeding from subscriberVolume would be reverse-engineering the ramp');
+  check('BAR: the churn save branch precedes the neg and the spread branch',
+    tab.indexOf('if (isChurnDraft) {') > 0
+      && tab.indexOf('if (isChurnDraft) {') < tab.indexOf('const neg = (v: number) => isOutflow'),
+    'a delta whose sign carries direction must never reach neg');
+
+  // ── THE RE-STATE EXCLUDES EVERY MEMBER ────────────────────────────────
+  check('BAR: the exclusion is a SET, covering the campaign under edit',
+    /churnExcludedIds/.test(tab)
+      && /e\.campaignName === editingCampaign/.test(tab),
+    'excluding only the first member is worse than excluding none');
+  check('BAR: and the series memo consumes that set, not a single id',
+    /marketEvents: churnExcludedIds\.size > 0/.test(tab),
+    'a campaign re-stated against its own effect derives a delta of zero');
+
+  // ── THE DELTA SIGN LIVES ON THE DISPLAY LAYER ONLY (D4 + option a) ─────
+  check('BAR: the churn negation appears EXACTLY ONCE, at the display site',
+    (tab.match(/churnMode === 'churn'\n?\s*\? -event\.subscriberVolume/g) ?? []).length === 1
+      || (tab.match(/\? -event\.subscriberVolume/g) ?? []).length === 1,
+    'a second negation site is how display and storage start disagreeing');
 
   // ── THE ARM AND ITS SPREAD SEMANTICS ───────────────────────────────────
   check('UI: the third arm renders only for Outflow',

@@ -55,6 +55,13 @@ g.IS_REACT_ACT_ENVIRONMENT = true;
 for (const p of ['offsetWidth', 'clientWidth'] as const) Object.defineProperty(dom.window.HTMLElement.prototype, p, { configurable: true, value: 900 });
 for (const p of ['offsetHeight', 'clientHeight'] as const) Object.defineProperty(dom.window.HTMLElement.prototype, p, { configurable: true, value: 400 });
 
+// THE MEMBER-DECLINE SENTENCE, read from the locale file rather than
+// duplicated here. A copy pasted into the spec would let the app's copy
+// change while the assertion kept passing against the old words.
+const EN_MEMBER_NO_EDIT: string = JSON.parse(
+  (await import('node:fs')).readFileSync('src/locales/en/translation.json', 'utf8')
+)['whatif_churn_member_no_edit'];
+
 let pass = 0; const fails: string[] = [];
 const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails.push(n + (d ? `  [${d}]` : '')); };
 const near = (a: number, b: number, eps = 1e-6) => Math.abs(a - b) <= eps * Math.max(1, Math.abs(a), Math.abs(b));
@@ -959,9 +966,25 @@ async function main() {
       return React.createElement(M, {
         ...whatIfProps(),
         newEvent: ev,
-        setNewEvent: (e: any) => setEv(e),
+        // STABLE, BECAUSE THE APP'S IS STABLE — and this is not cosmetic.
+        //
+        // This used to be `(e: any) => setEv(e)`, a fresh arrow every render.
+        // App passes a raw useState setter, which React guarantees stable, so
+        // every `useCallback` in WhatIfTab keyed on `setNewEvent` is built ONCE
+        // in the app and was rebuilt EVERY RENDER here. That difference
+        // silently disabled memoisation in the harness — and memoisation is
+        // exactly the mechanism stale-closure defects live inside.
+        //
+        // It cost a real one: `handleEditStart`'s deps were `[setNewEvent]`
+        // while it READ `marketEvents`, so the ramp-member decline never fired
+        // in the app. This harness reported it working for a day, because its
+        // own prop was unstable in a way the app's is not.
+        //
+        // RULE: a mounted harness passes props with the same STABILITY the app
+        // passes them, or it is testing a component the app does not render.
+        setNewEvent: setEv,
         marketEvents: evs,
-        setMarketEvents: (e: any) => setEvs(e),
+        setMarketEvents: setEvs,
         // THE SPY. A churn add must never reach App's fifth writer — it emits
         // ONE event from the amount field and knows none of the churn fields.
         addMarketEvent: () => { fifthWriterCalls++; },
@@ -1180,8 +1203,12 @@ async function main() {
         Number(original?.subscriberVolume) > 0, `${original?.subscriberVolume}`);
 
       // ── (a) REOPEN SEEDS THE PANEL ─────────────────────────────────────
-      const editBtns = () => [...hostR7.querySelectorAll('button')]
-        .filter((b: any) => /edit/i.test(b.getAttribute('title') || ''));
+      // BY TESTID, NOT BY TITLE. Both pencils' titles match /edit/i, and once
+      // churn campaigns became group-editable the CAMPAIGN pencil started
+      // sorting first — so a title-matched selector silently switched which
+      // affordance this section was driving. The failure looked like a missing
+      // Save Changes button; it was the campaign route answering instead.
+      const editBtns = () => [...hostR7.querySelectorAll('[data-testid="edit-event"]')] as any[];
       const openRow = async () => {
         const b = editBtns()[0];
         if (b) await (act as any)(async () => { b.click(); });
@@ -1376,6 +1403,152 @@ async function main() {
       check('R7 walk (f): and the bare kind-label fallback is GONE',
         !tabSrc.includes('{e.name || e.scenario}'),
         'the old expression surviving anywhere would leave the defect on that surface');
+
+      // ══ D5-REVISED: CHURN CAMPAIGNS GROUP-EDIT ═══════════════════════════
+      //
+      // Built as a 20-point target over three months so the stored trajectory
+      // is 6.67 / 13.33 / 20 — figures chosen because they are NOT round, so a
+      // seeding that silently re-derived a linear ramp from the target alone
+      // would still land on them, while one that read the wrong field would
+      // not. The FIELDS are asserted, never the derived deltas.
+      await (act as any)(async () => { (globalThis as any).__setEvents([]); });
+      await setDraft({ scenario: 'Outflow', date: DRAFT_MONTH, segment: SEG, product: 'All' });
+      const armG = q('[data-testid="volume-mode-churn"]');
+      if (armG) await (act as any)(async () => { armG.click(); });
+      const rampG = q('[data-testid="churn-ramp-toggle"]');
+      if (rampG) await (act as any)(async () => { rampG.click(); });
+      const tgtG = q('[data-testid="churn-target"]');
+      if (tgtG) await setNum(tgtG, '20');
+      const addG = [...qa('button')].find((b: any) => /add event/i.test(b.textContent || '')) as any;
+      if (addG) await (act as any)(async () => { addG.click(); });
+
+      check('R7 group: a three-month churn campaign exists', stored.length === 3, `${stored.length}`);
+      const beforeRows = stored.map((e: any) => ({ ...e }));
+      const CAMP = beforeRows[0]?.campaignName;
+      check('R7 group: its rows share one campaignName',
+        !!CAMP && beforeRows.every((e: any) => e.campaignName === CAMP), `${CAMP}`);
+      // THE STORED STATEMENT, hand-written. 20 over three months, cumulative.
+      check('R7 group: the stored trajectory is the CUMULATIVE statement',
+        beforeRows.length === 3
+          && near(beforeRows[0].churnTargetPct, 20 / 3, 1e-6)
+          && near(beforeRows[1].churnTargetPct, 40 / 3, 1e-6)
+          && near(beforeRows[2].churnTargetPct, 20, 1e-6),
+        beforeRows.map((e: any) => e.churnTargetPct).join(' / '));
+      // D4 STANDS: storage is signed verbatim, POSITIVE for a reduction.
+      check('R7 group: every stored delta is POSITIVE — D4 signed verbatim',
+        beforeRows.every((e: any) => Number(e.subscriberVolume) > 0),
+        beforeRows.map((e: any) => e.subscriberVolume).join(' / '));
+
+      // ── (g) THE MEMBER PENCIL DECLINES, and says the same sentence ──────
+      await openRow();
+      const declineEl = q('[data-testid="edit-decline-reason"]');
+      check('R7 group (g): a ramp MEMBER still declines row-edit', !!declineEl);
+      check('R7 group (g): and the panel does NOT open for it',
+        !q('[data-testid="churn-panel"]'));
+      // ONE SENTENCE, ONE SOURCE. Compared against the i18n value rather than
+      // against a second rendered copy, because under D5-revised the campaign
+      // chip carries NO decline reason any more — churn campaigns are editable,
+      // so there is no chip sentence left to compare with. Asserting equality
+      // against an element that no longer exists would be a vacuous check.
+      check('R7 group (g): the decline is the shared sentence, verbatim',
+        (declineEl?.textContent || '').trim() === EN_MEMBER_NO_EDIT,
+        `"${declineEl?.textContent}"`);
+      check('R7 group (g): and it points at the CAMPAIGN route',
+        /campaign/i.test(declineEl?.textContent || ''),
+        'the reason must name a door that exists');
+
+      // ── (h) THE GROUP AFFORDANCE RENDERS, AND SEEDS THE STATEMENT ───────
+      const campBtn = q('[data-testid="edit-campaign"]');
+      check('R7 group (h): the campaign group-edit affordance RENDERS for churn',
+        !!campBtn, 'D5-revised — the anyChurn bar at :512 is gone');
+      if (campBtn) await (act as any)(async () => { campBtn.click(); });
+
+      check('R7 group (h): reopening opens the CHURN panel, not a volume spread',
+        !!q('[data-testid="churn-panel"]'));
+      check('R7 group (h): the ramp is ON and the month count is seeded',
+        q('[data-testid="churn-ramp-toggle"]')?.checked === true
+          && Number(q('[data-testid="churn-months"]')?.value) === 3,
+        `ramp=${q('[data-testid="churn-ramp-toggle"]')?.checked} months=${q('[data-testid="churn-months"]')?.value}`);
+      check('R7 group (h): the headline target seeds to the FINAL cumulative figure',
+        Number(q('[data-testid="churn-target"]')?.value) === 20,
+        `${q('[data-testid="churn-target"]')?.value}`);
+      // THE TRAJECTORY, from the stored fields — and ROUNDED for display, which
+      // is the copy fix: the raw 6.666666666666667 is a float artefact shown as
+      // a figure the user typed.
+      check('R7 group (h): the trajectory seeds 6.67 / 13.33 / 20 from storage',
+        Number(q('[data-testid="churn-stated-0"]')?.value) === 6.67
+          && Number(q('[data-testid="churn-stated-1"]')?.value) === 13.33
+          && Number(q('[data-testid="churn-stated-2"]')?.value) === 20,
+        [0, 1, 2].map(i => q(`[data-testid="churn-stated-${i}"]`)?.value).join(' / '));
+
+      // ── (i) SAVE RE-STATES WITH ALL MEMBERS EXCLUDED, ATOMICALLY ────────
+      //
+      // THE ROUND-TRIP IDENTITY IS THE EXCLUSION TEST. Reopening and saving an
+      // UNCHANGED statement must reproduce the stored figures exactly: the fold
+      // re-runs against a series with every member removed, which is the same
+      // series the campaign was first stated against. If even one member were
+      // left in, its reduction would read as the current rate and churnCurrentPct
+      // would come back LOWER. Literal equality, never near(x, 0).
+      const saveG = [...qa('button')].find((b: any) => /save campaign/i.test(b.textContent || '')) as any;
+      check('R7 group (i): a Save Campaign control is present', !!saveG);
+      if (saveG) await (act as any)(async () => { saveG.click(); });
+      const confirmG = [...qa('button')].find((b: any) => (b.textContent || '').trim() === 'Save') as any;
+      if (confirmG) await (act as any)(async () => { confirmG.click(); });
+
+      const afterRows = stored.map((e: any) => ({ ...e }))
+        .sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)));
+      check('R7 group (i): ATOMIC — exactly three rows, never old and new together',
+        stored.length === 3, `${stored.length}`);
+      check('R7 group (i): no member row survived the replacement',
+        afterRows.every((e: any) => !beforeRows.some((o: any) => o.id === e.id)),
+        'a surviving old id means the replacement was partial');
+      check('R7 group (i): every row is still one campaign, still churn',
+        afterRows.every((e: any) => e.campaignName === CAMP && e.churnMode === 'churn'));
+
+      check('R7 group (i): the members were EXCLUDED — currentPct is unmoved',
+        afterRows.length === 3 && beforeRows.every((o: any, i: number) =>
+          near(Number(afterRows[i].churnCurrentPct), Number(o.churnCurrentPct), 1e-9)),
+        beforeRows.map((o: any, i: number) => `${o.churnCurrentPct} -> ${afterRows[i]?.churnCurrentPct}`).join('  |  '));
+      check('R7 group (i): and prevBase is unmoved, month for month',
+        afterRows.length === 3 && beforeRows.every((o: any, i: number) =>
+          near(Number(afterRows[i].churnPrevBase), Number(o.churnPrevBase), 1e-9)),
+        beforeRows.map((o: any, i: number) => `${o.churnPrevBase} -> ${afterRows[i]?.churnPrevBase}`).join('  |  '));
+      check('R7 group (i): so the deltas reproduce exactly, and stay POSITIVE',
+        afterRows.length === 3 && beforeRows.every((o: any, i: number) =>
+          near(Number(afterRows[i].subscriberVolume), Number(o.subscriberVolume), 1e-9))
+          && afterRows.every((e: any) => Number(e.subscriberVolume) > 0),
+        beforeRows.map((o: any, i: number) => `${o.subscriberVolume} -> ${afterRows[i]?.subscriberVolume}`).join('  |  '));
+
+      // ── (j) THE DELTA DISPLAY SHOWS DIRECTION OF EFFECT ─────────────────
+      //
+      // Storage stays positive (asserted above, D4). The Δ column negates at
+      // ONE named site, so a stored +449.16-family figure renders with a minus.
+      // The literal is derived from the row itself rather than typed, because
+      // the delta depends on the fixture's rate — but the SIGN and the
+      // MAGNITUDE-MATCH are the claim, and both are exact.
+      const storedDelta = Number(afterRows[0].subscriberVolume);
+      const deltaCells = [...qa('td')].map((td: any) => (td.textContent || '').trim());
+      // MATCHED ON THE CLAIM, NOT ON THE FORMATTING. The first version looked
+      // for a thousands-separated integer and failed against a cell reading
+      // "-18044.52" — the harness's formatNumber is toFixed(2). Pinning the
+      // rendered STRING would tie this spec to one number format; what the
+      // decision says is that the SIGN flips and the MAGNITUDE does not.
+      const signedCells = deltaCells
+        .filter((c: string) => /^[-−+][0-9.,]+$/.test(c))
+        .map((c: string) => ({
+          neg: /^[-−]/.test(c),
+          mag: Math.abs(Number(c.replace(/−/g, '-').replace(/,/g, ''))),
+        }));
+      const deltaCell = signedCells.find(x => Math.abs(x.mag - storedDelta) < 0.005);
+      check('R7 group (j): the Δ column carries a cell of the delta MAGNITUDE',
+        !!deltaCell,
+        `stored ${storedDelta} — cells ${JSON.stringify(deltaCells.filter((c: string) => /[0-9]/.test(c)).slice(0, 12))}`);
+      check('R7 group (j): and it renders NEGATIVE — direction of effect',
+        !!deltaCell && deltaCell.neg === true,
+        `a stored +${storedDelta.toFixed(2)} shown positive reads as MORE churn, not less`);
+      check('R7 group (j): while STORAGE stays POSITIVE — D4, the two layers apart',
+        Number(afterRows[0].subscriberVolume) > 0,
+        'the negation must live on the display layer only');
     }
     // ═══════════════════════════════════════════════════════════════════════
     // PRICING BASELINE SCOPE — all four figures, driven on the real path.

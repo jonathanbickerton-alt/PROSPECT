@@ -526,11 +526,13 @@ export function groupByCampaign(events: MarketEvent[]): Map<string, { rows: Mark
     // it yields a total — one that is not a churn statement, and which
     // re-spread by shares would not reproduce the rates the user typed. A
     // plausible, wrong spread with nothing about it to look wrong.
-    const anyChurn = g.rows.some(e => e.churnMode === 'churn');
-    if (anyChurn) {
-      g.editable = false;
-      g.reason = 'Churn-targeted events are edited individually — a campaign spread cannot restate their rates';
-    } else if (anyPercentage) {
+    // D5-REVISED (Jon, 2026-08-21): the `anyChurn` bar that stood here is GONE.
+    // Churn campaigns are group-editable, by the remove-and-restate branch in
+    // handleEditCampaignStart — which is what makes removing the bar safe. The
+    // hazard the bar existed for (reverse-engineering a ramp from summed
+    // volumes) has not lapsed; it is avoided by never reaching that path, not
+    // by refusing the edit.
+    if (anyPercentage) {
       // Barred by RULE, and checked before homogeneity so it is the reason the
       // user sees. Campaign group edit reverse-engineers a ramp by summing
       // Math.abs(subscriberVolume) across the rows (handleEditCampaignStart) —
@@ -2322,6 +2324,24 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       newEvent.channel, newEvent.channelL2, newEvent.tariffL1, newEvent.tariffL2,
       resolveForecast]);
 
+  /**
+   * THE ROWS THE RE-STATE MUST NOT SEE — one id on a row edit, every member on
+   * a campaign edit, none on Add.
+   *
+   * Derived rather than tracked, so it cannot fall out of step with what is
+   * actually being edited: a second piece of state saying "these are the rows
+   * under edit" is the two-sources-of-truth shape this card has already been
+   * corrected for once.
+   */
+  const churnExcludedIds = useMemo(() => {
+    if (editingCampaign) {
+      return new Set(marketEvents
+        .filter(e => e.campaignName === editingCampaign && !e.isPromotion)
+        .map(e => e.id));
+    }
+    return new Set(editingEventId ? [editingEventId] : []);
+  }, [editingCampaign, editingEventId, marketEvents]);
+
   const churnScopeSeries = useMemo(() => {
     if (!isChurnDraft || !newEvent.date) return null;
     // A slice with no resolvable forecast yields no series, and the fold's
@@ -2330,14 +2350,24 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     if (!scoped) return null;
     return computeAdjustedForecast({
       baseForecast: scoped,
-      // THE EVENT UNDER EDIT IS EXCLUDED — the eventScopeSeriesFor precedent.
+      // THE ROWS UNDER EDIT ARE EXCLUDED — the eventScopeSeriesFor precedent,
+      // in its PLURAL form.
       //
       // On Add the draft has no id, so nothing of it is in the list. On EDIT it
       // is, and leaving it in makes the row re-state against its OWN effect:
       // the churn it already reduced reads as the current rate, so a fresh
       // target of the same size derives a delta of nearly zero. The mount found
       // it as an edited 3pt statement storing a delta of 0.
-      marketEvents: editingEventId ? marketEvents.filter(e => e.id !== editingEventId) : marketEvents,
+      //
+      // ON CAMPAIGN EDIT THE SAME IS TRUE OF EVERY MEMBER, and excluding only
+      // the first would be worse than excluding none: months 2..n would still
+      // be in the series, so the fold would re-state against a partially
+      // reduced base and derive a trajectory that is neither the old one nor
+      // the stated one. The exclusion is therefore a SET, built from the
+      // campaign under edit.
+      marketEvents: churnExcludedIds.size > 0
+        ? marketEvents.filter(e => !churnExcludedIds.has(e.id))
+        : marketEvents,
       yieldEvents, pricingEvents,
       viewSegment: newEvent.segment ?? 'All',
       viewProduct: { l1: dimOrNull(newEvent.product), l2: dimOrNull(newEvent.productL2) },
@@ -2348,7 +2378,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
     }).chartData;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isChurnDraft, newEvent.date, churnScopeResolution, editingEventId,
+  }, [isChurnDraft, newEvent.date, churnScopeResolution, churnExcludedIds,
       marketEvents, yieldEvents, pricingEvents, data]);
 
   /** The fold's output for the current draft — the per-month figures the grid
@@ -2776,7 +2806,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setEditingEventId(event.id);
     setEditingCampaign(null);
     setSpreadEnabled(false);
-  }, [setNewEvent]);
+    // THE READ-SET, and this array was WRONG in a way that made the rule above
+    // structurally unreachable.
+    //
+    // It was `[setNewEvent]`. This callback READS `marketEvents` to count a
+    // row's siblings and `t` for the reason — and `setNewEvent` is a raw
+    // useState setter in App, which React guarantees stable for the
+    // component's lifetime. So the callback was built ONCE, capturing
+    // `marketEvents` as it stood on first render: EMPTY. `siblings.length` was
+    // always 0, never > 1, and the member decline never fired once.
+    //
+    // It was not a regression — it was born unreachable in the commit that
+    // introduced it. The dependency array is the read-set, not a list of things
+    // that ought to retrigger; this is the second stale-closure defect found in
+    // this file on that rule.
+  }, [setNewEvent, marketEvents, t]);
 
   // ── Campaign group edit ────────────────────────────────────────────────────
   // A campaign is group-editable when all its events share scenario + cohort
@@ -2811,6 +2855,60 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     }
 
     const first = rows[0];
+
+    // ── CHURN CAMPAIGNS SEED FROM THE STORED STATEMENT (D5-revised) ───────
+    //
+    // NEVER from the emitted deltas, and never through the spread path below.
+    // That path reverse-engineers a ramp by summing |subscriberVolume|, and on
+    // churn rows that arithmetic SUCCEEDS and is wrong: it yields a total that
+    // is not a churn statement, and re-spreading it by shares would not
+    // reproduce the rates the user typed. Removing the group-edit bar did not
+    // make that hazard go away — it made a second branch necessary.
+    //
+    // The statement survives intact because every member row records it:
+    // `churnTargetPct` holds that month's CUMULATIVE stated reduction, so the
+    // trajectory reads straight back off the rows in date order. A 20-point
+    // target over three months stored 6.67 / 13.33 / 20, and that is what
+    // reopens — not a linear re-derivation, so a hand-edited 1/3/6 comes back
+    // as 1/3/6.
+    if (first.churnMode === 'churn') {
+      const trajectory = rows.map(e => e.churnTargetPct ?? 0);
+      setNewEvent({
+        scenario: 'Outflow',
+        segment: first.segment,
+        product: first.product,
+        productL2: first.productL2 ?? 'All',
+        channel: first.channel,
+        channelL2: first.channelL2 ?? 'All',
+        tariffL1: first.tariffL1 ?? 'All',
+        tariffL2: first.tariffL2 ?? 'All',
+        date: first.date,
+        // The amount field means nothing on a churn row and must not be seeded
+        // with a delta — a figure the user never typed, in a control that would
+        // save it back as a hand-stated volume.
+        subscriberVolume: 0, customerVolume: 0, revenue: 0, arpu: 0,
+        name: '',
+        campaignName: campaign,
+        comment: rows.find(e => e.comment)?.comment ?? '',
+        contractLength: first.contractLength,
+      });
+      // A RESTORE IS NOT A TRANSITION — the stored control is set directly, the
+      // lesson from the single-row edit path, where routing the restore through
+      // the transition writer had it refused against a draft whose scenario
+      // arrived in the same batch.
+      setStoredAmountControl('churn');
+      setChurnRampOn(trajectory.length > 1);
+      setChurnMonths(trajectory.length);
+      setChurnStated(trajectory);
+      // The headline target is the LAST cumulative figure, because that is what
+      // the trajectory arrives at.
+      setChurnTargetPct(trajectory[trajectory.length - 1] ?? 0);
+      setSpreadEnabled(false);
+      setEditingEventId(null);
+      setEditingCampaign(campaign);
+      return;
+    }
+
     const isOutflow = first.scenario === 'Outflow';
     const abs = (v: number) => isOutflow ? Math.abs(v) : v;
 
@@ -2867,10 +2965,73 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   const handleSaveCampaign = useCallback(() => {
     if (!editingCampaign || !newEvent.date) return;
+
+    let newEvents: MarketEvent[];
+
+    // ── CHURN CAMPAIGNS RE-STATE (D5-revised) ─────────────────────────────
+    //
+    // ABOVE the `neg` below, and above the spread branch — the same placement
+    // fix B made on the add path and the edit path, for the same reason twice
+    // over. `neg` forces an Outflow amount negative, which is right for a
+    // hand-typed magnitude and catastrophic for a delta whose sign carries
+    // direction; and the spread branch is the volume path this decision
+    // forbids for churn. The draft never reaches either, rather than being
+    // excused by them.
+    //
+    // The fold has already re-run against a series with EVERY member excluded
+    // (see churnExcludedIds), so these deltas are stated against the campaign's
+    // true pre-campaign base rather than against its own effect.
+    if (isChurnDraft) {
+      if (churnBlockReason) return;
+      newEvents = churnFold.filter(m => !m.absence).map((m, i) => ({
+        id: Math.random().toString(36).substr(2, 9),
+        scenario:        'Outflow',
+        segment:         newEvent.segment   || 'All',
+        product:         newEvent.product   || 'All',
+        productL2:       newEvent.productL2 || 'All',
+        channel:         newEvent.channel   || 'All',
+        channelL2:       newEvent.channelL2 || 'All',
+        tariffL1:        newEvent.tariffL1  || 'All',
+        tariffL2:        newEvent.tariffL2  || 'All',
+        date:            m.month,
+        subscriberVolume: m.delta,
+        customerVolume:  0,
+        revenue:         0,
+        arpu:            0,
+        name:            '',
+        campaignName:    editingCampaign,
+        comment:         newEvent.comment || '',
+        contractLength:  newEvent.contractLength ?? 24,
+        sequence:        i,
+        amountType:      'absolute',
+        percentageBasis: 'baseline',
+        retentionLinked: newEvent.retentionLinked ?? true,
+        churnMode:       'churn',
+        // RE-SNAPSHOT AS A PAIR. A freshly stated target beside a stale
+        // prevBase would be a row whose figures came from two moments.
+        churnTargetPct:  m.statedReductionPct,
+        churnCurrentPct: m.currentPct,
+        churnPrevBase:   m.prevBase,
+      } as MarketEvent));
+      const isMineChurn = (e: MarketEvent) => e.campaignName === editingCampaign && !e.isPromotion;
+      // ONE commit. Old rows out and new rows in together, so there is never a
+      // render in which some months carry old deltas and some new — a
+      // half-applied ramp is a forecast nobody stated.
+      setMarketEvents([
+        ...marketEvents.filter(e => !isMineChurn(e)),
+        ...newEvents,
+      ]);
+      setEditingCampaign(null);
+      setStoredAmountControl('subs');
+      clearChurnDraft();
+      setNewEvent(BLANK_EVENT);
+      setSpreadEnabled(false);
+      return;
+    }
+
     const isOutflow = newEvent.scenario === 'Outflow';
     const neg = (v: number) => isOutflow ? -Math.abs(v) : v;
 
-    let newEvents: MarketEvent[];
     if (!spreadEnabled || newEvent.scenario === 'ARPU') {
       const resolvedSingle = draftEventRate(newEvent, cohortAvgArpu, newEvent.subscriberVolume || 0, newEvent.revenue);
       newEvents = [{
@@ -2948,7 +3109,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setSpreadMonths(3);
     setSpreadDistType('even');
     setCustomDist([34, 33, 33]);
-  }, [editingCampaign, newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, marketEvents, setMarketEvents, setNewEvent, cohortAvgArpu]);
+    // THE READ-SET, not a wish-list. isChurnDraft, churnFold and
+    // churnBlockReason are all READ above; omitting churnFold would re-state a
+    // campaign against a stale fold, which is the defect this whole branch
+    // exists to prevent, arriving through the dependency array instead.
+  }, [editingCampaign, newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, marketEvents, setMarketEvents, setNewEvent, cohortAvgArpu,
+      isChurnDraft, churnFold, churnBlockReason, clearChurnDraft]);
 
   // ── Confirmation for changes that recalculate the forecast ───────────────
   //
@@ -4158,7 +4324,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             <input
                               type="number" step={0.1} min={0}
                               data-testid={`churn-stated-${i}`}
-                              value={churnStated[i] ?? 0}
+                              // ROUNDED FOR DISPLAY, PRECISE IN STORE. A linear
+                              // 20-point ramp over three months is 20/3, and the
+                              // field showed `6.666666666666667` — a float
+                              // artefact presented as a statement the user made.
+                              // The state keeps full precision (the fold divides
+                              // by it), so this is a copy fix and not a rounding
+                              // of the arithmetic; typing still writes whatever
+                              // was typed.
+                              value={Math.round((churnStated[i] ?? 0) * 100) / 100}
                               onChange={e => {
                                 const next = [...churnStated];
                                 next[i] = Math.max(0, Number(e.target.value));
@@ -4716,7 +4890,28 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       //   movement the engine will not make — found in the browser, not
                       //   by any unit measurement, because both halves are individually
                       //   correct and only disagree on screen.
-                      const outflowDelta    = isOutflow   ? event.subscriberVolume        // already negative
+                      // ── THE ONE NAMED DISPLAY SITE FOR THE CHURN SIGN ──────
+                      //
+                      // A churn row stores a POSITIVE delta and D4 keeps it that
+                      // way verbatim: `applyEventsToMonth` does `outflow -= vol`,
+                      // so positive means a REDUCTION and the sign carries
+                      // direction rather than magnitude. Storage must not be
+                      // touched — no neg on write, on read, or on edit-save.
+                      //
+                      // But the Δ column shows DIRECTION OF EFFECT, and the
+                      // effect of a churn reduction on outflow is downward. A
+                      // stored +449.16 that renders as "+449" reads as more
+                      // churn where the user stated less.
+                      //
+                      // So the mapping lives HERE, at one site, and nowhere
+                      // else. Trap (c) plants the alternative — negating on the
+                      // storage path — and the pins that catch it are D4's,
+                      // while this literal stays green: the two together are
+                      // what prove the fix is on the display layer.
+                      const outflowDelta    = isOutflow
+                                           ? (event.churnMode === 'churn'
+                                                ? -event.subscriberVolume        // positive stored reduction → negative effect
+                                                : event.subscriberVolume)        // already negative
                                            : isRetention && event.retentionLinked !== false
                                                           ? -event.subscriberVolume        // positive stored → negative Outflow Δ
                                            : null;
@@ -4763,6 +4958,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 group?.editable ? (
                                   <button
                                     type="button"
+                                    data-testid="edit-campaign"
                                     onClick={(e) => { e.stopPropagation(); handleEditCampaignStart(campaignLabel); }}
                                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full hover:bg-[#e60000]/15 transition-colors cursor-pointer"
                                     title={t('whatif_edit_campaign_event', { p0: campaignLabel, p1: group.rows.length, p2: group.rows.length === 1 ? '' : 's' })}
@@ -4834,6 +5030,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             <td className="px-5 py-3 text-center">
                               <button
                                 type="button"
+                                data-testid="edit-event"
                                 onClick={(e) => { e.stopPropagation(); handleEditStart(event); }}
                                 className={`p-1 rounded transition-colors ${
                                   isEditing

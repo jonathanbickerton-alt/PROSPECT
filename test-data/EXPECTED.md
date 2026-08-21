@@ -6888,6 +6888,72 @@ nothing.
 re-home is proved by a guard-traps run, not by the source reading that
 predicted it.
 
+#### D5-REVISED — CHURN CAMPAIGNS GAIN GROUP EDIT (Jon, 2026-08-21)
+
+**This supersedes decision 5 above.** Churn rows no longer join the group-edit
+barred class; the `anyChurn` term at `:512` is removed and churn campaigns get
+the group-edit affordance.
+
+**The hazard that justified the bar does NOT lapse with it.** Reverse-engineering
+a ramp by summing `|subscriberVolume|` across member rows remains **forbidden**:
+on a churn row that arithmetic succeeds and is wrong, producing a plausible
+spread that would not reproduce the stated rates. Group edit is therefore
+**remove-and-restate MECHANISED**, not the volume-spread path:
+
+1. **Reopen seeds from the campaign's STORED STATEMENT** — target, months and
+   the per-month cumulative trajectory (the D2/D3 fields), never from the
+   emitted deltas. The trajectory stays **editable**, so a 1/3/6 ramp reopens
+   as 1/3/6 rather than being re-derived as linear.
+2. **Save Changes re-runs the fold** against the current series with **ALL
+   member rows excluded** — `excludeId` in its plural form. A campaign
+   re-stated against a series still containing its own effect derives a delta
+   of zero; that exact defect was found by the mount on the single-row edit
+   path and must not be reintroduced at campaign scale.
+3. **Replacement is atomic.** Old member rows are removed and new ones emitted
+   in one commit, under the same `campaignName`. There is no intermediate state
+   in which some months carry old deltas and some new — a half-applied ramp is
+   a forecast nobody stated.
+
+**Ramp MEMBERS still decline row-edit**, and the reason now points at the group
+route rather than at recreation.
+
+**Single churn events edit fully**, unchanged.
+
+**Trap 97 RETIRES** by this decision — it plants the bar's removal, which is now
+the wanted behaviour. `spec:churn-fold`'s `:512` assertions are re-aimed at the
+new behaviour rather than deleted: the count is the thing worth pinning, and it
+moved for a reason.
+
+#### THE DECLINE WAS NEVER REACHABLE (found 2026-08-21, while building the above)
+
+`handleEditStart` is a `useCallback` whose dependency array is `[setNewEvent]`,
+and it **reads `marketEvents`** to count a row's siblings. `setNewEvent` is a
+raw `useState` setter in `App`, so React guarantees it stable for the
+component's lifetime — the callback is therefore created **once**, capturing
+`marketEvents` as it was on first render: **empty**.
+
+So `siblings.length` was always `0`, never `> 1`, and the member decline built
+on 2026-08-20 **never fired once in the app**. The pencil always opened the full
+form, seeding a member's cumulative figure as though it were a single event.
+
+**It was not a regression.** It was born unreachable in its own commit. The
+report that introduced it was true of the code as written and false of the code
+as run.
+
+**THE MOUNT MASKED IT, and that is the more important half.** The harness passed
+`setNewEvent: (e: any) => setEv(e)` — a fresh arrow every render — so the
+dependency changed constantly, the callback was rebuilt constantly, and it
+always saw current `marketEvents`. The spec was green because the harness's own
+prop was **unstable in a way the app's is not**.
+
+**RULE, from this: a mounted harness must pass props with the same STABILITY
+the app passes them.** An inline arrow where the app passes a stable setter does
+not merely differ cosmetically — it silently disables `useCallback`
+memoisation, which is exactly the mechanism the stale-closure defects in this
+codebase live inside. Two of them have now been found here (`churnFold` in
+`handleAddMarketEvent`, `marketEvents` here); the first was caught by the mount
+and the second was hidden by it, for this reason.
+
 #### THE CHART KEEPS A FLOOR, AND NEVER FAILS SILENTLY (Jon, 2026-08-20)
 
 **1. The render fix, per the third-file diagnosis §6a.** The chart card is the

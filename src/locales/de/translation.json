@@ -815,5 +815,5 @@
   "whatif_churn_breakdown": "{{month}} Abgang {{outflow}} ÷ Vormonatsbasis {{base}} × 12",
   "whatif_churn_block_no_forecast": "Keine Basisprognose deckt diese Kohorte ab ({{reason}}), daher gibt es keine Abwanderungsrate zu senken.",
   "whatif_churn_reason_unknown": "kein Grund angegeben",
-  "whatif_churn_member_no_edit": "Dieser Monat ist eine Stufe einer Abwanderungsrampe — sein Ziel ist kumulativ und kann nicht einzeln bearbeitet werden. Entfernen Sie die Kampagne und geben Sie sie neu an."
+  "whatif_churn_member_no_edit": "Dieser Monat ist ein Schritt einer Churn-Rampe — sein Ziel ist kumulativ und kann daher nicht einzeln bearbeitet werden. Bearbeiten Sie stattdessen die Kampagne."
 }

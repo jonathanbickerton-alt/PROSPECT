@@ -815,5 +815,5 @@
   "whatif_churn_breakdown": "uscite {{month}} {{outflow}} ÷ base del mese precedente {{base}} × 12",
   "whatif_churn_block_no_forecast": "Nessuna previsione di base copre questa coorte ({{reason}}), quindi non c’è un tasso di abbandono da ridurre.",
   "whatif_churn_reason_unknown": "nessun motivo indicato",
-  "whatif_churn_member_no_edit": "Questo mese è una tappa di una rampa di abbandono: il suo obiettivo è cumulativo e non può essere modificato singolarmente. Rimuovi la campagna e ridichiarala."
+  "whatif_churn_member_no_edit": "Questo mese è un passaggio di una rampa di abbandono: il suo obiettivo è cumulativo, quindi non può essere modificato da solo. Modifica invece la campagna."
 }
