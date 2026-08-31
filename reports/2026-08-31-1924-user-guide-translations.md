@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-08-31 19:24 +0100 (UTC 2026-08-31 18:24)
-Certifies: __HASH__
-Repo: __REPO__
+Certifies: de975a7 (report filled one commit later)
+Repo: committed de975a7, pushed (origin in sync)
 SKELETON FIRST. BASE: HEAD 34024e8 vs 1847's 4297026 — one, REPORT-ONLY.
 ALL FIVE LANGUAGES DONE — nothing shed. de, es, fr, it, pt each at 8 sections,
   TOC 1–8, glossary parity, balanced markup, rendered and picker-checked.
