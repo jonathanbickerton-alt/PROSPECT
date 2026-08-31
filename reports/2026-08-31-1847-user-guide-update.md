@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-08-31 18:47 +0100 (UTC 2026-08-31 17:47)
-Certifies: __HASH__
-Repo: __REPO__
+Certifies: 4297026 (report filled one commit later)
+Repo: committed 4297026, pushed (origin in sync)
 SKELETON CREATED AS THIS SESSION'S FIRST ACTION, before the base check.
 BASE: HEAD a543bfb vs 1827's 29d7abd — one commit, REPORT-ONLY. No source drift.
 THE GUIDE IS NOW A TRACKED ARTEFACT at docs/PROSPECT_UserGuide_Multilingual.html,
