@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-09-01 23:43 +0100 (UTC 2026-09-01 22:43)
-Certifies: __HASH__
-Repo: __REPO__
+Certifies: 42c55ac (report filled one commit later)
+Repo: committed 42c55ac, pushed (origin in sync)
 SKELETON FIRST. BASE: HEAD 01a571f vs 1403's d63175b — one, REPORT-ONLY.
 THE MECHANISM IS NONE OF THE THREE CANDIDATES — no prune effect, no remount, no
   state living too low. It was a PER-TAB DEFAULT: value and pricing were
