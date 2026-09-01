@@ -6,8 +6,8 @@ UAT Day-1 findings D1-01 (service revenue) and D1-02 (per-scenario ARPU).
 
 ```
 Generated: 2026-09-01 12:19 +0100 (UTC 2026-09-01 11:19)
-Certifies: __HASH__
-Repo: __REPO__
+Certifies: none (read-only; 8d00543 carries the report)
+Repo: committed 8d00543, pushed (origin in sync)
 SKELETON FIRST. BASE: HEAD 1b6b12c vs doc-v336's e0eb9b1 — one, REPORT-ONLY;
   no source drift since 4a1d110 (src/, scripts/, test-data/ all empty).
 ALL FOUR PER-SCENARIO ARPUs ARE ALREADY FITTED on every forecast month —
