@@ -6,8 +6,8 @@ UAT findings D1-01 / D1-02.
 
 ```
 Generated: 2026-09-01 14:03 +0100 (UTC 2026-09-01 13:03)
-Certifies: __HASH__
-Repo: __REPO__
+Certifies: d63175b (report filled one commit later)
+Repo: committed d63175b, pushed (origin in sync)
 SKELETON FIRST. BASE: HEAD 7c650e2 vs 1312's 006a15f — one, REPORT-ONLY.
 ITEM 0a SWEPT: 13 floor-comparisons across the specs; only TWO are the trap-77
   class (source-site counts used as existence evidence) and both are re-aimed
