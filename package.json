@@ -57,6 +57,7 @@
     "spec:compare-events-panel": "tsx scripts/compare-events-panel-spec.ts",
     "spec:compare-window": "tsx scripts/compare-window-spec.ts",
     "spec:compare-render": "tsx scripts/compare-render-spec.ts",
+    "spec:scenario-arpu": "tsx scripts/scenario-arpu-spec.ts",
     "spec:churn-fold": "tsx scripts/churn-fold-spec.ts",
     "spec:amount-control": "tsx scripts/amount-control-spec.ts"
   },

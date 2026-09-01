@@ -6924,6 +6924,96 @@ the wanted behaviour. `spec:churn-fold`'s `:512` assertions are re-aimed at the
 new behaviour rather than deleted: the count is the thing worth pinning, and it
 moved for a reason.
 
+#### THE CHART SCENARIO x MEASURE GRID (Jon, 2026-09-01) — UAT D1-01 / D1-02
+
+**Service revenue is the NUMERATOR OF ARPU**, at every grain: per IBRO scenario
+(Inflow / Base / Retention / Outflow), per month, per dimension, per aggregate.
+`ARPU = Σrevenue / subscriber volume`.
+
+**Aggregate revenue is Σ leaf revenue; aggregate ARPU is Σrevenue / Σvolume,
+never an average of ARPUs.** This restates the settled reconciliation rule for
+the new measures rather than introducing a second one.
+
+1. **The Step-2 chart becomes a two-row control**: a scenario row (Inflow /
+   Base / Retention / Outflow, **multi-select within a measure**) crossed with a
+   measure row (Volume / Revenue / ARPU, **single-select**). Baseline AND
+   adjusted for every cell. Today's chart is the Volume row.
+
+2. **Base carries all three measures.** Its **T+1 lag is labelled** on screen:
+   base at month *t* is built from month *t-1*'s flows, so base revenue and the
+   flow revenues on one chart month describe different moments and are not
+   additive without saying so.
+
+3. **The blended ARPU is RETIRED FROM THE CHART DISPLAY.** It is not a fifth
+   scenario button and it is not drawn.
+
+   **The `chartData` column `ARPU (Adjusted)` is UNCHANGED**, and remains the
+   pricing card's `originalBaseArpu` feed. The pricing baseline settled on
+   2026-08-21 (`7b456a1`) **stands**: this decision retires a line from a chart,
+   not a quantity from the engine. Adding columns beside it is safe; redefining
+   it is a separate dated decision.
+
+4. **An "all scenarios" ARPU, if ever built, is Σrevenue/Σvolume over the four
+   scenarios from leaves — no other definition.** Recorded now because the
+   codebase already carries three different denominators under the one word
+   "blended" (see the finding below), and a fourth invented later would be the
+   same failure a third time.
+
+5. **Step 2 only.** Scenario Compare (a second engine, `computeScenarioForFilter`)
+   and Overall Forecast are separate scopes and are not touched.
+
+6. **Export follows the chart, additively** — new columns, no column removed or
+   redefined, so files already in circulation keep their shape.
+
+7. **Yield on non-Retention scenarios is existing behaviour and is NOT extended
+   here.** The blend admits only `ye.ibro === 'Retention'`; whatever that is, it
+   is unchanged by this arc.
+
+#### THE THREE DENOMINATORS UNDER ONE NAME (measured 2026-09-01, NOT corrected)
+
+The word "blended ARPU" carries three different denominators in the code:
+
+- **historical / leaf** — `totalRev / totalSubs` summed over **all four**
+  scenarios including base (`App.tsx:2646`);
+- **derived aggregate** — the leaf blends re-weighted by
+  `inflow + outflow + retention`, **base excluded** (`forecasting.ts:2630`);
+- **`ARPU (Adjusted)`** — divided by the adjusted **base stock** `newBAdj`
+  (`WhatIfTab.tsx:1191`).
+
+**This is recorded and deliberately NOT corrected.** The aggregate blend feeds
+the settled pricing baseline, so changing it moves stored figures on a surface
+that was gated four days ago. Correcting it is its own dated decision.
+
+**The per-scenario quantities this arc adds are unaffected by it** — each is
+Σrevenue/Σvolume over its own scenario, which has exactly one denominator by
+construction. That is the point of building them beside the blend rather than
+on top of it.
+
+#### PER-SCENARIO ADJUSTED ARPU — the engine rules (Jon, 2026-09-01)
+
+`computeAdjustedForecast` carries **four** per-scenario adjusted ARPU
+quantities **alongside, not replacing,** the existing blend.
+
+- **Market events**: the event pool's own ARPU
+  (`event.revenue / event.subscriberVolume`) goes into **the event's own
+  scenario**, and no other.
+- **Yield**: `retentionArpu` only, through the existing filter, unchanged.
+- **Pricing**: mapped by `target` / `cohortScope` onto the scenarios those
+  fields already name. A `base-only` target touches **baseArpu only**.
+- **Churn**: outflow **volume** only. Outflow ARPU passes through unchanged —
+  a churn event states how many leave, not what they were worth.
+- **Dilution**: retention **revenue** only; retention volume unchanged.
+
+**Base adjusted ARPU weights by the ADJUSTED running base stock**, mirroring the
+baseline's own-volume rule, and is **floored at zero** exactly as the baseline
+recursion is — a negative weight once produced a negative baseArpu and a base is
+a stock that cannot be negative.
+
+**ABSENCE IS ABSENCE, NOT THE BLEND.** Where a pre-schema forecast lacks a
+per-scenario band, the per-scenario quantity is **absent with a reason** and is
+never silently filled with the blended figure. One definition of missing; the
+two-meanings-of-null rule applied to a fifth site.
+
 #### THE DECLINE WAS NEVER REACHABLE (found 2026-08-21, while building the above)
 
 `handleEditStart` is a `useCallback` whose dependency array is `[setNewEvent]`,

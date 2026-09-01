@@ -513,6 +513,8 @@ export type MarketEventType = 'Inflow' | 'Retention' | 'Outflow';
  * The IBRO metrics for a single month after market events have been applied.
  * Base is still not stored — callers derive it from the running stock.
  */
+import type { ScenarioKey, ScenarioArpuResult } from '../utils/scenarioArpu';
+
 export interface AdjustedForecastMonth {
   month: string;
   /** The baseline Holt-Winters values before any event adjustment */
@@ -529,6 +531,15 @@ export interface AdjustedForecastMonth {
     outflow: number;
     arpu: number;
   };
+  /**
+   * PER-SCENARIO ADJUSTED ARPU AND REVENUE (Jon, 2026-09-01).
+   *
+   * Four quantities carried ALONGSIDE `uplifted.arpu`, never replacing it:
+   * each is Srevenue / Svolume for its OWN scenario and therefore has exactly
+   * one denominator. Absent with a reason where the forecast predates the
+   * per-scenario bands — never silently the blend.
+   */
+  scenarioArpu?: Record<ScenarioKey, ScenarioArpuResult>;
   /** IDs of market events that contributed to the uplift for this month */
   appliedEventIds: string[];
   /** The uplifted values BEFORE the zero floor. Equal to `uplifted` unless an

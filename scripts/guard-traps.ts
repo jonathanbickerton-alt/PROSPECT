@@ -74,13 +74,15 @@ const CMPWINDOW = 'scripts/compare-window-spec.ts';
 const CMPRENDER = 'scripts/compare-render-spec.ts';
 const CHURNFOLD = 'scripts/churn-fold-spec.ts';
 const CHURNENGINE = 'src/utils/churnFold.ts';
+const SCENARPU = 'scripts/scenario-arpu-spec.ts';
 const AMTCTRL = 'scripts/amount-control-spec.ts';
 const AMTENGINE = 'src/utils/amountControl.ts';
 const SHEETGUARD = 'src/utils/sheetGuards.ts';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const APP_COMPARE = 'src/components/ScenarioCompareTab.tsx';
-const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE];
+const SCENARPUENGINE = 'src/utils/scenarioArpu.ts';
+const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -1311,6 +1313,38 @@ const TRAPS: Trap[] = [
       '        arpu:            0,' + nl +
       '        name:            \'\',' + nl +
       '        campaignName:    editingCampaign,') },
+  // 114 feeds the BLENDED figure into a per-scenario slot. The no-event
+  // identity is what catches it: with no events each per-scenario ARPU must BE
+  // its own baseline band, and the fixture's blend (20) matches none of the
+  // four — which is why the fixture asserts that before asserting anything
+  // else. A fixture whose blend happened to equal a scenario's ARPU would let
+  // this through.
+  { id: '114 a per-scenario ARPU is fed the blended figure',
+    why: 'the blend has a different denominator, so the scenario reads a rate that is not its own',
+    file: WHATIF, spec: SCENARPU,
+    mutate: s => s.replace(
+      '          baselineArpu: fcM?.inflowArpu?.mean,',
+      '          baselineArpu: fcM?.arpu?.mean,') },
+  // 115 weights base ARPU by INFLOW instead of the adjusted base stock. The
+  // aggregate-equals-leaf-sum literal is not what catches this one — the base
+  // VOLUME assertion is, because revenue is ARPU x volume and the volume is now
+  // a flow. Recorded because the trap and the check that catches it are not the
+  // pair the brief predicted, and the difference is worth knowing.
+  { id: '115 base ARPU is weighted by inflow, not the adjusted base stock',
+    why: 'it answers what the newly-acquired are worth, not what the installed base is worth',
+    file: WHATIF, spec: SCENARPU,
+    mutate: s => s.replace(
+      '          naturalVolume: Math.max(0, newBAdj - p_eventPools.reduce((t, p) => t + p.size, 0)),',
+      '          naturalVolume: m.uplifted.inflow,') },
+  // 116 touches the BLENDED column's formula. The pricing pin goes red while
+  // every per-scenario check stays GREEN — that pairing is the layer proof, and
+  // only a trap that leaves one half green can demonstrate it.
+  { id: '116 the blended ARPU column formula is altered',
+    why: 'chartData ARPU (Adjusted) is the pricing card stored originalBaseArpu feed',
+    file: WHATIF, spec: SCENARPU,
+    mutate: s => s.replace(
+      '      pricingARPU = Math.max(0, pricingARPU);' + nl + nl + '      m.uplifted.arpu = pricingARPU;',
+      '      pricingARPU = Math.max(0, pricingARPU * 1.01);' + nl + nl + '      m.uplifted.arpu = pricingARPU;') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -1321,7 +1355,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

@@ -363,10 +363,24 @@ check('scope: a mismatch on ANY dimension excludes',
   !eventScopeMatchesView({ segment: 'Corporate', channelL1: 'Retail' },
     { ...CORPVIEW, channelL1: 'Direct' }));
 
-// The predicate has ONE definition and the tooltip uses it rather than its own.
-check('scope wiring: the tooltip filters through the shared predicate',
-  (tab.split('eventScopeMatchesView(').length - 1) >= 4,
-  `${tab.split('eventScopeMatchesView(').length - 1} call sites — apply path + three carriers in the tooltip`);
+// The predicate has ONE definition and every consumer uses it rather than its
+// own comparisons.
+//
+// AN EXACT COUNT, and it was `>= 4` until 2026-09-01. That relaxation was not
+// cosmetic: guard-trap 77 removes ONE call site and expects this to go red, and
+// with `>=` it only did so while the count sat exactly at the floor. The
+// per-scenario ARPU block added two more sites, the count became 6, and
+// removing one left 5 — still `>= 4`, so the trap PLANTED AND WAS MISSED.
+//
+// The rule this file already follows everywhere else: counts, not presence, and
+// exact, never `>=`. A floor cannot tell you a site was removed once anything
+// else has been added.
+//
+// The six: the pricing apply pass, three carriers in the tooltip, and the
+// per-scenario block's poolsFor and pricingFor.
+check('scope wiring: every consumer filters through the shared predicate',
+  (tab.split('eventScopeMatchesView(').length - 1) === 6,
+  `${tab.split('eventScopeMatchesView(').length - 1} call sites, expected 6`);
 check('scope wiring: the pricing apply filter no longer hand-rolls the comparisons',
   !tab.includes('const segOk  = pe.segment   ===') && !tab.includes('const tar2Ok = !pe.tariffL2'),
   'the seven inline comparisons are what the shared predicate replaced');

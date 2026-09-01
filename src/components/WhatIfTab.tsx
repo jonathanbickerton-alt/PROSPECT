@@ -15,6 +15,8 @@ import { rebalance, achievableTargetRange, solveForTarget, blendedArpu, conforms
 import { EventsSummaryTable } from './EventsSummaryTable';
 import { foldChurnRamp, linearChurnRamp, type ChurnFoldMonth } from '../utils/churnFold';
 import { canShowBaseForecast, resolveEventScopeForecast } from '../utils/forecasting';
+import { scenarioAdjustedArpu } from '../utils/scenarioArpu';
+import type { ScenarioKey, ScenarioPricing } from '../utils/scenarioArpu';
 import { nextAmountControlState, effectiveAmountControl, churnAvailableFor,
          type AmountControl } from '../utils/amountControl';
 import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor } from '../utils/forecasting';
@@ -916,6 +918,13 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
     let p_prevBAdjOut  = baseForecast.lastHistoricalOutflow;
 
     const rows = computed.map((m, idx) => {
+      // THE TWO YIELD RATIOS, HOISTED so the per-scenario block below can READ
+      // them instead of recomputing them. Two implementations of one ratio is
+      // the shape this codebase has removed five times; a hoist is one
+      // declaration and one assignment, and it cannot drift.
+      let m_inflowYieldRatio: number | null = null;
+      let m_retentionYieldRatio: number | null = null;
+
       // ── A: Compute total subscriber counts (lagged formula) ──
       const newBBase = Math.max(0, p_bBase + p_prevBBaseIn - p_prevBBaseOut);
       const newBAdj  = Math.max(0, p_bAdj  + p_prevBAdjIn  - p_prevBAdjOut);
@@ -1003,6 +1012,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
             ? storedTiers.reduce((s, t) => s + (applicableInflowYield.tariffBaseArpu[t] ?? 0), 0) / storedTiers.length
             : rawBlendedYieldArpu;
           const yieldRatio = storedEqualWeightArpu > 0 ? rawBlendedYieldArpu / storedEqualWeightArpu : 1;
+          m_inflowYieldRatio = yieldRatio;
           // Forecast inflow ARPU for the month whose subscribers are entering this pool
           const fcPrevMonth = baseForecast.months[idx - 1];
           const fcInflowArpu = fcPrevMonth
@@ -1166,6 +1176,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
           ? retStoredTiers.reduce((s, t) => s + (applicableRetentionYield.tariffBaseArpu[t] ?? 0), 0) / retStoredTiers.length
           : rawRetentionYieldArpu;
         const retYieldRatio = retStoredEqualWeightArpu > 0 ? rawRetentionYieldArpu / retStoredEqualWeightArpu : 1;
+        m_retentionYieldRatio = retYieldRatio;
         const fcCurMonth = baseForecast.months[idx];
         const fcRetentionArpu = fcCurMonth
           ? (fcCurMonth.retentionArpu?.mean ?? fcCurMonth.arpu.mean)
@@ -1263,6 +1274,96 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
       pricingARPU = Math.max(0, pricingARPU);
 
       m.uplifted.arpu = pricingARPU;
+
+      // ══ PER-SCENARIO ADJUSTED ARPU AND REVENUE (Jon, 2026-09-01) ═════════
+      //
+      // ALONGSIDE the blend, never replacing it. Everything above this line is
+      // untouched, and `pricingARPU` — which becomes chartData's
+      // `ARPU (Adjusted)` and therefore the pricing card's stored
+      // originalBaseArpu — is already final. This block only READS.
+      //
+      // Each scenario gets ONE denominator: its own volume. That is the whole
+      // point of building these beside the blend rather than on top of it —
+      // the word "blended" carries three different denominators in this
+      // codebase (measured 2026-09-01; recorded, not corrected).
+      const fcM = baseForecast.months[idx];
+
+      // Market pools, split by the scenario the event names. A pool carries its
+      // own rate (revenue / subscriberVolume), so it enters its scenario's
+      // blend at that rate rather than at the cohort's.
+      const poolsFor = (scen: 'Inflow' | 'Retention'): { volume: number; arpu: number }[] =>
+        marketEvents
+          .filter(e => e.scenario === scen && e.date === m.month && eventScopeMatchesView(e as any, viewScopeForMatch))
+          .map(e => {
+            const vol = Math.abs(Number(e.subscriberVolume) || 0);
+            const rev = Number(e.revenue) || 0;
+            const rate = vol > 0 && rev !== 0 ? rev / vol : (Number(e.arpu) || 0);
+            return { volume: vol, arpu: rate };
+          })
+          .filter(p => p.volume > 0);
+
+      // Pricing deltas, mapped onto the scenarios each event's own fields name.
+      // `target` and `cohortScope` already carry that mapping; it is read here,
+      // not invented.
+      const pricingFor = (scen: ScenarioKey): ScenarioPricing[] =>
+        pricingEvents
+          .filter(pe => {
+            if (!eventScopeMatchesView(pe, viewScopeForMatch)) return false;
+            if (pe.duration === 'one-off' ? pe.month !== m.month : pe.month > m.month) return false;
+            const touchesBase = pe.target === 'base-only' || pe.target === 'cohorts+base';
+            if (scen === 'base') return touchesBase;
+            if (scen === 'outflow') return false;   // no target names outflow
+            if (pe.target === 'base-only') return false;
+            const sc = pe.cohortScope ?? 'both';
+            if (scen === 'inflow') return sc !== 'retention';
+            return sc !== 'inflow';                 // retention
+          })
+          .sort((a, b) => a.month.localeCompare(b.month))
+          .map(pe => ({
+            inputMode: (pe.inputMode ?? 'percentage') as 'percentage' | 'absolute',
+            amount: Number(pe.amount) || 0,
+            // A base-only event prices the standing base and leaves event pools
+            // at their own fixed rates — the engine's own distinction, carried
+            // as a flag so the two cannot drift.
+            pricesPools: pe.target !== 'base-only',
+          }));
+
+      const inflowPools = poolsFor('Inflow');
+      const retentionPools = poolsFor('Retention');
+      const poolVol = (ps: { volume: number }[]) => ps.reduce((t, p) => t + p.volume, 0);
+
+      m.scenarioArpu = {
+        inflow: scenarioAdjustedArpu({
+          baselineArpu: fcM?.inflowArpu?.mean,
+          naturalVolume: Math.max(0, m.uplifted.inflow - poolVol(inflowPools)),
+          pools: inflowPools,
+          yieldRatio: m_inflowYieldRatio,
+          pricing: pricingFor('inflow'),
+        }),
+        retention: scenarioAdjustedArpu({
+          baselineArpu: fcM?.retentionArpu?.mean,
+          naturalVolume: Math.max(0, m.uplifted.retention - poolVol(retentionPools)),
+          pools: retentionPools,
+          yieldRatio: m_retentionYieldRatio,
+          pricing: pricingFor('retention'),
+        }),
+        // OUTFLOW IS RATE-INERT. No pricing target names it and yield carries
+        // only Inflow and Retention (YieldEvent.ibro is those two values and
+        // nothing else). A churn event moves how many leave, not what they were
+        // worth — so outflow VOLUME moves and outflow ARPU does not.
+        outflow: scenarioAdjustedArpu({
+          baselineArpu: fcM?.outflowArpu?.mean,
+          naturalVolume: m.uplifted.outflow,
+        }),
+        // BASE weights by the ADJUSTED running base stock, mirroring the
+        // baseline's own-volume rule, and the engine has already floored it.
+        base: scenarioAdjustedArpu({
+          baselineArpu: fcM?.baseArpu?.mean,
+          naturalVolume: Math.max(0, newBAdj - p_eventPools.reduce((t, p) => t + p.size, 0)),
+          pools: p_eventPools.map(p => ({ volume: p.size, arpu: p.arpu })),
+          pricing: pricingFor('base'),
+        }),
+      };
 
       const row = {
         month: m.month,

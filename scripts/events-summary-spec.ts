@@ -233,13 +233,20 @@ check('wiring: the expanded table is height-capped so it cannot push the cards a
 // are deliberate, and this is what says so if a later change harmonises them
 // by accident.
 check('wiring: the Volume list still sorts by sequence', tab.includes('.sort(bySequence)'));
-// THREE month sorts, and the count is 3 rather than 2 for a reason worth
-// stating: the pricing APPLY pass sorts by month as well as the two lists do.
-// The first expectation here was 2, and the run corrected it — the sites are
-// the pricing apply pass, the pricing list and the yield list.
-check('wiring: the pricing and yield lists still sort by month (+ the apply pass)',
-  (tab.split(".sort((a, b) => a.month.localeCompare(b.month))").length - 1) === 3,
-  `${tab.split(".sort((a, b) => a.month.localeCompare(b.month))").length - 1} month sorts, expected 3`);
+// FOUR month sorts, and every one of them is named — the count is the point,
+// so it is re-aimed when a site is added and never relaxed to >=.
+//
+// The first expectation was 2 and the run corrected it to 3: the pricing APPLY
+// pass sorts by month as well as the two lists do. It moved to 4 on 2026-09-01
+// when the per-scenario ARPU block gained its own pricing list, which must be
+// applied in month order for the same reason the apply pass is — a percentage
+// delta compounds, so the order it lands in changes the answer.
+//
+// The four sites: the pricing apply pass, the pricing list, the yield list,
+// and pricingFor() in the per-scenario block.
+check('wiring: the pricing and yield lists still sort by month (+ apply pass + pricingFor)',
+  (tab.split(".sort((a, b) => a.month.localeCompare(b.month))").length - 1) === 4,
+  `${tab.split(".sort((a, b) => a.month.localeCompare(b.month))").length - 1} month sorts, expected 4`);
 
 // ── R7 — THE CHURN SENTENCE, from stored figures only ─────────────────────
 //
