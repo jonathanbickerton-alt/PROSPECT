@@ -824,5 +824,10 @@
   "whatif_churn_breakdown": "{{month}} outflow {{outflow}} ÷ prior-month base {{base}} × 12",
   "whatif_churn_block_no_forecast": "No baseline forecast covers this cohort ({{reason}}), so there is no churn rate to reduce.",
   "whatif_churn_reason_unknown": "no reason given",
-  "whatif_churn_member_no_edit": "This month is one step of a churn ramp — its target is cumulative, so it cannot be edited on its own. Edit the campaign instead."
+  "whatif_churn_member_no_edit": "This month is one step of a churn ramp — its target is cumulative, so it cannot be edited on its own. Edit the campaign instead.",
+  "whatif_measure": "Measure",
+  "whatif_measure_volume": "Volume",
+  "whatif_measure_revenue": "Revenue",
+  "whatif_measure_arpu": "ARPU",
+  "whatif_base_lag_applies_to_revenue_and_arpu": "Base Revenue and Base ARPU carry the same one-month lag; the flow measures do not."
 }

@@ -815,5 +815,10 @@
   "whatif_churn_breakdown": "salidas de {{month}} {{outflow}} ÷ base del mes anterior {{base}} × 12",
   "whatif_churn_block_no_forecast": "Ninguna previsión de referencia cubre esta cohorte ({{reason}}), así que no hay tasa de rotación que reducir.",
   "whatif_churn_reason_unknown": "sin motivo indicado",
-  "whatif_churn_member_no_edit": "Este mes es un paso de una rampa de abandono: su objetivo es acumulativo, por lo que no puede editarse por separado. Edite la campaña en su lugar."
+  "whatif_churn_member_no_edit": "Este mes es un paso de una rampa de abandono: su objetivo es acumulativo, por lo que no puede editarse por separado. Edite la campaña en su lugar.",
+  "whatif_measure": "Medida",
+  "whatif_measure_volume": "Volumen",
+  "whatif_measure_revenue": "Ingresos",
+  "whatif_measure_arpu": "ARPU",
+  "whatif_base_lag_applies_to_revenue_and_arpu": "Los ingresos de Base y el ARPU de Base arrastran el mismo desfase de un mes; las medidas de flujo no."
 }

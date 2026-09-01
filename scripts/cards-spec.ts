@@ -74,8 +74,13 @@ check('the volume card region was located', volume.length > 1000, `${volume.leng
   check('both trigger variants can shrink', trigger === 2, `${trigger} of 2`);
   check('the label truncates rather than pushing the box wider',
     /<span className="truncate">\{displayText\}<\/span>/.test(dd));
+  // EXACT, not a floor — `>= 3` until 2026-09-01. See the trap-77 note in
+  // amount-control-spec: a floor stops discriminating the moment anything is
+  // added, and this one guards a layout property that a stray class would
+  // silently satisfy.
   check('the icons cannot be squeezed into the label',
-    (dd.match(/shrink-0/g) ?? []).length >= 3, `${(dd.match(/shrink-0/g) ?? []).length} shrink-0`);
+    (dd.match(/shrink-0/g) ?? []).length === 5,
+    `${(dd.match(/shrink-0/g) ?? []).length} shrink-0, expected 5`);
 
   // With truncation guaranteed, the only content with a fixed intrinsic
   // minimum is the native month input. Measured in Chrome at this font size

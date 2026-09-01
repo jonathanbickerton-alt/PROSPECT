@@ -245,9 +245,21 @@ const SCENARIOS = ['Inflow', 'Outflow', 'Retention', 'ARPU', undefined];
     'the panel keyed on a stored flag alone and leaked onto Inflow');
   check('WIRING: leaving Outflow is handled by an effect on scenario',
     /storedAmountControl === 'churn' && !churnAvailableFor\(newEvent\.scenario\)/.test(tab));
-  check('WIRING: the churn draft clears in ONE place',
+  // ONE declaration, FIVE call sites — both exact.
+  //
+  // The call count was `>= 2` until 2026-09-01. A floor cannot see a call site
+  // removed once anything else has been added, which is precisely how
+  // guard-trap 77 was MISSED the day before: its spec asserted `>= 4` call
+  // sites, an unrelated change added two, and deleting one still cleared the
+  // floor. Exact counts, never `>=`.
+  //
+  // The five: the amount-control writer's `next.clearChurnDraft` branch, the
+  // churn add emitter, the churn edit-save, the campaign churn save, and the
+  // campaign save's reset.
+  check('WIRING: the churn draft clears in ONE place, called from five',
     (tab.match(/const clearChurnDraft = useCallback\(/g) ?? []).length === 1
-      && (tab.match(/clearChurnDraft\(\);/g) ?? []).length >= 2);
+      && (tab.match(/clearChurnDraft\(\);/g) ?? []).length === 5,
+    `${(tab.match(/clearChurnDraft\(\);/g) ?? []).length} call sites, expected 5`);
 
   check('WIRING: the ramp is opt-in and defaults OFF',
     /useState\(false\);/.test(tab) && /data-testid="churn-ramp-toggle"/.test(raw)

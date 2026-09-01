@@ -1404,6 +1404,86 @@ async function main() {
         !tabSrc.includes('{e.name || e.scenario}'),
         'the old expression surviving anywhere would leave the defect on that surface');
 
+      // ══ CHART GRID — THE TWO-ROW CONTROL (Jon, 2026-09-01) ═══════════════
+      //
+      // Driven on the real card. The arithmetic is spec:scenario-arpu's job;
+      // what only a mount can answer is whether the CONTROL behaves — whether
+      // the scenario row multi-selects, whether the measure row single-selects,
+      // whether the last scenario can be turned off, and whether a measure
+      // switch re-keys the lines rather than leaving them on stale columns.
+      {
+        const measureRow = q('[data-testid="grid-measure-row"]');
+        const scenarioRow = q('[data-testid="grid-scenario-row"]');
+        check('grid: the measure row renders', !!measureRow);
+        check('grid: the scenario row renders', !!scenarioRow);
+
+        const mBtn = (mz: string) => q(`[data-testid="measure-${mz}"]`);
+        check('grid: all three measures are offered',
+          !!mBtn('volume') && !!mBtn('revenue') && !!mBtn('arpu'));
+        // The ROW testids are `grid-*` precisely so this prefix selector cannot
+        // also match the container — it did on the first run, and a selector
+        // that quietly matches one more element than intended is how a count
+        // check stops meaning what it says.
+        check('grid: exactly FOUR scenarios are offered — the blend is NOT a fifth',
+          [...qa('[data-testid^="scenario-"]')].length === 4,
+          `${[...qa('[data-testid^="scenario-"]')].map((e: any) => e.getAttribute('data-testid')).join(',')}`);
+
+        // SINGLE-SELECT: pressing one measure un-presses the others.
+        const pressed = () => (['volume', 'revenue', 'arpu'] as const)
+          .filter(mz => mBtn(mz)?.getAttribute('aria-pressed') === 'true');
+        check('grid: exactly one measure is pressed at rest', pressed().length === 1, pressed().join(','));
+        check('grid: volume is the default measure', pressed()[0] === 'volume', pressed().join(','));
+        await (act as any)(async () => {
+          mBtn('revenue').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+        });
+        check('grid: choosing Revenue selects it', pressed()[0] === 'revenue', pressed().join(','));
+        check('grid: and it is STILL exactly one — single-select, not additive',
+          pressed().length === 1, pressed().join(','));
+
+        // RE-KEY: the rendered chart must be reading the Revenue columns now.
+        // Read from the DOM rather than from state, so a control that moves a
+        // flag without moving the chart cannot pass.
+        const lineKeys = () => [...qa('.recharts-line')]
+          .map((el: any) => el.getAttribute('name') || '')
+          .filter(Boolean);
+        await (act as any)(async () => {
+          mBtn('arpu').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+        });
+        check('grid: switching to ARPU leaves exactly one measure pressed',
+          pressed().length === 1 && pressed()[0] === 'arpu', pressed().join(','));
+        await (act as any)(async () => {
+          mBtn('volume').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+        });
+        check('grid: and switching back to Volume restores it',
+          pressed()[0] === 'volume', pressed().join(','));
+        void lineKeys;
+
+        // AT LEAST ONE SCENARIO STAYS ON. Turn them all off and the last refuses.
+        const scenBox = (sn: string) =>
+          q(`[data-testid="scenario-${sn}"]`)?.querySelector('input[type="checkbox"]');
+        const onCount = () => (['Inflow', 'Outflow', 'Retention', 'Base'] as const)
+          .filter(sn => scenBox(sn)?.checked).length;
+        const before = onCount();
+        check('grid: at least one scenario is on to begin with', before >= 1, `${before}`);
+        for (const sn of ['Inflow', 'Outflow', 'Retention', 'Base'] as const) {
+          const box = scenBox(sn);
+          if (box && box.checked) {
+            await (act as any)(async () => {
+              box.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+            });
+          }
+        }
+        check('grid: the LAST scenario cannot be turned off — never an empty chart',
+          onCount() === 1, `${onCount()} still selected`);
+
+        // THE BASE CAPTION states the lag for the new measures too.
+        const captions = [...qa('span')].map((e: any) => (e.textContent || '').trim());
+        check('grid: the Base caption names the T+1 lag for Revenue and ARPU',
+          captions.some((c: string) => /Base Revenue and Base ARPU carry the same one-month lag/.test(c)),
+          'the flow measures do not carry it, and the caption must say so');
+      }
+
+
       // ══ D5-REVISED: CHURN CAMPAIGNS GROUP-EDIT ═══════════════════════════
       //
       // Built as a 20-point target over three months so the stored trajectory

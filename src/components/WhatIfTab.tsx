@@ -122,6 +122,40 @@ interface WhatIfTabProps {
 // ---------------------------------------------------------------------------
 
 const KPI_LIST = ['Inflow', 'Outflow', 'Retention', 'Base', 'ARPU'] as const;
+
+/**
+ * THE SCENARIO ROW — the four IBRO scenarios, multi-select within a measure.
+ *
+ * 'ARPU' is deliberately NOT here. The blended ARPU line is retired from the
+ * chart display (Jon, 2026-09-01): it is not a fifth scenario, and drawing it
+ * beside four per-scenario lines invited exactly the reading UAT reported —
+ * that revenue could be recovered as ARPU x volume off one chart. The
+ * `ARPU (Baseline)` / `ARPU (Adjusted)` COLUMNS are untouched and still feed
+ * the pricing card.
+ */
+const SCENARIO_LIST = ['Inflow', 'Outflow', 'Retention', 'Base'] as const;
+type ScenarioName = typeof SCENARIO_LIST[number];
+
+/** THE MEASURE ROW — single-select. One measure at a time, four scenarios in it. */
+const MEASURE_LIST = ['volume', 'revenue', 'arpu'] as const;
+type MeasureName = typeof MEASURE_LIST[number];
+
+/**
+ * The chartData column suffix a measure reads.
+ *
+ * Volume keeps the ORIGINAL column names — `Inflow (Baseline)` and friends —
+ * because those are the thirteen fields that predate the grid and are pinned.
+ * Revenue and ARPU read the per-scenario columns added beside them.
+ */
+function measureKey(scenario: ScenarioName, measure: MeasureName, half: 'Baseline' | 'Adjusted'): string {
+  if (measure === 'volume') return `${scenario} (${half})`;
+  return `${scenario} ${measure === 'revenue' ? 'Revenue' : 'ARPU'} (${half})`;
+}
+
+/** Which axis a measure belongs on, and how its ticks read. */
+const MEASURE_AXIS: Record<MeasureName, 'left' | 'right'> = {
+  volume: 'left', revenue: 'right', arpu: 'right',
+};
 type KpiName = typeof KPI_LIST[number];
 
 /** Default KPI set per tab, applied the first time each tab is opened.
@@ -691,6 +725,50 @@ export interface AdjustedForecastInput {
   wiInflowVal?: string; wiOutflowVal?: string; wiRetentionVal?: string;
   /** Injectable for tests: pass [] to reproduce the pre-pro-rata wildcard behaviour. */
   proRataLeavesOverride?: ProRataLeaf[];
+}
+
+/**
+ * THE SIXTEEN PER-SCENARIO CHART COLUMNS, built in one place.
+ *
+ * Four scenarios x {ARPU, Revenue} x {Baseline, Adjusted}. Named rather than
+ * inlined so the chart, the table and the export all read one definition and
+ * cannot drift on which volume a revenue was multiplied by — the mistake trap
+ * 118 plants.
+ *
+ * BASELINE volumes come from the forecast month and the baseline base stock;
+ * ADJUSTED volumes from the engine's own per-scenario result, which already
+ * carries the volume it divided by. Reading the volume back out of the result
+ * rather than re-deriving it is what keeps ARPU x volume = revenue true by
+ * construction instead of by agreement.
+ */
+function perScenarioColumns(
+  m: AdjustedForecastMonth,
+  fcM: any,
+  baselineBase: number,
+  _adjustedBase: number,
+): Record<string, number | null> {
+  const out: Record<string, number | null> = {};
+  const scen: Array<[string, ScenarioKey, number | undefined, number]> = [
+    ['Inflow',    'inflow',    fcM?.inflowArpu?.mean,    m.baseline.inflow],
+    ['Outflow',   'outflow',   fcM?.outflowArpu?.mean,   m.baseline.outflow],
+    ['Retention', 'retention', fcM?.retentionArpu?.mean, m.baseline.retention],
+    ['Base',      'base',      fcM?.baseArpu?.mean,      baselineBase],
+  ];
+  for (const [label, key, baseArpuMean, baseVol] of scen) {
+    const adj = m.scenarioArpu?.[key];
+    // BASELINE: the band's own mean, and revenue against the baseline volume.
+    const bArpu = (baseArpuMean === undefined || baseArpuMean === null || !Number.isFinite(baseArpuMean))
+      ? null : baseArpuMean;
+    out[`${label} ARPU (Baseline)`] = bArpu === null ? null : +bArpu.toFixed(2);
+    out[`${label} Revenue (Baseline)`] = bArpu === null ? null : +(bArpu * baseVol).toFixed(2);
+    // ADJUSTED: the engine's figure, with its own volume. A named absence
+    // reaches the column as null rather than as a substituted blend.
+    out[`${label} ARPU (Adjusted)`] = adj?.arpu === null || adj?.arpu === undefined
+      ? null : +adj.arpu.toFixed(2);
+    out[`${label} Revenue (Adjusted)`] = adj?.revenue === null || adj?.revenue === undefined
+      ? null : +adj.revenue.toFixed(2);
+  }
+  return out;
 }
 
 export function computeAdjustedForecast(input: AdjustedForecastInput): { chartData: any[]; adjustedMonths: AdjustedForecastMonth[]; eventShares: Map<string, number> } {
@@ -1380,6 +1458,25 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
         // Outflow ARPU reference — display-only line on ARPU axis
         'ARPU Outflow (Ref)':   +(baseForecast.months[idx]?.outflowArpu?.mean ?? m.baseline.arpu).toFixed(2),
         hasEvent: m.appliedEventIds.length > 0,
+        // ── SIXTEEN PER-SCENARIO COLUMNS (Jon, 2026-09-01) ────────────────
+        //
+        // ADDITIVE. The thirteen fields above are untouched, and
+        // `ARPU (Adjusted)` in particular is byte-identical — it is the
+        // pricing card's stored originalBaseArpu feed and the settled baseline
+        // of 2026-08-21 (`7b456a1`) rests on it.
+        //
+        // Baseline ARPU is the forecast month's OWN band, not the blend.
+        // Adjusted ARPU is the engine's per-scenario quantity, computed in the
+        // block below pass F. Revenue is that scenario's ARPU times THAT
+        // scenario's volume in this same row — base against the running base
+        // stock, flows against their own flows.
+        //
+        // ABSENCE IS ABSENCE. Where the engine reports a reason (a pre-schema
+        // forecast carrying no band, or no volume to divide by) the column is
+        // `null`, never the blend and never 0. A zero here would read as "these
+        // subscribers are worth nothing", which is a different claim from "we
+        // cannot say" — the two-meanings-of-null rule, at the chart seam.
+        ...perScenarioColumns(m, baseForecast.months[idx], newBBase, newBAdj),
       };
 
       p_prevBBaseIn  = m.baseline.inflow;
@@ -1458,6 +1555,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // follow the user back to Volume. Each tab now remembers what it was left on,
   // and gets its default the first time it is opened.
   const [kpisByTab, setKpisByTab] = useState<Record<string, KpiName[]>>({});
+  // PER TAB, exactly as the scenario selection is. Switching tabs should not
+  // silently change which measure you are reading, and holding it globally
+  // would do precisely that.
+  const [measureByTab, setMeasureByTab] = useState<Record<string, MeasureName>>({});
 
   // null = add-new mode; a string id = editing that event
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
@@ -1531,6 +1632,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // cannot disagree. The FOCUS bar that used to be a second writer is deleted;
   // see the header-slot rule in EXPECTED.md.
   const selectedKpis = kpisByTab[activeTab] ?? TAB_DEFAULT_KPIS[activeTab] ?? TAB_DEFAULT_KPIS.volume;
+  const activeMeasure: MeasureName = measureByTab[activeTab] ?? 'volume';
+  /** The scenarios actually plotted: the selection minus the retired blend. */
+  const selectedScenarios = selectedKpis.filter(
+    (k): k is ScenarioName => (SCENARIO_LIST as readonly string[]).includes(k));
   const setSelectedKpis = useCallback(
     (next: KpiName[] | ((prev: KpiName[]) => KpiName[])) =>
       setKpisByTab(prev => {
@@ -3623,6 +3728,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
    *  was for. Kept next to the chart it drives rather than in the header slot,
    *  so there is exactly one authority for what is displayed. */
   const selectOnlyKpi = (kpi: KpiName) => setSelectedKpis([kpi]);
+  /**
+   * AT LEAST ONE SCENARIO STAYS SELECTED. Deselecting the last one would leave
+   * a measure chosen with nothing to draw it for — an empty chart whose cause
+   * is a control state rather than the data, which is the one kind of blank
+   * this card is not allowed to show.
+   */
+  const toggleScenario = (sc: ScenarioName) =>
+    setSelectedKpis(prev => {
+      const on = prev.includes(sc);
+      if (on && prev.filter(k => (SCENARIO_LIST as readonly string[]).includes(k)).length === 1) return prev;
+      return on ? prev.filter(k => k !== sc) : [...prev, sc];
+    });
+  const setMeasure = (mz: MeasureName) =>
+    setMeasureByTab(prev => ({ ...prev, [activeTab]: mz }));
 
   // -------------------------------------------------------------------------
   // Unique dimension values for view filter dropdowns
@@ -3821,13 +3940,39 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             </div>
           </div>
 
-          {/* KPI selector */}
-          <div className="flex flex-wrap gap-2 mb-5">
-            {KPI_LIST.map(kpi => {
-              const isOnly = selectedKpis.length === 1 && selectedKpis[0] === kpi;
+          {/* MEASURE ROW — single-select. One measure at a time; the scenario
+              row below chooses which of the four it is drawn for. Switching
+              measures re-keys every line and the y-axis unit with it. */}
+          <div className="flex flex-wrap items-center gap-2 mb-3" data-testid="grid-measure-row">
+            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mr-1">
+              {t('whatif_measure')}
+            </span>
+            <div className="flex rounded-lg overflow-hidden border border-slate-200">
+              {MEASURE_LIST.map(mz => (
+                <button
+                  key={mz}
+                  type="button"
+                  data-testid={`measure-${mz}`}
+                  aria-pressed={activeMeasure === mz}
+                  onClick={() => setMeasure(mz)}
+                  className={`px-3 py-1.5 text-xs font-semibold border-r border-slate-200 last:border-r-0 transition-colors ${
+                    activeMeasure === mz
+                      ? 'bg-[#e60000] text-white'
+                      : 'bg-white text-slate-500 hover:bg-slate-50'
+                  }`}
+                >{t(`whatif_measure_${mz}`)}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* SCENARIO ROW — multi-select within the chosen measure. */}
+          <div className="flex flex-wrap gap-2 mb-5" data-testid="grid-scenario-row">
+            {SCENARIO_LIST.map(kpi => {
+              const isOnly = selectedScenarios.length === 1 && selectedScenarios[0] === kpi;
               return (
               <label
                 key={kpi}
+                data-testid={`scenario-${kpi}`}
                 className={`group flex items-center gap-2 text-xs pl-3 pr-2 py-1.5 rounded-lg border cursor-pointer transition-colors ${
                   selectedKpis.includes(kpi)
                     ? 'bg-slate-800 border-slate-800 text-white'
@@ -3837,7 +3982,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 <input
                   type="checkbox"
                   checked={selectedKpis.includes(kpi)}
-                  onChange={() => toggleKpi(kpi)}
+                  onChange={() => toggleScenario(kpi)}
                   className="sr-only"
                 />
                 <span
@@ -3870,7 +4015,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           <div className="flex items-center gap-4 mb-4 text-[10px] text-slate-400">
             <span className="flex items-center gap-1.5"><span className="w-6 border-t-2 border-slate-400" />{t('whatif_baseline_step_1')}</span>
             <span className="flex items-center gap-1.5"><span className="w-6 border-t-2 border-dashed border-[#e60000]" />{t('whatif_adjusted_events')}</span>
-            <span className="ml-auto italic">{t('whatif_base_reflects_inflow_outflow_from_the_prior_m')}</span>
+            <span className="ml-auto italic">
+              {t('whatif_base_reflects_inflow_outflow_from_the_prior_m')}
+              {' '}{t('whatif_base_lag_applies_to_revenue_and_arpu')}
+            </span>
           </div>
 
           <div className="h-[380px]">
@@ -3940,14 +4088,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     ));
                   })()}
 
-                  {selectedKpis.map(kpi => {
+                  {selectedScenarios.map(kpi => {
                     const c = KPI_COLORS[kpi];
+                    // THE AXIS FOLLOWS THE MEASURE, not the scenario. Volume is
+                    // a count and revenue and ARPU are money; putting all three
+                    // on one scale would flatten whichever is smaller into the
+                    // axis. Re-keyed together so a measure switch cannot leave a
+                    // line reading its old column against the new unit.
+                    const axis = MEASURE_AXIS[activeMeasure];
                     return (
-                      <React.Fragment key={kpi}>
+                      <React.Fragment key={`${kpi}-${activeMeasure}`}>
                         <Line
-                          yAxisId={c.axis}
+                          yAxisId={axis}
                           type="monotone"
-                          dataKey={`${kpi} (Baseline)`}
+                          dataKey={measureKey(kpi, activeMeasure, 'Baseline')}
                           stroke={c.baseline}
                           strokeWidth={2}
                           dot={{ r: 2, fill: c.baseline, strokeWidth: 0 }}
@@ -3955,9 +4109,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           connectNulls
                         />
                         <Line
-                          yAxisId={c.axis}
+                          yAxisId={MEASURE_AXIS[activeMeasure]}
                           type="monotone"
-                          dataKey={`${kpi} (Adjusted)`}
+                          dataKey={measureKey(kpi, activeMeasure, 'Adjusted')}
                           stroke={c.adjusted}
                           strokeWidth={2}
                           strokeDasharray="5 5"
@@ -3982,7 +4136,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       semi-transparent, so it cannot be read as either.
                       DEFAULT VISIBILITY IS UNCHANGED — whether it should show
                       by default is a product call, and it is not taken here. */}
-                  {selectedKpis.includes('ARPU') && (
+                  {/* RETIRED FROM THE DISPLAY (Jon, 2026-09-01), not deleted.
+                      The Outflow ARPU reference existed because the chart had
+                      no per-scenario ARPU; the measure row now draws Outflow
+                      ARPU as a first-class line, so a faint duplicate of it
+                      would be the confusion this control removes.
+                      THE COLUMN STAYS in chartData: the export writes chartData
+                      wholesale, and dropping it would remove an existing export
+                      column, which this session's export rule forbids. */}
+                  {false && (
                     <Line
                       yAxisId="right"
                       type="monotone"

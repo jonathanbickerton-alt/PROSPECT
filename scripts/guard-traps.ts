@@ -903,9 +903,17 @@ const TRAPS: Trap[] = [
   // that the shared predicate is load-bearing rather than decorative.
   { id: '77 the pricing apply path stops filtering by scope', why: 'every pricing event applies to every slice',
     file: WHATIF, spec: PRICEROUND,
+    // THE ANCHOR IS EXTENDED UPWARD, not moved, because the bare filter line
+    // now appears TWICE in WhatIfTab.tsx: once here in the apply pass and once
+    // in the per-scenario ARPU block, which filters through the same shared
+    // predicate as it should. `String.replace` takes the first occurrence, so
+    // this trap still hit the right site — but only by file order, and a later
+    // edit that moved the per-scenario block upward would have silently
+    // retargeted it. The preceding comment line is unique to the apply pass.
     mutate: s => s.replace(
-      '          if (!eventScopeMatchesView(pe, viewScopeForMatch)) return false;',
-      '') },
+      '          if (!eventScopeMatchesView(pe, viewScopeForMatch)) return false;' + nl +
+      '          if (pe.duration === \'one-off\') return pe.month === m.month;',
+      '          if (pe.duration === \'one-off\') return pe.month === m.month;') },
   // 78 reverts PREVIEW's baseline to the cohort-scoped series while the saved
   // row stays event-scoped — reinstating the disagreement the previous session
   // introduced knowingly and this one closed. Both figures remain plausible
@@ -1345,6 +1353,37 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '      pricingARPU = Math.max(0, pricingARPU);' + nl + nl + '      m.uplifted.arpu = pricingARPU;',
       '      pricingARPU = Math.max(0, pricingARPU * 1.01);' + nl + nl + '      m.uplifted.arpu = pricingARPU;') },
+  // 117 plots the BLENDED column under a scenario button — the exact confusion
+  // the grid removes. The per-scenario literals catch it because the fixture's
+  // blend (20) matches none of the four scenario ARPUs, which that spec asserts
+  // before it asserts anything else.
+  { id: '117 a scenario line is fed the blended column',
+    why: 'the grid exists because the blend is not any scenario, and drawing it as one restores the defect',
+    file: WHATIF, spec: SCENARPU,
+    mutate: s => s.replace(
+      "    out[`${label} ARPU (Baseline)`] = bArpu === null ? null : +bArpu.toFixed(2);",
+      "    out[`${label} ARPU (Baseline)`] = fcM?.arpu?.mean ?? null;") },
+  // 118 multiplies a scenario's ARPU by the WRONG scenario's volume. Revenue is
+  // ARPU x THAT scenario's volume, and the four baseline revenues are asserted
+  // DISTINCT for exactly this reason — a fixture where two collided would let
+  // this through.
+  { id: '118 revenue is ARPU times another scenario\'s volume',
+    why: 'revenue must be that scenario\'s rate over that scenario\'s population, or it belongs to neither',
+    file: WHATIF, spec: SCENARPU,
+    mutate: s => s.replace(
+      "    out[`${label} Revenue (Baseline)`] = bArpu === null ? null : +(bArpu * baseVol).toFixed(2);",
+      "    out[`${label} Revenue (Baseline)`] = bArpu === null ? null : +(bArpu * m.baseline.inflow).toFixed(2);") },
+  // 119 drops an EXISTING chart column. The chart export writes chartData
+  // wholesale, so the row's key order IS the export's column order and removing
+  // one is a removed export column — which the additive-only rule forbids. The
+  // key-order literal catches it; a presence check would not, because the
+  // sixteen new columns would still all be there.
+  { id: '119 an existing chartData column is dropped from the export',
+    why: 'the chart export writes chartData wholesale, so a dropped key is a removed export column',
+    file: WHATIF, spec: SCENARPU,
+    mutate: s => s.replace(
+      "        'ARPU Outflow (Ref)':   +(baseForecast.months[idx]?.outflowArpu?.mean ?? m.baseline.arpu).toFixed(2),",
+      '') },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>

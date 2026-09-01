@@ -815,5 +815,10 @@
   "whatif_churn_breakdown": "{{month}} Abgang {{outflow}} ÷ Vormonatsbasis {{base}} × 12",
   "whatif_churn_block_no_forecast": "Keine Basisprognose deckt diese Kohorte ab ({{reason}}), daher gibt es keine Abwanderungsrate zu senken.",
   "whatif_churn_reason_unknown": "kein Grund angegeben",
-  "whatif_churn_member_no_edit": "Dieser Monat ist ein Schritt einer Churn-Rampe — sein Ziel ist kumulativ und kann daher nicht einzeln bearbeitet werden. Bearbeiten Sie stattdessen die Kampagne."
+  "whatif_churn_member_no_edit": "Dieser Monat ist ein Schritt einer Churn-Rampe — sein Ziel ist kumulativ und kann daher nicht einzeln bearbeitet werden. Bearbeiten Sie stattdessen die Kampagne.",
+  "whatif_measure": "Kennzahl",
+  "whatif_measure_volume": "Volumen",
+  "whatif_measure_revenue": "Umsatz",
+  "whatif_measure_arpu": "ARPU",
+  "whatif_base_lag_applies_to_revenue_and_arpu": "Basisumsatz und Basis-ARPU tragen dieselbe Verzögerung von einem Monat; die Flussgrößen nicht."
 }

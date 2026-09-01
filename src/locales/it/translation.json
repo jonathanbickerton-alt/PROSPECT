@@ -815,5 +815,10 @@
   "whatif_churn_breakdown": "uscite {{month}} {{outflow}} ÷ base del mese precedente {{base}} × 12",
   "whatif_churn_block_no_forecast": "Nessuna previsione di base copre questa coorte ({{reason}}), quindi non c’è un tasso di abbandono da ridurre.",
   "whatif_churn_reason_unknown": "nessun motivo indicato",
-  "whatif_churn_member_no_edit": "Questo mese è un passaggio di una rampa di abbandono: il suo obiettivo è cumulativo, quindi non può essere modificato da solo. Modifica invece la campagna."
+  "whatif_churn_member_no_edit": "Questo mese è un passaggio di una rampa di abbandono: il suo obiettivo è cumulativo, quindi non può essere modificato da solo. Modifica invece la campagna.",
+  "whatif_measure": "Misura",
+  "whatif_measure_volume": "Volume",
+  "whatif_measure_revenue": "Ricavi",
+  "whatif_measure_arpu": "ARPU",
+  "whatif_base_lag_applies_to_revenue_and_arpu": "I ricavi di Base e l’ARPU di Base portano lo stesso sfasamento di un mese; le misure di flusso no."
 }

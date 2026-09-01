@@ -25,6 +25,7 @@
  */
 import { computeAdjustedForecast } from '../src/components/WhatIfTab';
 import { scenarioAdjustedArpu, aggregateScenarioArpu } from '../src/utils/scenarioArpu';
+import { deriveAggregate } from '../src/utils/forecasting';
 
 let pass = 0; const fails: string[] = [];
 const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails.push(n + (d ? `  [${d}]` : '')); };
@@ -257,6 +258,211 @@ const baseline = sc(run(), 1);
     `${s.base.volume}`);
   check('base: revenue is base ARPU x base stock',
     near(s.base.revenue, s.base.arpu * s.base.volume), `${s.base.revenue}`);
+}
+
+// ── 7. THE SIXTEEN COLUMNS, AND THE EXPORT ORDER ─────────────────────────
+//
+// The chart export writes `chartData` wholesale, so the row's KEY ORDER is the
+// export's column order. "Additive only" is therefore a literal, checkable
+// claim: the original thirteen keys must still be the first thirteen, in the
+// same order, and everything new must follow them.
+{
+  const r = run();
+  const row: any = r.chartData[1];
+  const keys = Object.keys(row);
+
+  const ORIGINAL_13 = [
+    'month',
+    'Inflow (Baseline)', 'Inflow (Adjusted)',
+    'Outflow (Baseline)', 'Outflow (Adjusted)',
+    'Retention (Baseline)', 'Retention (Adjusted)',
+    'Base (Baseline)', 'Base (Adjusted)',
+    'ARPU (Baseline)', 'ARPU (Adjusted)',
+    'ARPU Outflow (Ref)',
+    'hasEvent',
+  ];
+  check('export: the original thirteen keys are the FIRST thirteen, in order',
+    JSON.stringify(keys.slice(0, 13)) === JSON.stringify(ORIGINAL_13),
+    `${JSON.stringify(keys.slice(0, 13))}`);
+  check('export: nothing existing was renamed or removed',
+    ORIGINAL_13.every(k => keys.includes(k)));
+
+  const NEW_16: string[] = [];
+  for (const sn of ['Inflow', 'Outflow', 'Retention', 'Base']) {
+    for (const mz of ['ARPU', 'Revenue']) {
+      for (const half of ['Baseline', 'Adjusted']) NEW_16.push(`${sn} ${mz} (${half})`);
+    }
+  }
+  check('export: all sixteen new columns are present', NEW_16.every(k => keys.includes(k)),
+    `${NEW_16.filter(k => !keys.includes(k)).join(', ') || 'all present'}`);
+  check('export: and every one of them comes AFTER the original thirteen',
+    NEW_16.every(k => keys.indexOf(k) >= 13));
+  check('export: the row has exactly 13 + 16 keys — nothing else crept in',
+    keys.length === 29, `${keys.length} keys`);
+
+  // ── THE LITERALS. Hand-computed from the fixture, per scenario. ─────────
+  // Revenue is THAT scenario's ARPU x THAT scenario's volume — trap 118 plants
+  // the wrong volume, and only a per-scenario literal can see it.
+  check('columns: Inflow ARPU (Baseline) is the inflow band',
+    row['Inflow ARPU (Baseline)'] === A.inflow, `${row['Inflow ARPU (Baseline)']}`);
+  check('columns: Inflow Revenue (Baseline) is 30 x 400 = 12000',
+    row['Inflow Revenue (Baseline)'] === 12000, `${row['Inflow Revenue (Baseline)']}`);
+  check('columns: Outflow Revenue (Baseline) is 18 x 250 = 4500',
+    row['Outflow Revenue (Baseline)'] === 4500, `${row['Outflow Revenue (Baseline)']}`);
+  check('columns: Retention Revenue (Baseline) is 22 x 600 = 13200',
+    row['Retention Revenue (Baseline)'] === 13200, `${row['Retention Revenue (Baseline)']}`);
+  check('columns: Base Revenue (Baseline) is 12 x the BASELINE base stock',
+    near(row['Base Revenue (Baseline)'], A.base * row['Base (Baseline)'], 1e-4),
+    `${row['Base Revenue (Baseline)']} vs ${A.base * row['Base (Baseline)']}`);
+
+  // NO EVENTS: adjusted equals baseline in every one of the sixteen.
+  for (const sn of ['Inflow', 'Outflow', 'Retention', 'Base']) {
+    check(`columns: ${sn} ARPU adjusted === baseline with no events`,
+      row[`${sn} ARPU (Adjusted)`] === row[`${sn} ARPU (Baseline)`],
+      `${row[`${sn} ARPU (Adjusted)`]} vs ${row[`${sn} ARPU (Baseline)`]}`);
+  }
+
+  // AND THE WRONG-VOLUME MISTAKE IS VISIBLE: the four revenues are distinct, so
+  // multiplying by another scenario's volume cannot coincide with the right
+  // answer. Asserted, because a fixture where they collided would let trap 118
+  // through.
+  const revs = ['Inflow', 'Outflow', 'Retention', 'Base'].map(sn => row[`${sn} Revenue (Baseline)`]);
+  check('columns: the four baseline revenues are DISTINCT — a wrong volume cannot hide',
+    new Set(revs).size === 4, revs.join(' / '));
+}
+
+// ── 8. ABSENCE REACHES THE COLUMN AS null, NEVER AS THE BLEND OR ZERO ─────
+{
+  // A forecast month with NO per-scenario bands — the pre-schema shape.
+  const bare: any = {
+    ...BF,
+    months: BF.months.map((mm: any) => ({
+      month: mm.month, inflow: mm.inflow, outflow: mm.outflow, retention: mm.retention,
+      arpu: { mean: 20 },
+    })),
+  };
+  const r = computeAdjustedForecast({
+    baseForecast: bare, marketEvents: [], yieldEvents: [], pricingEvents: [],
+    viewSegment: 'All', viewProduct: ALL as any, viewChannel: ALL as any, viewTariff: ALL as any,
+    data: [], wiSegmentCol: '', wiProductCol: '', wiProductL2Col: '',
+    wiChannelCol: '', wiChannelL2Col: '', wiTariffL1Col: '', wiTariffL2Col: '',
+    wiValueCol: '', proRataLeavesOverride: [],
+  } as any);
+  const row: any = r.chartData[1];
+  for (const sn of ['Inflow', 'Outflow', 'Retention', 'Base']) {
+    check(`absence: ${sn} ARPU (Baseline) is null, not the blend and not 0`,
+      row[`${sn} ARPU (Baseline)`] === null, `${row[`${sn} ARPU (Baseline)`]}`);
+    check(`absence: ${sn} Revenue (Adjusted) is null, not 0`,
+      row[`${sn} Revenue (Adjusted)`] === null, `${row[`${sn} Revenue (Adjusted)`]}`);
+  }
+  check('absence: the BLENDED columns still carry their figures — only the new ones abstain',
+    row['ARPU (Baseline)'] === 20 && row['ARPU (Adjusted)'] === 20,
+    `${row['ARPU (Baseline)']} / ${row['ARPU (Adjusted)']}`);
+  check('absence: the engine named a REASON rather than just producing null',
+    (r.adjustedMonths[1] as any).scenarioArpu.inflow.absence === 'band-absent',
+    `${(r.adjustedMonths[1] as any).scenarioArpu.inflow.absence}`);
+}
+
+// ── 9. YIELD ISOLATION — the engine session's first stated gap ────────────
+//
+// That session wired yield through the hoisted ratios and said plainly it had
+// no spec of its own. One Inflow yield and one Retention yield, each asserted
+// to move its own scenario and NO other.
+{
+  const yieldEv = (ibro: 'Inflow' | 'Retention', month: string) => ({
+    id: `y-${ibro}`, ibro, segment: 'All', product: 'All',
+    channelL1: 'All', channelL2: 'All', month, rollForward: false,
+    // A mix that blends to DOUBLE the equal-weight baseline, so the ratio is
+    // 2.0 and the movement cannot be mistaken for rounding.
+    tariffMix: { A: 100, B: 0 },
+    tariffBaseArpu: { A: 40, B: 20 },
+    name: '', comment: '',
+  });
+
+  const base = sc(run(), 1);
+
+  // RETENTION yield in month 1.
+  {
+    const s2 = sc(run([], [yieldEv('Retention', M1)]), 1);
+    check('yield/Retention: retention ARPU MOVES',
+      s2.retention.arpu !== base.retention.arpu,
+      `${base.retention.arpu} -> ${s2.retention.arpu}`);
+    check('yield/Retention: inflow ARPU is UNMOVED', s2.inflow.arpu === base.inflow.arpu,
+      `${s2.inflow.arpu}`);
+    check('yield/Retention: outflow ARPU is UNMOVED', s2.outflow.arpu === base.outflow.arpu);
+    check('yield/Retention: base ARPU is UNMOVED', s2.base.arpu === base.base.arpu);
+  }
+
+  // INFLOW yield applies to the PREVIOUS month's inflow entering the pool, so
+  // it is stated at M0 and read at M1 — the engine's own T-1 lag on that arm.
+  {
+    const s2 = sc(run([], [yieldEv('Inflow', M0)]), 1);
+    check('yield/Inflow: inflow ARPU MOVES',
+      s2.inflow.arpu !== base.inflow.arpu, `${base.inflow.arpu} -> ${s2.inflow.arpu}`);
+    check('yield/Inflow: retention ARPU is UNMOVED',
+      s2.retention.arpu === base.retention.arpu, `${s2.retention.arpu}`);
+    check('yield/Inflow: outflow ARPU is UNMOVED', s2.outflow.arpu === base.outflow.arpu);
+  }
+}
+
+// ── 10. A TWO-LEAF STORE — the engine session's second stated gap ─────────
+//
+// That session drove the aggregate rule on `aggregateScenarioArpu` directly and
+// said the REAL aggregation was not exercised. This runs deriveAggregate over
+// two leaves and then feeds the aggregate through computeAdjustedForecast, so
+// the whole path is driven.
+{
+  const leafOf = (name: string, mult: number, arpu: typeof A) => ({
+    cohort: { segment: name, product: 'All', productL2: 'All', channel: 'All',
+              channelL2: 'All', tariffL1: 'All', tariffL2: 'All', scenario: 'Base Case' },
+    seedBaseVolume: SEED * mult, seedBaseKnown: true,
+    lastHistoricalInflow: 0, lastHistoricalOutflow: 0,
+    historicalMonths: ['2026-05'],
+    months: [M0, M1].map(month => ({
+      month,
+      inflow: band(V.inflow * mult), outflow: band(V.outflow * mult),
+      retention: band(V.retention * mult),
+      arpu: { mean: 20 },
+      inflowArpu: { mean: arpu.inflow }, outflowArpu: { mean: arpu.outflow },
+      retentionArpu: { mean: arpu.retention }, baseArpu: { mean: arpu.base },
+    })),
+    provenance: { kind: 'fitted', modelUsed: 'Holt Linear' },
+  });
+
+  const LA = leafOf('LA', 1, A);
+  const LB = leafOf('LB', 3, { inflow: 10, outflow: 6, retention: 8, base: 4 });
+  // THE FIXTURE MUST DISCRIMINATE: the leaves disagree on every scenario.
+  check('two-leaf: the leaves disagree on every scenario ARPU',
+    A.inflow !== 10 && A.outflow !== 6 && A.retention !== 8 && A.base !== 4);
+
+  const agg = deriveAggregate([LA, LB] as any, LA.cohort as any);
+  const am: any = agg!.months.find((x: any) => x.month === M1);
+
+  // Srevenue / Svolume, per scenario, hand-computed.
+  const expInflow = (A.inflow * V.inflow + 10 * V.inflow * 3) / (V.inflow + V.inflow * 3);
+  check('two-leaf: aggregate inflowArpu is Srev/Svol, hand-computed',
+    near(am.inflowArpu.mean, +expInflow.toFixed(4), 1e-4),
+    `${am.inflowArpu.mean} vs ${expInflow}`);
+  check('two-leaf: it is NOT the mean of the two leaf rates',
+    Math.abs(am.inflowArpu.mean - (A.inflow + 10) / 2) > 0.01,
+    `${am.inflowArpu.mean} vs mean-of-rates ${(A.inflow + 10) / 2}`);
+
+  // AND THROUGH THE ENGINE: the aggregate's columns carry those figures.
+  const r = computeAdjustedForecast({
+    baseForecast: agg, marketEvents: [], yieldEvents: [], pricingEvents: [],
+    viewSegment: 'All', viewProduct: ALL as any, viewChannel: ALL as any, viewTariff: ALL as any,
+    data: [], wiSegmentCol: '', wiProductCol: '', wiProductL2Col: '',
+    wiChannelCol: '', wiChannelL2Col: '', wiTariffL1Col: '', wiTariffL2Col: '',
+    wiValueCol: '', proRataLeavesOverride: [],
+  } as any);
+  const row: any = r.chartData[1];
+  check('two-leaf: the chart column carries the AGGREGATE inflow ARPU',
+    near(row['Inflow ARPU (Baseline)'], +am.inflowArpu.mean.toFixed(2), 1e-6),
+    `${row['Inflow ARPU (Baseline)']} vs ${am.inflowArpu.mean}`);
+  check('two-leaf: aggregate inflow revenue is aggregate ARPU x aggregate volume',
+    near(row['Inflow Revenue (Baseline)'],
+         +(row['Inflow ARPU (Baseline)'] * row['Inflow (Baseline)']).toFixed(2), 1e-4),
+    `${row['Inflow Revenue (Baseline)']}`);
 }
 
 console.log(`\nscenario-arpu spec: ${pass}/${pass + fails.length} passed`);
