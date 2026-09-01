@@ -6,8 +6,8 @@ UAT findings D1-01 / D1-02.
 
 ```
 Generated: 2026-09-01 13:12 +0100 (UTC 2026-09-01 12:12)
-Certifies: __HASH__
-Repo: __REPO__
+Certifies: 006a15f (report filled one commit later)
+Repo: committed 006a15f, pushed (origin in sync)
 SKELETON FIRST. BASE: HEAD 5c4347c vs 1219's 8d00543 — one, REPORT-ONLY; no
   source drift since 4a1d110.
 ITEM 0 MEASURED, GAP MATERIAL: on a two-leaf fixture driving the REAL
