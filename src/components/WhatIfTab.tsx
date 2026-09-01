@@ -161,11 +161,30 @@ type KpiName = typeof KPI_LIST[number];
 /** Default KPI set per tab, applied the first time each tab is opened.
   * Module scope so the per-tab setter closes over a stable reference and needs
   * no dependency-array exemption. */
+/**
+ * THE PER-TAB DEFAULT SELECTION.
+ *
+ * `value` and `pricing` used to default to ['ARPU'] — the blended series, back
+ * when ARPU was a fifth KPI. It is now a MEASURE, not a series, so those
+ * defaults named a value the scenario row cannot represent: the selection
+ * filtered to nothing and the chart drew axes with no lines. Walked as W6a on
+ * 2026-09-01 and read as "adding an event cleared my selection", because
+ * adding a pricing event is what takes you to the tab where it shows.
+ *
+ * Their INTENT is preserved exactly — those tabs open on ARPU — but in the new
+ * vocabulary: all four scenarios, with the ARPU measure selected below.
+ */
 const TAB_DEFAULT_KPIS: Record<string, KpiName[]> = {
   volume:    ['Inflow', 'Outflow', 'Retention', 'Base'],
   promotion: ['Inflow', 'Outflow', 'Retention', 'Base'],
-  value:     ['ARPU'],
-  pricing:   ['ARPU'],
+  value:     ['Inflow', 'Outflow', 'Retention', 'Base'],
+  pricing:   ['Inflow', 'Outflow', 'Retention', 'Base'],
+};
+
+/** Which measure a tab opens on — the other half of what ['ARPU'] used to mean. */
+const TAB_DEFAULT_MEASURE: Record<string, MeasureName> = {
+  value:   'arpu',
+  pricing: 'arpu',
 };
 
 const KPI_COLORS: Record<KpiName, { baseline: string; adjusted: string; axis: 'left' | 'right' }> = {
@@ -1632,10 +1651,31 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // cannot disagree. The FOCUS bar that used to be a second writer is deleted;
   // see the header-slot rule in EXPECTED.md.
   const selectedKpis = kpisByTab[activeTab] ?? TAB_DEFAULT_KPIS[activeTab] ?? TAB_DEFAULT_KPIS.volume;
-  const activeMeasure: MeasureName = measureByTab[activeTab] ?? 'volume';
-  /** The scenarios actually plotted: the selection minus the retired blend. */
-  const selectedScenarios = selectedKpis.filter(
-    (k): k is ScenarioName => (SCENARIO_LIST as readonly string[]).includes(k));
+  const activeMeasure: MeasureName =
+    measureByTab[activeTab] ?? TAB_DEFAULT_MEASURE[activeTab] ?? 'volume';
+  /**
+   * THE SCENARIOS ACTUALLY PLOTTED — and the ONE place the non-empty invariant
+   * lives.
+   *
+   * It is enforced HERE, at the derivation, rather than in the pill's onClick,
+   * because the click path was never the only way to reach empty. W6a reached
+   * it through a per-tab DEFAULT that named the retired blend: no click, no
+   * prune, no remount — a stored selection that simply filtered to nothing.
+   * A guard in the toggle handler cannot see that, and did not.
+   *
+   * Falls back to the tab's own default scenarios, then to all four. Never
+   * empty, on any path — defaults, restores, a stale stored selection naming a
+   * value some later change retires, or anything else that has not happened
+   * yet.
+   */
+  const selectedScenarios: ScenarioName[] = (() => {
+    const isScenario = (k: string): k is ScenarioName =>
+      (SCENARIO_LIST as readonly string[]).includes(k);
+    const picked = selectedKpis.filter(isScenario);
+    if (picked.length > 0) return picked;
+    const dflt = (TAB_DEFAULT_KPIS[activeTab] ?? []).filter(isScenario);
+    return dflt.length > 0 ? dflt : [...SCENARIO_LIST];
+  })();
   const setSelectedKpis = useCallback(
     (next: KpiName[] | ((prev: KpiName[]) => KpiName[])) =>
       setKpisByTab(prev => {
@@ -3734,6 +3774,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
    * is a control state rather than the data, which is the one kind of blank
    * this card is not allowed to show.
    */
+  /**
+   * The pill refuses to turn off the last scenario, so the STORED selection
+   * never goes empty either. That is a second property from the derivation's
+   * invariant above, not a duplicate of it: this one keeps the control honest
+   * (a click that would empty it does nothing visible and should), while the
+   * derivation guarantees the CHART regardless of how the selection got there.
+   * Trap 120 removes the derivation's half and shows the click guard alone was
+   * never enough.
+   */
   const toggleScenario = (sc: ScenarioName) =>
     setSelectedKpis(prev => {
       const on = prev.includes(sc);
@@ -3974,14 +4023,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 key={kpi}
                 data-testid={`scenario-${kpi}`}
                 className={`group flex items-center gap-2 text-xs pl-3 pr-2 py-1.5 rounded-lg border cursor-pointer transition-colors ${
-                  selectedKpis.includes(kpi)
+                  selectedScenarios.includes(kpi)
                     ? 'bg-slate-800 border-slate-800 text-white'
                     : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
                 }`}
               >
                 <input
                   type="checkbox"
-                  checked={selectedKpis.includes(kpi)}
+                  // READ FROM THE DERIVED VALUE, not the stored one — the same
+                  // list the chart plots. A negative control on trap 120 caught
+                  // these disagreeing: with a bad default the chart fell back to
+                  // all four lines while every pill rendered UNCHECKED, so the
+                  // control said "nothing selected" over a chart showing four.
+                  // The source comment above promises the pills and the chart
+                  // cannot disagree; this is what makes that true.
+                  checked={selectedScenarios.includes(kpi)}
                   onChange={() => toggleScenario(kpi)}
                   className="sr-only"
                 />
@@ -4001,7 +4057,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   className={`ml-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide transition-opacity ${
                     isOnly
                       ? 'opacity-0 pointer-events-none'
-                      : selectedKpis.includes(kpi)
+                      : selectedScenarios.includes(kpi)
                         ? 'opacity-0 group-hover:opacity-100 focus:opacity-100 bg-white/15 text-white hover:bg-white/25'
                         : 'opacity-0 group-hover:opacity-100 focus:opacity-100 bg-slate-200 text-slate-600 hover:bg-slate-300'
                   }`}
@@ -4022,7 +4078,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           </div>
 
           <div className="h-[380px]">
-            {selectedKpis.length > 0 ? (
+            {/* GUARDED ON WHAT IS DRAWN, not on what is stored. Reading
+                `selectedKpis` here was the second half of W6a: ['ARPU'] has
+                length 1, so this branch was TRUE and the chart rendered axes
+                with no lines — a silent blank rather than the message below,
+                which is the state the message exists for. */}
+            {selectedScenarios.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 40, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -4188,6 +4249,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           {(['volume', 'value', 'pricing', 'promotion'] as const).map(tab => (
             <button
               key={tab}
+              // TESTID, because the LABELS now collide. The measure row added a
+              // button reading "Volume", so selecting a tab by its text also
+              // matches a measure — which is exactly how the W6a spec first
+              // drove the wrong control and left the card on another tab.
+              data-testid={`whatif-tab-${tab}`}
               onClick={() => setActiveTab(tab)}
               className={`px-5 py-1.5 rounded-lg text-sm font-semibold transition-all ${
                 activeTab === tab

@@ -1483,6 +1483,135 @@ async function main() {
           'the flow measures do not carry it, and the caption must say so');
       }
 
+      // ══ W6a — THE SELECTION SURVIVES EVERY RECOMPUTE ═════════════════════
+      //
+      // Walked 2026-09-01: with a scenario selected, adding a pricing event
+      // left the chart with nothing plotted. The click-path spec above could
+      // never have caught it — the empty was reached through a per-tab DEFAULT
+      // that named the retired blend, not through a click.
+      //
+      // THE DIRECT REPRODUCTION IS THE TAB SWITCH. Adding a pricing event takes
+      // you to the Pricing tab, whose default selection was ['ARPU']; with ARPU
+      // no longer a scenario, that filtered to nothing.
+      {
+        const pressedScenarios = () =>
+          (['Inflow', 'Outflow', 'Retention', 'Base'] as const)
+            .filter(sn => (q(`[data-testid="scenario-${sn}"]`)
+              ?.querySelector('input[type="checkbox"]') as any)?.checked);
+        const chartDrawn = () => !!q('.recharts-wrapper') || [...qa('svg')].length > 0;
+        // BY TESTID, NOT BY LABEL. The measure row's "Volume" button has the
+        // same text as the Volume TAB, so a text selector drives whichever
+        // comes first in the DOM — it drove the measure, left the card on the
+        // Pricing tab, and the churn section three blocks later crashed on an
+        // empty event list. The collision is real in the product, so the fix
+        // is a testid on the tabs rather than a cleverer selector here.
+        const goTab = async (tab: string) => {
+          const b = q(`[data-testid="whatif-tab-${tab}"]`);
+          if (b) await (act as any)(async () => {
+            b.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+          });
+        };
+
+        // EVERY TAB DEFAULT NAMES AT LEAST ONE SCENARIO — checked at SOURCE.
+        //
+        // This is the half of the fix that is load-bearing. W6a was a default
+        // naming ['ARPU'] after ARPU stopped being a scenario, and the runtime
+        // check below cannot see that any more: the derivation's fallback
+        // rescues it, so a bad default is invisible at runtime by design. The
+        // source check is what keeps the defaults honest, and trap 120 plants
+        // exactly the historical defect against it.
+        const tabSrcW = (await import('node:fs'))
+          .readFileSync('src/components/WhatIfTab.tsx', 'utf8');
+        const defaultsBlock = tabSrcW.slice(
+          tabSrcW.indexOf('const TAB_DEFAULT_KPIS'),
+          tabSrcW.indexOf('const TAB_DEFAULT_MEASURE'));
+        check('W6a: the defaults block was found', defaultsBlock.length > 40);
+        for (const tab of ['volume', 'promotion', 'value', 'pricing']) {
+          const line = defaultsBlock.split('\n').find(l => l.trim().startsWith(tab + ':')) ?? '';
+          check(`W6a: the ${tab} default names at least one SCENARIO`,
+            /'(Inflow|Outflow|Retention|Base)'/.test(line), line.trim() || '(not found)');
+          check(`W6a: and the ${tab} default names no retired value`,
+            !/'ARPU'/.test(line), line.trim());
+        }
+
+        // EVERY TAB derives a non-empty scenario set. This is W6a itself.
+        for (const tab of ['Volume', 'Value', 'Pricing', 'Promotion']) {
+          await goTab(tab.toLowerCase());
+          check(`W6a: the ${tab} tab derives a NON-EMPTY scenario selection`,
+            pressedScenarios().length > 0,
+            `${pressedScenarios().length} selected on ${tab}`);
+          check(`W6a: and the ${tab} tab draws a chart rather than a blank`,
+            chartDrawn(), tab);
+        }
+        await goTab('volume');
+
+        // SELECT INFLOW ONLY, then put the card through every recompute.
+        //
+        // Inflow is turned ON FIRST. The preceding block left a single scenario
+        // selected and it is not necessarily this one; turning the others off
+        // without turning Inflow on would hit the last-one-stays rule and leave
+        // whichever the previous block happened to end on. Asserted below, so a
+        // wrong starting state fails loudly rather than shifting what the rest
+        // of this block is testing.
+        const scenBox2 = (sn: string) =>
+          q(`[data-testid="scenario-${sn}"]`)?.querySelector('input[type="checkbox"]');
+        const inBox = scenBox2('Inflow');
+        if (inBox && !inBox.checked) await (act as any)(async () => {
+          inBox.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+        });
+        for (const sn of ['Outflow', 'Retention', 'Base'] as const) {
+          const box = scenBox2(sn);
+          if (box && box.checked) await (act as any)(async () => {
+            box.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+          });
+        }
+        check('W6a: Inflow alone is selected to begin with',
+          pressedScenarios().length === 1 && pressedScenarios()[0] === 'Inflow',
+          pressedScenarios().join(','));
+        const prior = pressedScenarios().slice();
+
+        const stillInflow = (what: string) => {
+          check(`W6a: the selection survives ${what}`,
+            pressedScenarios().length === prior.length
+              && pressedScenarios().every((x, i) => x === prior[i]),
+            `${pressedScenarios().join(',') || '(EMPTY)'}`);
+          check(`W6a: and it is never zero after ${what}`,
+            pressedScenarios().length > 0, `${pressedScenarios().length}`);
+        };
+
+        // (1) A MARKET ADD through the real button.
+        await setDraft({ scenario: 'Inflow', date: DRAFT_MONTH, segment: SEG,
+          product: 'All', subscriberVolume: 250 });
+        const addBtnW = [...qa('button')].find((b: any) => /add event/i.test(b.textContent || '')) as any;
+        if (addBtnW) await (act as any)(async () => {
+          addBtnW.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+        });
+        stillInflow('a market add');
+
+        // (2) A REMOVE — the event list emptying is its own recompute.
+        await (act as any)(async () => { (globalThis as any).__setEvents([]); });
+        stillInflow('an event remove');
+
+        // (3) A MEASURE SWITCH.
+        await (act as any)(async () => {
+          q('[data-testid="measure-revenue"]')
+            .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+        });
+        stillInflow('a measure switch');
+        await (act as any)(async () => {
+          q('[data-testid="measure-volume"]')
+            .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+        });
+
+        // (4) A TAB ROUND TRIP — leave to Pricing and come back. This is the
+        // walked sequence: the selection must be waiting where it was left.
+        await goTab('pricing');
+        check('W6a: the Pricing tab is non-empty on arrival',
+          pressedScenarios().length > 0, `${pressedScenarios().length}`);
+        await goTab('volume');
+        stillInflow('a tab round trip');
+      }
+
 
       // ══ D5-REVISED: CHURN CAMPAIGNS GROUP-EDIT ═══════════════════════════
       //

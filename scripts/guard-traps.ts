@@ -1384,6 +1384,26 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "        'ARPU Outflow (Ref)':   +(baseForecast.months[idx]?.outflowArpu?.mean ?? m.baseline.arpu).toFixed(2),",
       '') },
+  // 120 restores W6a's actual defect: a per-tab default naming the retired
+  // blend. This is the load-bearing half of the fix.
+  //
+  // ITS FIRST AIM WAS VACUOUS AND THE HARNESS SAID SO. It removed the
+  // DERIVATION's fallback instead, and MISSED — because with the defaults
+  // corrected, `picked` is never empty and the fallback it removed was never
+  // reached. A trap that plants something nothing can observe is not a weaker
+  // trap, it is not a trap; the "what would this actually redden?" test was
+  // owed before the run and was not paid.
+  //
+  // Caught by the SOURCE-level defaults check, which exists precisely because
+  // the runtime check cannot see a bad default any more — the fallback rescues
+  // it. The click-path spec stays GREEN throughout, which is the layer proof
+  // the brief asked for: the toggle handler was never the invariant.
+  { id: '120 a per-tab default names the retired blend again',
+    why: 'the scenario row cannot represent it, so the selection derives to nothing — W6a exactly',
+    file: WHATIF, spec: MIXCARD,
+    mutate: s => s.replace(
+      "  pricing:   ['Inflow', 'Outflow', 'Retention', 'Base'],",
+      "  pricing:   ['ARPU'],") },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
