@@ -82,6 +82,7 @@ const I18NPARITY = 'scripts/i18n-parity-spec.ts';
 const I18NSCAN = 'scripts/scan-i18n.ts';
 const FTSPLIT = 'scripts/forecast-type-split-spec.ts';
 const ARPUCOMP = 'scripts/arpu-companion-spec.ts';
+const APPLIEDCOUNT = 'scripts/applied-count-spec.ts';
 const DEBUNDLE = 'src/locales/de/translation.json';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
@@ -1499,6 +1500,24 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "{arpuDelta !== null ? fmtArpu(arpuDelta) : '—'}",
       "{arpuDelta !== null ? fmtDelta(arpuDelta) : '—'}") },
+
+  // ---------------------------------------------------------------------
+  // 126 — the "N events applied" caption back to counting the raw array
+  // (Jon, 2026-09-02: it counts what was applied AT THIS VIEW).
+  //
+  // The reason this earns a trap rather than a comment is what the old count
+  // DID during UAT-D2-03: a leaf-scoped event showed "1 event applied" at an
+  // aggregate whose Base delta was +0.00, and the caption was read as
+  // corroboration that the event had reached the aggregate. It corroborated
+  // nothing — it would have printed 1 at a view the engine never touched. A
+  // caption that cannot be wrong cannot be evidence, and this one was quoted
+  // as evidence in a walk.
+  { id: '126 the applied-events caption counts the store, not the view',
+    why: 'a count identical at every view cannot disagree with the deltas beside it, so it reads as corroboration when it is not',
+    file: WHATIF, spec: APPLIEDCOUNT,
+    mutate: s => s.replace(
+      "eventCount: appliedHere.size",
+      "eventCount: marketEvents.length") },
 ];
 
 const specFails = (spec: string = SPEC): boolean => {
@@ -1514,7 +1533,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

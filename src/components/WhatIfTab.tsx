@@ -3760,8 +3760,25 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const last = chartData[chartData.length - 1];
     const baseDelta = last['Base (Adjusted)'] - last['Base (Baseline)'];
     const arpuDelta = last['ARPU (Adjusted)'] - last['ARPU (Baseline)'];
-    return { baseDelta, arpuDelta, eventCount: marketEvents.length };
-  }, [chartData, marketEvents.length]);
+    // COUNTED AT THIS VIEW, not from the array (Jon, 2026-09-02).
+    //
+    // This read `marketEvents.length` — every event in the store, whatever the
+    // filter. The caption therefore said the same number at every view and
+    // could not disagree with the two figures beside it: a leaf-scoped event
+    // showed "1 event applied" at an aggregate the engine had not touched,
+    // which is how a zero delta beside a confident count read as a defect in
+    // the delta rather than in the caption. The 1456 session found it while
+    // failing to reproduce UAT-D2-03 and left it, because it is not the cause;
+    // it is why the walk's own corroboration looked stronger than it was.
+    //
+    // The engine already reports what it applied — appliedEventIds, per month,
+    // from applyEventsToMonth. The distinct union across months is the honest
+    // answer, and it comes from the same pass that produced the deltas rather
+    // than being re-derived beside them.
+    const appliedHere = new Set<string>();
+    for (const m of adjustedMonths) for (const id of m.appliedEventIds ?? []) appliedHere.add(id);
+    return { baseDelta, arpuDelta, eventCount: appliedHere.size };
+  }, [chartData, adjustedMonths]);
 
   // -------------------------------------------------------------------------
   // Retention event validation — warn when event volume exceeds forecast Outflow
