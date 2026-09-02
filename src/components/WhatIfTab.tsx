@@ -962,20 +962,39 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
     };
 
     baseForecast.months.forEach(month => {
-      const applicable = marketEvents.filter(e => {
-        if (e.date !== month.month) return false;
-        const segMatch  = e.segment === 'All' || vseg === 'All' || e.segment === vseg;
-        // Event matches view product when:
-        //  - event targets All products, OR view is All products, OR event.product === view L1
-        // AND if the event has an L2 and the view has an L2, they must match too.
-        const prodL1Match = e.product === 'All' || !vprodL1 || e.product === vprodL1;
-        const prodL2Match = !e.productL2 || e.productL2 === 'All' || !vprodL2 || e.productL2 === vprodL2;
-        const chanL1Match = e.channel === 'All' || !vchanL1 || e.channel === vchanL1;
-        const chanL2Match = !e.channelL2 || e.channelL2 === 'All' || !vchanL2 || e.channelL2 === vchanL2;
-        const tarL1Match = !e.tariffL1 || e.tariffL1 === 'All' || !vtarL1 || e.tariffL1 === vtarL1;
-        const tarL2Match = !e.tariffL2 || e.tariffL2 === 'All' || !vtarL2 || e.tariffL2 === vtarL2;
-        return segMatch && prodL1Match && prodL2Match && chanL1Match && chanL2Match && tarL1Match && tarL2Match;
-      });
+      // THE APPLY PATH CALLS THE SHARED PREDICATE. It used to carry its own
+      // copy of the rule, and the copy was wrong in a way the original is not.
+      //
+      // "ALL" HAS TWO REPRESENTATIONS AND THE COPY KNEW ONE. The copy tested
+      // the view side with `!vprodL1`, so only `null` counted as All. But
+      // cohortScope maps `baseForecast.cohort.product ?? null`, and `??`
+      // converts only nullish — a cohort whose product is the STRING 'All'
+      // stays 'All', which is truthy. So at the All view `!vprodL1` was false,
+      // 'Mobile Voice' !== 'All', and a leaf-scoped event was WITHHELD from
+      // every view broad enough to contain it. Segment escaped it alone,
+      // because its clause had an explicit `vseg === 'All'` test; the other
+      // six dimensions did not.
+      //
+      // MEASURED on the 02 Sep walk save, event Large Enterprise/Mobile Voice:
+      // the copy returned false at All and at Large Enterprise/All, true at
+      // Large Enterprise/Mobile Voice; eventScopeMatchesView returned true,
+      // true, true, and false at the disjoint SME/All. The engine was never
+      // wrong — handed the same event directly it returned 8,000.00 at All.
+      // The event never reached it.
+      //
+      // Deleted rather than repaired. Adding `|| vprodL1 === 'All'` six times
+      // would fix these numbers and leave a second definition of the rule in
+      // the codebase, which is how the two implementations that agree today
+      // become the two that disagree tomorrow. The tooltip already called the
+      // shared predicate — which is exactly why the tooltip listed the event
+      // the KPI beside it said did not apply.
+      const applicable = marketEvents.filter(e =>
+        e.date === month.month
+        && eventScopeMatchesView(
+          { segment: e.segment, product: e.product, productL2: e.productL2,
+            channelL1: e.channel, channelL2: e.channelL2,
+            tariffL1: e.tariffL1, tariffL2: e.tariffL2 },
+          viewScopeForMatch));
 
       const applied = applyEventsToMonth(
         {
@@ -4053,7 +4072,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           <div className="grid grid-cols-3 gap-4">
             <div className={`p-4 rounded-2xl border ${impactSummary.baseDelta >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
               <p className="text-xs font-semibold text-slate-500 mb-1">{t('whatif_base_volume_delta_end_of_period')}</p>
-              <p className={`text-2xl font-bold ${impactSummary.baseDelta >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+              <p data-testid="impact-base-delta"
+                 className={`text-2xl font-bold ${impactSummary.baseDelta >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
                 {impactSummary.baseDelta >= 0 ? '+' : ''}{formatNumber(impactSummary.baseDelta)}
               </p>
               <p className="text-[10px] text-slate-400 mt-1">{t('whatif_adjusted_vs_baseline')}</p>
@@ -4067,7 +4087,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             </div>
             <div className="p-4 rounded-2xl border bg-slate-50 border-slate-100">
               <p className="text-xs font-semibold text-slate-500 mb-1">{t('whatif_active_market_events')}</p>
-              <p className="text-2xl font-bold text-slate-700">{impactSummary.eventCount}</p>
+              <p data-testid="impact-event-count"
+                 className="text-2xl font-bold text-slate-700">{impactSummary.eventCount}</p>
               <p className="text-[10px] text-slate-400 mt-1">
                 {impactSummary.eventCount === 0 ? t('whatif_add_events_below_to_adjust_the_forecast') : t('whatif_events_applied_to_adjusted_path')}
               </p>

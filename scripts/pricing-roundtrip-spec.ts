@@ -376,14 +376,26 @@ check('scope: a mismatch on ANY dimension excludes',
 // exact, never `>=`. A floor cannot tell you a site was removed once anything
 // else has been added.
 //
-// The six: the pricing apply pass, three carriers in the tooltip, and the
-// per-scenario block's poolsFor and pricingFor.
+// The seven: the pricing apply pass, three carriers in the tooltip, the
+// per-scenario block's poolsFor and pricingFor, and — added 2026-09-02 —
+// THE MARKET-EVENT APPLY PASS, which until then carried its own copy of the
+// rule and was the last consumer not filtering through the shared predicate.
 check('scope wiring: every consumer filters through the shared predicate',
-  (tab.split('eventScopeMatchesView(').length - 1) === 6,
-  `${tab.split('eventScopeMatchesView(').length - 1} call sites, expected 6`);
+  (tab.split('eventScopeMatchesView(').length - 1) === 7,
+  `${tab.split('eventScopeMatchesView(').length - 1} call sites, expected 7`);
 check('scope wiring: the pricing apply filter no longer hand-rolls the comparisons',
   !tab.includes('const segOk  = pe.segment   ===') && !tab.includes('const tar2Ok = !pe.tariffL2'),
   'the seven inline comparisons are what the shared predicate replaced');
+// The market-event twin of the check above, and the one that would have caught
+// UAT-D2-03. The copy tested the view side with `!vprodL1`, so only null
+// counted as All; a cohort dim of the STRING 'All' is truthy, and the event was
+// withheld from every view broad enough to contain it. The reimplementation is
+// named here so restoring any of it fails, not just the whole block.
+check('scope wiring: the market-event apply filter no longer hand-rolls it',
+  !tab.includes('const prodL1Match = e.product === ')
+  && !tab.includes('const segMatch  = e.segment === ')
+  && !tab.includes('const tarL2Match = !e.tariffL2'),
+  'the inline copy read null-as-All only, so string "All" withheld the event');
 
 // ── 11. THE EVENT-SCOPED BASELINE ──────────────────────────────────────────
 check('baseline: the slice invocation is ONE extracted function',

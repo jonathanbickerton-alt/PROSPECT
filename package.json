@@ -67,7 +67,8 @@
     "spec:compare-render": "tsx scripts/compare-render-spec.ts",
     "spec:scenario-arpu": "tsx scripts/scenario-arpu-spec.ts",
     "spec:churn-fold": "tsx scripts/churn-fold-spec.ts",
-    "spec:amount-control": "tsx scripts/amount-control-spec.ts"
+    "spec:amount-control": "tsx scripts/amount-control-spec.ts",
+    "spec:view-apply-mounted": "tsx scripts/view-apply-mounted-spec.tsx"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

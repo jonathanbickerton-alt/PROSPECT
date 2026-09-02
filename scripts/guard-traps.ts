@@ -84,6 +84,7 @@ const FTSPLIT = 'scripts/forecast-type-split-spec.ts';
 const ARPUCOMP = 'scripts/arpu-companion-spec.ts';
 const APPLIEDCOUNT = 'scripts/applied-count-spec.ts';
 const AGGRECON = 'scripts/aggregate-reconciliation-spec.ts';
+const VIEWAPPLY = 'scripts/view-apply-mounted-spec.tsx';
 const DEBUNDLE = 'src/locales/de/translation.json';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
@@ -1545,6 +1546,33 @@ const TRAPS: Trap[] = [
       "            ? (forecastCoverage(e, metricOf(e), month.month, viewLeafForecasts)\n" +
       "               ?? eventCoverage(e, viewScope, leavesFor(e)))",
       "            ? eventCoverage(e, viewScope, leavesFor(e))") },
+
+  // ---------------------------------------------------------------------
+  // 128 — the apply path takes back its own copy of the scope rule.
+  //
+  // This is UAT-D2-03 itself. The market-event apply filter carried an inline
+  // reimplementation of eventScopeMatchesView, and the copy tested the view
+  // side with `!vprodL1` — so only `null` counted as All. cohortScope maps
+  // `cohort.product ?? null`, and `??` converts only nullish, so a cohort whose
+  // product is the STRING 'All' stayed 'All', which is truthy. A leaf-scoped
+  // event was therefore WITHHELD from every view broad enough to contain it,
+  // while the tooltip — which already called the shared predicate — listed it.
+  // Jon walked into a card reading +0.00 and "0 events applied" beside a
+  // tooltip naming both events.
+  //
+  // The trap restores the copy verbatim. It is caught by the MOUNTED spec and
+  // by nothing else, which is the point: three sessions handed the engine the
+  // event directly and the engine was right every time. A filter in front of
+  // the engine is invisible to every check that starts at the engine.
+  { id: '128 the apply path re-hand-rolls the view scope rule',
+    why: 'null-as-All only, so a cohort dim of string \"All\" withholds a leaf-scoped event from every broader view',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      "        && eventScopeMatchesView(\n" +
+      "          { segment: e.segment, product: e.product, productL2: e.productL2,",
+      "        && (e.product === 'All' || !vprodL1 || e.product === vprodL1)\n" +
+      "        && eventScopeMatchesView(\n" +
+      "          { segment: e.segment, product: e.product, productL2: e.productL2,") },
 ];
 
 const specFails = (spec: string = SPEC): boolean => {
@@ -1560,7 +1588,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT) || specFails(AGGRECON)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT) || specFails(AGGRECON) || specFails(VIEWAPPLY)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');
