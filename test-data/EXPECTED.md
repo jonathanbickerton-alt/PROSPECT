@@ -7014,6 +7014,47 @@ per-scenario band, the per-scenario quantity is **absent with a reason** and is
 never silently filled with the blended figure. One definition of missing; the
 two-meanings-of-null rule applied to a fifth site.
 
+#### LOCALE PARITY — de and it are CORE UAT LANGUAGES (Jon, 2026-09-02)
+
+**German and Italian are the core UAT languages.** They are not a
+nice-to-have tail behind English; a string that renders in English inside a
+German session is a **UAT-blocking defect**, not a cosmetic one.
+
+**Every user-visible string renders in the selected language.** That is the
+rule, stated positively so it can be checked rather than argued.
+
+**A locale value byte-identical to English is a DEFECT unless it is on the
+explicit allowlist.** The allowlist is not a convenience for whatever has
+not been done yet — it is a list of keys that are *correctly* identical,
+each carrying a one-line justification, and its size is pinned to an exact
+count. A key that is identical because nobody translated it is a failure;
+a key that is identical because the locale genuinely uses the English word
+is an entry with a reason.
+
+**Why the allowlist is exact-count rather than a floor.** A floor stops
+discriminating the moment anything is added to it — trap 77 established
+that in this codebase, and an allowlist is exactly the structure where the
+failure would be silent: the easy way to make a parity failure disappear is
+to allowlist the key. An exact count means every addition is a deliberate,
+reviewed edit to the pin.
+
+**Hardcoded literals are the same defect wearing different clothes.** A
+label that never reaches the locale files cannot be flagged by a parity
+scan, so it renders English in all six languages while the scan reports
+clean. The count of such literals in source is pinned at zero for the
+labels named here.
+
+**No raw field name reaches a user-visible surface.** A tooltip falling
+back to its data key (`inflowArpu_opt`) is untranslated in every language
+including English, and is the same class: a string that never entered the
+locale system.
+
+**Native review is a separate, later gate.** This session establishes
+parity — that a translated string exists, is in the right register, and
+matches the terminology the locale already uses. Whether it is what a
+native speaker would have written is Marcel's (de) and Alessandro's (it)
+call in UAT, and this rule does not pretend to substitute for it.
+
 #### THE DECLINE WAS NEVER REACHABLE (found 2026-08-21, while building the above)
 
 `handleEditStart` is a `useCallback` whose dependency array is `[setNewEvent]`,

@@ -716,7 +716,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                             modelRecommendation.confidence === 'Medium' ? 'bg-amber-100 text-amber-800' :
                             'bg-slate-100 text-slate-600'
                           }`}>
-                            {modelRecommendation.confidence} Confidence
+                            {t(`baseline_confidence_${modelRecommendation.confidence.toLowerCase()}`)}
                           </span>
                         </div>
                         
@@ -843,7 +843,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                           confidenceRecommendation.strength === 'Medium' ? 'bg-amber-100 text-amber-800' :
                           'bg-slate-100 text-slate-600'
                         }`}>
-                          {confidenceRecommendation.strength} Confidence
+                          {t(`baseline_confidence_${confidenceRecommendation.strength.toLowerCase()}`)}
                         </span>
                       </div>
                       

@@ -711,7 +711,7 @@ export default function App() {
         if (missingSheets.length > 0) {
           setImportSaveResult({
             success: false,
-            error: `Not a recognised PROSPECT save file — missing sheets: ${missingSheets.join(', ')}.`,
+            error: t('app_import_missing_sheets', { sheets: missingSheets.join(', ') }),
           });
           return;
         }
@@ -721,7 +721,7 @@ export default function App() {
         if (!getMetaValue('PROSPECT_Version')) {
           setImportSaveResult({
             success: false,
-            error: 'Not a recognised PROSPECT save file — missing PROSPECT_Version in Metadata.',
+            error: t('app_import_missing_version'),
           });
           return;
         }

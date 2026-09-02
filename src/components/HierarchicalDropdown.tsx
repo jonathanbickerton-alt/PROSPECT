@@ -34,8 +34,12 @@ interface HierarchicalDropdownProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function selectionLabel(value: HierarchicalSelection): string {
-  if (!value.l1) return 'All';
+function selectionLabel(value: HierarchicalSelection, allLabel = 'All'): string {
+  // The 'All' default is for the two non-rendering callers only. Every
+  // rendering path passes t('hierdrop_all') — the collapsed button used to
+  // return the literal while the list beneath it rendered the key, so the
+  // control disagreed with itself in every non-English locale.
+  if (!value.l1) return allLabel;
   if (!value.l2) return value.l1;
   return `${value.l1} — ${value.l2}`;
 }
@@ -185,7 +189,7 @@ export function HierarchicalDropdown({
         className,
       ].join(' ');
 
-  const displayText = selectionLabel(value);
+  const displayText = selectionLabel(value, t('hierdrop_all'));
 
   if (tree.size === 0) return null;
 

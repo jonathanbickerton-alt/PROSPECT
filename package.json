@@ -24,6 +24,7 @@
     "spec:derive": "tsx scripts/derive-aggregate-spec.ts",
     "spec:interaction": "tsx scripts/derived-interaction-spec.ts",
     "guard-traps": "tsx scripts/guard-traps.ts",
+    "spec:i18n-parity": "tsx scripts/i18n-parity-spec.ts",
     "spec:nullrender": "tsx scripts/null-render-spec.tsx",
     "spec:challenger": "tsx scripts/challenger-render-spec.tsx",
     "spec:deletions": "tsx scripts/deletions-spec.ts",

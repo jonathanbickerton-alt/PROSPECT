@@ -537,21 +537,15 @@ for (const e of identErrors) console.log(`  ${e.file}:${e.line}  [${e.kind}]  ${
 // now", and it belongs in the same commit as the key, with a §13 row.
 // ---------------------------------------------------------------------------
 const LOCALE_DEFERRED = new Set<string>([
-  // Recorded in src/locales/TERMBASE.md §13, 2026-07-30 and 2026-07-31.
-  'actuals_no_forecast_yet_tooltip',
-  'actuals_revenue_no_band',
-  'actuals_show',
-  'actuals_unit_arpu',
-  'actuals_unit_revenue',
-  'actuals_value_revenue',
-  'bulk_large_run_detail',
-  'bulk_large_run_title',
-  'bulk_no_source_cohort',
-  // Percentage events, 2026-08-02. Present in all six locales but carrying
-  // ENGLISH in the five non-English ones. Listed here rather than left to look
-  // translated: parity would pass on the key existing, which is exactly the
-  // kind of green that means nothing.
-  'whatif_revenue_arpu_not_applicable_to_percentage',
+  // EMPTIED 2026-09-02 by the locale sweep. Every key that sat here is now
+  // translated in all five locales, which this scanner's own staleness check
+  // reported the moment the sweep landed.
+  //
+  // The authority for a value that may legitimately equal English is no longer
+  // this list — it is the exact-count allowlist in scripts/i18n-parity-spec.ts,
+  // where each entry carries a reason and a staleness check of its own. Adding
+  // a key here again would exempt it from a PRESENCE check that no longer has
+  // anything to find; adding it there is a reviewed edit to a pinned count.
 ]);
 
 const LOCALES = ['de', 'es', 'fr', 'it', 'pt'];

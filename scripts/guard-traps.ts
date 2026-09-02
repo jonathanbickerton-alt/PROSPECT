@@ -78,11 +78,13 @@ const SCENARPU = 'scripts/scenario-arpu-spec.ts';
 const AMTCTRL = 'scripts/amount-control-spec.ts';
 const AMTENGINE = 'src/utils/amountControl.ts';
 const SHEETGUARD = 'src/utils/sheetGuards.ts';
+const I18NPARITY = 'scripts/i18n-parity-spec.ts';
+const DEBUNDLE = 'src/locales/de/translation.json';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const APP_COMPARE = 'src/components/ScenarioCompareTab.tsx';
 const SCENARPUENGINE = 'src/utils/scenarioArpu.ts';
-const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE];
+const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -1404,6 +1406,39 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "  pricing:   ['Inflow', 'Outflow', 'Retention', 'Base'],",
       "  pricing:   ['ARPU'],") },
+
+  // ---------------------------------------------------------------------
+  // 121 / 122 — the LOCALE PARITY class (Jon, 2026-09-02). German and
+  // Italian are the core UAT languages, so a string rendering English in a
+  // German session is UAT-blocking rather than cosmetic.
+  //
+  // These two are planted on DIFFERENT SURFACES on purpose, because the
+  // class has two shapes and only one of them is visible to a bundle scan:
+  //
+  //   121 — a locale VALUE reverts to its English string. Visible in the
+  //         bundle, which is the shape the parity check reads.
+  //   122 — a label goes back to a hardcoded LITERAL, so it never reaches a
+  //         bundle at all. It renders English in all six languages while a
+  //         value-comparing check reports perfectly clean. That is the
+  //         shape that hid Subs / % and the Compare window sizes until this
+  //         session, and it is why the spec pins a literal count as well as
+  //         comparing values.
+  //
+  // 121 also moves the (key, locale) pair count off its pin, so it reddens
+  // twice by two independent routes. That is deliberate: an allowlist is
+  // exactly the structure where the cheap way to silence a failure is to
+  // widen the exemption, and an exact count makes widening it a visible edit.
+  { id: '121 a German string reverts to its English value',
+    why: 'de is a core UAT language — an English string in a German session is a defect, not a cosmetic gap',
+    file: DEBUNDLE, spec: I18NPARITY,
+    mutate: s => s.replace('"whatif_export": "Exportieren"', '"whatif_export": "Export"') },
+
+  { id: '122 a keyed label goes back to a hardcoded literal',
+    why: 'a literal never reaches the bundles, so it renders English in all six while a value check stays green',
+    file: WHATIF, spec: I18NPARITY,
+    mutate: s => s.replace(
+      "{mode === 'absolute' ? t('whatif_amount_unit_subs') : t('whatif_amount_unit_pct')}",
+      "{mode === 'absolute' ? 'Subs' : '%'}") },
 ];
 
 const specFails = (spec: string = SPEC): boolean =>
@@ -1414,7 +1449,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

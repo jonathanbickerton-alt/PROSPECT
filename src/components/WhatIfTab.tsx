@@ -152,6 +152,34 @@ function measureKey(scenario: ScenarioName, measure: MeasureName, half: 'Baselin
   return `${scenario} ${measure === 'revenue' ? 'Revenue' : 'ARPU'} (${half})`;
 }
 
+/**
+ * The DISPLAY name for a chart series, and deliberately separate from
+ * measureKey.
+ *
+ * measureKey's output is two things at once: the chartData property Recharts
+ * plots, and the COLUMN HEADING the Export button writes. Those must be
+ * byte-identical in every locale, or a German user's workbook has different
+ * headings from an English user's and the chart-grid session's promise that no
+ * existing column was renamed stops being true.
+ *
+ * Recharts falls back to `dataKey` when a <Line> carries no `name`, which is
+ * exactly how "(Baseline)" and "(Adjusted)" reached the German legend. Naming
+ * the line explicitly separates what the reader sees from what the spreadsheet
+ * is keyed on. The scenario names stay English by TERMBASE §1.
+ */
+function measureDisplay(
+  t: (k: string) => string,
+  scenario: ScenarioName,
+  measure: MeasureName,
+  half: 'Baseline' | 'Adjusted',
+): string {
+  const unit = measure === 'volume' ? ''
+    : measure === 'revenue' ? ` ${t('whatif_measure_revenue')}`
+    : ' ARPU';
+  const side = t(half === 'Baseline' ? 'whatif_series_baseline' : 'whatif_series_adjusted');
+  return `${scenario}${unit} (${side})`;
+}
+
 /** Which axis a measure belongs on, and how its ticks read. */
 const MEASURE_AXIS: Record<MeasureName, 'left' | 'right'> = {
   volume: 'left', revenue: 'right', arpu: 'right',
@@ -3977,7 +4005,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     onClick={() => setWindowSize(size)}
                     className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all ${windowSize === size ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                   >
-                    {size}M
+                    {t('whatif_window_months', { n: size })}
                   </button>
                 ))}
               </div>
@@ -4163,6 +4191,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           yAxisId={axis}
                           type="monotone"
                           dataKey={measureKey(kpi, activeMeasure, 'Baseline')}
+                          name={measureDisplay(t, kpi, activeMeasure, 'Baseline')}
                           stroke={c.baseline}
                           strokeWidth={2}
                           dot={{ r: 2, fill: c.baseline, strokeWidth: 0 }}
@@ -4173,6 +4202,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           yAxisId={MEASURE_AXIS[activeMeasure]}
                           type="monotone"
                           dataKey={measureKey(kpi, activeMeasure, 'Adjusted')}
+                          name={measureDisplay(t, kpi, activeMeasure, 'Adjusted')}
                           stroke={c.adjusted}
                           strokeWidth={2}
                           strokeDasharray="5 5"
@@ -4468,7 +4498,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           : 'bg-white text-slate-500 hover:bg-slate-50'
                       }`}
                     >
-                      {mode === 'absolute' ? 'Subs' : '%'}
+                      {mode === 'absolute' ? t('whatif_amount_unit_subs') : t('whatif_amount_unit_pct')}
                     </button>
                   ))}
                   {newEvent.scenario === 'Outflow' && (

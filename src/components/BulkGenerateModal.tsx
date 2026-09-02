@@ -340,7 +340,7 @@ export function BulkGenerateModal({
                   { label: t('bulk_pre_horizon_z_score'), value: autoConfidence ? t('bulk_auto_configured_per_cohort') : `${params.preHorizonUncertainty}` },
                   { label: t('bulk_post_horizon_band_multiplier'), value: autoConfidence ? t('bulk_auto_configured_per_cohort') : `${params.postHorizonExpansionRate}×` },
                   { label: t('bulk_confidence_horizon'), value: autoConfidence ? t('bulk_auto_configured_per_cohort') : t('bulk_month', { p0: params.confidenceHorizon, p1: params.confidenceHorizon !== 1 ? 's' : '' }) },
-                  { label: t('bulk_forecast_length'), value: `${params.forecastLength} months` },
+                  { label: t('bulk_forecast_length'), value: t('bulk_forecast_length_months', { n: params.forecastLength }) },
                 ].map(row => (
                   <div key={row.label} className="flex items-center justify-between px-4 py-2 text-xs">
                     <span className="text-slate-500">{row.label}</span>

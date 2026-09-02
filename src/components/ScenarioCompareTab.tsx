@@ -448,7 +448,7 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
                     onClick={() => setWindowSize(size)}
                     className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${windowSize === size ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                   >
-                    {size === 'all' ? 'All Time' : `${size}M`}
+                    {size === 'all' ? t('compare_window_all_time') : t('compare_window_months', { n: size })}
                   </button>
                 ))}
               </div>
