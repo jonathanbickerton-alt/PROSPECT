@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { forecastTypeLabel } from '../utils/forecastTypeLabel';
 import { X } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { format, isValid } from 'date-fns';
@@ -51,7 +52,7 @@ export const ViewCohortForecastModal: React.FC<ViewCohortForecastModalProps> = (
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center shrink-0">
           <h3 className="text-lg font-semibold text-slate-900">
-            {viewingCohort.forecastType}: {viewingCohort.segment} - {viewingCohort.product} {viewingCohort.scenario !== '-' ? `- ${viewingCohort.scenario}` : ''}
+            {forecastTypeLabel(t, viewingCohort.forecastType)}: {viewingCohort.segment} - {viewingCohort.product} {viewingCohort.scenario !== '-' ? `- ${viewingCohort.scenario}` : ''}
           </h3>
           <button onClick={() => setViewingCohort(null)} className="text-slate-400 hover:text-slate-600">
             <X size={20} />

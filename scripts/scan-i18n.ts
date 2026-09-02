@@ -13,7 +13,13 @@ const ROOT = path.resolve('src');
 const UI_ATTRS = new Set(['placeholder', 'title', 'aria-label', 'alt', 'label', 'aria-description']);
 // Attributes that are never user-facing
 const SKIP_ATTRS = new Set(['className', 'class', 'style', 'id', 'key', 'type', 'role', 'htmlFor', 'name',
-  'href', 'src', 'xmlns', 'd', 'fill', 'stroke', 'viewBox', 'dataKey', 'data-testid', 'accept', 'autoComplete']);
+  'href', 'src', 'xmlns', 'd', 'fill', 'stroke', 'viewBox', 'dataKey', 'data-testid', 'accept', 'autoComplete',
+  // A test-id PREFIX is an identifier by construction — it is concatenated
+  // into data-testid downstream. `data-testid` was already here; the custom
+  // prop that feeds it was not, so `compare-events-${f.fileName}` read as
+  // interpolated copy and was the last thing standing between --check and a
+  // clean exit.
+  'testIdPrefix']);
 
 // Never-translate vocabulary + held-back identifiers (TERMBASE §1, §11)
 const NEVER = new Set(['Inflow', 'Outflow', 'Retention', 'Base', 'ARPU', 'IBRO', 'IBRO Scenario', 'IBRO Type',
@@ -139,6 +145,28 @@ function isRenderingPosition(n: ts.Node): boolean {
  * lookup silently stops matching the moment the value is actually translated.
  * Fourth instance of this class after Base Case, All and the Field export names.
  */
+/** Is `name` the receiver of a `.join(...)` anywhere in the function that
+ *  encloses `from`? Display-vs-identifier evidence for the rule below. */
+function joinedInEnclosingFunction(from: ts.Node, name: string): boolean {
+  let fn: ts.Node | undefined = from;
+  while (fn && !ts.isFunctionDeclaration(fn) && !ts.isFunctionExpression(fn) &&
+         !ts.isArrowFunction(fn) && !ts.isMethodDeclaration(fn) && !ts.isSourceFile(fn)) fn = fn.parent;
+  if (!fn) return false;
+  let found = false;
+  const visit = (x: ts.Node): void => {
+    if (found) return;
+    if (ts.isCallExpression(x) && ts.isPropertyAccessExpression(x.expression) &&
+        x.expression.name.text === 'join' &&
+        ts.isIdentifier(x.expression.expression) && x.expression.expression.text === name) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(x, visit);
+  };
+  ts.forEachChild(fn, visit);
+  return found;
+}
+
 function tCallInIdentifierPosition(n: ts.Node): string | null {
   if (!ts.isCallExpression(n)) return null;
   const e = n.expression;
@@ -162,7 +190,21 @@ function tCallInIdentifierPosition(n: ts.Node): string | null {
     while (q) {
       if (ts.isJsxExpression(q)) return null;                       // renders — safe
       if (ts.isForOfStatement(q) && q.expression) return 'for-of key list';
-      if (ts.isVariableDeclaration(q)) return 'array bound as key list';
+      if (ts.isVariableDeclaration(q)) {
+        // BOUND, BUT TO WHAT END. The comment below is right that .join()/.map()
+        // mean display, and the walk above only sees them when they sit ABOVE
+        // the array in the tree. `const parts = [t(...)]; …; return parts.join()`
+        // joins LATER in the function, so the walk reached the binding and
+        // called a list of display strings a key list. That single false
+        // positive was the only thing making --check exit 1, which is a large
+        // part of why nothing ever ran it.
+        //
+        // Positive evidence only: if the bound name is joined somewhere in the
+        // enclosing function, it is display. Not finding a join still flags —
+        // this rule can clear a warning, never invent one.
+        if (ts.isIdentifier(q.name) && joinedInEnclosingFunction(q, q.name.text)) return null;
+        return 'array bound as key list';
+      }
       // `.join(...)` / `.map(...)` turn the array into display output, not a key
       // list, even when the result is bound to a variable.
       if (ts.isPropertyAccessExpression(q) && /^(join|map)$/.test(q.name.text)) return null;
@@ -618,13 +660,67 @@ let undocumentedCount = 0;
   for (const k of staleContext) console.log(`  ${k} — in _context.json but absent from en/translation.json`);
 }
 
-const mustKey = bucketed.filter(b => b.bucket.includes('MUST KEY'));
+/**
+ * DIAGNOSTIC-ONLY STRINGS, and the one invariant that makes the exclusion true.
+ *
+ * `src/utils/mixConstraint.ts` returns a `detail` on every blocked outcome. The
+ * module's own contract says those are never rendered — the mix card branches
+ * on `reason` and renders its own keyed copy — and that was VERIFIED on
+ * 2026-09-02 rather than taken on trust: `WhatIfTab.tsx` is the only component
+ * that consumes these outcomes and it contains ZERO reads of `.detail`.
+ *
+ * So they are not a translation gap, and keying them would add seventeen
+ * strings × six locales that nothing can ever display, plus seventeen entries
+ * on the parity spec's surface. The 1028 report called them "genuinely
+ * user-facing"; that was wrong, and this session's brief inherited the error.
+ *
+ * THE EXCLUSION IS CONDITIONAL, not a blanket on the filename. `--check` also
+ * asserts the invariant below, so the moment anyone renders a `detail` the
+ * exclusion stops applying and all seventeen come back as failures. An
+ * exemption that cannot notice its own premise expiring is how debt becomes
+ * permanent — see LOCALE_DEFERRED above, which took a year to empty.
+ */
+const DIAGNOSTIC_ONLY = 'src/utils/mixConstraint.ts';
+const diagnosticFileRe = /src[\\/]utils[\\/]mixConstraint\.ts$/;
+
+/** The premise: nothing outside the module reads `.detail`. */
+function detailIsNeverRead(): { ok: boolean; sites: string[] } {
+  const sites: string[] = [];
+  for (const sf of sourceFiles) {
+    const rel = path.relative(process.cwd(), sf.fileName);
+    if (diagnosticFileRe.test(rel)) continue;
+    const text = sf.getFullText();
+    // Only outcomes of this module matter, so require the read to sit in a file
+    // that imports it. Anything else named `.detail` is a different quantity.
+    if (!/from '[^']*mixConstraint'/.test(text)) continue;
+    const re = /\.detail\b/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) {
+      const line = text.slice(0, m.index).split('\n').length;
+      sites.push(`${rel}:${line}`);
+    }
+  }
+  return { ok: sites.length === 0, sites };
+}
+
+const detailCheck = detailIsNeverRead();
+const mustKey = bucketed.filter(b =>
+  b.bucket.includes('MUST KEY') &&
+  !(detailCheck.ok && diagnosticFileRe.test(b.file)));
 if (process.argv.includes('--check')) {
   if (identErrors.length) {
     console.error(`\nFAIL: ${identErrors.length} t() call(s) used where an identifier is required.`);
     console.error('A translated value must never be a property accessor, computed key,');
     console.error('comparison operand or switch case. Keep the identifier a literal and key');
     console.error('the display form separately (TERMBASE §11).');
+    process.exit(1);
+  }
+  if (!detailCheck.ok) {
+    console.error(`\nFAIL: ${detailCheck.sites.length} site(s) read .detail from ${DIAGNOSTIC_ONLY}.`);
+    for (const site of detailCheck.sites) console.error(`  ${site}`);
+    console.error('Those strings are excluded from the must-key rule ONLY because nothing');
+    console.error('renders them. Rendering one makes it user-facing English in six locales:');
+    console.error('branch on `reason` and render keyed copy, as the mix card already does.');
     process.exit(1);
   }
   if (mustKey.length) {

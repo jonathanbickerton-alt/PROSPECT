@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { forecastTypeLabel } from '../utils/forecastTypeLabel';
 import { Download } from 'lucide-react';
 
 interface Cohort {
@@ -144,7 +145,7 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
                 className="appearance-none text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none"
               >
                 <option value="All">{t('overall_all_types')}</option>
-                {Array.from(new Set(allCohorts.map(c => c.forecastType))).map(t => <option key={t as string} value={t as string}>{t as string}</option>)}
+                {Array.from(new Set(allCohorts.map(c => c.forecastType))).map(ft => <option key={ft as string} value={ft as string}>{forecastTypeLabel(t, ft as string)}</option>)}
               </select>
             </div>
             <div className="flex items-center gap-2">
@@ -250,7 +251,7 @@ export const OverallForecastTab: React.FC<OverallForecastTabProps> = ({
                   <td className="px-6 py-4 font-medium text-slate-900">{cohort.segment}</td>
                   <td className="px-6 py-4 text-slate-700">{cohort.product}</td>
                   <td className="px-6 py-4 text-slate-700">{cohort.channel}</td>
-                  <td className="px-6 py-4 text-slate-700">{cohort.forecastType}</td>
+                  <td className="px-6 py-4 text-slate-700">{forecastTypeLabel(t, cohort.forecastType)}</td>
                   <td className="px-6 py-4 text-slate-700">{cohort.scenario}</td>
                   <td className="px-6 py-4">
                     {cohort.hasForecast ? (

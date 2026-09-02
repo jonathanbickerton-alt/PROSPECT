@@ -79,6 +79,8 @@ const AMTCTRL = 'scripts/amount-control-spec.ts';
 const AMTENGINE = 'src/utils/amountControl.ts';
 const SHEETGUARD = 'src/utils/sheetGuards.ts';
 const I18NPARITY = 'scripts/i18n-parity-spec.ts';
+const I18NSCAN = 'scripts/scan-i18n.ts';
+const FTSPLIT = 'scripts/forecast-type-split-spec.ts';
 const DEBUNDLE = 'src/locales/de/translation.json';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
@@ -1439,17 +1441,60 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "{mode === 'absolute' ? t('whatif_amount_unit_subs') : t('whatif_amount_unit_pct')}",
       "{mode === 'absolute' ? 'Subs' : '%'}") },
+
+  // ---------------------------------------------------------------------
+  // 123 — RE-AIMED FROM THE BRIEF, and the re-aiming is the finding.
+  //
+  // The 1242 brief asked for "one mixConstraint reason back to a bare
+  // English literal". That trap cannot exist: all seventeen ARE bare English
+  // literals and are supposed to be. They are `detail` strings on blocked
+  // outcomes, diagnostic only, and the card renders its own keyed copy by
+  // branching on `reason` — verified 2026-09-02, zero `.detail` reads in the
+  // only component that consumes them. The 1028 report called them
+  // "genuinely user-facing" and it was wrong; this brief inherited that.
+  //
+  // So the trap is aimed at the invariant that MAKES them safe rather than
+  // at their Englishness. Rendering one turns a diagnostic into user-facing
+  // English in six locales, and that is the defect worth a trap.
+  { id: '123 a mixConstraint diagnostic is rendered to the user',
+    why: 'the seventeen are excluded from must-key ONLY because nothing renders them; rendering one makes them a gap',
+    file: WHATIF, spec: I18NSCAN,
+    mutate: s => s.replace(
+      "const outcome = rebalance(members, seeded, [], changedTier, newValue);",
+      "const outcome = rebalance(members, seeded, [], changedTier, newValue);\n" +
+      "      if (outcome.kind === 'blocked') console.warn(outcome.detail);") },
+
+  // ---------------------------------------------------------------------
+  // 124 — THE LAYER PROOF for TERMBASE §11. Translating the forecastType
+  // IDENTIFIER must break the old-save round trip while every label check
+  // stays green, because the two are different strings doing different jobs.
+  //
+  // §11 records that this failure is SILENT: cohort ids written under one
+  // locale simply stop matching those written under another, with no error
+  // anywhere. Nothing at runtime would report it, which is exactly why it
+  // needs a trap rather than a comment.
+  { id: '124 the forecastType identifier is translated',
+    why: 'a translated cohort-key segment silently stops matching every previously saved session',
+    file: APP, spec: FTSPLIT,
+    mutate: s => s.replace(
+      "forecastType: 'Standard Forecast',",
+      "forecastType: 'Standardprognose',") },
 ];
 
-const specFails = (spec: string = SPEC): boolean =>
-  spawnSync('npx', ['tsx', spec], { encoding: 'utf8', shell: process.platform === 'win32' }).status !== 0;
+const specFails = (spec: string = SPEC): boolean => {
+  // scan-i18n only enforces under --check; without it the scanner prints its
+  // inventory and exits 0, which is precisely how seventeen must-key strings
+  // sat tolerated. Passing the flag here is what makes trap 123 mean anything.
+  const args = spec === I18NSCAN ? ['tsx', spec, '--check'] : ['tsx', spec];
+  return spawnSync('npx', args, { encoding: 'utf8', shell: process.platform === 'win32' }).status !== 0;
+};
 
 const results: { id: string; state: string; detail: string }[] = [];
 
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

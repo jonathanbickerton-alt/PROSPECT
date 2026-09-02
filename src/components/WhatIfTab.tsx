@@ -1,5 +1,6 @@
 import React, { useMemo, useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { monthLabel, formatMonthDate } from '../utils/monthFormat';
 import { ArrowLeft, Info, Download, Trash2, CheckCircle2, XCircle, Activity, AlertTriangle, Pencil, ChevronRight, ChevronDown } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip,
@@ -227,15 +228,17 @@ const KPI_COLORS: Record<KpiName, { baseline: string; adjusted: string; axis: 'l
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Build a key for one scenario — used when writing to savedForecasts */
-function fmtMonth(m: string) {
-  try {
-    const d = parse(m, 'yyyy-MM', new Date());
-    return isValid(d) ? format(d, 'MMM yyyy') : m;
-  } catch {
-    return m;
-  }
-}
+/* `fmtMonth` USED TO LIVE HERE, module-level and English-only:
+ *
+ *     return isValid(d) ? format(d, 'MMM yyyy') : m;
+ *
+ * With no locale, date-fns formats in English regardless of the app's language,
+ * so a German session read "Oct 2026" on the Step 2 axis, in the chart tooltip
+ * and in eight table cells. It is now a component-scope callback bound to
+ * `i18n.language` (see `monthLabel`), which is why it had to leave module scope:
+ * a pure module function has no way to know what language the app is in.
+ *
+ * All ten call sites are unchanged — they still call `fmtMonth(m)`. */
 
 // ---------------------------------------------------------------------------
 // Shared tier-data derivation (Value-mix control) — used by both the Yield
@@ -572,6 +575,15 @@ function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
  * pre-filter `events` to their own card's rows (e.g. `!e.isPromotion` for
  * Volume, `e.isPromotion` for Promotion) before calling this.
  */
+/**
+ * `reason` is a LOCALE KEY, not a sentence — empty string when editable.
+ *
+ * It is rendered as the `title` of the disabled campaign pill, which is the
+ * tooltip a user hovers to learn why the pencil is greyed out, so it is
+ * genuinely user-facing and was English in all six locales until 2026-09-02.
+ * The key is resolved at the render site: this function is module-level and
+ * has no `t`, and a data structure should carry the identifier anyway.
+ */
 export function groupByCampaign(events: MarketEvent[]): Map<string, { rows: MarketEvent[]; editable: boolean; reason: string }> {
   const groups = new Map<string, { rows: MarketEvent[]; editable: boolean; reason: string }>();
   events.forEach(e => {
@@ -629,19 +641,19 @@ export function groupByCampaign(events: MarketEvent[]): Map<string, { rows: Mark
       // protection while providing none, and a mutation test proved it — the
       // clause could be deleted with every assertion still green.
       g.editable = false;
-      g.reason = 'Percentage events are edited individually, not as a campaign spread';
+      g.reason = 'whatif_campaign_decline_percentage';
     } else if (!homogeneous) {
       g.editable = false;
-      g.reason = 'Events in this campaign target different scenarios or cohorts — edit rows individually';
+      g.reason = 'whatif_campaign_decline_heterogeneous';
     } else if (first.scenario === 'ARPU' && g.rows.length > 1) {
       g.editable = false;
-      g.reason = 'Multi-month ARPU campaigns cannot be edited as a spread — edit rows individually';
+      g.reason = 'whatif_campaign_decline_arpu_multimonth';
     } else if (span > 24) {
       g.editable = false;
-      g.reason = 'Campaign spans more than 24 months — edit rows individually';
+      g.reason = 'whatif_campaign_decline_span';
     } else if (span < 1) {
       g.editable = false;
-      g.reason = 'Campaign has an invalid month — edit rows individually';
+      g.reason = 'whatif_campaign_decline_invalid_month';
     }
   });
   return groups;
@@ -1593,7 +1605,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   formatNumber,
   setActiveView,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  /** Month labels follow the app's language. Bound to `i18n.language` so the
+   *  axis re-formats when the picker changes, and stable between changes so
+   *  Recharts' `tickFormatter` identity does not churn every render. */
+  const fmtMonth = useCallback((m: string) => monthLabel(m, i18n.language), [i18n.language]);
   const { baseForecast, setAdjustedForecast, forecastStore, hasBaseline, resolveForecast } = useForecast();
 
   // KPI selection is PER TAB. One shared set produced two wrong behaviours in
@@ -5061,14 +5077,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_volume')}</span>
                             {spreadDistType === 'custom' && <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">%</span>}
                             {Array.from({ length: spreadMonths }, (_, i) => {
-                              const monthLabel = baseDate && isValid(baseDate)
-                                ? format(addMonths(baseDate, i), 'MMM yyyy')
+                              const spreadLabel = baseDate && isValid(baseDate)
+                                ? formatMonthDate(addMonths(baseDate, i), i18n.language)
                                 : t('whatif_month', { p0: i + 1 });
                               const fraction  = pcts[i] / (pctTotal || 1);
                               const vol       = Math.round(totalVol * fraction);
                               return (
                                 <React.Fragment key={i}>
-                                  <span className="text-xs text-slate-600 py-1">{monthLabel}</span>
+                                  <span className="text-xs text-slate-600 py-1">{spreadLabel}</span>
                                   <span className={`text-xs font-semibold py-1 ${vol >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                                     {vol >= 0 ? '+' : ''}{vol.toLocaleString()}
                                   </span>
@@ -5328,7 +5344,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 ) : (
                                   <span
                                     className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full opacity-60 cursor-not-allowed"
-                                    title={group?.reason || campaignLabel}
+                                    title={group?.reason ? t(group.reason) : campaignLabel}
                                   >
                                     {campaignLabel}
                                   </span>
@@ -6473,14 +6489,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_volume')}</span>
                               {promoSpreadDistType === 'custom' && <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">%</span>}
                               {Array.from({ length: promoSpreadMonths }, (_, i) => {
-                                const monthLabel = baseDate && isValid(baseDate)
-                                  ? format(addMonths(baseDate, i), 'MMM yyyy')
+                                const spreadLabel = baseDate && isValid(baseDate)
+                                  ? formatMonthDate(addMonths(baseDate, i), i18n.language)
                                   : t('whatif_month', { p0: i + 1 });
                                 const fraction = pcts[i] / (pctTotal || 1);
                                 const vol = Math.round(totalVol * fraction);
                                 return (
                                   <React.Fragment key={i}>
-                                    <span className="text-xs text-slate-600 py-1">{monthLabel}</span>
+                                    <span className="text-xs text-slate-600 py-1">{spreadLabel}</span>
                                     <span className="text-xs font-semibold text-emerald-600 py-1">+{vol.toLocaleString()}</span>
                                     {promoSpreadDistType === 'custom' && (
                                       <input
@@ -6971,7 +6987,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 ) : (
                                   <span
                                     className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full opacity-60 cursor-not-allowed"
-                                    title={group?.reason || campaignLabel}
+                                    title={group?.reason ? t(group.reason) : campaignLabel}
                                   >
                                     {campaignLabel}
                                   </span>

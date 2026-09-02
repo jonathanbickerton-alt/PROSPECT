@@ -255,18 +255,42 @@ only. A user sees *Alle*; the code still compares `'All'`.
 | `Optimistic` | §4 | scenario band identifier | Literal stays English; translations are display-only |
 | `Pessimistic` | §4 | scenario band identifier | Literal stays English; translations are display-only |
 
-### Already correctly split — no action
+### `Standard Forecast` / `What-If Analysis` — SPLIT 2026-09-02
 
-`Standard Forecast` and `What-If Analysis` are the code's **internal**
-forecast-type names and appear only in composite keys and comparisons, never
-as display text. The user-facing equivalents are the separately-keyed §3
-entries *Baseline Forecast* and *Market Events*. Verified: no JSX text
-occurrence of either internal name.
+These are the code's **internal** forecast-type names. They sit inside the
+composite `cohortId` (`…|Standard Forecast|${scenario}`), in map keys, in
+equality comparisons, and in the `Forecast_Type` column of an exported save that
+a later session reads back. **The literals stay English, everywhere.**
 
-**Open question — needs confirmation:** `forecastType` values are rendered in
-a "Forecast Type" column in the Overall Forecast view. If that column prints
-the raw internal value rather than a mapped display label, the internal name
-does surface to the user and needs a display mapping. Confirm before phase 2.
+The display form is now keyed, via `src/utils/forecastTypeLabel.ts`, reusing the
+keys the app already uses in its own navigation — `standard_forecast`,
+`what_if` — rather than new ones. A user who reads *Standardprognose* in the nav
+reads it in the Forecast Type column too.
+
+**THE OPEN QUESTION BELOW IS ANSWERED, AND ITS PREMISE WAS TOO NARROW.** The
+paragraph that stood here read *"Verified: no JSX text occurrence of either
+internal name"*. That verification had gone stale, and nothing noticed — it is
+prose, and prose cannot fail. The raw internal value was reaching the user at
+**four** sites, not the one the question imagined:
+
+| Site | What it printed |
+|---|---|
+| `OverallForecastTab.tsx:147` | the type filter's `<option>` labels |
+| `OverallForecastTab.tsx:253` | the Forecast Type table cell |
+| `GenerateCohortForecastModal.tsx:72` | the generate modal's summary line |
+| `ViewCohortForecastModal.tsx:54` | the view-cohort modal's title |
+
+**Answered question, now pinned rather than restated.**
+`scripts/forecast-type-split-spec.ts` asserts both halves separately: the
+identifier's exact counts in `App.tsx` (20 occurrences, 10 in composite keys, 7
+quoted literals), an old-save round trip reproducing cohort keys byte for byte
+under every locale, and the label resolving from the bundle in all five. Trap
+124 plants a translated identifier: the identifier checks go red while every
+label-side spec stays green, which is the layer proof this section describes.
+
+The lesson generalises past this entry — **a "Verified:" line in a document is
+a claim with no expiry date.** Where a §11 split matters, pin it in a spec and
+let this section point at the spec.
 
 ---
 

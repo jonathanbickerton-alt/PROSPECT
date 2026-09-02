@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { forecastTypeLabel } from '../utils/forecastTypeLabel';
 import { X } from 'lucide-react';
 
 interface GenerateCohortForecastModalProps {
@@ -69,7 +70,7 @@ export const GenerateCohortForecastModal: React.FC<GenerateCohortForecastModalPr
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-slate-500">{t('common_forecast_type')}</span>
-              <span className="font-medium text-slate-900">{generatingCohort.forecastType}</span>
+              <span className="font-medium text-slate-900">{forecastTypeLabel(t, generatingCohort.forecastType)}</span>
             </div>
           </div>
 

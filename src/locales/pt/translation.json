@@ -847,5 +847,10 @@
   "whatif_window_months": "{{n}} m",
   "whatif_series_baseline": "Base",
   "whatif_series_adjusted": "Ajustada",
-  "actuals_forecast_marker": "Previsão →"
+  "actuals_forecast_marker": "Previsão →",
+  "whatif_campaign_decline_percentage": "Os eventos percentuais são editados individualmente, não como uma distribuição de campanha",
+  "whatif_campaign_decline_heterogeneous": "Os eventos desta campanha visam cenários ou coortes diferentes — edite as linhas individualmente",
+  "whatif_campaign_decline_arpu_multimonth": "As campanhas de ARPU de vários meses não podem ser editadas como uma distribuição — edite as linhas individualmente",
+  "whatif_campaign_decline_span": "A campanha abrange mais de 24 meses — edite as linhas individualmente",
+  "whatif_campaign_decline_invalid_month": "A campanha tem um mês inválido — edite as linhas individualmente"
 }

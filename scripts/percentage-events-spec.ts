@@ -377,7 +377,7 @@ const app = (o: Partial<EventApplication>): EventApplication => ({
   ]);
   check('an all-percentage campaign is barred by the rule, with that reason',
     allPct.get('C')!.editable === false &&
-    /individually, not as a campaign spread/.test(allPct.get('C')!.reason),
+    allPct.get('C')!.reason === 'whatif_campaign_decline_percentage',
     allPct.get('C')!.reason);
 
   // The intra-campaign sort feeds spread reconstruction (month offsets from the

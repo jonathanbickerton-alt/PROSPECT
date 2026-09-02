@@ -847,5 +847,10 @@
   "whatif_window_months": "{{n}}M",
   "whatif_series_baseline": "Baseline",
   "whatif_series_adjusted": "Adjusted",
-  "actuals_forecast_marker": "Forecast →"
+  "actuals_forecast_marker": "Forecast →",
+  "whatif_campaign_decline_percentage": "Percentage events are edited individually, not as a campaign spread",
+  "whatif_campaign_decline_heterogeneous": "Events in this campaign target different scenarios or cohorts — edit rows individually",
+  "whatif_campaign_decline_arpu_multimonth": "Multi-month ARPU campaigns cannot be edited as a spread — edit rows individually",
+  "whatif_campaign_decline_span": "Campaign spans more than 24 months — edit rows individually",
+  "whatif_campaign_decline_invalid_month": "Campaign has an invalid month — edit rows individually"
 }
