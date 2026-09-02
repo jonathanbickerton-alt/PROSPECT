@@ -31,6 +31,7 @@
     "spec:month-format": "tsx scripts/month-format-spec.ts",
     "spec:arpu-companion": "tsx scripts/arpu-companion-spec.ts",
     "spec:applied-count": "tsx scripts/applied-count-spec.ts",
+    "spec:aggregate-reconciliation": "tsx scripts/aggregate-reconciliation-spec.ts",
     "spec:nullrender": "tsx scripts/null-render-spec.tsx",
     "spec:challenger": "tsx scripts/challenger-render-spec.tsx",
     "spec:deletions": "tsx scripts/deletions-spec.ts",

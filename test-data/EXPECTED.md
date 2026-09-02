@@ -7014,6 +7014,57 @@ per-scenario band, the per-scenario quantity is **absent with a reason** and is
 never silently filled with the blended figure. One definition of missing; the
 two-meanings-of-null rule applied to a fifth site.
 
+#### AGGREGATE APPLICATION OF A PERCENTAGE EVENT — option (i) (Jon, 2026-09-02)
+
+**The aggregate adjustment of a percentage event is Σ over the targeted
+populated leaves of (pct × that leaf's FITTED FORECAST for that month)**, taken
+from the leaf forecasts the read-time derivation already holds.
+
+Implemented in the smaller equivalent form: **weight coverage by the fitted
+forecast at the view for that month, not by historical rows.** Because a derived
+view's forecast IS the sum of those leaves, `pct × basis × coverage` reduces
+exactly to `pct × forecast(view ∩ target)`.
+
+**WHY THIS WAS WRONG BEFORE.** `eventCoverage` weights leaves by summed HISTORY
+(`wiValueCol` over the loaded rows); the value it scales is `month.inflow.mean`,
+a FITTED FORECAST. Two different denominators. The reconciliation the module
+promises — *"each leaf takes the same percentage of its own value, and those sum
+to that percentage of the aggregate"* — holds only while the fit preserves the
+historical mix, and leaves fitted independently do not.
+
+Measured on the 02 Sep walk save (sha1 `1322c3e6…`), a `+10%` Inflow event on
+Large Enterprise / Mobile Voice:
+
+```
+                       coverage        basis        delta
+  BEFORE  ALL     0.012940327     31,839.87        41.20
+          LEAF    1.000000000        482.81        48.28   <- 14.66% apart
+  AFTER   ALL     0.015163693     31,839.87        48.28
+          LEAF    1.000000000        482.81        48.28   <- reconciles
+```
+
+**A LEAF WITH A FORECAST BUT NO HISTORY IS NOW COVERED BY ITS FORECAST.** Under
+historical weighting it contributed 0 to the numerator while contributing its
+full forecast to the basis — coverage 0 at the aggregate and 1 at the leaf,
+which is the degenerate form of the same defect.
+
+**ABSOLUTE EVENTS ARE UNCHANGED, AND WERE ALREADY CORRECT.** They use
+`eventProRataShare`, which divides by the TARGET rather than the view, and the
+same save gives 8,000.00 at both views. Measured before deciding not to touch
+them, not assumed.
+
+**WHERE THE FORECAST WEIGHTS ARE NOT AVAILABLE, THE HISTORICAL ONES STAND.**
+`forecastCoverage` returns `null` — never 0 — when no leaves are supplied (a
+STORED forecast is fitted, not summed, so its leaves do not add up to it) or
+when the view's forecast for that metric-month is zero. Null means "cannot
+answer, fall back"; answering 0 would silently discard the event, which is the
+failure this change exists to remove.
+
+**THE TWO DECISIONS THIS SITS BESIDE, both 2026-09-02:** an event matching no
+populated leaf is COMMUNICATED and applied nowhere, consistently at every view;
+and the applied-count caption counts events applied AT THE VIEW (built at
+`bd2cf63`).
+
 #### LOCALE PARITY — de and it are CORE UAT LANGUAGES (Jon, 2026-09-02)
 
 **German and Italian are the core UAT languages.** They are not a

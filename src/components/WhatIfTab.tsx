@@ -8,7 +8,7 @@ import {
 } from 'recharts';
 import { format, parse, isValid, addMonths, differenceInCalendarMonths } from 'date-fns';
 import { useForecast } from '../context/ForecastContext';
-import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent, ActiveView, SkipReason } from '../types/forecast';
+import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, PricingEvent, ActiveView, SkipReason, BaseForecast } from '../types/forecast';
 import { SKIP_REASON_KEY } from '../types/forecast';
 import { EventChangeConfirmModal } from './EventChangeConfirmModal';
 import type { MarketEvent } from '../utils/forecasting';
@@ -20,7 +20,7 @@ import { scenarioAdjustedArpu } from '../utils/scenarioArpu';
 import type { ScenarioKey, ScenarioPricing } from '../utils/scenarioArpu';
 import { nextAmountControlState, effectiveAmountControl, churnAvailableFor,
          type AmountControl } from '../utils/amountControl';
-import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor } from '../utils/forecasting';
+import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, forecastCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope, PricingVolumes, ViewScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
@@ -784,6 +784,11 @@ export interface AdjustedForecastInput {
   wiInflowVal?: string; wiOutflowVal?: string; wiRetentionVal?: string;
   /** Injectable for tests: pass [] to reproduce the pre-pro-rata wildcard behaviour. */
   proRataLeavesOverride?: ProRataLeaf[];
+  /** The leaf forecasts the view's own forecast is summed from, when it was
+   *  DERIVED. Percentage events weight their coverage by these rather than by
+   *  historical rows — see forecastCoverage. Absent for a stored forecast, and
+   *  the historical weighting stands. */
+  viewLeafForecasts?: BaseForecast[];
 }
 
 /**
@@ -835,7 +840,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
     viewChannel, viewTariff, data, wiSegmentCol, wiProductCol, wiProductL2Col,
     wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiValueCol,
     wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
-    proRataLeavesOverride } = input;
+    proRataLeavesOverride, viewLeafForecasts } = input;
   if (!baseForecast) return { chartData: [], adjustedMonths: [], eventShares: new Map() };
 
     // Use the local view filter for event matching so the chart reflects the
@@ -930,6 +935,10 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
     /** The leaf set weighted by the metric an event moves — shared by the
      *  pro-rata share and the coverage fraction so they can never disagree
      *  about which leaves an event sees. */
+    /** Which metric a volume event moves — the key forecastCoverage sums. */
+    const metricOf = (e: MarketEvent): 'inflow' | 'outflow' | 'retention' =>
+      e.scenario === 'Outflow' ? 'outflow'
+        : e.scenario === 'Retention' ? 'retention' : 'inflow';
     const leavesFor = (e: MarketEvent) =>
       leavesByMetric[(e.scenario as LeafMetric) in leavesByMetric
         ? (e.scenario as LeafMetric) : 'Inflow'];
@@ -987,7 +996,19 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
           percentAmount: e.subscriberVolume,
           // A percentage scales what it lands on rather than being split
           // across it — coverage, not share. See eventCoverage.
-          coverage: e.amountType === 'percentage' ? eventCoverage(e, viewScope, leavesFor(e)) : 1,
+          //
+          // FORECAST WEIGHTS FIRST (Jon, 2026-09-02). eventCoverage weights by
+          // historical rows while the basis below is a fitted forecast; those
+          // denominators diverge as soon as leaves are fitted independently,
+          // and the aggregate then moves by less than its own leaf. Where the
+          // view's forecast is the SUM of known leaf forecasts, the ratio is
+          // taken over those instead and the two views reconcile exactly.
+          // forecastCoverage returns null when it cannot answer, and the
+          // historical weighting stands rather than a zero being invented.
+          coverage: e.amountType === 'percentage'
+            ? (forecastCoverage(e, metricOf(e), month.month, viewLeafForecasts)
+               ?? eventCoverage(e, viewScope, leavesFor(e)))
+            : 1,
         })),
       );
 
@@ -2314,8 +2335,37 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     tar:  { l1: baseForecast?.cohort.tariffL1  ?? null, l2: baseForecast?.cohort.tariffL2  ?? null },
   }), [baseForecast]);
 
+  /**
+   * The leaf forecasts THIS VIEW's forecast is summed from.
+   *
+   * Resolved through the same seam the event-scope surfaces use, with the
+   * view's own dims, so the chart cannot disagree with them about what a view
+   * is made of. Empty for a stored forecast — see forecastCoverage, which then
+   * declines and the historical weighting stands.
+   */
+  const viewLeafForecasts = useMemo(() => {
+    // CANNOT-ANSWER IS NOT ZERO, and here it is not even a forecast question.
+    //
+    // The context type declares `resolveForecast` non-optional, and that is
+    // not true of every mounted provider: override-arpu-spec builds one
+    // without it. The two older callers never noticed because both are
+    // conditional — the churn panel returns before resolving unless a churn
+    // draft is open, the pricing feed runs on demand — and this one runs at
+    // mount. Reading a seam that is absent must not crash a card whose other
+    // twenty surfaces do not need it, so a missing seam yields NO LEAVES and
+    // forecastCoverage then declines and the historical weighting stands,
+    // which is the same documented fallback a stored forecast takes.
+    if (typeof resolveForecast !== 'function') return [];
+    return resolveEventScopeForecast({
+      segment: cohortScope.seg,
+      product: cohortScope.prod.l1 ?? 'All', productL2: cohortScope.prod.l2 ?? 'All',
+      channelL1: cohortScope.chan.l1 ?? 'All', channelL2: cohortScope.chan.l2 ?? 'All',
+      tariffL1: cohortScope.tar.l1 ?? 'All', tariffL2: cohortScope.tar.l2 ?? 'All',
+    }, resolveForecast).leaves ?? [];
+  }, [cohortScope, resolveForecast]);
+
   const { chartData, adjustedMonths, eventShares } = useMemo(() => computeAdjustedForecast({
-    baseForecast, marketEvents, yieldEvents, pricingEvents,
+    baseForecast, marketEvents, yieldEvents, pricingEvents, viewLeafForecasts,
     viewSegment: cohortScope.seg, viewProduct: cohortScope.prod,
     viewChannel: cohortScope.chan, viewTariff: cohortScope.tar, data,
     wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
@@ -2326,7 +2376,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // unused in this body, which is why they were historically absent here.
   }), [baseForecast, marketEvents, yieldEvents, pricingEvents, cohortScope,
        data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiValueCol,
-       wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal]);
+       wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal, viewLeafForecasts]);
 
   // ── Custom chart tooltip — shows KPI values + any event names for that month ─
   const renderTooltip = useCallback(({ active, payload, label }: any) => {

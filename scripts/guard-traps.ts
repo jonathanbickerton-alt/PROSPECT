@@ -83,6 +83,7 @@ const I18NSCAN = 'scripts/scan-i18n.ts';
 const FTSPLIT = 'scripts/forecast-type-split-spec.ts';
 const ARPUCOMP = 'scripts/arpu-companion-spec.ts';
 const APPLIEDCOUNT = 'scripts/applied-count-spec.ts';
+const AGGRECON = 'scripts/aggregate-reconciliation-spec.ts';
 const DEBUNDLE = 'src/locales/de/translation.json';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
@@ -236,9 +237,14 @@ const TRAPS: Trap[] = [
     // Retargeted to ENGINE when the seam moved out of App into the pure
     // resolveFromStore. The move was caught by spec:retire's own anchor check,
     // which went red rather than passing over a window that no longer existed.
+    // RE-ANCHORED 2026-09-02: the return grew `leaves: []` when resolveFromStore
+    // began carrying the leaves it had already built, and this anchor still
+    // named the three-field shape. It planted NOTHING and reported INCONCLUSIVE
+    // — which is the whole reason that state exists rather than a silent pass:
+    // the trap had stopped guarding the retirement rule and said so.
     file: ENGINE, spec: RETIRE,
-    mutate: s => s.replace('  if (stored && !isRetiredAggregateFit(key, stored)) return { forecast: stored, reason: null };',
-                           '  if (stored) return { forecast: stored, reason: null };') },
+    mutate: s => s.replace('  if (stored && !isRetiredAggregateFit(key, stored)) return { forecast: stored, reason: null, leaves: [] };',
+                           '  if (stored) return { forecast: stored, reason: null, leaves: [] };') },
   { id: '14 the retirement rule broadened past its scope', why: 'it retires leaf fits too',
     file: ENGINE, spec: RETIRE,
     mutate: s => s.replace("  return key.split('|').some(part => part === 'All');",
@@ -1518,6 +1524,27 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "eventCount: appliedHere.size",
       "eventCount: marketEvents.length") },
+
+  // ---------------------------------------------------------------------
+  // 127 — a percentage event weighted by HISTORY again (UAT-D2-03).
+  //
+  // eventCoverage weights leaves by summed history; the value it scales is a
+  // fitted forecast. The two denominators agree in every synthetic fixture
+  // anyone would write, which is why this survived a session that measured it
+  // head-on and was only caught on a real save: at 02 Sep's walk file a +10%
+  // event moved the aggregate 41.20 where its own leaf moved 48.28.
+  //
+  // The trap removes the forecast-weighted preference and keeps the fallback,
+  // which is the shape the mistake would actually take — someone "simplifying"
+  // the ?? away. Deleting forecastCoverage outright is a compile error that
+  // anything would catch.
+  { id: '127 a percentage event is weighted by history, not the forecast',
+    why: 'the aggregate then moves by less than its own leaf, and bottom-up stops holding',
+    file: WHATIF, spec: AGGRECON,
+    mutate: s => s.replace(
+      "            ? (forecastCoverage(e, metricOf(e), month.month, viewLeafForecasts)\n" +
+      "               ?? eventCoverage(e, viewScope, leavesFor(e)))",
+      "            ? eventCoverage(e, viewScope, leavesFor(e))") },
 ];
 
 const specFails = (spec: string = SPEC): boolean => {
@@ -1533,7 +1560,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT) || specFails(AGGRECON)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

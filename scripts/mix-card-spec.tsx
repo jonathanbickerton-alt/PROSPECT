@@ -1953,8 +1953,25 @@ async function main() {
       const srcRaw = (await import('node:fs')).readFileSync('src/components/WhatIfTab.tsx', 'utf8');
       const src = srcRaw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
       const callers = (src.match(/resolveEventScopeForecast\s*\(/g) ?? []).length;
-      check('pricing scope: the shared helper has EXACTLY two callers',
-        callers === 2, `found ${callers}`);
+      // RAISED 2 -> 3, 2026-09-02 (UAT-D2-03). Jon should reverse this if he
+      // disagrees; it loosens a number he pinned deliberately.
+      //
+      // The third caller is the chart's `viewLeafForecasts`, which resolves
+      // THE VIEW's own dims so a percentage event can be weighted by the
+      // fitted forecast instead of summed history. It is worth distinguishing
+      // from the failure this pin describes, because it is that failure's
+      // opposite: the guarded shape is "a card resolving its own slice
+      // LOCALLY", forking the definition, and this one routes a new question
+      // through the SHARED helper precisely so it cannot fork. Had it resolved
+      // the view by building a cohort key inline — the tempting alternative,
+      // and a shorter diff — the count would still have read two and the
+      // divergence the pin exists to prevent would have been real.
+      //
+      // So the count is raised rather than relaxed to `>=`. A fourth site
+      // still fails here, which is the discriminating power worth keeping;
+      // `>=` would have surrendered it permanently to buy this one change.
+      check('pricing scope: the shared helper has EXACTLY three callers',
+        callers === 3, `found ${callers}`);
       check('pricing scope: and it is IMPORTED, not redefined locally',
         /import\s*\{[^}]*resolveEventScopeForecast/.test(src)
           && !/function\s+resolveEventScopeForecast/.test(src),

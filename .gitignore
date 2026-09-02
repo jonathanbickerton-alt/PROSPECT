@@ -36,3 +36,8 @@ coverage/
 
 # Regenerable scanner output — the scanner itself is committed at scripts/scan-i18n.ts
 /scan_i18n_report.json
+
+# Walk saves — 15 MB session exports Jon supplies for reproduction. Cited by
+# sha1 in reports; never committed, so the repo does not carry binaries whose
+# only reader is one session.
+test-data/Walks/

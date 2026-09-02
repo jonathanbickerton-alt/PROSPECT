@@ -2934,6 +2934,54 @@ export function eventCoverage(
   return inBoth / inView;
 }
 
+
+/**
+ * A percentage event's coverage at a view, weighted by the FITTED FORECAST for
+ * the month rather than by historical rows — Jon's decision of 2026-09-02,
+ * option (i).
+ *
+ * THE DEFECT THIS REPLACES. `eventCoverage` weights leaves by summed history
+ * (`wiValueCol` over the loaded rows) and the value it scales is
+ * `month.inflow.mean`, a fitted forecast. Two different denominators. The
+ * module's promise that "each leaf takes the same percentage of its own value,
+ * and those sum to that percentage of the aggregate" holds only while the fit
+ * preserves the historical mix — and leaves fitted independently do not. On the
+ * 02 Sep walk save the two ratios were 0.012940327 and 0.015163693, so a +10%
+ * event moved the aggregate 41.20 where the leaf moved 48.28: 14.66% short.
+ *
+ * WHY A RATIO AND NOT A DIRECT SUM. `applyEventsToMonth` owns the arithmetic
+ * `pct × basis × coverage`, and the basis it uses depends on `percentageBasis`
+ * — the untouched baseline, or the value after absolute events. Returning a
+ * ratio lets that choice stay where it is made. Because the view's forecast IS
+ * the sum of these leaves, the baseline case reduces exactly to
+ * `pct × forecast(view ∩ target)`, which is the decision's wording.
+ *
+ * RETURNS null WHEN IT CANNOT ANSWER — no leaves supplied (a stored forecast,
+ * or a caller that has none), or a view whose forecast for this metric-month is
+ * zero. Null means "fall back to the historical weighting", not "zero".
+ * Answering 0 there would silently discard the event, which is the failure this
+ * whole change exists to remove.
+ */
+export function forecastCoverage(
+  event: ProRataScope,
+  metric: 'inflow' | 'outflow' | 'retention',
+  month: string,
+  viewLeaves: readonly BaseForecast[] | undefined,
+): number | null {
+  if (!viewLeaves || viewLeaves.length === 0) return null;
+  let inView = 0;
+  let inBoth = 0;
+  for (const lf of viewLeaves) {
+    const m = lf.months.find(x => x.month === month);
+    if (!m) continue;
+    const v = Number(m[metric]?.mean) || 0;
+    inView += v;
+    if (leafWithinScope(event, lf.cohort as unknown as ProRataScope)) inBoth += v;
+  }
+  if (!(inView > 0)) return null;
+  return inBoth / inView;
+}
+
 /** The metrics a month carries through event application. */
 export interface MonthMetrics {
   inflow: number;
@@ -3489,17 +3537,24 @@ export function resolveFromStore(
   store: Map<string, BaseForecast>,
   leafMap: Map<string, string[]>,
   key: string,
-): { forecast: BaseForecast | null; reason: SkipReason | null } {
+): { forecast: BaseForecast | null; reason: SkipReason | null; leaves: BaseForecast[] } {
   const stored = store.get(key);
   // A stored FITTED forecast under an All-bearing key is a fit-on-aggregate
   // left behind by the manual path Session G removed. Ignored here rather than
   // purged, so derivation answers instead.
-  if (stored && !isRetiredAggregateFit(key, stored)) return { forecast: stored, reason: null };
+  // LEAVES ARE RETURNED ONLY WHERE THE FORECAST IS THEIR SUM.
+  //
+  // A stored forecast was fitted, not derived, so the leaves under its key do
+  // not add up to it and weighting anything by them would be a second wrong
+  // denominator in place of the first. Empty here means "no forecast weights
+  // available", and the caller falls back to the historical weighting rather
+  // than to a number that looks right.
+  if (stored && !isRetiredAggregateFit(key, stored)) return { forecast: stored, reason: null, leaves: [] };
 
   const leafKeys = leafMap.get(key) ?? [];
   if (leafKeys.length === 0) {
     // Not a key this data can produce at all.
-    return { forecast: null, reason: 'never-enumerated' };
+    return { forecast: null, reason: 'never-enumerated', leaves: [] };
   }
 
   const leaves = leafKeys
@@ -3507,7 +3562,7 @@ export function resolveFromStore(
     .filter((b): b is BaseForecast => !!b);
   if (leaves.length === 0) {
     // The key is real and every leaf behind it failed to fit.
-    return { forecast: null, reason: 'insufficient-history' };
+    return { forecast: null, reason: 'insufficient-history', leaves: [] };
   }
 
   const [segment, product, productL2, channel, channelL2, tariffL1, tariffL2] = key.split('|');
@@ -3517,7 +3572,12 @@ export function resolveFromStore(
   } as any);
   // deriveAggregate only returns null for an EMPTY leaf list, handled above -
   // so `derived` is always non-null here. No false arm.
-  return { forecast: derived, reason: null };
+  //
+  // `leaves` travels with it because the adjusted path needs the FORECAST
+  // weights, not the historical ones — see forecastCoverage. The identity that
+  // makes it safe is that `derived` IS the sum of exactly these leaves, so a
+  // ratio taken over them and a basis taken from `derived` share a denominator.
+  return { forecast: derived, reason: null, leaves };
 }
 
 /**

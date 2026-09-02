@@ -1480,6 +1480,9 @@ export default function App() {
   const resolveForecast = useCallback((key: string): {
     forecast: BaseForecast | null;
     reason: SkipReason | null;
+    /** The leaves a DERIVED forecast is summed from — empty when it was stored.
+     *  Percentage events weight their coverage by these; see forecastCoverage. */
+    leaves: BaseForecast[];
   } => {
     // Delegates to the pure seam so this closure and the session-import path
     // cannot drift. See resolveFromStore for why it is not inlined here.
