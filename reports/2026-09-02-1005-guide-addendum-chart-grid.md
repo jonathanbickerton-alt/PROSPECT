@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-09-02 10:05 +0100 (UTC 2026-09-02 09:05)
-Certifies: __HASH__
-Repo: __REPO__
+Certifies: 3c0dcb2 (report filled one commit later)
+Repo: committed 3c0dcb2, pushed (origin in sync)
 SKELETON FIRST. BASE: HEAD e1c0ed9 vs 2343's 42c55ac — one, REPORT-ONLY; no
   source drift.
 THE BRIEF HAS THE LINE STYLES INVERTED, and the guide documents what is built:
