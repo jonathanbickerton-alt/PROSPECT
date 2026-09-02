@@ -4,9 +4,30 @@
 
 ```
 Generated: 2026-09-02 14:56 +0100 (UTC 2026-09-02 13:56)
-Certifies: __HASH__
-Repo: __REPO__
-__PENDING__
+Certifies: a4550bf
+Repo: committed a4550bf, pushed (origin in sync)
+BASE: HEAD e7e20c9 vs 1332's de947ad — one, REPORT-ONLY; no source drift.
+PART A IS A MEASURED STOP-CONDITION: UAT-D2-03 IS NOT REPRODUCIBLE, no fix.
+  On the real fixture, real column mapping, no test seam, a leaf-scoped +10%
+  Inflow event moves ALL and the LEAF by the SAME 698.10 — coverage 0.271410
+  x basis 25,721.10 = the leaf's own +10%. Absolute moves ALL too (+1,000.00
+  both); adjusted basis the same. Bottom-up is HOLDING here.
+THE WALK'S OWN CORROBORATION IS WEAKER THAN IT LOOKS: impactSummary's
+  eventCount is marketEvents.length — the raw array, not what the engine
+  applied. "1 event applied" renders identically at every view, including
+  one where nothing applied. Not the cause; not changed; worth knowing.
+A REAL LATENT ASYMMETRY, RECORDED NOT FIXED: eventProRataShare has a fallback
+  for "no leaf under the target"; eventCoverage has none, so it returns 0 at
+  an aggregate while the leaf shows full effect — the walked shape EXACTLY,
+  when triggered. Unreached on this data; adding the fallback is Jon's call.
+TO SETTLE IT: the walk's saved session, the stored event's seven scope
+  fields, and whether ALL had a saved or derived forecast. Not more reading.
+PART B ESTABLISHED AND FIXED (display only). Engine treats the companion as
+  a RATE: % and absolute events adding the SAME 100 subs give BYTE-IDENTICAL
+  ARPU (20.0000/20.0500/20.0400). Stored row carries a rate. fmtDelta keyed
+  off isPercentage — which describes the VOLUME — so 25 rendered "+25.0%".
+  One rate-only formatter for one cell; the three volume cells untouched.
+GATE: guard-traps 122/122 (was 121) · 52 specs 0 failed · lint and build clean.
 ```
 
 ---
