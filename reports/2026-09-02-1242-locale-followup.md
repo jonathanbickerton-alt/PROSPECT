@@ -4,9 +4,30 @@
 
 ```
 Generated: 2026-09-02 12:42 +0100 (UTC 2026-09-02 11:42)
-Certifies: __HASH__
-Repo: __REPO__
-__PENDING__
+Certifies: a766d0b
+Repo: committed a766d0b, pushed (origin in sync)
+BASE: HEAD fe0fae3 vs 1028's 59731fa — two commits, REPORT-ONLY, no drift.
+ITEM 1's PREMISE IS REFUTED AND THE ERROR WAS MINE. mixConstraint's 17 are
+  DIAGNOSTIC ONLY, never rendered — ZERO .detail reads in the only consumer.
+  My 1028 report called them user-facing; keying them: 102 dead strings.
+THE HUNT FOUND FIVE REAL ONES 20 LINES AWAY — the campaign-decline reasons,
+  rendered as the tooltip on a greyed-out pencil. Keyed, all six locales.
+SEVENTEEN WENT UNTRACKED FOR ONE REASON: scan-i18n only enforces under
+  --check and nothing passed it. Three things blocked a clean exit — a false
+  positive of its own making, testIdPrefix, the 17. Fixed; now gated.
+THE EXCLUSION IS CONDITIONAL, not a blanket on the filename: --check also
+  asserts nothing reads .detail, so rendering one brings all 17 back red.
+ITEM 2 ANSWERS AN OPEN QUESTION IN TERMBASE §11 — whose "Verified: no JSX
+  occurrence" had gone stale. FOUR sites printed the internal name. Split:
+  identifier pinned 20/10/7, old-save cohort keys byte-identical.
+ITEM 3: only Step 2 formatted month names — Step 3 and Compare are already
+  yyyy-MM. A FORMATTED DATE IS INVISIBLE TO A PARITY CHECK: "Oct 2026" is in
+  no bundle. Now de Okt./Dez., it ott/dic; the spec found two I had missed.
+ITEM 4 PART-SHED, first in the order and BEFORE the gate: de measured, both
+  tables scroll their wrapper, 0 clipped at 1440. fr and Step 3 NOT measured.
+TRAP 123 RE-AIMED — the briefed one cannot exist, since all 17 are meant to
+  be English. 124 is exact: identifier red, every label-side spec green.
+GATE: guard-traps 121/121 (was 119) · 51 specs 0 failed · lint and build clean.
 ```
 
 ---
