@@ -5302,6 +5302,26 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       const fmtDelta = (v: number) => isPercentage
                         ? (v > 0 ? '+' : '') + v.toFixed(1) + '%'
                         : (v > 0 ? '+' : '') + formatNumber(v);
+                      // ARPU IS A RATE, AND `isPercentage` DESCRIBES THE VOLUME.
+                      //
+                      // fmtDelta keys off the amount type of subscriberVolume, which
+                      // is right for the three volume cells and wrong for this one:
+                      // the ARPU companion is money per subscriber whatever mode the
+                      // volume is in. A stated 25 on a percentage row rendered as
+                      // "+25.0%" — UAT-D2-02 — while the identical companion on an
+                      // absolute row rendered "+25.00".
+                      //
+                      // MEASURED 2026-09-02 before changing anything: a % event and
+                      // an absolute event that add the SAME 100 subscribers with the
+                      // same companion produce byte-identical adjusted ARPU series
+                      // (20.0000 / 20.0500 / 20.0400). The engine already treats it
+                      // as a rate and the stored row already carries one, so this is
+                      // a display-only correction — the two rows now read alike
+                      // because the engine says they ARE alike.
+                      //
+                      // NOT a semantics change. The companion gaining its own
+                      // absolute/% mode is Jon's decision and a separate build.
+                      const fmtArpu = (v: number) => (v > 0 ? '+' : '') + formatNumber(v);
 
                       const isEditing = editingEventId === event.id
                         || (editingCampaign !== null && event.campaignName === editingCampaign);
@@ -5398,7 +5418,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               arpuDelta === null ? 'text-slate-300' :
                               arpuDelta >= 0 ? 'text-emerald-600' : 'text-rose-600'
                             }`}>
-                              {arpuDelta !== null ? fmtDelta(arpuDelta) : '—'}
+                              {arpuDelta !== null ? fmtArpu(arpuDelta) : '—'}
                             </td>
 
                             <td className="px-5 py-3 text-slate-500 text-xs max-w-xs truncate" title={event.comment}>{event.comment || '—'}</td>

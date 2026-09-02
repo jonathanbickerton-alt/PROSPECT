@@ -29,6 +29,7 @@
     "spec:mix-refusal-copy": "tsx scripts/mix-refusal-copy-spec.ts",
     "spec:forecast-type-split": "tsx scripts/forecast-type-split-spec.ts",
     "spec:month-format": "tsx scripts/month-format-spec.ts",
+    "spec:arpu-companion": "tsx scripts/arpu-companion-spec.ts",
     "spec:nullrender": "tsx scripts/null-render-spec.tsx",
     "spec:challenger": "tsx scripts/challenger-render-spec.tsx",
     "spec:deletions": "tsx scripts/deletions-spec.ts",

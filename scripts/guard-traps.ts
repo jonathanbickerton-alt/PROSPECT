@@ -81,6 +81,7 @@ const SHEETGUARD = 'src/utils/sheetGuards.ts';
 const I18NPARITY = 'scripts/i18n-parity-spec.ts';
 const I18NSCAN = 'scripts/scan-i18n.ts';
 const FTSPLIT = 'scripts/forecast-type-split-spec.ts';
+const ARPUCOMP = 'scripts/arpu-companion-spec.ts';
 const DEBUNDLE = 'src/locales/de/translation.json';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
@@ -1479,6 +1480,25 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "forecastType: 'Standard Forecast',",
       "forecastType: 'Standardprognose',") },
+
+  // ---------------------------------------------------------------------
+  // 125 — UAT-D2-02. The ARPU companion is money per subscriber; the row's
+  // `fmtDelta` keys off `isPercentage`, which describes subscriberVolume.
+  // Pointing the ARPU cell back at it restores the defect exactly: a stated
+  // 25 renders "+25.0%" on a percentage row and "+25.00" on an absolute one,
+  // for a companion the ENGINE treats identically in both — measured, two
+  // events adding the same 100 subscribers give byte-identical ARPU series.
+  //
+  // Aimed at the CELL rather than at fmtArpu's body on purpose. Deleting the
+  // helper is a compile error and would be caught by anything; silently
+  // calling the neighbouring formatter is the mistake that actually happened
+  // and the one nothing else would notice.
+  { id: '125 the ARPU cell formats a rate with the volume formatter',
+    why: 'a rate is not a percentage — the companion means the same thing in both volume modes',
+    file: WHATIF, spec: ARPUCOMP,
+    mutate: s => s.replace(
+      "{arpuDelta !== null ? fmtArpu(arpuDelta) : '—'}",
+      "{arpuDelta !== null ? fmtDelta(arpuDelta) : '—'}") },
 ];
 
 const specFails = (spec: string = SPEC): boolean => {
@@ -1494,7 +1514,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');
