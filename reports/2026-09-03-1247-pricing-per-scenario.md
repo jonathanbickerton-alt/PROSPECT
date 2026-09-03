@@ -3,7 +3,31 @@
 ## FOR ADVISOR
 
 ```
-__ADVISOR__
+Generated: 2026-09-03 12:47 +0100 (UTC 2026-09-03 11:47)
+Certifies: 20799e3
+Repo: committed 20799e3, pushed (origin in sync)
+BASE: f55ffc8 — no source drift. The STOP did not fire.
+ENTRIES: Q3/Q4 are NOT in EXPECTED.md. They are Jon's answers of 2026-09-02,
+  in working-agreement s3 (v3.3.8) — REMOVED at 079ebc0 this arc, v3.3.9
+  carrying only a pointer. The governing spec existed only in git history;
+  recovered from 079ebc0^ and recorded before any code. Load-bearing: the
+  chart-grid entry needs "a separate dated decision" and Q3 IS that.
+BRANCH 1, and it corrected MY OWN earlier analysis: I reported the re-banded
+  pool feeding "only the blend"; it also feeds m.scenarioArpu.base at
+  WhatIfTab:1570-1575. That error would have taken branch 2.
+ITEM 0 -> ITEM 4, leaf / All: blended 1.29 / 0.63 -> Base 1.29 / 0.63,
+  Inflow 0 / 0, Outflow and Retention absent (em dash, not 0.00). Base carries
+  the blend's value EXACTLY — what made the re-point faithful. Inflow 0 is
+  correct end-of-period; driven in the last month it moves 10.83, by hand.
+D3-02 RE-POINTED to Base ARPU (leaf 0.94 / All 0.43, unchanged); NOT to
+  Retention, which never consults the pool and would pass vacuously. Trap 131
+  re-confirmed by hand against the re-pointed assertions.
+Q4's SECOND CONSUMER DOES NOT EXIST: EventSummaryRow carries no ARPU delta.
+REMAINING BLENDED READERS in src/: ZERO (expected "Compare only"; Compare
+  computes its own). Q3 pin: pricingBaselineArpu, EXACTLY two callers.
+NOT BUILT: the pool-to-scenario feed (Jon 2026-09-03). Seam and 3 call sites
+  named in the report; pool arithmetic differs, so it needs its own fixture.
+GATE: 131/131 · 55/55 · lint+build clean. Specs 51 and 136; traps 129 -> 131.
 ```
 
 ## Base check
@@ -325,10 +349,10 @@ Already reported above: it still reddens the re-pointed Base ARPU assertions.
 ## Gate
 
 ```
-guard-traps: __/__ PENDING
-full suite:  __/__ PENDING
-lint:        PENDING
-build:       PENDING
+guard-traps: 131/131 caught, no MISSED, no INCONCLUSIVE (was 129)
+full suite:  55/55 spec scripts green (54/55 on the first run — see below)
+lint:        tsc --noEmit clean
+build:       clean
 ```
 
 ## Limits of this check
