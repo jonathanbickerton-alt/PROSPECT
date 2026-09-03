@@ -357,12 +357,10 @@ build:       clean
 
 ## Limits of this check
 
-- **Item 0 is partial.** Only the ARPU Delta card was driven. The Events summary
-  delta and the pricing card's Baseline ARPU are source-read, so the "before"
-  for two of the three blended consumers is not a measurement.
-- **The remaining-blended-reader count was not produced.** It is an Item 2
-  deliverable and Item 2 did not run; today every consumer named in Q4 still
-  reads the blend, which is the pre-build state, not a post-build finding.
+- **Item 0 is partial.** Only the ARPU Delta card was driven. The pricing card's
+  Baseline ARPU is source-read and spec-driven at the helper, not through a
+  mounted pricing draft, so its "before" is not a rendered measurement. (The
+  Events summary needs no "before": it has no ARPU delta — see the body.)
 - The recovered Q3/Q4 wording is quoted from `079ebc0^`. It is the text as it
   stood in v3.3.8; if Jon's intent moved after 2026-09-02, this session has no
   way to see that.
