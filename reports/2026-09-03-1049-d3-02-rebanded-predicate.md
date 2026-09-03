@@ -3,7 +3,31 @@
 ## FOR ADVISOR
 
 ```
-__ADVISOR__
+Generated: 2026-09-03 10:49 +0100 (UTC 2026-09-03 09:49)
+Certifies: f55ffc8
+Repo: committed f55ffc8, pushed (origin in sync)
+BASE: 2b818ee — no source drift. The STOP did not fire; it REPRODUCED.
+ITEM 1, MOUNTED, arpuDelta on the rendered KPI by testid:
+  BEFORE  leaf 0.94   All 0.00   Corp/All 0.00   (2 FAILs)
+  AFTER   leaf 0.94   All 0.43   Corp/All 0.43
+  All != leaf is CORRECT: ARPU is a weighted blend, so one 500-sub pool
+  moves a larger base by less. The invariant that failed was "a pool exists".
+ITEM 3 — SEVEN copies, not one, all scope-match; nothing else found.
+  4 LIVE in WhatIfTab (yield Inflow, Inflow pool, re-banded pool, yield
+  Retention) because cohortScope supplies the STRING 'All'. 3 in Compare
+  are CORRECT TODAY because it holds its view as {l1: null}. Identical
+  lines, opposite outcomes, decided by how each spells "All". All 7 gone.
+MEASURED, NOT INFERRED: the yield filters' 4 dims are NOT an omission
+  (YieldEventLike has no tariff/productL2). scenarioHelper's Inflow-pool filter
+  IS one — 5 dims for a 7-dim carrier — so retiring it CHANGES COMPARE's
+  behaviour for tariff-scoped events. Annotated; no fixture drives it.
+PINS: WhatIfTab 7 -> 11, scenarioHelper 1 -> 4. The 7 was green while 4 copies
+  sat in the file it pins, because A CALLER COUNT CANNOT SEE A NON-CALLER.
+ITEM 4: structural check — the copies' shape occurs ZERO times in both files
+  (line numbers reported when not), plus the one definition still carries the
+  both-forms test. Trap 132 proves the pairing: it plants a copy calling
+  nothing, so the caller pin stays green and only the structural check fires.
+GATE: 129/129 · 55/55 · lint+build clean. Spec 46, traps 127 -> 129.
 ```
 
 ## Base check
@@ -156,10 +180,10 @@ trusted — the trap-13 lesson, applied twice.
 ## Gate
 
 ```
-guard-traps: __/__ PENDING
-full suite:  __/__ PENDING
-lint:        PENDING
-build:       PENDING
+guard-traps: 129/129 caught, no MISSED, no INCONCLUSIVE (was 127)
+full suite:  55/55 spec scripts green
+lint:        tsc --noEmit clean
+build:       clean
 ```
 
 ## Limits of this check
