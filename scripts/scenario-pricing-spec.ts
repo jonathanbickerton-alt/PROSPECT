@@ -165,8 +165,13 @@ async function main() {
 
   // ── WIRING — shared functions, no local reimplementation ──────────────────
   check('wiring: scope goes through the SHARED predicate',
-    (helper.split('eventScopeMatchesView(').length - 1) === 1,
-    `${helper.split('eventScopeMatchesView(').length - 1} call sites, expected 1`);
+    // RAISED 1 -> 4, 2026-09-03 (D3-02 sweep). Compare's three hand-rolled
+    // copies were CORRECT — it passes {l1: null} for All, so `!vprodL1` held.
+    // They were retired anyway: the identical lines are a live defect in
+    // WhatIfTab, and a copy that is right only because of how its one caller
+    // spells "All" is a defect waiting for a second caller.
+    (helper.split('eventScopeMatchesView(').length - 1) === 4,
+    `${helper.split('eventScopeMatchesView(').length - 1} call sites, expected 4`);
   check('wiring: the weighting goes through the SHARED functions',
     helper.includes('pricedVolumesFor(') && helper.includes('applyPricingToBlend('));
   check('wiring: the six inline comparisons are gone',

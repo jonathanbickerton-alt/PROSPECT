@@ -168,6 +168,7 @@ async function main() {
     const q = (id: string) => container.querySelector('[data-testid="' + id + '"]') as any;
     const deltaEl = q('impact-base-delta');
     const countEl = q('impact-event-count');
+    const arpuEl  = q('impact-arpu-delta');
     // OPEN THE DERIVATION EXPANDER, if asked for. The empty state is the whole
     // point of the ghost case, and it renders only for an expanded percentage
     // row — so a spec that never clicks the chevron cannot see the copy it is
@@ -186,6 +187,7 @@ async function main() {
       rendered: !!deltaEl,
       delta: deltaEl ? Number(String(deltaEl.textContent).replace(/[+,\s]/g, '')) : NaN,
       count: countEl ? String(countEl.textContent).trim() : null,
+      arpuDelta: arpuEl ? Number(String(arpuEl.textContent).replace(/[+,\s]/g, '')) : NaN,
       expanderFound: expandId ? !!q('event-expand-' + expandId) : null,
       expanderText,
     };
@@ -417,6 +419,58 @@ async function main() {
   console.log('  ABS GHOST delta  All ' + absGhostAll.delta + ' count ' + absGhostAll.count
     + '   Corp/All ' + absGhostCorp.delta + ' count ' + absGhostCorp.count
     + '   leaf ' + absGhostLeaf.delta + ' count ' + absGhostLeaf.count);
+
+  // ── 7. D3-02: THE RE-BANDED RETENTION POOL AT A BROADER VIEW ────────────
+  //
+  // A Retention promotion carrying a mix or pricing arm has promoRebanded set,
+  // and the engine carves its volume into its OWN ARPU pool so the promo's
+  // re-banded rate is isolated from the standing base. That pool is what makes
+  // the promotion's ARPU visible at all.
+  //
+  // The pool's filter hand-rolled the seven dimension comparisons instead of
+  // calling the shared predicate, and carried `!vprodL1` — so only null counted
+  // as All. cohortScope hands the engine the STRING 'All', which is truthy, and
+  // the pool was therefore never carved at any view broad enough to contain the
+  // promotion. Same mechanism as D2-03, a different surface: there the event's
+  // VOLUME went missing, here its ARPU does.
+  //
+  // Asserted on the rendered ARPU KPI by testid, because the pool's whole
+  // purpose is an ARPU effect and an engine-level call could not see a filter
+  // that runs before the pool is built.
+  const REBANDED = {
+    id: 'evt-rebanded', sequence: 9, scenario: 'Retention', date: MONTHS[0],
+    amountType: 'absolute', subscriberVolume: 500, arpu: 40,
+    segment: 'Corporate', product: 'Mobile Voice', productL2: 'All',
+    channel: 'All', channelL2: 'All', tariffL1: 'All', tariffL2: 'All',
+    name: 'rebanded promo', retentionLinked: false,
+    isPromotion: true, promoRebanded: true,
+    promoMixAxis: 'value', promoMix: { High: 100 },
+  } as any;
+
+  check('rebanded: the promo IS in scope at All by the shared predicate',
+    fc.eventScopeMatchesView(
+      { segment: REBANDED.segment, product: REBANDED.product, productL2: REBANDED.productL2,
+        channelL1: REBANDED.channel, channelL2: REBANDED.channelL2,
+        tariffL1: REBANDED.tariffL1, tariffL2: REBANDED.tariffL2 },
+      { segment: 'All', productL1: 'All', productL2: 'All', channelL1: 'All',
+        channelL2: 'All', tariffL1: 'All', tariffL2: 'All' }),
+    'if it were out of scope at All the pool SHOULD be absent and this tests nothing');
+
+  const rbLeaf = await readAt(keyA, [REBANDED], undefined);
+  const rbAll  = await readAt(KEY_ALL, [REBANDED], undefined);
+  const rbCorp = await readAt(KEY_CORP, [REBANDED], undefined);
+
+  // The pool carries arpu 40 against a baseline of 20, so a carved pool MUST
+  // move the blended ARPU. A zero here means no pool was built.
+  check('rebanded: the pool moves ARPU at the LEAF', Math.abs(rbLeaf.arpuDelta) > 0.005,
+    'arpuDelta ' + rbLeaf.arpuDelta + ' — no pool carved even at the leaf');
+  check('rebanded: the pool is carved at ALL too', Math.abs(rbAll.arpuDelta) > 0.005,
+    'arpuDelta ' + rbAll.arpuDelta);
+  check('rebanded: and at the intermediate Corporate/All view',
+    Math.abs(rbCorp.arpuDelta) > 0.005, 'arpuDelta ' + rbCorp.arpuDelta);
+
+  console.log('  REBANDED arpuDelta  leaf ' + rbLeaf.arpuDelta
+    + '   All ' + rbAll.arpuDelta + '   Corp/All ' + rbCorp.arpuDelta);
 
   report();
 }

@@ -1620,6 +1620,39 @@ const TRAPS: Trap[] = [
       "  if (leaves.length === 0) {\n    // NO DENOMINATOR.",
       "  if (targetIdx.length === 0) { return leafWithinScope(event, cohort) || leafWithinScope(cohort, event) ? 1 : 0; }\n" +
       "  if (leaves.length === 0) {\n    // NO DENOMINATOR.") },
+
+  // ---------------------------------------------------------------------
+  // 131 — the re-banded Retention pool hand-rolls the scope rule again.
+  //
+  // D3-02. The pool that isolates a promotion's re-banded ARPU filtered with
+  // its own copy of the rule carrying `!vprodL1`, so only null counted as All
+  // while cohortScope hands the engine the STRING. The pool was never carved
+  // at any view broad enough to contain the promotion, and the promotion's
+  // ARPU fell silently back into the standing base.
+  //
+  // Same mechanism as trap 128, a different surface: there the event's VOLUME
+  // went missing at the aggregate, here its ARPU does. Measured before the
+  // fix: arpuDelta 0.94 at the leaf, 0.00 at All and at Corporate/All.
+  { id: '131 the re-banded pool re-hand-rolls the view scope rule',
+    why: "a promotion's re-banded ARPU vanishes at every view broad enough to contain it",
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      "          eventScopeMatchesView(\n            { segment: e.segment, product: e.product, productL2: e.productL2,\n              channelL1: e.channel, channelL2: e.channelL2,\n              tariffL1: e.tariffL1, tariffL2: e.tariffL2 },\n            viewScopeForMatch),",
+      "          (e.product === \'All\' || !vprodL1 || e.product === vprodL1),") },
+
+  // ---------------------------------------------------------------------
+  // 132 — a FRESH hand-rolled comparison anywhere in the tab.
+  //
+  // The caller pin counts sites that DO call the shared predicate and is
+  // silent about one that never does — which is exactly how four copies
+  // survived inside a file whose pin was green. This trap plants a copy that
+  // calls nothing, so ONLY the structural check can catch it.
+  { id: '132 a fresh hand-rolled view comparison is added',
+    why: 'a caller count cannot see a non-caller — the structural check is what closes that',
+    file: WHATIF, spec: PRICEROUND,
+    mutate: s => s.replace(
+      "    const vtarL2 = viewTariff.l2;",
+      "    const vtarL2 = viewTariff.l2;\n    const strayOk = (d: string) => d === \'All\' || !vprodL1 || d === vprodL1;\n    void strayOk;") },
 ];
 
 const specFails = (spec: string = SPEC): boolean => {

@@ -78,6 +78,21 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
     }
     leavesByMetric[metric] = Array.from(byLeaf.values());
   }
+  /**
+   * The view in the shared predicate's terms (D3-02 sweep).
+   *
+   * Compare passes `{l1: null}` for All, so its three hand-rolled copies were
+   * CORRECT — `!vprodL1` is true for null. They are retired anyway: the same
+   * lines are a live defect in WhatIfTab, where cohortScope supplies the string
+   * 'All', and a copy that is right only because of how its one caller happens
+   * to spell "All" is a defect waiting for a second caller.
+   */
+  const viewScopeForMatch = {
+    segment: vseg,
+    productL1: vprodL1, productL2: vprodL2,
+    channelL1: vchanL1, channelL2: vchanL2,
+    tariffL1: vtarL1, tariffL2: vtarL2,
+  };
   const viewScope: ProRataScope = {
     segment: vseg === 'All' ? 'All' : vseg,
     product: vprodL1 ?? 'All',
@@ -198,14 +213,11 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
     const applicable = marketEvents.filter((e: any) => {
       const eventDate = e.Start_Month || e.Date || e.Month;
       if (eventDate !== month.month) return false;
-      const segMatch  = e.Segment === 'All' || vseg === 'All' || e.Segment === vseg;
-      const prodL1Match = e.Product === 'All' || !vprodL1 || e.Product === vprodL1;
-      const prodL2Match = !e.Product_L2 || e.Product_L2 === 'All' || !vprodL2 || e.Product_L2 === vprodL2;
-      const chanL1Match = e.Channel === 'All' || !vchanL1 || e.Channel === vchanL1;
-      const chanL2Match = !e.Channel_L2 || e.Channel_L2 === 'All' || !vchanL2 || e.Channel_L2 === vchanL2;
-      const tarL1Match = !e.Tariff_L1 || e.Tariff_L1 === 'All' || !vtarL1 || e.Tariff_L1 === vtarL1;
-      const tarL2Match = !e.Tariff_L2 || e.Tariff_L2 === 'All' || !vtarL2 || e.Tariff_L2 === vtarL2;
-      return segMatch && prodL1Match && prodL2Match && chanL1Match && chanL2Match && tarL1Match && tarL2Match;
+      return eventScopeMatchesView(
+        { segment: e.Segment, product: e.Product, productL2: e.Product_L2,
+          channelL1: e.Channel, channelL2: e.Channel_L2,
+          tariffL1: e.Tariff_L1, tariffL2: e.Tariff_L2 },
+        viewScopeForMatch);
     });
 
     const applied = applyEventsToMonth(
@@ -330,11 +342,10 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       const applicableInflowYield = yieldEvents
         .filter((ye: any) => {
           if (ye.IBRO !== 'Inflow') return false;
-          const segOk = ye.Segment === 'All' || vseg === 'All' || ye.Segment === vseg;
-          const prodOk = ye.Product === 'All' || !vprodL1 || ye.Product === vprodL1;
-          const ch1Ok = ye.Channel_L1 === 'All' || !vchanL1 || ye.Channel_L1 === vchanL1;
-          const ch2Ok = ye.Channel_L2 === 'All' || !vchanL2 || ye.Channel_L2 === vchanL2;
-          if (!segOk || !prodOk || !ch1Ok || !ch2Ok) return false;
+          if (!eventScopeMatchesView(
+            { segment: ye.Segment, product: ye.Product,
+              channelL1: ye.Channel_L1, channelL2: ye.Channel_L2 },
+            viewScopeForMatch)) return false;
           if (ye.Roll_Forward === 'Yes') return ye.Month <= prevMonthKey;
           return ye.Month === prevMonthKey;
         })
@@ -378,12 +389,16 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       const applicableEvents = marketEvents.filter((e: any) => {
         const eventDate = e.Start_Month || e.Date || e.Month;
         if (eventDate !== prevMonthKey || e.Scenario !== 'Inflow') return false;
-        const segMatch  = e.Segment === 'All' || vseg === 'All' || e.Segment === vseg;
-        const prodL1Match = e.Product === 'All' || !vprodL1 || e.Product === vprodL1;
-        const prodL2Match = !e.Product_L2 || e.Product_L2 === 'All' || !vprodL2 || e.Product_L2 === vprodL2;
-        const chanL1Match = e.Channel === 'All' || !vchanL1 || e.Channel === vchanL1;
-        const chanL2Match = !e.Channel_L2 || e.Channel_L2 === 'All' || !vchanL2 || e.Channel_L2 === vchanL2;
-        return segMatch && prodL1Match && prodL2Match && chanL1Match && chanL2Match;
+        // WIDENED DELIBERATELY. This copy compared FIVE dimensions and omitted
+        // tariff L1/L2 entirely, so a tariff-scoped Inflow event pooled across
+        // every tariff here. That is the same omission the pricing filter had
+        // before it was retired to the shared predicate, and the same fix.
+        // Behaviour therefore changes for tariff-scoped events in Compare.
+        return eventScopeMatchesView(
+          { segment: e.Segment, product: e.Product, productL2: e.Product_L2,
+            channelL1: e.Channel, channelL2: e.Channel_L2,
+            tariffL1: e.Tariff_L1, tariffL2: e.Tariff_L2 },
+          viewScopeForMatch);
       });
 
       applicableEvents.forEach((ev: any) => {

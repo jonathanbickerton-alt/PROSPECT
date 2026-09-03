@@ -376,13 +376,18 @@ check('scope: a mismatch on ANY dimension excludes',
 // exact, never `>=`. A floor cannot tell you a site was removed once anything
 // else has been added.
 //
-// The seven: the pricing apply pass, three carriers in the tooltip, the
-// per-scenario block's poolsFor and pricingFor, and — added 2026-09-02 —
-// THE MARKET-EVENT APPLY PASS, which until then carried its own copy of the
-// rule and was the last consumer not filtering through the shared predicate.
+// RAISED 7 -> 11, 2026-09-03 (D3-02). "The last consumer" was wrong when it was
+// written: four MORE hand-rolled copies were still live in this file, and a
+// caller count cannot see a non-caller — which is why they survived a pin that
+// was passing. The four: the Inflow event pool, the re-banded Retention pool,
+// and both yield filters (Inflow and Retention sides).
+//
+// The pin stays EXACT rather than becoming a floor. What it cannot do is notice
+// a NEW hand-rolled copy, so it is now paired with the structural check below,
+// which asserts the copies' own shape occurs zero times.
 check('scope wiring: every consumer filters through the shared predicate',
-  (tab.split('eventScopeMatchesView(').length - 1) === 7,
-  `${tab.split('eventScopeMatchesView(').length - 1} call sites, expected 7`);
+  (tab.split('eventScopeMatchesView(').length - 1) === 11,
+  `${tab.split('eventScopeMatchesView(').length - 1} call sites, expected 11`);
 check('scope wiring: the pricing apply filter no longer hand-rolls the comparisons',
   !tab.includes('const segOk  = pe.segment   ===') && !tab.includes('const tar2Ok = !pe.tariffL2'),
   'the seven inline comparisons are what the shared predicate replaced');
@@ -391,6 +396,38 @@ check('scope wiring: the pricing apply filter no longer hand-rolls the compariso
 // counted as All; a cohort dim of the STRING 'All' is truthy, and the event was
 // withheld from every view broad enough to contain it. The reimplementation is
 // named here so restoring any of it fails, not just the whole block.
+// ── THE CHECK A CALLER COUNT CANNOT MAKE ────────────────────────────────────
+//
+// A caller pin counts sites that DO call the predicate. It is silent about a
+// site that never calls it — which is exactly how four copies survived inside a
+// file whose pin was green, one of them the re-banded pool that D3-02 found.
+//
+// So this asserts the SHAPE of a hand-rolled copy occurs zero times, in both
+// files that hold view-scoped filters. `=== 'All' || !v…` is the signature: an
+// 'All' string test OR'd with a truthiness test on a view dimension, which is
+// precisely the construction that reads null as All and the string 'All' as a
+// value. Comments are stripped first — this file's own history contains a trap
+// that matched an explanatory comment instead of the code it described.
+{
+  const strip = (x: string) => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const HAND_ROLLED = /===\s*'All'\s*\|\|\s*!v/;
+  for (const f of ['src/components/WhatIfTab.tsx', 'src/utils/scenarioHelper.ts']) {
+    const body = strip(fs.readFileSync(f, 'utf8'));
+    const hits = body.split(String.fromCharCode(10))
+      .map((l, i) => ({ l, n: i + 1 }))
+      .filter(x => HAND_ROLLED.test(x.l));
+    check(`scope wiring: no hand-rolled view comparison in ${f.split('/').pop()}`,
+      hits.length === 0,
+      hits.length ? `${hits.length} at line(s) ${hits.map(h => h.n).join(', ')}` : '0');
+  }
+  // The ONE definition is exempt by living elsewhere: forecasting.ts holds it,
+  // and neither file above may restate it.
+  const def = fs.readFileSync('src/utils/forecasting.ts', 'utf8');
+  check('scope wiring: the one definition still carries the both-forms test',
+    /!dim \|\| dim === 'All' \|\| !view \|\| view === 'All' \|\| dim === view/.test(def),
+    'eventScopeMatchesView must accept BOTH representations of All');
+}
+
 check('scope wiring: the market-event apply filter no longer hand-rolls it',
   !tab.includes('const prodL1Match = e.product === ')
   && !tab.includes('const segMatch  = e.segment === ')

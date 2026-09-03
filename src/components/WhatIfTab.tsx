@@ -1178,11 +1178,15 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
         const applicableInflowYield = yieldEvents
           .filter(ye => {
             if (ye.ibro !== 'Inflow') return false;
-            const segOk = ye.segment === 'All' || vseg === 'All' || ye.segment === vseg;
-            const prodOk = ye.product === 'All' || !vprodL1 || ye.product === vprodL1;
-            const ch1Ok = ye.channelL1 === 'All' || !vchanL1 || ye.channelL1 === vchanL1;
-            const ch2Ok = ye.channelL2 === 'All' || !vchanL2 || ye.channelL2 === vchanL2;
-            if (!segOk || !prodOk || !ch1Ok || !ch2Ok) return false;
+            // THE SHARED PREDICATE (D3-02 sweep). YieldEventLike carries only
+            // segment/product/channelL1/channelL2 — no productL2, no tariff — and
+            // the predicate treats an absent dimension as matching, so this is the
+            // SAME comparison, not a widened one. What it removes is `!vprodL1`,
+            // which reads only null as All while cohortScope hands over the string.
+            if (!eventScopeMatchesView(
+              { segment: ye.segment, product: ye.product,
+                channelL1: ye.channelL1, channelL2: ye.channelL2 },
+              viewScopeForMatch)) return false;
             if (ye.rollForward) return ye.month <= prevMonthKey;
             return ye.month === prevMonthKey;
           })
@@ -1243,13 +1247,15 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
             e.date === prevMonthKey &&
             e.scenario === 'Inflow' &&
             !p_eventPools.find(p => p.eventId === e.id) &&
-            (e.segment  === 'All' || vseg    === 'All' || e.segment  === vseg) &&
-            (e.product  === 'All' || !vprodL1            || e.product  === vprodL1) &&
-            (!e.productL2 || e.productL2 === 'All' || !vprodL2 || e.productL2 === vprodL2) &&
-            (e.channel  === 'All' || !vchanL1            || e.channel  === vchanL1) &&
-            (!e.channelL2 || e.channelL2 === 'All' || !vchanL2 || e.channelL2 === vchanL2) &&
-            (!e.tariffL1 || e.tariffL1 === 'All' || !vtarL1 || e.tariffL1 === vtarL1) &&
-            (!e.tariffL2 || e.tariffL2 === 'All' || !vtarL2 || e.tariffL2 === vtarL2),
+            // THE SHARED PREDICATE (D3-02 sweep). The Inflow pool carried the
+            // same `!vprodL1` copy as the re-banded pool below it, with the same
+            // consequence: no pool at any view whose product dim is the string
+            // 'All', so an Inflow event's own ARPU fell back into the base.
+            eventScopeMatchesView(
+              { segment: e.segment, product: e.product, productL2: e.productL2,
+                channelL1: e.channel, channelL2: e.channelL2,
+                tariffL1: e.tariffL1, tariffL2: e.tariffL2 },
+              viewScopeForMatch),
           )
           .forEach(e => {
             // A STATED RATE OUTRANKS EVERY DERIVATION, and is tested for
@@ -1310,13 +1316,19 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
           e.scenario === 'Retention' &&
           e.promoRebanded &&
           !p_eventPools.find(p => p.eventId === e.id) &&
-          (e.segment   === 'All' || vseg   === 'All' || e.segment   === vseg) &&
-          (e.product   === 'All' || !vprodL1          || e.product   === vprodL1) &&
-          (!e.productL2 || e.productL2 === 'All' || !vprodL2 || e.productL2 === vprodL2) &&
-          (e.channel   === 'All' || !vchanL1          || e.channel   === vchanL1) &&
-          (!e.channelL2 || e.channelL2 === 'All' || !vchanL2 || e.channelL2 === vchanL2) &&
-          (!e.tariffL1 || e.tariffL1 === 'All' || !vtarL1 || e.tariffL1 === vtarL1) &&
-          (!e.tariffL2 || e.tariffL2 === 'All' || !vtarL2 || e.tariffL2 === vtarL2),
+          // THE SHARED PREDICATE (D3-02). This carried its own copy of the rule
+          // with `!vprodL1`, so only null counted as All — and cohortScope hands
+          // the engine the STRING 'All', which is truthy. The pool was therefore
+          // never carved at any view broad enough to contain the promotion, and
+          // the promo's re-banded ARPU silently fell back into the standing base.
+          // Measured before the change: arpuDelta 0.94 at the leaf, 0.00 at All
+          // and at Corporate/All. Same mechanism as D2-03; there the event's
+          // volume went missing, here its ARPU did.
+          eventScopeMatchesView(
+            { segment: e.segment, product: e.product, productL2: e.productL2,
+              channelL1: e.channel, channelL2: e.channelL2,
+              tariffL1: e.tariffL1, tariffL2: e.tariffL2 },
+            viewScopeForMatch),
         )
         .forEach(e => {
           p_eventPools.push({
@@ -1348,11 +1360,15 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
       const applicableRetentionYield = yieldEvents
         .filter(ye => {
           if (ye.ibro !== 'Retention') return false;
-          const segOk = ye.segment === 'All' || vseg === 'All' || ye.segment === vseg;
-          const prodOk = ye.product === 'All' || !vprodL1 || ye.product === vprodL1;
-          const ch1Ok = ye.channelL1 === 'All' || !vchanL1 || ye.channelL1 === vchanL1;
-          const ch2Ok = ye.channelL2 === 'All' || !vchanL2 || ye.channelL2 === vchanL2;
-          if (!segOk || !prodOk || !ch1Ok || !ch2Ok) return false;
+          // THE SHARED PREDICATE (D3-02 sweep). YieldEventLike carries only
+          // segment/product/channelL1/channelL2 — no productL2, no tariff — and
+          // the predicate treats an absent dimension as matching, so this is the
+          // SAME comparison, not a widened one. What it removes is `!vprodL1`,
+          // which reads only null as All while cohortScope hands over the string.
+          if (!eventScopeMatchesView(
+            { segment: ye.segment, product: ye.product,
+              channelL1: ye.channelL1, channelL2: ye.channelL2 },
+            viewScopeForMatch)) return false;
           if (ye.rollForward) return ye.month <= m.month;
           return ye.month === m.month;
         })
@@ -4097,7 +4113,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             </div>
             <div className={`p-4 rounded-2xl border ${impactSummary.arpuDelta >= 0 ? 'bg-cyan-50 border-cyan-100' : 'bg-rose-50 border-rose-100'}`}>
               <p className="text-xs font-semibold text-slate-500 mb-1">{t('whatif_arpu_delta_end_of_period')}</p>
-              <p className={`text-2xl font-bold ${impactSummary.arpuDelta >= 0 ? 'text-cyan-700' : 'text-rose-700'}`}>
+              <p data-testid="impact-arpu-delta"
+                 className={`text-2xl font-bold ${impactSummary.arpuDelta >= 0 ? 'text-cyan-700' : 'text-rose-700'}`}>
                 {impactSummary.arpuDelta >= 0 ? '+' : ''}{formatNumber(impactSummary.arpuDelta)}
               </p>
               <p className="text-[10px] text-slate-400 mt-1">{t('whatif_adjusted_vs_baseline')}</p>
