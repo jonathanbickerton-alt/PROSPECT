@@ -96,7 +96,12 @@ async function main() {
     // for the wrong reason. Measured on the first run: all four null at the
     // leaf, so the fixture could not have told a working card from a broken one.
     months: MONTHS.map(month => ({
-      month, inflow: band(inflow), outflow: band(0), retention: band(0), arpu: band(20),
+      // RETENTION IS NON-ZERO so the DERIVED aggregate has a retention ARPU to
+      // fit. With retention 0 on every leaf the All view's retention band is a
+      // named absence, and every retention assertion below reads the em dash —
+      // measured on the first run: retention moved at the leaf and was null at
+      // All, which would have looked like a scoping defect and was a fixture gap.
+      month, inflow: band(inflow), outflow: band(0), retention: band(100), arpu: band(20),
       inflowArpu: band(22), outflowArpu: band(18), retentionArpu: band(21), baseArpu: band(20),
     })),
   });
@@ -473,6 +478,57 @@ async function main() {
   const rbLeaf = await readAt(keyA, [REBANDED], undefined);
   const rbAll  = await readAt(KEY_ALL, [REBANDED], undefined);
   const rbCorp = await readAt(KEY_CORP, [REBANDED], undefined);
+
+  // ── THE POOL FEEDS ITS OWN SCENARIO, AND BASE ONLY FROM T+1 ─────────────
+  // (Jon, 2026-09-03). The card is end-of-period, so the month a promotion
+  // sits in decides which term can show it:
+  //   - a promo in the LAST month feeds RETENTION there, and BASE must be 0,
+  //     because the lag has not delivered it yet;
+  //   - a promo one month earlier has been delivered, so BASE carries it.
+  // The pair is what makes the lag assertion mean something: either alone
+  // would pass on a build that ignored the lag in one direction.
+  const REB_LAST = { ...REBANDED, id: 'reb-last', date: MONTHS[MONTHS.length - 1] } as any;
+  const REB_PREV = { ...REBANDED, id: 'reb-prev', date: MONTHS[MONTHS.length - 2] } as any;
+  const rbLastLeaf = await readAt(keyA, [REB_LAST], undefined);
+  const rbLastAll  = await readAt(KEY_ALL, [REB_LAST], undefined);
+  const rbPrevLeaf = await readAt(keyA, [REB_PREV], undefined);
+
+  // ── THE ARITHMETIC THE FEED CARRIES — a PERCENTAGE event ────────────────
+  //
+  // Measured before the change: the retired construction sized a pool from
+  // `subscriberVolume`, which for a percentage event HOLDS THE PERCENT. A +10%
+  // event became a pool of 10 subscribers at 35 instead of the resolved 20.
+  //
+  // At the leaf that is the difference between an Inflow ARPU delta of 1.18
+  // and 0.59, both computed by hand here so a regression cannot hide behind a
+  // number that merely looks plausible:
+  //   correct   pool 20 @35, natural 200 -> (200x22 + 20x35)/220 - 22 = 1.18
+  //   retired   pool 10 @35, natural 210 -> (210x22 + 10x35)/220 - 22 = 0.59
+  const PCT_LAST = { ...EVENT_ABS, id: 'evt-pct-last', amountType: 'percentage',
+                     subscriberVolume: 10, arpu: 35, date: MONTHS[MONTHS.length - 1] } as any;
+  const pctLast = await readAt(keyA, [PCT_LAST], undefined);
+  console.log('  PCT last-month at leaf  inflow ' + pctLast.arpuInflow);
+  check('feed: a PERCENTAGE event sizes its pool from the RESOLVED delta',
+    pctLast.arpuInflow !== null && Math.abs((pctLast.arpuInflow as number) - 1.18) < 0.02,
+    'inflow ' + pctLast.arpuInflow + ' — 0.59 means the percent was read as a subscriber count');
+
+  console.log('  LAG promo in LAST month  leaf retention ' + rbLastLeaf.arpuRetention
+    + '  base ' + rbLastLeaf.arpuBase + '   |  All retention ' + rbLastAll.arpuRetention
+    + '  base ' + rbLastAll.arpuBase);
+  console.log('  LAG promo one month EARLIER  leaf base ' + rbPrevLeaf.arpuBase);
+
+  check('lag: a promo in the LAST month moves RETENTION ARPU at the leaf',
+    rbLastLeaf.arpuRetention !== null && Math.abs(rbLastLeaf.arpuRetention as number) > 0.005,
+    'retention ' + rbLastLeaf.arpuRetention);
+  check('lag: and at All',
+    rbLastAll.arpuRetention !== null && Math.abs(rbLastAll.arpuRetention as number) > 0.005,
+    'retention ' + rbLastAll.arpuRetention);
+  check('lag: BASE is untouched at T — the lag has not delivered it',
+    rbLastLeaf.arpuBase === null || Math.abs(rbLastLeaf.arpuBase as number) < 0.005,
+    'base ' + rbLastLeaf.arpuBase + ' — base must not see a pool in its own month');
+  check('lag: BASE carries it at T+1',
+    rbPrevLeaf.arpuBase !== null && Math.abs(rbPrevLeaf.arpuBase as number) > 0.005,
+    'base ' + rbPrevLeaf.arpuBase);
 
   // The pool carries arpu 40 against a baseline of 20, so a carved pool MUST
   // move the blended ARPU. A zero here means no pool was built.

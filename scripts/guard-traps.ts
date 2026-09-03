@@ -1354,9 +1354,15 @@ const TRAPS: Trap[] = [
   { id: '115 base ARPU is weighted by inflow, not the adjusted base stock',
     why: 'it answers what the newly-acquired are worth, not what the installed base is worth',
     file: WHATIF, spec: SCENARPU,
+    // RE-ANCHORED 2026-09-03. The base term's natural volume was
+    // `newBAdj - p_eventPools.reduce(...)`; it now subtracts only the pools the
+    // T+1 lag has DELIVERED, so the old anchor named a line that no longer
+    // exists. It planted nothing and reported INCONCLUSIVE — the state that
+    // exists so a trap cannot go green by failing to fire. Trap 13's lesson,
+    // and the second time this file has paid for it.
     mutate: s => s.replace(
-      '          naturalVolume: Math.max(0, newBAdj - p_eventPools.reduce((t, p) => t + p.size, 0)),',
-      '          naturalVolume: m.uplifted.inflow,') },
+      '            naturalVolume: Math.max(0, newBAdj - delivered.reduce((t, p) => t + p.size, 0)),',
+      '            naturalVolume: m.uplifted.inflow,') },
   // 116 touches the BLENDED column's formula. The pricing pin goes red while
   // every per-scenario check stays GREEN — that pairing is the layer proof, and
   // only a trap that leaves one half green can demonstrate it.
@@ -1682,6 +1688,42 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "                      data-testid={`impact-arpu-delta-${kpi.toLowerCase()}`}",
       "                      data-testid={`impact-arpu-RETIRED-${kpi.toLowerCase()}`}") },
+
+  // ---------------------------------------------------------------------
+  // 135 — the per-scenario pools take back the retired sizing.
+  //
+  // Jon, 2026-09-03: a pool feeds the ARPU of the scenario whose cohort it
+  // describes. The construction that fed those terms before sized a pool from
+  // `Math.abs(e.subscriberVolume)` — no view share, and no percentage
+  // resolution. For a percentage event that field HOLDS THE PERCENT, so a
+  // +10% event became a pool of ten subscribers at the stated rate: a
+  // fabricated population, priced.
+  //
+  // Measured at the leaf on the mounted card, both figures by hand: the
+  // resolved pool gives an Inflow ARPU delta of 1.18, the retired sizing 0.59.
+  // Absolute events agree, which is why nothing caught this for as long as
+  // the fixtures held only absolute events.
+  { id: '135 the per-scenario pools size from the stored volume again',
+    why: "a percentage event's pool becomes its PERCENT read as a subscriber count",
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      "            volume: Math.max(0, resolvedEventVolume(\n              e,\n              e.subscriberVolume * eventShare(e),\n              m.derivations,\n              scen === 'Retention' ? 'retention' : 'inflow',\n            )),",
+      "            volume: Math.abs(Number(e.subscriberVolume) || 0),") },
+
+  // ---------------------------------------------------------------------
+  // 136 — Base sees a pool in its own month again.
+  //
+  // Base must see a pool ONLY once the T+1 lag has delivered it. The
+  // re-banded Retention pool is pushed in its event month, so without the
+  // filter Base moves in the month a promotion is STATED rather than the
+  // month its subscribers reach the stock. Measured: base 0 at T and 0.94 at
+  // T+1; without the filter it is non-zero at T.
+  { id: '136 Base counts a pool in the month it was stated',
+    why: 'the stock moves before the subscribers reach it — the lag is the whole point',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      "          const delivered = p_eventPools.filter(p => p.eventMonthIdx < idx);",
+      "          const delivered = p_eventPools;") },
 ];
 
 const specFails = (spec: string = SPEC): boolean => {

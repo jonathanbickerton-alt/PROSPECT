@@ -1096,6 +1096,19 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
       contractLength: number; // protection window in months
       enterMonthIdx: number;  // 0-based index when they enter Base (event month + 1)
       size: number;           // current subscriber count
+      /**
+       * The month index of the EVENT itself, which is not always
+       * `enterMonthIdx - 1`: the Inflow pool is pushed a month after its event
+       * (the T+1 lag) while the re-banded Retention pool is pushed in the event's
+       * own month, because retention applies without the lag.
+       *
+       * Base must see a pool ONLY once the lag has delivered it (Jon,
+       * 2026-09-03), and `enterMonthIdx` cannot answer that for the re-banded
+       * pool because it equals the event's own month there. So the event month
+       * is carried explicitly rather than inferred from a field that means
+       * different things for the two pools.
+       */
+      eventMonthIdx: number;
     }
 
     let p_bBase = baseForecast.seedBaseVolume;
@@ -1224,6 +1237,11 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
               arpu: yieldArpu,
               contractLength: DEFAULT_CONTRACT_N,
               enterMonthIdx: idx,
+              // A SYNTHETIC pool for yield-adjusted NATURAL inflow, built from
+              // the previous month's flow — so its event month is idx - 1 and
+              // the lag has already delivered it, exactly like a real Inflow
+              // pool. It is not a market event and feeds no scenario term.
+              eventMonthIdx: idx - 1,
               size: Math.max(0, p_prevBBaseIn),
             });
             // Natural inflow captured by yield pool — do NOT also add to base pool
@@ -1282,6 +1300,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
               arpu: derivedArpu,
               contractLength: e.contractLength ?? DEFAULT_CONTRACT_N,
               enterMonthIdx: idx,
+              eventMonthIdx: idx - 1,   // filtered on prevMonthKey — the T+1 lag
               // The pool must hold exactly the volume this view actually
               // received, or the blended ARPU is computed over subscribers that
               // were never added to Base.
@@ -1336,6 +1355,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
             arpu: e.arpu > 0 ? e.arpu : m.baseline.arpu,
             contractLength: e.contractLength ?? DEFAULT_CONTRACT_N,
             enterMonthIdx: idx,
+            eventMonthIdx: idx,       // retention applies in its OWN month
             // Pro-rata share, consistent with Pass 1 (see eventProRataShare).
             size: Math.max(0, e.subscriberVolume * eventShare(e)),
           });
@@ -1498,18 +1518,45 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
       // codebase (measured 2026-09-01; recorded, not corrected).
       const fcM = baseForecast.months[idx];
 
-      // Market pools, split by the scenario the event names. A pool carries its
-      // own rate (revenue / subscriberVolume), so it enters its scenario's
-      // blend at that rate rather than at the cohort's.
-      const poolsFor = (scen: 'Inflow' | 'Retention'): { volume: number; arpu: number }[] =>
+      /**
+       * A POOL FEEDS THE ARPU OF THE SCENARIO WHOSE COHORT IT DESCRIBES
+       * (Jon, 2026-09-03). ONE arithmetic, the same one `p_eventPools` uses.
+       *
+       * This replaced a second construction, `poolsFor`, which sized a pool
+       * from `Math.abs(e.subscriberVolume)` — no view share, no percentage
+       * resolution. MEASURED before the change, same events, leaf and All:
+       * the two agreed for absolute events (1000/35, 500/40) and disagreed for
+       * a percentage one, where `subscriberVolume` HOLDS THE PERCENT. A +10%
+       * event produced a pool of "10 subscribers at 35" against the resolved
+       * 20 — a pool of ten people who do not exist, priced.
+       *
+       * So the deletion is not tidying. The per-scenario ARPU of any
+       * percentage event was computed over a fabricated population.
+       */
+      const scenarioPools = (scen: 'Inflow' | 'Retention'): { volume: number; arpu: number }[] =>
         marketEvents
           .filter(e => e.scenario === scen && e.date === m.month && eventScopeMatchesView(e as any, viewScopeForMatch))
-          .map(e => {
-            const vol = Math.abs(Number(e.subscriberVolume) || 0);
-            const rev = Number(e.revenue) || 0;
-            const rate = vol > 0 && rev !== 0 ? rev / vol : (Number(e.arpu) || 0);
-            return { volume: vol, arpu: rate };
-          })
+          .map(e => ({
+            // The pool's own rate, by the same precedence the base pool uses:
+            // a stated override, else revenue over volume, else a stated rate.
+            // A volume-only event has no rate of its own and takes the month's
+            // baseline rather than diluting the pool to zero.
+            arpu: e.arpuOverride !== undefined
+              ? e.arpuOverride
+              : e.subscriberVolume > 0 && Math.abs(Number(e.revenue) || 0) > 0
+                ? (Number(e.revenue) || 0) / e.subscriberVolume
+                : (Number(e.arpu) || 0) > 0
+                  ? Number(e.arpu)
+                  : m.baseline.arpu,
+            // THE VIEW'S SHARE, AND RESOLVED FOR A PERCENTAGE — the whole of
+            // what the retired construction got wrong.
+            volume: Math.max(0, resolvedEventVolume(
+              e,
+              e.subscriberVolume * eventShare(e),
+              m.derivations,
+              scen === 'Retention' ? 'retention' : 'inflow',
+            )),
+          }))
           .filter(p => p.volume > 0);
 
       // Pricing deltas, mapped onto the scenarios each event's own fields name.
@@ -1538,8 +1585,8 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
             pricesPools: pe.target !== 'base-only',
           }));
 
-      const inflowPools = poolsFor('Inflow');
-      const retentionPools = poolsFor('Retention');
+      const inflowPools = scenarioPools('Inflow');
+      const retentionPools = scenarioPools('Retention');
       const poolVol = (ps: { volume: number }[]) => ps.reduce((t, p) => t + p.volume, 0);
 
       m.scenarioArpu = {
@@ -1567,12 +1614,25 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
         }),
         // BASE weights by the ADJUSTED running base stock, mirroring the
         // baseline's own-volume rule, and the engine has already floored it.
-        base: scenarioAdjustedArpu({
-          baselineArpu: fcM?.baseArpu?.mean,
-          naturalVolume: Math.max(0, newBAdj - p_eventPools.reduce((t, p) => t + p.size, 0)),
-          pools: p_eventPools.map(p => ({ volume: p.size, arpu: p.arpu })),
-          pricing: pricingFor('base'),
-        }),
+        // BASE SEES A POOL ONLY ONCE THE T+1 LAG HAS DELIVERED IT
+        // (Jon, 2026-09-03). At month T that is pools whose EVENT month is
+        // T-1 or earlier, never T.
+        //
+        // This changes nothing for the Inflow pool, which is pushed a month
+        // after its event and was already lagged. It changes the re-banded
+        // Retention pool, which is pushed in its own month: base counted it
+        // immediately, so a retention promotion moved Base ARPU in the month
+        // it was stated rather than the month its subscribers reached the
+        // stock. Retention ARPU now carries it in that month instead.
+        base: (() => {
+          const delivered = p_eventPools.filter(p => p.eventMonthIdx < idx);
+          return scenarioAdjustedArpu({
+            baselineArpu: fcM?.baseArpu?.mean,
+            naturalVolume: Math.max(0, newBAdj - delivered.reduce((t, p) => t + p.size, 0)),
+            pools: delivered.map(p => ({ volume: p.size, arpu: p.arpu })),
+            pricing: pricingFor('base'),
+          });
+        })(),
       };
 
       const row = {
