@@ -451,6 +451,14 @@ export interface PricingEvent {
  */
 export interface YieldEvent {
   id: string;
+  /**
+   * The tariffs or bands the USER has padlocked on this event's mix
+   * (Jon, 2026-09-03). Same name and same meaning as `MarketEvent.mixLocked`:
+   * a lock is the user's, and only the user unlocks it. Optional, and absent
+   * means no locks — an old workbook restores clean rather than with a
+   * phantom lock nobody set.
+   */
+  mixLocked?: string[];
   /** IBRO type this event targets */
   ibro: 'Inflow' | 'Retention';
   segment: string;

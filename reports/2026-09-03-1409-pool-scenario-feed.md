@@ -27,7 +27,7 @@ poolsFor DELETED. EventPool gains eventMonthIdx (enterMonthIdx meant
   tsc caught a THIRD push site the decision never named — the yield pool.
 GATE CAUGHT AN AGED ANCHOR: trap 115 INCONCLUSIVE at 132/133, re-anchored.
   Second after trap 13 — traps rot on the code that changes most.
-GATE: 133/133 · 55/55 · lint+build clean. Spec 51 -> 56; traps 133 -> 135.
+GATE: 133/133 · 55/55 · lint+build clean. Spec 51 -> 56; traps 131 -> 133.
 ```
 
 ## Base check
@@ -153,7 +153,7 @@ end of the period and the lag had already delivered them.
 
 ## Item 3 — specs and traps
 
-`spec:view-apply-mounted` 51 → **56** checks. Traps 133 → **135**.
+`spec:view-apply-mounted` 51 → **56** checks. Traps 131 → **133**.
 
 **The fixture needed retention volume first.** With `retention: band(0)` on
 every leaf the derived All aggregate has no retention band to fit, so every

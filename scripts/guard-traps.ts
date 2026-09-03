@@ -85,6 +85,7 @@ const ARPUCOMP = 'scripts/arpu-companion-spec.ts';
 const APPLIEDCOUNT = 'scripts/applied-count-spec.ts';
 const AGGRECON = 'scripts/aggregate-reconciliation-spec.ts';
 const VIEWAPPLY = 'scripts/view-apply-mounted-spec.tsx';
+const LOCKRT = 'scripts/lock-roundtrip-spec.ts';
 const DEBUNDLE = 'src/locales/de/translation.json';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
@@ -1474,9 +1475,14 @@ const TRAPS: Trap[] = [
   { id: '123 a mixConstraint diagnostic is rendered to the user',
     why: 'the seventeen are excluded from must-key ONLY because nothing renders them; rendering one makes them a gap',
     file: WHATIF, spec: I18NSCAN,
+    // RE-ANCHORED 2026-09-03: autoBalanceMix gained a `locked` parameter when
+    // the Value card started passing its padlocks, so the hard-coded [] this
+    // anchor named no longer exists. It planted nothing and reported
+    // INCONCLUSIVE — the THIRD anchor to age out in three days (13, 115, 123),
+    // every one on code a session was actively changing.
     mutate: s => s.replace(
-      "const outcome = rebalance(members, seeded, [], changedTier, newValue);",
-      "const outcome = rebalance(members, seeded, [], changedTier, newValue);\n" +
+      "const outcome = rebalance(members, seeded, locked, changedTier, newValue);",
+      "const outcome = rebalance(members, seeded, locked, changedTier, newValue);\n" +
       "      if (outcome.kind === 'blocked') console.warn(outcome.detail);") },
 
   // ---------------------------------------------------------------------
@@ -1724,6 +1730,37 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "          const delivered = p_eventPools.filter(p => p.eventMonthIdx < idx);",
       "          const delivered = p_eventPools;") },
+
+  // ---------------------------------------------------------------------
+  // 136 — the Value card stops passing its padlocks.
+  //
+  // Jon, 2026-09-03: a lock is the user's, and only the user unlocks it. A
+  // hard-coded [] here unlocks every padlock silently — the sliders still
+  // move, the totals still reach 100, and nothing else looks wrong. It is
+  // caught by a SOURCE check, which is the weaker kind and is labelled as
+  // such: the mounted coverage that would drive the padlock through the DOM
+  // does not exist yet and is recorded as the remaining piece.
+  { id: '138 the Value card drops its lock set',
+    why: "a hard-coded [] unlocks every padlock the user set, silently",
+    file: WHATIF, spec: LOCKRT,
+    mutate: s => s.replace(
+      "    setDraftMix(prev => autoBalanceMix(prev, changedTier, newValue, yieldMixLocked));",
+      "    setDraftMix(prev => autoBalanceMix(prev, changedTier, newValue));") },
+
+  // ---------------------------------------------------------------------
+  // 137 — the export drops the lock column.
+  //
+  // Persistence IS the decision, so losing the column is losing it. The trap
+  // reddens eight checks, and one of them is arithmetic rather than
+  // structural: with the column gone the restored mix rebalances a held share
+  // from 30 to 22.5. That is what makes the round trip a check on the
+  // BEHAVIOUR rather than on the presence of a field.
+  { id: '139 the lock column is dropped from the export',
+    why: 'a lock that does not survive the save has been unlocked by the tool',
+    file: ENGINE, spec: LOCKRT,
+    mutate: s => s.replace(
+      "    Promo_Mix_Locked: e.mixLocked && e.mixLocked.length ? JSON.stringify(e.mixLocked) : '',",
+      "    Promo_Mix_Locked_DROPPED: '',") },
 ];
 
 const specFails = (spec: string = SPEC): boolean => {
@@ -1739,7 +1776,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT) || specFails(AGGRECON) || specFails(VIEWAPPLY)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT) || specFails(AGGRECON) || specFails(VIEWAPPLY) || specFails(LOCKRT)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

@@ -17,6 +17,7 @@ import { EventsSummaryTable } from './EventsSummaryTable';
 import { foldChurnRamp, linearChurnRamp, type ChurnFoldMonth } from '../utils/churnFold';
 import { canShowBaseForecast, resolveEventScopeForecast } from '../utils/forecasting';
 import { scenarioAdjustedArpu } from '../utils/scenarioArpu';
+import { MixSliderRow } from './MixSliderRow';
 import type { ScenarioKey, ScenarioPricing } from '../utils/scenarioArpu';
 import { nextAmountControlState, effectiveAmountControl, churnAvailableFor,
          type AmountControl } from '../utils/amountControl';
@@ -463,6 +464,8 @@ interface BuildPromoEventsParams {
   mixEnabled: boolean;
   mixAxis: 'value' | 'tariff';
   draftMix: Record<string, number>;
+  /** The user's padlocks on that mix, carried onto every built row. */
+  mixLocked: readonly string[];
   tierData: { tier: string; baseArpu: number }[];
   pricingEnabled: boolean;
   pricingMode: 'percentage' | 'absolute';
@@ -553,6 +556,10 @@ function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
       promoRebanded,
       promoMixAxis: p.mixEnabled ? p.mixAxis : undefined,
       promoMix: p.mixEnabled ? { ...p.draftMix } : undefined,
+      // ABSENT WHEN THERE ARE NONE, and absent when the mix arm is off — a lock
+      // set without a mix is a claim about bands the event does not use, which
+      // is the rule promoMix and promoBandArpuOverride already follow.
+      mixLocked: p.mixEnabled && p.mixLocked.length ? [...p.mixLocked] : undefined,
       // R3's carrier, carried through BY PRESENCE. Absent entirely when nothing
       // is stated, and absent when the mix arm is off — an override map without
       // a mix is a claim about bands the event does not use.
@@ -732,7 +739,23 @@ export function seedMixPreserving(
  * leave it alone rather than to substitute a repaired one the user did not ask
  * for.
  */
-export function autoBalanceMix(prev: Record<string, number>, changedTier: string, newValue: number): Record<string, number> {
+export function autoBalanceMix(
+  prev: Record<string, number>,
+  changedTier: string,
+  newValue: number,
+  /**
+   * The user's padlocks (Jon, 2026-09-03, decision 1). Defaults to none, so the
+   * 400 no-lock cases `spec:mix-constraint` pins this against `rebalance` with
+   * are unchanged, and so a caller that has no locks needs no argument.
+   *
+   * The SEEDING GUARD BELOW IS KEPT, and measured to be still needed: its
+   * reason is a slider move landing in the frame between `yieldTierData`
+   * producing a tier and `seedMixPreserving` writing it into `draftMix`, which
+   * has nothing to do with locks. It stays in this one place rather than being
+   * duplicated into the caller that now passes a lock set.
+   */
+  locked: readonly string[] = [],
+): Record<string, number> {
   // The old body would happily write a share for a tier not yet present in
   // `prev` — it rebuilt `others` from the remaining keys and always assigned
   // `next[changedTier]`. `rebalance` refuses that as malformed, which is right
@@ -743,7 +766,7 @@ export function autoBalanceMix(prev: Record<string, number>, changedTier: string
   // rather than reason to argue about it.
   const members = changedTier in prev ? Object.keys(prev) : [...Object.keys(prev), changedTier];
   const seeded = changedTier in prev ? prev : { ...prev, [changedTier]: 0 };
-  const outcome = rebalance(members, seeded, [], changedTier, newValue);
+  const outcome = rebalance(members, seeded, locked, changedTier, newValue);
   return outcome.kind === 'ok' ? outcome.shares : prev;
 }
 
@@ -1927,9 +1950,22 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   }, [yieldTierData.map(t => t.tier).join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-balancing slider handler
-  const handleSliderChange = useCallback((changedTier: string, newValue: number) => {
-    setDraftMix(prev => autoBalanceMix(prev, changedTier, newValue));
+  /**
+   * THE VALUE CARD'S LOCK SET (Jon, 2026-09-03, decision 1). Component state,
+   * seeded from a restored event so a saved lock survives a re-edit — a lock is
+   * the user's, and only the user unlocks it.
+   */
+  const [yieldMixLocked, setYieldMixLocked] = useState<string[]>([]);
+  /** The padlock. The ONLY thing that changes lock state; auto-lock is OFF. */
+  const handleYieldLockToggle = useCallback((tier: string) => {
+    setYieldMixLocked(prev => prev.includes(tier) ? prev.filter(t => t !== tier) : [...prev, tier]);
   }, []);
+
+
+
+  const handleSliderChange = useCallback((changedTier: string, newValue: number) => {
+    setDraftMix(prev => autoBalanceMix(prev, changedTier, newValue, yieldMixLocked));
+  }, [yieldMixLocked]);
 
   // Computed blended ARPU from current draft
   /**
@@ -1962,6 +1998,24 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     yieldTierData.forEach(t => { m[t.tier] = effectiveTierArpu(t.tier, t.baseArpu); });
     return m;
   }, [yieldTierData, effectiveTierArpu]);
+
+  /**
+   * The Value card's reachable interval, from the SAME solver the Promotion arm
+   * uses — `achievableTargetRange` takes members, shares, locks and per-member
+   * rates and is card-agnostic, so this is a second CALLER, not a second
+   * implementation.
+   *
+   * Recomputed, never remembered, for the reason recorded on the Promotion
+   * arm's copy: a remembered range would offer a target that stopped being
+   * reachable when a padlock moved.
+   */
+  const yieldMembers = useMemo(() => yieldTierData.map(t => t.tier), [yieldTierData]);
+  const yieldMixRange = useMemo(
+    () => achievableTargetRange(yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap),
+    [yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap]);
+  /** A collapsed range immobilises every slider — and is NOT a padlock. The two
+   *  reasons stay separate all the way to the control; see MixSliderRow. */
+  const yieldRangeCollapsed = yieldMixRange.kind === 'ok' && yieldMixRange.range.collapsed;
 
   const draftBlendedArpu = useMemo(() => {
     // From the EFFECTIVE rates, so a tier edit moves this on screen with no
@@ -2292,6 +2346,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const events = buildPromoEvents({
       target: promoTarget, draft: newPromo,
       mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
+      mixLocked: promoMixLocked,
       bandArpuOverride: draftPromoBandArpu,
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
       cohortAvgArpu: promoCohortAvgArpu,
@@ -2340,6 +2395,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // Restored AFTER the fields that drive the tier list. seedMixPreserving is
     // what stops the seeding effect wiping this on the next render.
     setDraftMix({ ...ev.tariffMix });
+    // A LOCK IS THE USER'S — reopening their event shows the padlocks they set
+    // (Jon, 2026-09-03). An event saved before the field existed has none, and
+    // shows none, rather than inheriting whatever the card last held.
+    setYieldMixLocked(ev.mixLocked ? [...ev.mixLocked] : []);
     // Restored so reopening shows what the USER stated, not the derived figure
     // that would otherwise be indistinguishable from it. Absent restores to an
     // empty map, which is "nothing stated" — the same thing, one level down.
@@ -2396,6 +2455,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       month: newYieldEvent.month,
       mixAxis,
       tariffMix: { ...draftMix },
+      // The user's padlocks, absent when there are none — same rule as the
+      // promotion arm's, and the same reason: an empty array would round-trip
+      // as "a lock set with no members" rather than as "no locks".
+      mixLocked: yieldMixLocked.length ? [...yieldMixLocked] : undefined,
       tariffBaseArpu,
       // THE ONE CONSTRUCTION SITE — verified 1/1/1 at dae586d and pinned by
       // spec:yield-roundtrip. Absent rather than {} when the user has stated
@@ -3786,7 +3849,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // Locks and target are draft-time only and no saved event carries them,
     // so opening an edit starts from no holds and no target rather than
     // inheriting whatever the previous draft had.
-    setPromoMixLocked([]);
+    // A LOCK IS THE USER'S — reopening the event shows the padlocks it was
+    // saved with (Jon, 2026-09-03). An event from a workbook without the column
+    // restores with none rather than a phantom lock.
+    setPromoMixLocked(event.mixLocked ? [...event.mixLocked] : []);
     setPromoTargetArpu('');
     setPromoPricingEnabled(event.promoPricingAmount !== undefined);
     setPromoPricingMode(event.promoPricingMode ?? 'percentage');
@@ -3861,6 +3927,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const events = buildPromoEvents({
       target: promoTarget, draft: newPromo,
       mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
+      mixLocked: promoMixLocked,
       bandArpuOverride: draftPromoBandArpu,
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
       cohortAvgArpu: promoCohortAvgArpu,
@@ -3883,6 +3950,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const events = buildPromoEvents({
       target: promoTarget, draft: newPromo,
       mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
+      mixLocked: promoMixLocked,
       bandArpuOverride: draftPromoBandArpu,
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
       cohortAvgArpu: promoCohortAvgArpu,
@@ -6970,41 +7038,19 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               // something they did not.
                               const immovable = held || promoRangeCollapsed;
                               return (
-                                <div key={tier} className="grid gap-x-3 items-center" style={{ gridTemplateColumns: 'minmax(80px,180px) 1fr 52px 34px 90px' }}>
-                                  <span className="text-xs font-medium text-slate-700 truncate leading-none" title={tier}>{tier}</span>
-                                  <input
-                                    type="range"
-                                    min={0}
-                                    max={100}
-                                    step={0.1}
-                                    value={mixPct}
-                                    disabled={immovable}
-                                    onChange={e => handlePromoSliderChange(tier, Number(e.target.value))}
-                                    className="w-full accent-[#e60000] h-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                                  />
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    max={100}
-                                    step={0.1}
-                                    value={parseFloat(mixPct.toFixed(1))}
-                                    disabled={immovable}
-                                    onChange={e => handlePromoSliderChange(tier, Number(e.target.value))}
-                                    className="w-full text-xs font-semibold text-slate-700 text-right tabular-nums border border-slate-200 rounded px-1 py-0.5 outline-none focus:border-[#e60000] bg-white disabled:bg-slate-50 disabled:text-slate-400"
-                                  />
-                                  {/* THE PADLOCK. Manual only — clicking it is the one
-                                      thing in this card that changes lock state.
-                                      Moving a slider does not: auto-lock is OFF,
-                                      settled 2026-08-11. */}
-                                  <button
-                                    type="button"
-                                    data-testid={`promo-mix-lock-${tier}`}
-                                    aria-pressed={held}
-                                    aria-label={held ? t('whatif_mix_release') : t('whatif_mix_hold_aria')}
-                                    title={held ? t('whatif_mix_release') : t('whatif_mix_hold_aria')}
-                                    onClick={() => handlePromoLockToggle(tier)}
-                                    className={`justify-self-center px-1.5 py-0.5 text-[13px] leading-none rounded transition-colors ${held ? 'text-[#e60000]' : 'text-slate-300 hover:text-slate-500'}`}
-                                  >{held ? '\u{1F512}' : '\u{1F513}'}</button>
+                                <MixSliderRow
+                                  key={tier}
+                                  tier={tier}
+                                  mixPct={mixPct}
+                                  held={held}
+                                  immovable={immovable}
+                                  onChange={handlePromoSliderChange}
+                                  onToggleLock={handlePromoLockToggle}
+                                  testIdPrefix="promo"
+                                  gridTemplateColumns="minmax(80px,180px) 1fr 52px 34px 90px"
+                                  holdLabel={t('whatif_mix_hold_aria')}
+                                  releaseLabel={t('whatif_mix_release')}
+                                >
                                   {/* EDITABLE BAND ARPU — Request 3, the same
                                       four states as the Value card's tier
                                       override and the Volume card's
@@ -7048,7 +7094,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                         : 'border-slate-200 bg-white text-slate-400'
                                     }`}
                                   />
-                                </div>
+                                </MixSliderRow>
                               );
                             })}
 
@@ -7499,26 +7545,19 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         const overridden = draftTierArpuOverride[tier] !== undefined;
                         const effRate = effectiveTierArpu(tier, baseArpu);
                         return (
-                          <div key={tier} className="grid gap-x-3 items-center" style={{ gridTemplateColumns: 'minmax(80px,180px) 1fr 52px 90px 80px' }}>
-                            <span className="text-xs font-medium text-slate-700 truncate leading-none" title={tier}>{tier}</span>
-                            <input
-                              type="range"
-                              min={0}
-                              max={100}
-                              step={0.1}
-                              value={mixPct}
-                              onChange={e => handleSliderChange(tier, Number(e.target.value))}
-                              className="w-full accent-[#e60000] h-1.5 cursor-pointer"
-                            />
-                            <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              step={0.1}
-                              value={parseFloat(mixPct.toFixed(1))}
-                              onChange={e => handleSliderChange(tier, Number(e.target.value))}
-                              className="w-full text-xs font-semibold text-slate-700 text-right tabular-nums border border-slate-200 rounded px-1 py-0.5 outline-none focus:border-[#e60000] bg-white"
-                            />
+                          <MixSliderRow
+                            key={tier}
+                            tier={tier}
+                            mixPct={mixPct}
+                            held={yieldMixLocked.includes(tier)}
+                            immovable={yieldMixLocked.includes(tier) || yieldRangeCollapsed}
+                            onChange={handleSliderChange}
+                            onToggleLock={handleYieldLockToggle}
+                            testIdPrefix="yield"
+                            gridTemplateColumns="minmax(80px,180px) 1fr 52px 34px 90px 80px"
+                            holdLabel={t('whatif_mix_hold_aria')}
+                            releaseLabel={t('whatif_mix_release')}
+                          >
                             {/* EDITABLE BASE ARPU — request 2, reading (b). The
                                 INPUT becomes editable; the blend below stays
                                 derived. Same four states as the Volume card's
@@ -7557,7 +7596,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             <span className="text-xs text-emerald-700 text-right tabular-nums font-semibold leading-none">
                               {formatNumber(mixPct / 100 * effRate)}
                             </span>
-                          </div>
+                          </MixSliderRow>
                         );
                       })}
                     </div>

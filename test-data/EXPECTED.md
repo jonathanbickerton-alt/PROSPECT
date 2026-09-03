@@ -7065,6 +7065,52 @@ populated leaf is COMMUNICATED and applied nowhere, consistently at every view;
 and the applied-count caption counts events applied AT THE VIEW (built at
 `bd2cf63`).
 
+#### CARD PARITY — SEVEN DECISIONS (Jon, 2026-09-03; recorded here 2026-09-03)
+
+**Recorded because they were not here.** These answer REQ-D2-01 and REQ-D3-01
+off the true-state inventory in `reports/2026-09-03-1012-card-parity-truestate.md`.
+They were written into working agreement v3.3.10 §3 and had no entry in this
+file, which is the condition the audit of the same day exists to end.
+
+1. **Lock state PERSISTS. A lock is the user's, and only the user unlocks it.**
+   It round-trips save, export and re-edit; one column per sheet that carries a
+   mix.
+2. **Churn mode on a promotion: DECLINED for now.** Alessandro's example is a
+   composite event (REQ-D3-02); its churn line uses R7's target-rate semantics
+   unchanged.
+3. **Dilution on the promo pricing arm: BUILD.**
+4. **Target NOT ported to the promo pricing arm — option (i).**
+5. **Applies-to NOT ported — option (i).** A promotion's pricing arm reaches
+   only the population the promotion itself defines.
+6. **Percentage on the Promotion volume arm: BUILD, Inflow AND Retention.** The
+   recorded order stands. The basis for a percentage re-banded Retention
+   promotion is the view's forecast retention for that month, symmetric with
+   Inflow.
+7. **ONE slider component before the second padlock.**
+
+**"Percentage events on Custom Promotion" on the never-re-propose list is a
+DECLINED-UNTIL, not a rejection** — the entry of 2026-08-02 holds the reason and
+the order of work, and decision 6 above takes it up.
+
+##### Two adjacent records a reader will meet, and must not confuse
+
+**AUTO-LOCK IS A DIFFERENT QUESTION AND IS STILL OPEN.** The mix-mode entry says
+of it: *"The moved member is held for that operation — arithmetically it must be
+— which is a different thing from a padlock that persists to the next
+interaction."* That sentence is about whether dragging a slider should lock it,
+and it remains open and under its do-not-build guard. Decision 1 above is about
+an EXPLICIT padlock surviving a save; it does not settle auto-lock and must not
+be read as doing so.
+
+**A STALE LINE, corrected here rather than in place.** The same entry says
+`autoBalanceMix` *"is not yet delegated to `rebalance`"*. It has been delegated
+since well before this session — `WhatIfTab.tsx:746` calls
+`rebalance(members, seeded, [], changedTier, newValue)` — and the entry's own
+next clause anticipated it: *"Both are behaviour changes on live controls and
+belong with the card work."* This is that work. The original text is left as
+written, because this file records what was decided when it was decided; the
+correction belongs beside it, not inside it.
+
 #### RECORDED FROM WORKING AGREEMENT v3.3.1 (audit 2026-09-03) — the never-re-propose list
 
 **Written here because it had no EXPECTED.md heading of its own.** The list has

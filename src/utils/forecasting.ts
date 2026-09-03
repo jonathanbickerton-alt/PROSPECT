@@ -112,6 +112,17 @@ export interface MarketEvent {
    */
   promoRebanded?: boolean;
   /**
+   * The bands or tariffs the USER has padlocked on this event's mix
+   * (Jon, 2026-09-03). ONE field name across both carriers, because it is one
+   * concept: a lock is the user's, and only the user unlocks it.
+   *
+   * OPTIONAL, and absent means no locks. A workbook written before this field
+   * existed restores with none — never a crash, and never a phantom lock,
+   * which would be worse: a lock the user did not set and cannot explain.
+   */
+  mixLocked?: string[];
+
+  /**
    * Phase 4 — Custom Promotion Card: the mix arm's raw inputs, stored purely so
    * editing a promo can restore the slider selections the user made. Not read
    * by the adjusted-forecast engine — arpu/revenue already carry the resolved
@@ -218,6 +229,8 @@ export interface StoredEventModifiers {
   promoRebanded: boolean;
   promoMixAxis?: 'value' | 'tariff';
   promoMix?: Record<string, number>;
+  /** The user's padlocks on that mix — absent means none. See MarketEvent. */
+  mixLocked?: string[];
   promoPricingMode?: 'percentage' | 'absolute';
   promoPricingAmount?: number;
   arpuOverride?: number;
@@ -332,6 +345,19 @@ export function marketEventExportRow(e: MarketEvent): Record<string, unknown> {
     Promo_Mix_JSON: e.promoMix ? JSON.stringify(e.promoMix) : '',
     Promo_Pricing_Mode: e.promoPricingMode ?? '',
     Promo_Pricing_Amount: e.promoPricingAmount ?? '',
+    /**
+     * THE USER'S PADLOCKS (Jon, 2026-09-03, decision 1): a lock is the user's,
+     * and only the user unlocks it — so it survives the save.
+     *
+     * APPENDED, never inserted. A reader keying by column NAME is unaffected
+     * either way, but the sheet's column order is what a human diffing two
+     * exports reads, and inserting would shift every column after it.
+     *
+     * '' is the ABSENCE carrier, matching Promo_Mix_JSON directly above: an
+     * empty array would claim "a lock set with no members", which is a
+     * different statement from "no locks" and would round-trip as one.
+     */
+    Promo_Mix_Locked: e.mixLocked && e.mixLocked.length ? JSON.stringify(e.mixLocked) : '',
     // Alessandro's editable ARPU. '' is the ABSENCE carrier and 0 is a real
     // stated rate — `?? ''` is doing that work, so it must not become `?? 0`.
     Arpu_Override: e.arpuOverride ?? '',
@@ -781,6 +807,17 @@ export interface YieldEventLike {
   month: string;
   mixAxis?: 'value' | 'tariff';
   tariffMix: Record<string, number>;
+  /**
+   * The bands or tariffs the USER has padlocked on this event's mix
+   * (Jon, 2026-09-03). ONE field name across both carriers, because it is one
+   * concept: a lock is the user's, and only the user unlocks it.
+   *
+   * OPTIONAL, and absent means no locks. A workbook written before this field
+   * existed restores with none — never a crash, and never a phantom lock,
+   * which would be worse: a lock the user did not set and cannot explain.
+   */
+  mixLocked?: string[];
+
   tariffBaseArpu: Record<string, number>;
   rollForward: boolean;
   name?: string;
@@ -1014,6 +1051,13 @@ export function readStoredEventModifiers(row: Record<string, unknown>): StoredEv
   const mode = String(row.Promo_Pricing_Mode ?? '');
 
   let promoMix: Record<string, number> | undefined;
+  // LOCKS. Absent column, empty string and malformed JSON all mean NO LOCKS —
+  // an old workbook must load clean, and a phantom lock is worse than none.
+  let mixLocked: string[] | undefined;
+  try {
+    const raw = String(row.Promo_Mix_Locked ?? '');
+    if (raw) { const a = JSON.parse(raw); if (Array.isArray(a) && a.length) mixLocked = a.map(String); }
+  } catch { mixLocked = undefined; }
   const mixRaw = row.Promo_Mix_JSON;
   if (mixRaw !== undefined && mixRaw !== null && mixRaw !== '') {
     try {
@@ -1025,6 +1069,7 @@ export function readStoredEventModifiers(row: Record<string, unknown>): StoredEv
   }
 
   return {
+    mixLocked,
     amountType:      row.Amount_Type === 'percentage' ? 'percentage' : 'absolute',
     percentageBasis: row.Percentage_Basis === 'adjusted' ? 'adjusted' : 'baseline',
     retentionLinked: row.Retention_Linked === 'No' ? false : true,
@@ -1199,6 +1244,9 @@ export function yieldEventExportRow(e: YieldEvent): Record<string, unknown> {
     Mix_Axis: e.mixAxis ?? 'value',
     Tariff_Mix_JSON: JSON.stringify(e.tariffMix),
     Tariff_Base_ARPU_JSON: JSON.stringify(e.tariffBaseArpu),
+    /** The user's padlocks — same field name, same absence carrier, same
+     *  reason as Promo_Mix_Locked. See marketEventExportRow. */
+    Tariff_Mix_Locked: e.mixLocked && e.mixLocked.length ? JSON.stringify(e.mixLocked) : '',
     // The user's STATED per-bucket rates. '' is the absence carrier — an
     // empty object would claim "an override map with no members", which is a
     // different thing from "no overrides" and is how promoMix already reads.
@@ -1224,6 +1272,12 @@ export function yieldEventFromRow(r: Record<string, any>): YieldEvent {
   let tariffMix: Record<string, number> = {};
   let tariffBaseArpu: Record<string, number> = {};
   try { tariffMix = JSON.parse(String(r.Tariff_Mix_JSON ?? '{}')); } catch {}
+  // Same rule as Promo_Mix_Locked: absent, empty or malformed is NO LOCKS.
+  let mixLocked: string[] | undefined;
+  try {
+    const rawLocks = String(r.Tariff_Mix_Locked ?? '');
+    if (rawLocks) { const a = JSON.parse(rawLocks); if (Array.isArray(a) && a.length) mixLocked = a.map(String); }
+  } catch { mixLocked = undefined; }
   try { tariffBaseArpu = JSON.parse(String(r.Tariff_Base_ARPU_JSON ?? '{}')); } catch {}
   // Through the SHARED map reader, which reuses readOptionalNumber per value:
   // presence is the carrier, a stated 0 survives as 0, a negative survives
@@ -1241,6 +1295,7 @@ export function yieldEventFromRow(r: Record<string, any>): YieldEvent {
     rollForward:   r.Roll_Forward === 'Yes',
     mixAxis:       (r.Mix_Axis === 'tariff' ? 'tariff' : 'value') as 'value' | 'tariff',
     tariffMix,
+    mixLocked,
     tariffBaseArpu,
     tariffBaseArpuOverride,
     comment:       String(r.Comment ?? ''),
