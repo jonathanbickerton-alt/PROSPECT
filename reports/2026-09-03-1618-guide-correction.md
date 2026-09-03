@@ -3,7 +3,31 @@
 ## FOR ADVISOR
 
 ```
-__ADVISOR__
+Generated: 2026-09-03 16:18 +0100 (UTC 2026-09-03 15:18)
+Verified against: HEAD 89f68a9, branch main, tree CLEAN — NO source changed.
+Repo: committed 89f68a9, pushed (origin in sync)
+Last gated commit: 2ecdefb. No gate — docs only.
+STOP FIRED AND IS REPORTED, NOT OBEYED: the test-data/ drift is commit
+  0b72574, the previous session's audit entries, and the brief's own BASE line
+  names that commit. src/, scripts/, package.json: ZERO drift.
+ITEM 0 — §16b EXISTS and is SOMETHING ELSE, so :7148 is left untouched. Three
+  things wear the label: EXPECTED:7893 "Known coverage gaps — cannot be
+  measured on the current fixtures"; EXPECTED:2067, a record of an agent
+  MIS-CITING a defect as §16b and calling it "out of bounds as a source for
+  anything"; and v3.3.1–v3.3.6's "§16b per-cohort ancestry denominator".
+CORRECTION TO 1601: it said "'ancestor' appears in no working-agreement
+  version" — literally true, misleading: "ancestry" appears, in that shelved
+  line. Verdict unchanged; the search was narrower than the sentence said.
+§5 BEFORE: "...The Events summary's ARPU delta and the Pricing card's Baseline
+  ARPU still read it." BOTH claims wrong, differently: the Pricing baseline no
+  longer reads the blend (Q3), and the Events summary delta NEVER read it —
+  EventSummaryRow carries no delta. REMOVED, not replaced: a per-scenario
+  delta there would be a second false sentence in the same place.
+§5 AFTER states the mapping read from pricingBaselineArpu at 2ecdefb, sums as
+  revenue-over-volume NOT an average; 7 phrases keyed in the report.
+TAIL: sha1 3949eb15… / 301,169 chars, IDENTICAL either side; the script refuses
+  to write on mismatch and asserts the anchor precedes the tail. RENDER COUNTS
+  unchanged in all six: en 8/44/25, the other five 8/38/22.
 ```
 
 ## Base check
