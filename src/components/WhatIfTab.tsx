@@ -20,7 +20,7 @@ import { scenarioAdjustedArpu } from '../utils/scenarioArpu';
 import type { ScenarioKey, ScenarioPricing } from '../utils/scenarioArpu';
 import { nextAmountControlState, effectiveAmountControl, churnAvailableFor,
          type AmountControl } from '../utils/amountControl';
-import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, forecastCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor } from '../utils/forecasting';
+import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, forecastCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor, pricingBaselineArpu } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope, PricingVolumes, ViewScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
@@ -2874,7 +2874,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // matching guard, on the same rule the mode predicate follows.
     if (!eventScopeSeries) return;
     const matchRow = eventScopeSeries.find((r: any) => r.month === newPricingEvent.month);
-    const originalBaseArpu = matchRow ? (matchRow['ARPU (Adjusted)'] as number) : 0;
+    // Q3 (Jon, 2026-09-02): PER-SCENARIO, for the subscribers this event applies
+    // to, not the blend. Same function as the Preview reads, so the saved row
+    // and the panel that described it cannot disagree about the basis.
+    //
+    // The 0 fallback is KEPT for an absent row, deliberately and unchanged: the
+    // surrounding code and the stored-row contract already treat 0 here as "no
+    // row matched", and widening that to null is a separate change with a
+    // round-trip of its own. A per-scenario null from a present row is a
+    // different case and is recorded as such below.
+    const perScenarioBase = pricingBaselineArpu(
+      matchRow as Record<string, unknown> | undefined,
+      newPricingEvent.target ?? 'cohorts',
+      isDilution ? 'retention' : (newPricingEvent.cohortScope ?? 'both'),
+    );
+    const originalBaseArpu = perScenarioBase ?? 0;
 
     // THE WEIGHTING VOLUMES, FROM THE SAME INVOCATION AND THE SAME ROW as the
     // baseline above. ONE slice run feeds both, deliberately: a second run here
@@ -3861,7 +3875,32 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     if (!chartData.length) return null;
     const last = chartData[chartData.length - 1];
     const baseDelta = last['Base (Adjusted)'] - last['Base (Baseline)'];
-    const arpuDelta = last['ARPU (Adjusted)'] - last['ARPU (Baseline)'];
+    /**
+     * Q4 (Jon, 2026-09-02): the ARPU Delta card shows FOUR per-scenario deltas.
+     *
+     * Each is that scenario's own adjusted ARPU against its own baseline, so
+     * each has exactly one denominator by construction — which is the whole
+     * reason the per-scenario quantities were built beside the blend rather
+     * than on top of it (see "THE THREE DENOMINATORS UNDER ONE NAME").
+     *
+     * ABSENCE TRAVELS. A per-scenario band that could not be fitted reaches
+     * chartData as null, and a null here stays null rather than becoming a
+     * subtraction against 0 — the card renders an em dash, not a fabricated
+     * movement.
+     *
+     * THE BLENDED DELTA IS GONE FROM HERE ENTIRELY. It was computed beside
+     * these until Q4 landed, and once the card stopped rendering it, nothing
+     * read it — a dead quantity carrying the name of a retired one is worse
+     * than no quantity. The `ARPU (Adjusted)` COLUMN persists for export
+     * compatibility; only this consumer is gone. The D3-02 regression now
+     * observes the pool through Base ARPU, which is what it actually feeds.
+     */
+    const arpuByScenario = SCENARIO_LIST.map(kpi => {
+      const adj = last[`${kpi} ARPU (Adjusted)`];
+      const bas = last[`${kpi} ARPU (Baseline)`];
+      const known = typeof adj === 'number' && typeof bas === 'number';
+      return { kpi, delta: known ? (adj as number) - (bas as number) : null };
+    });
     // COUNTED AT THIS VIEW, not from the array (Jon, 2026-09-02).
     //
     // This read `marketEvents.length` — every event in the store, whatever the
@@ -3879,7 +3918,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // than being re-derived beside them.
     const appliedHere = new Set<string>();
     for (const m of adjustedMonths) for (const id of m.appliedEventIds ?? []) appliedHere.add(id);
-    return { baseDelta, arpuDelta, eventCount: appliedHere.size };
+    return { baseDelta, arpuByScenario, eventCount: appliedHere.size };
   }, [chartData, adjustedMonths]);
 
   // -------------------------------------------------------------------------
@@ -4111,12 +4150,29 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               </p>
               <p className="text-[10px] text-slate-400 mt-1">{t('whatif_adjusted_vs_baseline')}</p>
             </div>
-            <div className={`p-4 rounded-2xl border ${impactSummary.arpuDelta >= 0 ? 'bg-cyan-50 border-cyan-100' : 'bg-rose-50 border-rose-100'}`}>
+            {/* Q4 (Jon, 2026-09-02): FOUR per-scenario deltas, not one blend.
+                The scenario names are IDENTIFIERS and are rendered raw, exactly
+                as the scenario pills above render them — translating them here
+                would make the card disagree with the control beside it. */}
+            <div className="p-4 rounded-2xl border bg-cyan-50 border-cyan-100">
               <p className="text-xs font-semibold text-slate-500 mb-1">{t('whatif_arpu_delta_end_of_period')}</p>
-              <p data-testid="impact-arpu-delta"
-                 className={`text-2xl font-bold ${impactSummary.arpuDelta >= 0 ? 'text-cyan-700' : 'text-rose-700'}`}>
-                {impactSummary.arpuDelta >= 0 ? '+' : ''}{formatNumber(impactSummary.arpuDelta)}
-              </p>
+              <div className="space-y-0.5" data-testid="impact-arpu-scenarios">
+                {impactSummary.arpuByScenario.map(({ kpi, delta }) => (
+                  <div key={kpi} className="flex items-baseline justify-between gap-2">
+                    <span className="text-[11px] text-slate-500">{kpi}</span>
+                    <span
+                      data-testid={`impact-arpu-delta-${kpi.toLowerCase()}`}
+                      className={`text-sm font-bold tabular-nums ${
+                        delta === null ? 'text-slate-400'
+                          : delta >= 0 ? 'text-cyan-700' : 'text-rose-700'}`}>
+                      {/* ABSENCE IS AN EM DASH, never a 0.00 — a band that could
+                          not be fitted has no delta, and printing one would
+                          state a movement nothing measured. */}
+                      {delta === null ? '—' : `${delta >= 0 ? '+' : ''}${formatNumber(delta)}`}
+                    </span>
+                  </div>
+                ))}
+              </div>
               <p className="text-[10px] text-slate-400 mt-1">{t('whatif_adjusted_vs_baseline')}</p>
             </div>
             <div className="p-4 rounded-2xl border bg-slate-50 border-slate-100">
@@ -6106,7 +6162,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           return <p data-testid="pricing-preview-scope-reason" className="text-xs text-amber-700">{pricingScopeReason}</p>;
                         }
                         const matchRow = previewScopeSeries?.find((r: any) => r.month === newPricingEvent.month);
-                        const baseArpu = matchRow ? (matchRow['ARPU (Adjusted)'] as number) : null;
+                        // Q3: the per-scenario basis, from the SAME function the
+                        // saved row uses. Null stays null and falls through to
+                        // the existing "select a month" state rather than
+                        // becoming a 0 the user would read as a real rate.
+                        const baseArpu = pricingBaselineArpu(
+                          matchRow as Record<string, unknown> | undefined,
+                          newPricingEvent.target ?? 'cohorts',
+                          newPricingEvent.pricingMode === 'dilution'
+                            ? 'retention' : (newPricingEvent.cohortScope ?? 'both'),
+                        );
                         if (baseArpu === null) return <p className="text-xs text-slate-400">{t('whatif_select_a_month_to_preview')}</p>;
                         // DILUTION-AWARE. This read `newPricingEvent.amount`,
                         // which dilution mode never sets — the draft's amount

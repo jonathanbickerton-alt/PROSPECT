@@ -90,8 +90,14 @@ async function main() {
     historicalMonths: ['2025-10', '2025-11', '2025-12'],
     lastHistoricalInflow: inflow, lastHistoricalOutflow: 0,
     provenance: 'fitted' as const,
+    // PER-SCENARIO ARPU BANDS ARE PART OF THE FIXTURE, not an afterthought.
+    // Without them every per-scenario column is a named absence and every
+    // delta below reads the em dash — which would make the Q4 assertions pass
+    // for the wrong reason. Measured on the first run: all four null at the
+    // leaf, so the fixture could not have told a working card from a broken one.
     months: MONTHS.map(month => ({
       month, inflow: band(inflow), outflow: band(0), retention: band(0), arpu: band(20),
+      inflowArpu: band(22), outflowArpu: band(18), retentionArpu: band(21), baseArpu: band(20),
     })),
   });
 
@@ -169,6 +175,12 @@ async function main() {
     const deltaEl = q('impact-base-delta');
     const countEl = q('impact-event-count');
     const arpuEl  = q('impact-arpu-delta');
+    const perScen = (k: string) => {
+      const el = q('impact-arpu-delta-' + k);
+      if (!el) return NaN;
+      const txt = String(el.textContent).trim();
+      return txt === '—' ? null : Number(txt.replace(/[+,\s]/g, ''));
+    };
     // OPEN THE DERIVATION EXPANDER, if asked for. The empty state is the whole
     // point of the ghost case, and it renders only for an expanded percentage
     // row — so a spec that never clicks the chevron cannot see the copy it is
@@ -188,6 +200,8 @@ async function main() {
       delta: deltaEl ? Number(String(deltaEl.textContent).replace(/[+,\s]/g, '')) : NaN,
       count: countEl ? String(countEl.textContent).trim() : null,
       arpuDelta: arpuEl ? Number(String(arpuEl.textContent).replace(/[+,\s]/g, '')) : NaN,
+      arpuInflow: perScen('inflow'), arpuOutflow: perScen('outflow'),
+      arpuRetention: perScen('retention'), arpuBase: perScen('base'),
       expanderFound: expandId ? !!q('event-expand-' + expandId) : null,
       expanderText,
     };
@@ -462,15 +476,70 @@ async function main() {
 
   // The pool carries arpu 40 against a baseline of 20, so a carved pool MUST
   // move the blended ARPU. A zero here means no pool was built.
-  check('rebanded: the pool moves ARPU at the LEAF', Math.abs(rbLeaf.arpuDelta) > 0.005,
-    'arpuDelta ' + rbLeaf.arpuDelta + ' — no pool carved even at the leaf');
-  check('rebanded: the pool is carved at ALL too', Math.abs(rbAll.arpuDelta) > 0.005,
-    'arpuDelta ' + rbAll.arpuDelta);
+  // RE-POINTED at Base ARPU (Jon, 2026-09-03). Q4 retired the blended figure
+  // from the card, and the blend was where this used to be read. The pool's
+  // real observable is BASE: p_eventPools feeds m.scenarioArpu.base directly
+  // (WhatIfTab:1570-1575), which is the column the chart grid draws.
+  //
+  // NOT Retention, though the promotion is a Retention event. The per-scenario
+  // Retention ARPU is built from poolsFor('Retention') — a SEPARATE pool
+  // construction that reads marketEvents through the shared predicate and never
+  // consults p_eventPools — so it moves whether or not the re-banded pool was
+  // carved. Asserting there would pass for a different reason than the defect.
+  check('rebanded: the pool moves BASE ARPU at the LEAF',
+    rbLeaf.arpuBase !== null && Math.abs(rbLeaf.arpuBase as number) > 0.005,
+    'base ' + rbLeaf.arpuBase + ' — no pool carved even at the leaf');
+  check('rebanded: the pool is carved at ALL too',
+    rbAll.arpuBase !== null && Math.abs(rbAll.arpuBase as number) > 0.005,
+    'base ' + rbAll.arpuBase);
   check('rebanded: and at the intermediate Corporate/All view',
-    Math.abs(rbCorp.arpuDelta) > 0.005, 'arpuDelta ' + rbCorp.arpuDelta);
+    rbCorp.arpuBase !== null && Math.abs(rbCorp.arpuBase as number) > 0.005,
+    'base ' + rbCorp.arpuBase);
 
+  console.log('  REBANDED per-scenario at All  inflow ' + rbAll.arpuInflow
+    + '  outflow ' + rbAll.arpuOutflow + '  retention ' + rbAll.arpuRetention
+    + '  base ' + rbAll.arpuBase);
+  console.log('  REBANDED per-scenario at leaf inflow ' + rbLeaf.arpuInflow
+    + '  outflow ' + rbLeaf.arpuOutflow + '  retention ' + rbLeaf.arpuRetention
+    + '  base ' + rbLeaf.arpuBase);
   console.log('  REBANDED arpuDelta  leaf ' + rbLeaf.arpuDelta
     + '   All ' + rbAll.arpuDelta + '   Corp/All ' + rbCorp.arpuDelta);
+
+  // ── ITEM 0 (Q3/Q4 session): the blended consumers, MEASURED BEFORE ──────
+  const ARPU_EVENT = { ...EVENT_ABS, id: 'evt-arpu', arpu: 35 } as any;
+  const m0Leaf = await readAt(keyA, [ARPU_EVENT], undefined);
+  const m0All  = await readAt(KEY_ALL, [ARPU_EVENT], undefined);
+  console.log('  ITEM0/4 per-scenario at leaf  inflow ' + m0Leaf.arpuInflow
+    + '  outflow ' + m0Leaf.arpuOutflow + '  retention ' + m0Leaf.arpuRetention
+    + '  base ' + m0Leaf.arpuBase);
+  console.log('  ITEM0/4 per-scenario at All   inflow ' + m0All.arpuInflow
+    + '  outflow ' + m0All.arpuOutflow + '  retention ' + m0All.arpuRetention
+    + '  base ' + m0All.arpuBase);
+  // Q4: the card shows FOUR, and the blended figure is gone from it.
+  check('Q4: the blended ARPU figure is NO LONGER on the card',
+    Number.isNaN(m0Leaf.arpuDelta), 'still rendered: ' + m0Leaf.arpuDelta);
+  check('Q4: the four per-scenario deltas are rendered at the leaf',
+    [m0Leaf.arpuInflow, m0Leaf.arpuOutflow, m0Leaf.arpuRetention, m0Leaf.arpuBase]
+      .every(v => v === null || Number.isFinite(v as number)),
+    'a NaN means the testid is missing, not that the value is absent');
+  // THE CARD IS END-OF-PERIOD, and that is why the Inflow feed needs its own
+  // event. An Inflow event in month 0 does not move month 2's INFLOW ARPU —
+  // inflow is a flow and its month has passed — while BASE still carries it,
+  // because base is a stock. Measured: inflow 0, base 1.29 at the leaf. So the
+  // Inflow feed is exercised with an event in the LAST month, where it can show.
+  const LAST_MONTH_EVENT = { ...EVENT_ABS, id: 'evt-last', arpu: 35, date: MONTHS[MONTHS.length - 1] } as any;
+  const mLast = await readAt(keyA, [LAST_MONTH_EVENT], undefined);
+  console.log('  ITEM4 last-month event at leaf  inflow ' + mLast.arpuInflow
+    + '  base ' + mLast.arpuBase);
+  check('Q4: an Inflow event in the LAST month moves INFLOW ARPU',
+    mLast.arpuInflow !== null && Math.abs(mLast.arpuInflow as number) > 0.005,
+    'inflow ' + mLast.arpuInflow);
+  check('Q4: and an Inflow event in the FIRST month does not, at end of period',
+    m0Leaf.arpuInflow === null || Math.abs(m0Leaf.arpuInflow as number) < 0.005,
+    'inflow ' + m0Leaf.arpuInflow + ' — the flow month has passed; only base carries it');
+  check('Q4: outflow is rate-inert and does not move',
+    m0Leaf.arpuOutflow === null || Math.abs(m0Leaf.arpuOutflow as number) < 0.005,
+    'outflow ' + m0Leaf.arpuOutflow);
 
   report();
 }

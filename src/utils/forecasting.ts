@@ -3970,6 +3970,65 @@ export function eventArpuDelta(e: MarketEvent): number | null {
  * Zero when the event produced no derivation for this month and metric: it did
  * not apply at this view, so it contributed nobody.
  */
+/**
+ * THE PRICING CARD'S BASELINE ARPU, PER SCENARIO — Q3 (Jon, 2026-09-02).
+ *
+ * Verbatim from the decision: "the per-scenario figure for the subscribers the
+ * event applies to (Inflow -> inflowArpu; Retention -> retentionArpu; Both ->
+ * Srev/Svol over the two; Base Only -> baseArpu; Cohorts+Base -> S over three),
+ * event-scoped."
+ *
+ * ONE DEFINITION, TWO CALLERS — the Preview and the saved row. They disagreed
+ * about a pricing quantity once before (the row applied the full percentage to
+ * a blended baseline while the engine moved only the retention share), and the
+ * fix then was to make both ask the same function. This is that shape again,
+ * for the baseline itself.
+ *
+ * SUMS ARE REVENUE OVER VOLUME, never an average of ARPUs — the settled
+ * reconciliation rule, and the reason a two- or three-scenario baseline cannot
+ * be a mean of its parts.
+ *
+ * ABSENCE PROPAGATES. A scenario whose band could not be fitted reaches the row
+ * as null, and null here returns null rather than dropping the term: a baseline
+ * computed over the scenarios that happened to be present would be a different
+ * quantity wearing the same name. The caller renders the em dash it already has
+ * for base-only.
+ */
+export function pricingBaselineArpu(
+  row: Record<string, unknown> | null | undefined,
+  target: 'cohorts' | 'base-only' | 'cohorts+base' | undefined,
+  cohortScope: 'inflow' | 'retention' | 'both' | undefined,
+): number | null {
+  if (!row) return null;
+  const scen: string[] =
+    target === 'base-only' ? ['Base']
+      : target === 'cohorts+base' ? ['Inflow', 'Retention', 'Base']
+        : cohortScope === 'inflow' ? ['Inflow']
+          : cohortScope === 'retention' ? ['Retention']
+            : ['Inflow', 'Retention'];
+
+  // A single scenario reads its own rate directly. Going through revenue and
+  // volume for one term would introduce a division this does not need and a
+  // zero-volume case it would then have to invent an answer for.
+  if (scen.length === 1) {
+    const a = row[`${scen[0]} ARPU (Adjusted)`];
+    return typeof a === 'number' && Number.isFinite(a) ? a : null;
+  }
+
+  let rev = 0, vol = 0;
+  for (const sn of scen) {
+    const r = row[`${sn} Revenue (Adjusted)`];
+    const v = row[`${sn} (Adjusted)`];
+    if (typeof r !== 'number' || !Number.isFinite(r)) return null;
+    if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+    rev += r; vol += v;
+  }
+  // NOTHING TO PRICE IS NOT A RATE OF ZERO. An empty pool has no ARPU, and
+  // returning 0 would state that the subscribers the event applies to are worth
+  // nothing — which is a claim, not an absence.
+  return vol > 0 ? rev / vol : null;
+}
+
 export function resolvedEventVolume(
   event: { id: string; amountType?: 'absolute' | 'percentage' },
   sharedAbsolute: number,

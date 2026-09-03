@@ -7065,6 +7065,78 @@ populated leaf is COMMUNICATED and applied nowhere, consistently at every view;
 and the applied-count caption counts events applied AT THE VIEW (built at
 `bd2cf63`).
 
+#### A POOL FEEDS THE ARPU OF THE SCENARIO WHOSE COHORT IT DESCRIBES (Jon, 2026-09-03)
+
+**Supplements Q3/Q4 (2026-09-02); does not reopen them.** Cross-referenced to
+Q4 (the blend consumers) and to D3-02 (`f55ffc8`, the re-banded pool's
+hand-rolled scope predicate).
+
+- The **Inflow event pool** feeds **Inflow ARPU (adjusted)**.
+- The **re-banded Retention pool** feeds **Retention ARPU (adjusted)**.
+- Both reach **Base ARPU only through the T+1 lag**.
+- **No pool feeds a blended figure once Q4 lands.**
+
+**MEASURED STATE AT `f55ffc8`, recorded because the decision and the code do not
+yet agree.** `p_eventPools` — which holds both pools — feeds two things:
+
+- the blended ARPU, at `WhatIfTab.tsx:1411-1412`;
+- `m.scenarioArpu.base`, at `WhatIfTab.tsx:1570-1575`, i.e. the
+  `Base ARPU (Adjusted)` column, DIRECTLY rather than only through the lag.
+
+The per-scenario Inflow and Retention ARPUs are built from a SECOND, separate
+pool construction, `poolsFor(scen)` at `WhatIfTab.tsx:1504-1513`, which reads
+`marketEvents` through the shared predicate and never consults `p_eventPools`.
+
+So today: neither pool feeds its own scenario's ARPU, both feed Base directly,
+and both feed the blend. The decision above describes the target, and the
+distance to it is a build with its own brief — **not** part of the Q3/Q4
+session, which stops at leaving the ARPU Delta card's blended figure in place
+where the D3-02 regression can still observe the pool.
+
+#### Q3 / Q4 — THE PRICING BASELINE AND THE BLEND CONSUMERS GO PER-SCENARIO (Jon, 2026-09-02; recorded here 2026-09-03)
+
+**RECORDED LATE, AND THAT IS THE FINDING.** These are two of Jon's six answers
+of 2026-09-02. They were written into the working-agreement document (v3.3.8
+§3) and never into this file — and v3.3.8 was REMOVED from the tree at
+`079ebc0` when v3.3.9 landed, while v3.3.9 carries only a pointer,
+"re-derive from §3's Q3/Q4 wording", to the file that had just been deleted.
+
+The decisions therefore existed, at the moment the build was briefed, **only in
+git history**. They are recovered verbatim below and recorded here so the build
+has a governing entry in the file that governs.
+
+**This entry is also the "separate dated decision" the chart-grid entry
+demanded.** That entry says: *"The `chartData` column `ARPU (Adjusted)` is
+UNCHANGED, and remains the pricing card's `originalBaseArpu` feed. The pricing
+baseline settled on 2026-08-21 (`7b456a1`) stands: this decision retires a line
+from a chart, not a quantity from the engine. Adding columns beside it is safe;
+redefining it is a separate dated decision."* Q3 IS that redefinition, and
+without this entry the build would contradict the standing text on the strength
+of a document that is no longer in the tree.
+
+**Q3 pricing baseline → option (b)** (Jon, 2026-09-02, verbatim):
+
+> the Pricing card's Baseline ARPU (Preview AND row) is the per-scenario figure
+> for the subscribers the event applies to (Inflow → inflowArpu; Retention →
+> retentionArpu; Both → Σrev/Σvol over the two; Base Only → baseArpu;
+> Cohorts+Base → Σ over three), event-scoped. Stored rows verbatim; test events
+> recreated.
+
+**Q4 blend consumers → per-scenario** (Jon, 2026-09-02, verbatim):
+
+> the ARPU Delta card shows four per-scenario deltas; the events summary's ARPU
+> delta is per touched scenario. After Q3+Q4 the blended ARPU has NO UI consumer
+> (Compare's own engine excepted); columns persist for compatibility.
+
+**STORED ROWS ARE VERBATIM.** A saved pricing row keeps the
+`originalBaseArpu` it was written with. Q3 changes what NEW rows record and what
+Preview computes; it does not rewrite history, and a row saved before this
+decision continues to describe the basis it was actually measured against.
+
+**The three-denominator finding closes by obsolescence when both land** — it
+feeds nothing displayed once the blend has no UI consumer. It is still not
+corrected, and correcting it remains its own decision.
+
 #### AN EVENT MATCHING NO POPULATED LEAF IS APPLIED NOWHERE — ABSOLUTE TOO (Jon, 2026-09-03)
 
 **The 2026-09-02 rule applies to absolute events as well.** An event whose

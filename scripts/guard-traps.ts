@@ -1653,6 +1653,35 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "    const vtarL2 = viewTariff.l2;",
       "    const vtarL2 = viewTariff.l2;\n    const strayOk = (d: string) => d === \'All\' || !vprodL1 || d === vprodL1;\n    void strayOk;") },
+
+  // ---------------------------------------------------------------------
+  // 133 — the pricing card takes its baseline from the BLEND again (Q3).
+  //
+  // Jon, 2026-09-02: the Baseline ARPU is the per-scenario figure for the
+  // subscribers the event applies to. Reading the blended column instead
+  // gives a plausible number for the wrong population — the whole reason the
+  // per-scenario quantities were built beside the blend rather than on top of
+  // it. Caught twice over: the exactly-two-callers pin AND the structural
+  // check that no caller reads the blended column.
+  { id: '133 the pricing baseline reads the blended column again',
+    why: 'a plausible rate for the wrong population — the blend is not the priced cohort',
+    file: WHATIF, spec: PRICEROUND,
+    mutate: s => s.replace(
+      "    const originalBaseArpu = perScenarioBase ?? 0;",
+      "    const originalBaseArpu = matchRow ? (matchRow['ARPU (Adjusted)'] as number) : 0;") },
+
+  // ---------------------------------------------------------------------
+  // 134 — the ARPU Delta card shows the blend again instead of four (Q4).
+  //
+  // The blended figure has no UI consumer after Q4. Restoring it here removes
+  // the four per-scenario testids the card now renders, which is what the
+  // mounted spec reads.
+  { id: '134 the ARPU Delta card renders one blended figure again',
+    why: 'four per-scenario deltas each have one denominator; the blend has three under one name',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      "                      data-testid={`impact-arpu-delta-${kpi.toLowerCase()}`}",
+      "                      data-testid={`impact-arpu-RETIRED-${kpi.toLowerCase()}`}") },
 ];
 
 const specFails = (spec: string = SPEC): boolean => {

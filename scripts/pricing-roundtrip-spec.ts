@@ -31,7 +31,7 @@ import {
   pricingEventExportRow, pricingEventFromRow, pricingEventSummary,
   retainedRevenueRatio, dilutionAmountPct, isValidDilutionPct,
   applyPricingToBlend, pricedVolumesFor, pricingAdjustedBlend, pricingDraftBlockReason,
-  eventScopeMatchesView,
+  eventScopeMatchesView, pricingBaselineArpu,
 } from '../src/utils/forecasting';
 import type { PricingEvent } from '../src/types/forecast';
 
@@ -585,6 +585,92 @@ check('row: COMPAT — an event without them still weights via the cohort series
 check('row: the stored branch goes through the SHARED applyPricingToBlend',
   tab.includes('return Math.max(0, applyPricingToBlend('),
   'no row-local weighting arithmetic');
+
+// ── Q3: THE PRICING BASELINE IS PER-SCENARIO ────────────────────────────────
+//
+// Jon, 2026-09-02, verbatim: "the per-scenario figure for the subscribers the
+// event applies to (Inflow -> inflowArpu; Retention -> retentionArpu; Both ->
+// Srev/Svol over the two; Base Only -> baseArpu; Cohorts+Base -> S over three)".
+//
+// THE FIXTURE DISCRIMINATES, and that is asserted first. Every per-scenario
+// rate differs from every other AND from the blend, so a mapping that returned
+// the wrong scenario — or the old blended column — is a different number rather
+// than a coincidence. A fixture whose rates agreed would pass all five cases
+// while testing none of them.
+{
+  const ROW: Record<string, unknown> = {
+    'ARPU (Adjusted)': 99,          // the BLEND — must never be the answer now
+    'Inflow ARPU (Adjusted)': 22,
+    'Retention ARPU (Adjusted)': 30,
+    'Base ARPU (Adjusted)': 40,
+    'Inflow Revenue (Adjusted)': 2200,      'Inflow (Adjusted)': 100,
+    'Retention Revenue (Adjusted)': 6000,   'Retention (Adjusted)': 200,
+    'Base Revenue (Adjusted)': 40000,       'Base (Adjusted)': 1000,
+  };
+  const rates = [22, 30, 40, 99];
+  check('Q3 fixture: every rate is distinct, so a wrong mapping cannot coincide',
+    new Set(rates).size === rates.length, JSON.stringify(rates));
+
+  check('Q3: Inflow -> inflowArpu',
+    pricingBaselineArpu(ROW, 'cohorts', 'inflow') === 22,
+    String(pricingBaselineArpu(ROW, 'cohorts', 'inflow')));
+  check('Q3: Retention -> retentionArpu',
+    pricingBaselineArpu(ROW, 'cohorts', 'retention') === 30,
+    String(pricingBaselineArpu(ROW, 'cohorts', 'retention')));
+  check('Q3: Base Only -> baseArpu',
+    pricingBaselineArpu(ROW, 'base-only', 'both') === 40,
+    String(pricingBaselineArpu(ROW, 'base-only', 'both')));
+
+  // Both = Srev/Svol over the two = 8200/300 = 27.333..., which is NOT the mean
+  // of 22 and 30 (26). The gap IS the rule — an average of ARPUs is the error
+  // this weighting removes — so it is asserted against the mean explicitly.
+  const both = pricingBaselineArpu(ROW, 'cohorts', 'both') as number;
+  check('Q3: Both -> Srev/Svol over the two', near(both, 8200 / 300), String(both));
+  check('Q3: and it is NOT the mean of the two rates',
+    Math.abs(both - 26) > 1, `${both} vs mean 26`);
+
+  // Cohorts+Base = 48200/1300 = 37.077..., again not a mean (30.667).
+  const three = pricingBaselineArpu(ROW, 'cohorts+base', 'both') as number;
+  check('Q3: Cohorts+Base -> S over three', near(three, 48200 / 1300), String(three));
+  check('Q3: and it is NOT the mean of the three rates',
+    Math.abs(three - (22 + 30 + 40) / 3) > 1, String(three));
+
+  check('Q3: no mapping returns the BLENDED column',
+    ![
+      pricingBaselineArpu(ROW, 'cohorts', 'inflow'),
+      pricingBaselineArpu(ROW, 'cohorts', 'retention'),
+      pricingBaselineArpu(ROW, 'cohorts', 'both'),
+      pricingBaselineArpu(ROW, 'base-only', 'both'),
+      pricingBaselineArpu(ROW, 'cohorts+base', 'both'),
+    ].some(v => v === 99),
+    'the blend is 99 in this fixture and must not surface');
+
+  // ABSENCE, not zero.
+  check('Q3: an absent row is null, not 0',
+    pricingBaselineArpu(null, 'cohorts', 'inflow') === null);
+  check('Q3: a null per-scenario rate stays null',
+    pricingBaselineArpu({ ...ROW, 'Inflow ARPU (Adjusted)': null }, 'cohorts', 'inflow') === null);
+  check('Q3: a sum with ONE missing term is null, not a partial sum',
+    pricingBaselineArpu({ ...ROW, 'Retention Revenue (Adjusted)': null }, 'cohorts', 'both') === null,
+    'a baseline over the scenarios that happened to be present is a different quantity');
+  check('Q3: zero volume is ABSENCE, not a rate of 0',
+    pricingBaselineArpu({ ...ROW, 'Inflow (Adjusted)': 0, 'Retention (Adjusted)': 0 },
+      'cohorts', 'both') === null,
+    'nothing to price has no ARPU');
+
+  // ONE DEFINITION, EXACTLY TWO CALLERS — the Preview and the saved row. They
+  // are the pair that disagreed about a pricing quantity once before, which is
+  // why the count is pinned rather than merely checked as non-zero.
+  const tabSrc = fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const callers = (tabSrc.match(/pricingBaselineArpu\s*\(/g) ?? []).length;
+  check('Q3: pricingBaselineArpu has EXACTLY two callers in the tab',
+    callers === 2, `${callers} call sites, expected 2 (Preview + saved row)`);
+  check('Q3: and neither reads the blended column for its baseline',
+    !/matchRow\['ARPU \(Adjusted\)'\]/.test(tabSrc),
+    'the blended read is what Q3 retires');
+}
+
 
 console.log(`\npricing-roundtrip spec: ${pass} passed, ${fails.length} failed`);
 fails.forEach(f => console.log('  FAIL  ' + f));

@@ -26,6 +26,19 @@ const NEVER = new Set(['Inflow', 'Outflow', 'Retention', 'Base', 'ARPU', 'IBRO',
   'PROSPECT', 'MAPE', 'Simple Exponential Smoothing', 'Holt Linear', 'Damped Trend', 'Holt-Winters', 'AutoML',
   'Base Case', 'Standard Forecast', 'What-If Analysis', 'Optimistic', 'Pessimistic', 'All', 'All (Aggregated)',
   'Mean (Base)', 'Base Only', 'All Time', 'Recurring monthly peaks', 'No strong pattern detected',
+  // CHARTDATA COLUMN IDENTIFIERS, read by key (Q3, 2026-09-03). The `{}` is the
+  // scanner's own placeholder for the interpolated scenario name, so these are
+  // the template forms of 'Inflow ARPU (Adjusted)', 'Base Revenue (Adjusted)'
+  // and their siblings. They are the pinned chartData keys the chart export
+  // writes wholesale — translating one would rename an export column and break
+  // the very compatibility the pinned order exists to hold. Same family, and
+  // the same reason, as the export column identifiers below.
+  //
+  // They surface here and the identical construction in WhatIfTab does not,
+  // because the TS-literal rule applies to .ts files and that one lives in a
+  // .tsx. The exemption is the honest fix; the asymmetry is a scanner finding,
+  // recorded in the report rather than papered over here.
+  '{} ARPU (Adjusted)', '{} Revenue (Adjusted)',
   // TERMBASE §1 tight compounds built on a never-translate term
   'ARPU Column', 'Inflow Identifier', 'Outflow Identifier', 'Base Identifier', 'Retention Identifier',
   'ARPU Uplift %', 'Inflow Uplift %', 'Retention Uplift %', 'Inflow Lag (Months)', 'Retention Lag (Months)',
