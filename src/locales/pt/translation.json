@@ -852,5 +852,7 @@
   "whatif_campaign_decline_heterogeneous": "Os eventos desta campanha visam cenários ou coortes diferentes — edite as linhas individualmente",
   "whatif_campaign_decline_arpu_multimonth": "As campanhas de ARPU de vários meses não podem ser editadas como uma distribuição — edite as linhas individualmente",
   "whatif_campaign_decline_span": "A campanha abrange mais de 24 meses — edite as linhas individualmente",
-  "whatif_campaign_decline_invalid_month": "A campanha tem um mês inválido — edite as linhas individualmente"
+  "whatif_campaign_decline_invalid_month": "A campanha tem um mês inválido — edite as linhas individualmente",
+  "whatif_event_not_in_current_view": "Este evento não se aplica na vista atual.",
+  "whatif_event_no_coverage_in_view": "Este evento aplica-se à vista atual, mas a vista não contém nada que ele vise, pelo que não altera nada aqui."
 }

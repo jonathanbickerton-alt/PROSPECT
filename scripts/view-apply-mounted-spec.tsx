@@ -143,7 +143,7 @@ async function main() {
   } as any);
 
   /** Mount the card AT A VIEW and read the two KPI testids back. */
-  const readAt = async (viewKey: string, marketEvents: any[]) => {
+  const readAt = async (viewKey: string, marketEvents: any[], expandId?: string) => {
     const resolved = resolveForecast(viewKey);
     const host = document.getElementById('root')!;
     host.replaceChildren();
@@ -167,10 +167,26 @@ async function main() {
     const q = (id: string) => container.querySelector('[data-testid="' + id + '"]') as any;
     const deltaEl = q('impact-base-delta');
     const countEl = q('impact-event-count');
+    // OPEN THE DERIVATION EXPANDER, if asked for. The empty state is the whole
+    // point of the ghost case, and it renders only for an expanded percentage
+    // row — so a spec that never clicks the chevron cannot see the copy it is
+    // meant to be pinning.
+    let expanderText: string | null = null;
+    if (expandId) {
+      const btn = q('event-expand-' + expandId);
+      if (btn) {
+        await (act as any)(async () => { btn.dispatchEvent(
+          new dom.window.MouseEvent('click', { bubbles: true })); });
+        const empty = q('event-expander-empty');
+        expanderText = empty ? String(empty.textContent).trim() : null;
+      }
+    }
     const out = {
       rendered: !!deltaEl,
       delta: deltaEl ? Number(String(deltaEl.textContent).replace(/[+,\s]/g, '')) : NaN,
       count: countEl ? String(countEl.textContent).trim() : null,
+      expanderFound: expandId ? !!q('event-expand-' + expandId) : null,
+      expanderText,
     };
     await (act as any)(async () => { root.unmount(); });
     return out;
@@ -233,6 +249,78 @@ async function main() {
     + '   Corp ' + corpAbs.delta + '   disjoint ' + disjAbs.delta);
   console.log('  percentage leaf ' + leafPct.delta + '   All ' + allPct.delta
     + '   disjoint ' + disjPct.delta);
+
+  // ── 4. THE GHOST: in scope at the view, landing on none of it ───────────
+  //
+  // Its product exists in no row and no leaf, so at the All view it PASSES the
+  // scope predicate (the view is All, which meets everything) while its
+  // coverage is a measured 0: the view is populated on inflow, and none of
+  // that population is inside the event's target.
+  //
+  // That 0 is a real ratio, not a stand-in for "cannot tell". eventCoverage
+  // and forecastCoverage both reserve separate behaviour for the empty cases —
+  // the first falls back to 1 where nothing is populated, the second returns
+  // null — so this fixture exercises the one path where 0 genuinely means
+  // "lands on nothing here".
+  const GHOST = { ...EVENT_ABS, id: 'evt-ghost', amountType: 'percentage',
+                  subscriberVolume: 10, product: 'Satellite' } as any;
+
+  check('ghost: it is IN SCOPE at All — otherwise this tests the wrong thing',
+    fc.eventScopeMatchesView(
+      { segment: GHOST.segment, product: GHOST.product, productL2: GHOST.productL2,
+        channelL1: GHOST.channel, channelL2: GHOST.channelL2,
+        tariffL1: GHOST.tariffL1, tariffL2: GHOST.tariffL2 },
+      { segment: 'All', productL1: 'All', productL2: 'All', channelL1: 'All',
+        channelL2: 'All', tariffL1: 'All', tariffL2: 'All' }),
+    'a ghost that fails the predicate would be excluded for the OTHER reason');
+
+  const ghostAll = await readAt(KEY_ALL, [GHOST], GHOST.id);
+  const ghostLeaf = await readAt(keyA, [GHOST], GHOST.id);
+
+  check('ghost: the KPI does not move at All', Math.abs(ghostAll.delta) < 0.005, 'delta ' + ghostAll.delta);
+  check('ghost: and the caption EXCLUDES it at All', ghostAll.count === '0', String(ghostAll.count));
+  check('ghost: the KPI does not move at the leaf either', Math.abs(ghostLeaf.delta) < 0.005, 'delta ' + ghostLeaf.delta);
+  check('ghost: and the caption excludes it at the leaf', ghostLeaf.count === '0', String(ghostLeaf.count));
+
+  // The expander must EXIST to be read. Without this, a missing chevron would
+  // leave expanderText null and every copy check below would pass vacuously.
+  check('ghost: the derivation expander is present to open', ghostAll.expanderFound === true,
+    'no chevron — the copy checks below would be vacuous');
+  check('ghost: the expander shows the ZERO-COVERAGE copy, not the out-of-scope one',
+    ghostAll.expanderText === i18n.t('whatif_event_no_coverage_in_view'),
+    JSON.stringify(ghostAll.expanderText));
+
+  // A REAL out-of-scope event still gets the OTHER sentence. Without this the
+  // pair could both be satisfied by always showing the zero-coverage string.
+  const OUTSIDE = { ...EVENT_PCT, id: 'evt-outside', segment: 'Consumer' } as any;
+  const outsideAt = await readAt(keyA, [OUTSIDE], OUTSIDE.id);
+  check('out-of-scope: the expander shows the NOT-IN-VIEW copy instead',
+    outsideAt.expanderText === i18n.t('whatif_event_not_in_current_view'),
+    JSON.stringify(outsideAt.expanderText));
+  check('the two sentences are DIFFERENT strings',
+    i18n.t('whatif_event_no_coverage_in_view') !== i18n.t('whatif_event_not_in_current_view'),
+    'one sentence cannot carry two reasons');
+
+  // ── 5. THE COPY IS KEYED, so it is not English in a German session ───────
+  // spec:i18n-parity owns bundle parity; this asserts the RENDERED string
+  // changes with the language, which is exactly what a hardcoded literal
+  // cannot do and what this session's D2-04 change exists to fix.
+  const enText = i18n.t('whatif_event_no_coverage_in_view');
+  await (i18n as any).changeLanguage('de');
+  const deText = i18n.t('whatif_event_no_coverage_in_view');
+  await (i18n as any).changeLanguage('it');
+  const itText = i18n.t('whatif_event_no_coverage_in_view');
+  await (i18n as any).changeLanguage('en');
+  check('copy: de differs from en', !!deText && deText !== enText, deText);
+  check('copy: it differs from en', !!itText && itText !== enText, itText);
+  check('copy: neither is the key name echoed back',
+    deText !== 'whatif_event_no_coverage_in_view' && itText !== 'whatif_event_no_coverage_in_view',
+    'i18next echoes the key when a bundle is missing, which would satisfy a bare != test');
+
+  console.log('\n  ghost      All delta ' + ghostAll.delta + ' count ' + ghostAll.count
+    + '   leaf delta ' + ghostLeaf.delta + ' count ' + ghostLeaf.count);
+  console.log('  ghost copy en/de/it: '
+    + JSON.stringify([enText.slice(0, 26), deText.slice(0, 26), itText.slice(0, 26)]));
 
   report();
 }

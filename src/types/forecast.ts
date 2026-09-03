@@ -542,6 +542,17 @@ export interface AdjustedForecastMonth {
   scenarioArpu?: Record<ScenarioKey, ScenarioArpuResult>;
   /** IDs of market events that contributed to the uplift for this month */
   appliedEventIds: string[];
+  /**
+   * Events in scope at this view that landed on none of it (coverage 0).
+   *
+   * Absence from BOTH lists means the event was never in scope here at all.
+   * That is the distinction the row expander needs: "irrelevant to this view"
+   * and "relevant to this view and empty in it" are different facts about the
+   * forecast, and one sentence cannot honestly carry both.
+   *
+   * Optional so a workbook written before 2026-09-03 still restores.
+   */
+  zeroCoverageEventIds?: string[];
   /** The uplifted values BEFORE the zero floor. Equal to `uplifted` unless an
    *  event drove a metric negative — which is what makes a floor breach
    *  reportable rather than silently clipped. */

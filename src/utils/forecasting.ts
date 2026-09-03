@@ -3034,6 +3034,17 @@ export interface MonthApplication {
   /** Before the zero floor, so a breach can be shown rather than just clipped. */
   preFloor: MonthMetrics;
   appliedIds: string[];
+  /**
+   * Events that MATCHED this view but landed on none of it — coverage 0.
+   *
+   * Kept separate from `appliedIds` rather than folded into it, because the
+   * two answer different questions and a surface needs both. "Did this event
+   * move anything here" is appliedIds; "is this event irrelevant to this view,
+   * or relevant and empty" is the difference between this list and absence
+   * from both. A display that cannot tell those apart has to guess, and the
+   * copy it shows is the guess made visible.
+   */
+  zeroCoverageIds: string[];
   /** Metrics the floor actually caught, and the events that were applied when
    *  it did — enough to attach a warning to this cohort-month. */
   flooredMetrics: Array<'inflow' | 'outflow' | 'retention' | 'arpu'>;
@@ -3085,8 +3096,34 @@ export function applyEventsToMonth(
 
   const isPct = (e: EventApplication) => e.amountType === 'percentage';
 
+  /**
+   * COVERAGE 0 IS NOT "APPLIED" (Jon, 2026-09-03).
+   *
+   * An event reaches here only if it already passed the shared scope
+   * predicate, so it is IN SCOPE for this view. Coverage is what happens
+   * next: the fraction of the view that lies inside the event's target. Zero
+   * means the view holds none of what the event aims at — it moves nothing
+   * here, and recording it as applied made the caption assert an effect the
+   * numbers beside it denied.
+   *
+   * APPLICABILITY IS NOT RE-DECIDED HERE. This is the weighting RESULT gating
+   * the record, after the engine has computed it; the predicate is untouched
+   * and this function still never sees a view's dimensions.
+   *
+   * ONLY AN EXACT ZERO, and only for percentages. `coverage` is 1 for absolute
+   * events by construction at the call site, so they are unaffected; and a
+   * coverage that is merely small is a real, tiny effect, not an absence.
+   * Note that `eventCoverage` and `forecastCoverage` reserve their own
+   * meanings for the empty cases — the former falls back to 1 rather than 0
+   * where nothing is populated, the latter returns null — so a 0 arriving
+   * here is a measured ratio, never a stand-in for "could not tell".
+   */
+  const zeroCoverageIds: string[] = [];
+  const coversNothing = (e: EventApplication) => isPct(e) && (e.coverage ?? 1) === 0;
+
   // ── Phase 1: absolute events ───────────────────────────────────────────
   events.forEach(e => {
+    if (coversNothing(e)) { zeroCoverageIds.push(e.id); return; }
     appliedIds.push(e.id);
     if (isPct(e)) return;
     const vol = e.sharedVolume;
@@ -3118,6 +3155,9 @@ export function applyEventsToMonth(
   const derivations: PercentageDerivation[] = [];
   events.forEach(e => {
     if (!isPct(e)) return;
+    // NO DERIVATION ROW EITHER. A row of zeroes is arithmetic that did not
+    // happen; the expander's empty state is what carries the reason.
+    if (coversNothing(e)) return;
     const basisKind = e.percentageBasis === 'adjusted' ? 'adjusted' as const : 'baseline' as const;
     const basis = basisKind === 'adjusted' ? afterAbsolute : baseline;
     const pct = (e.percentAmount ?? 0) / 100;
@@ -3163,6 +3203,7 @@ export function applyEventsToMonth(
     },
     preFloor,
     appliedIds,
+    zeroCoverageIds,
     flooredMetrics,
     derivations,
   };

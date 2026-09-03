@@ -464,7 +464,6 @@ const I18N_PHASE2 = new Set<string>([
   "WhatIfTab.tsx::Hide derivation",
   "WhatIfTab.tsx::Show how this was applied",
   "WhatIfTab.tsx::How this was applied",
-  "WhatIfTab.tsx::This event does not apply in the current view.",
   "WhatIfTab.tsx::In scope",
   "WhatIfTab.tsx::Applied = basis x % x in-scope share. \"In scope\" is how much of this view lies inside the",
 ]);

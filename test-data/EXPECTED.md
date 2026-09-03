@@ -7065,6 +7065,41 @@ populated leaf is COMMUNICATED and applied nowhere, consistently at every view;
 and the applied-count caption counts events applied AT THE VIEW (built at
 `bd2cf63`).
 
+#### AN EVENT MATCHING NO POPULATED LEAF IS APPLIED NOWHERE — ABSOLUTE TOO (Jon, 2026-09-03)
+
+**The 2026-09-02 rule applies to absolute events as well.** An event whose
+target matches no populated leaf is applied nowhere, at every view, WHATEVER
+ITS AMOUNT TYPE. There is no absolute exemption.
+
+**`eventProRataShare` adopts the contract the coverage functions already have:**
+
+- `null` — NEVER 0 — when the denominator cannot answer;
+- a real `0` when the target matches no populated leaf.
+
+The "don't silently drop it" fallback to 1 survives **only for the
+cannot-answer case**.
+
+**WHY THE DISTINCTION IS THE WHOLE POINT.** Today one predicate,
+`targetIdx.length === 0`, fires on both situations and answers 1 for each: no
+leaves exist at all (cannot answer), and leaves exist but none is inside the
+event's target (a measured nothing). Those are the two meanings of null that
+this project has separated everywhere else — `forecastCoverage` returns null
+rather than 0 for exactly this reason, and `eventCoverage` reserves its own
+fallback for the unpopulated case. `eventProRataShare` was the site that still
+conflated them.
+
+**The observable consequence, measured 2026-09-03:** for the same ghost event —
+a target matching no populated leaf, viewed at an aggregate that contains it —
+`eventCoverage` returns 0 and `eventProRataShare` returns 1. A percentage ghost
+therefore moves nothing while an absolute ghost applies at FULL magnitude, and
+the caption, the delta and the export disagree about whether anything happened.
+
+**NOT IMPLEMENTED 2026-09-03 (Jon: "not this session").** The session that
+found it recorded the fallback, its two cases, the concrete condition a real
+absolute event needs to reach it, and a count of fixture and spec events that
+hit it — see `reports/2026-09-03-0857-zero-coverage-applied.md`, section
+"eventProRataShare fallback". That section is the brief for the follow-up.
+
 #### LOCALE PARITY — de and it are CORE UAT LANGUAGES (Jon, 2026-09-02)
 
 **German and Italian are the core UAT languages.** They are not a

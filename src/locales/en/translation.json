@@ -852,5 +852,7 @@
   "whatif_campaign_decline_heterogeneous": "Events in this campaign target different scenarios or cohorts — edit rows individually",
   "whatif_campaign_decline_arpu_multimonth": "Multi-month ARPU campaigns cannot be edited as a spread — edit rows individually",
   "whatif_campaign_decline_span": "Campaign spans more than 24 months — edit rows individually",
-  "whatif_campaign_decline_invalid_month": "Campaign has an invalid month — edit rows individually"
+  "whatif_campaign_decline_invalid_month": "Campaign has an invalid month — edit rows individually",
+  "whatif_event_not_in_current_view": "This event does not apply in the current view.",
+  "whatif_event_no_coverage_in_view": "This event is in scope for the current view, but the view contains nothing it targets — so it changes nothing here."
 }

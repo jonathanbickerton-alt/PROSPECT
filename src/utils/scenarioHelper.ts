@@ -254,6 +254,7 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       // floor warnings existing here. They do not. An earlier version of this
       // comment claimed they did.
       appliedEventIds: applied.appliedIds,
+      zeroCoverageEventIds: applied.zeroCoverageIds,
     });
   });
 

@@ -1051,6 +1051,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
         derivations: applied.derivations,
         flooredMetrics: applied.flooredMetrics,
         appliedEventIds: applied.appliedIds,
+        zeroCoverageEventIds: applied.zeroCoverageIds,
       });
     });
 
@@ -5430,6 +5431,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 <button
                                   type="button"
                                   onClick={(e) => { e.stopPropagation(); setExpandedEventId(expandedEventId === event.id ? null : event.id); }}
+                                  data-testid={`event-expand-${event.id}`}
                                   className="align-middle mr-1 text-slate-400 hover:text-slate-600 transition-colors"
                                   title={expandedEventId === event.id ? 'Hide derivation' : 'Show how this was applied'}
                                   aria-expanded={expandedEventId === event.id}
@@ -5550,9 +5552,25 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                       .filter(d => d.eventId === event.id)
                                       .map(d => ({ month: m.month, ...d })));
                                   if (!rowsFor.length) {
+                                    // TWO REASONS, TWO SENTENCES. An empty
+                                    // derivation list used to mean one thing;
+                                    // since coverage 0 stopped counting as
+                                    // applied it means either "not in scope
+                                    // here" or "in scope here and the view
+                                    // holds nothing it targets". The engine
+                                    // says which — this does not re-derive it,
+                                    // and in particular does not re-ask the
+                                    // scope predicate, which would put a
+                                    // second answer to the same question in
+                                    // the codebase.
+                                    const coversNothingHere = adjustedMonths
+                                      .some(m => (m.zeroCoverageEventIds ?? []).includes(event.id));
                                     return (
-                                      <div className="text-xs text-slate-400 italic">
-                                        This event does not apply in the current view.
+                                      <div className="text-xs text-slate-400 italic"
+                                           data-testid="event-expander-empty">
+                                        {coversNothingHere
+                                          ? t('whatif_event_no_coverage_in_view')
+                                          : t('whatif_event_not_in_current_view')}
                                       </div>
                                     );
                                   }

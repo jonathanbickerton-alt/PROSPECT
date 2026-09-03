@@ -1573,6 +1573,26 @@ const TRAPS: Trap[] = [
       "        && (e.product === 'All' || !vprodL1 || e.product === vprodL1)\n" +
       "        && eventScopeMatchesView(\n" +
       "          { segment: e.segment, product: e.product, productL2: e.productL2,") },
+
+  // ---------------------------------------------------------------------
+  // 129 — a zero-coverage event counted as applied again.
+  //
+  // An event that passes the scope predicate but whose coverage at the view
+  // is 0 moves nothing there. Recording it in appliedEventIds made the KPI
+  // caption say \"1 event applied\" beside a Base delta of +0.00 — a caption
+  // asserting an effect the number next to it denied, which is the same
+  // failure trap 126 was written for, one layer further in.
+  //
+  // The trap keeps the zeroCoverageIds record and restores only the
+  // unconditional push, so exactly ONE thing is wrong: the count. That is
+  // deliberate — a trap that breaks three surfaces at once cannot tell you
+  // which of them the spec is actually pinning.
+  { id: '129 a zero-coverage event is counted as applied',
+    why: 'the caption then asserts an effect the delta beside it denies',
+    file: ENGINE, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      "    if (coversNothing(e)) { zeroCoverageIds.push(e.id); return; }",
+      "    if (coversNothing(e)) { zeroCoverageIds.push(e.id); }") },
 ];
 
 const specFails = (spec: string = SPEC): boolean => {
