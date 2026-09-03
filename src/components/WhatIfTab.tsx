@@ -957,8 +957,23 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
         leavesByMetric[(e.scenario as LeafMetric) in leavesByMetric
           ? (e.scenario as LeafMetric) : 'Inflow'],
       );
-      shareCache.set(e.id, v);
-      return v;
+      // NULL IS RESOLVED HERE, AND THE COMPILER IS NOT WATCHING.
+      //
+      // `strictNullChecks` is off in this project's tsconfig, so a forgotten
+      // null does not fail the build — it flows into
+      // `e.subscriberVolume * eventShare(e)`, where `1000 * null` is 0. That
+      // would silently discard the event, which is the precise failure the
+      // fallback below exists to prevent. Hence an explicit test, not `?? 1`
+      // buried in an expression, and a spec check that pins it.
+      //
+      // THE FALLBACK NOW COVERS ONE CASE: no leaf exists for this metric at
+      // all, so there is no denominator to divide by. A cohort with no history
+      // for the metric the event moves still takes the event in full — which
+      // is what the legacy all-or-nothing behaviour was written to protect. A
+      // measured zero no longer arrives here; it arrives as 0.
+      const resolved = v === null ? 1 : v;
+      shareCache.set(e.id, resolved);
+      return resolved;
     };
 
     baseForecast.months.forEach(month => {
@@ -1008,6 +1023,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
           scenario: e.scenario,
           // VOLUME events take only this view's pro-rata share of the event.
           sharedVolume: e.subscriberVolume * eventShare(e),
+          viewShare: eventShare(e),
           arpuDelta: e.arpu,
           amountType: e.amountType,
           percentageBasis: e.percentageBasis,

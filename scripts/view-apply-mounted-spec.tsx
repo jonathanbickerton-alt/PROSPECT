@@ -123,8 +123,8 @@ async function main() {
 
   const EVENT_PCT = { ...EVENT_ABS, id: 'evt-pct', amountType: 'percentage', subscriberVolume: 10 } as any;
 
-  const propsFor = (marketEvents: any[]) => ({
-    data,
+  const propsFor = (marketEvents: any[], dataOverride?: any[]) => ({
+    data: dataOverride ?? data,
     wiDateCol: C.date, wiSegmentCol: C.seg, wiProductCol: C.prod, wiProductL2Col: C.prodL2,
     wiChannelCol: C.chan, wiChannelL2Col: C.chanL2, wiMetricCol: C.metric,
     wiInflowVal: 'Inflow', wiOutflowVal: 'Outflow', wiRetentionVal: 'Retention',
@@ -143,7 +143,8 @@ async function main() {
   } as any);
 
   /** Mount the card AT A VIEW and read the two KPI testids back. */
-  const readAt = async (viewKey: string, marketEvents: any[], expandId?: string) => {
+  const readAt = async (viewKey: string, marketEvents: any[], expandId?: string,
+                        dataOverride?: any[]) => {
     const resolved = resolveForecast(viewKey);
     const host = document.getElementById('root')!;
     host.replaceChildren();
@@ -152,7 +153,7 @@ async function main() {
     const root = createRoot(container);
     const Harness = () => {
       const [newEvent, setNewEvent] = (React as any).useState({});
-      return React.createElement(M, { ...propsFor(marketEvents), newEvent, setNewEvent });
+      return React.createElement(M, { ...propsFor(marketEvents, dataOverride), newEvent, setNewEvent });
     };
     await (act as any)(async () => {
       root.render(React.createElement(ForecastProvider as any, {
@@ -321,6 +322,101 @@ async function main() {
     + '   leaf delta ' + ghostLeaf.delta + ' count ' + ghostLeaf.count);
   console.log('  ghost copy en/de/it: '
     + JSON.stringify([enText.slice(0, 26), deText.slice(0, 26), itText.slice(0, 26)]));
+
+  // ── 6. THE ABSOLUTE GHOST — the case the suite was silent on ────────────
+  //
+  // 0857 measured the blast radius of this change across all 55 specs and
+  // found it zero, which cuts both ways: nothing existing would catch the
+  // change going in wrong, so the fixture has to come with it.
+  //
+  // Same ghost scope as above, absolute this time. Absolute events are
+  // weighted by eventProRataShare, not by coverage, and its empty-target
+  // branch used to answer 1 for two different questions — "no leaf exists for
+  // this metric" (cannot answer) and "leaves exist, none is in the target"
+  // (a measured nothing). This asserts the second now answers 0 while the
+  // first still takes the legacy fallback.
+  const ABS_GHOST = { ...EVENT_ABS, id: 'evt-absghost', product: 'Satellite' } as any;
+
+  const scopeOf = (e: any) => ({
+    segment: e.segment, product: e.product, productL2: e.productL2,
+    channel: e.channel, channelL2: e.channelL2,
+    tariffL1: e.tariffL1, tariffL2: e.tariffL2,
+  });
+
+  check('abs-ghost: it PASSES the scope predicate at All',
+    fc.eventScopeMatchesView(
+      { segment: ABS_GHOST.segment, product: ABS_GHOST.product, productL2: ABS_GHOST.productL2,
+        channelL1: ABS_GHOST.channel, channelL2: ABS_GHOST.channelL2,
+        tariffL1: ABS_GHOST.tariffL1, tariffL2: ABS_GHOST.tariffL2 },
+      { segment: 'All', productL1: 'All', productL2: 'All', channelL1: 'All',
+        channelL2: 'All', tariffL1: 'All', tariffL2: 'All' }),
+    'a ghost that fails the predicate is excluded for the OTHER reason and tests nothing');
+
+  // The leaf set the engine builds for Inflow from the loaded rows: two leaves,
+  // neither inside the ghost's target. This is the MEASURED-ZERO world.
+  const inflowLeaves = [
+    { segment: 'Corporate', product: 'Mobile Voice', productL2: 'All', channel: 'All',
+      channelL2: 'All', tariffL1: 'All', tariffL2: 'All', volume: 300, hasMetricData: true },
+    { segment: 'Corporate', product: 'Broadband', productL2: 'All', channel: 'All',
+      channelL2: 'All', tariffL1: 'All', tariffL2: 'All', volume: 700, hasMetricData: true },
+  ];
+  const viewScopeOf = (seg: string, prod: string) => ({
+    segment: seg, product: prod, productL2: 'All', channel: 'All',
+    channelL2: 'All', tariffL1: 'All', tariffL2: 'All',
+  });
+
+  const shareAll  = fc.eventProRataShare(scopeOf(ABS_GHOST), viewScopeOf('All', 'All'), inflowLeaves);
+  const shareCorp = fc.eventProRataShare(scopeOf(ABS_GHOST), viewScopeOf('Corporate', 'All'), inflowLeaves);
+  const shareLeaf = fc.eventProRataShare(scopeOf(ABS_GHOST), viewScopeOf('Corporate', 'Mobile Voice'), inflowLeaves);
+  // CANNOT ANSWER: no leaf exists for this metric at all. The legacy
+  // all-or-nothing fallback survives here and ONLY here.
+  const shareNoLeaves = fc.eventProRataShare(scopeOf(ABS_GHOST), viewScopeOf('All', 'All'), []);
+
+  check('abs-ghost: share at All is a measured 0, not the legacy 1',
+    shareAll === 0, String(shareAll));
+  check('abs-ghost: share at the intermediate Corporate/All is 0',
+    shareCorp === 0, String(shareCorp));
+  check('abs-ghost: share at a real leaf is 0',
+    shareLeaf === 0, String(shareLeaf));
+  // TWO LAYERS, TWO ASSERTIONS. The FUNCTION answers null — there is no
+  // denominator, and null is the contract forecastCoverage already keeps. The
+  // CALL SITE resolves that null to the legacy 1. Asserting only the first
+  // would let a call site quietly drop the fallback; asserting only the second
+  // would let the function answer 0 and look identical from outside until
+  // something multiplied by it.
+  check('cannot-answer: the FUNCTION answers null, not 0 and not 1',
+    shareNoLeaves === null, String(shareNoLeaves));
+
+  // THE CANNOT-ANSWER WORLD, MOUNTED. Rows exist, but none is Inflow, so the
+  // Inflow leaf set the engine builds is EMPTY — no denominator. An absolute
+  // Inflow event on a real leaf must still apply IN FULL: that is what the
+  // legacy fallback was written to protect and the one case it still covers.
+  // If this goes red, the split took the fallback from the case that needed it.
+  const outflowOnlyRows = data.map(r => ({ ...r, [C.metric]: 'Outflow' }));
+  const cannotAnswer = await readAt(KEY_ALL, [EVENT_ABS], undefined, outflowOnlyRows);
+  check('cannot-answer: mounted, an absolute event still applies IN FULL',
+    Math.abs(cannotAnswer.delta - 1000) < 0.005, 'delta ' + cannotAnswer.delta);
+  check('cannot-answer: and it is still counted as applied',
+    cannotAnswer.count === '1', String(cannotAnswer.count));
+
+  const absGhostAll  = await readAt(KEY_ALL, [ABS_GHOST], undefined);
+  const absGhostCorp = await readAt(KEY_CORP, [ABS_GHOST], undefined);
+  const absGhostLeaf = await readAt(keyA, [ABS_GHOST], ABS_GHOST.id);
+
+  check('abs-ghost: the KPI does not move at All', Math.abs(absGhostAll.delta) < 0.005,
+    'delta ' + absGhostAll.delta);
+  check('abs-ghost: nor at the intermediate view', Math.abs(absGhostCorp.delta) < 0.005,
+    'delta ' + absGhostCorp.delta);
+  check('abs-ghost: nor at a real leaf', Math.abs(absGhostLeaf.delta) < 0.005,
+    'delta ' + absGhostLeaf.delta);
+  check('abs-ghost: the caption EXCLUDES it at All', absGhostAll.count === '0', String(absGhostAll.count));
+  check('abs-ghost: and at the leaf', absGhostLeaf.count === '0', String(absGhostLeaf.count));
+
+  console.log('\n  ABS GHOST share  All ' + shareAll + '   Corp/All ' + shareCorp
+    + '   leaf ' + shareLeaf + '   (no-leaves cannot-answer ' + shareNoLeaves + ')');
+  console.log('  ABS GHOST delta  All ' + absGhostAll.delta + ' count ' + absGhostAll.count
+    + '   Corp/All ' + absGhostCorp.delta + ' count ' + absGhostCorp.count
+    + '   leaf ' + absGhostLeaf.delta + ' count ' + absGhostLeaf.count);
 
   report();
 }

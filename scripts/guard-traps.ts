@@ -1593,6 +1593,33 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "    if (coversNothing(e)) { zeroCoverageIds.push(e.id); return; }",
       "    if (coversNothing(e)) { zeroCoverageIds.push(e.id); }") },
+
+  // ---------------------------------------------------------------------
+  // 130 — eventProRataShare answers the two questions with one number again.
+  //
+  // The empty-target branch used to return 1 whether the leaf set was EMPTY
+  // (no denominator — cannot answer) or merely held nothing inside the
+  // event's target (a measured zero). An absolute event aimed at a slice the
+  // view does not contain therefore applied at FULL magnitude, while the
+  // percentage path returned 0 for the same event — the two weighting
+  // functions disagreeing about the same ghost.
+  //
+  // The trap restores the all-or-nothing return AHEAD of the null branch, so
+  // the null case never runs and both worlds answer 1 again. Caught only by
+  // the mounted spec, which is the fixture this change had to bring with it:
+  // 0857 measured the blast radius across all 55 specs as ZERO, meaning
+  // nothing that existed would have caught it going in wrong.
+  { id: '130 eventProRataShare conflates cannot-answer with measured zero',
+    why: 'an absolute event applies in full to a view holding none of its target',
+    file: ENGINE, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      // The bare `if (leaves.length === 0) {` appears three times in this
+      // file; the NO DENOMINATOR comment is what makes the anchor unique. An
+      // anchor that relies on being the first match plants somewhere else the
+      // day a line is added above it — trap 13's lesson.
+      "  if (leaves.length === 0) {\n    // NO DENOMINATOR.",
+      "  if (targetIdx.length === 0) { return leafWithinScope(event, cohort) || leafWithinScope(cohort, event) ? 1 : 0; }\n" +
+      "  if (leaves.length === 0) {\n    // NO DENOMINATOR.") },
 ];
 
 const specFails = (spec: string = SPEC): boolean => {

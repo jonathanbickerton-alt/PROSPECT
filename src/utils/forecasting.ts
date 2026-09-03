@@ -2840,7 +2840,7 @@ export function eventProRataShare(
   event: ProRataScope,
   cohort: ProRataScope,
   leaves: ProRataLeaf[],
-): number {
+): number | null {
   // Leaves inside the event's target scope, and the subset also inside the cohort.
   const targetIdx: number[] = [];
   const cohortIdx = new Set<number>();
@@ -2850,12 +2850,28 @@ export function eventProRataShare(
     if (leafWithinScope(cohort, leaf)) cohortIdx.add(i);
   });
 
-  if (targetIdx.length === 0) {
-    // No populated leaf under the event's target. Fall back to the legacy
-    // all-or-nothing behaviour so the event is not silently dropped: it applies
-    // in full to any cohort that the event's own dimensions match.
-    return leafWithinScope(event, cohort) || leafWithinScope(cohort, event) ? 1 : 0;
+  // CANNOT ANSWER AND MEASURED ZERO ARE TWO ANSWERS (Jon, 2026-09-03).
+  //
+  // One predicate — `targetIdx.length === 0` — used to be true in two
+  // different worlds and returned 1 for both. It is true when NO leaf exists
+  // for this metric at all, and it is true when leaves exist and none of them
+  // is inside the event's target. The first is a missing denominator; the
+  // second is a measured nothing, and answering 1 there applied an event in
+  // full to a view that holds none of what it aims at.
+  //
+  // This is the contract `forecastCoverage` already keeps and whose EXPECTED.md
+  // entry says why: answering 0 where the question cannot be answered would
+  // silently discard the event. The inverse is just as bad and is what this
+  // function did — answering 1 where the answer is genuinely zero.
+  if (leaves.length === 0) {
+    // NO DENOMINATOR. Nothing is known about this metric anywhere, so no ratio
+    // exists to take. Callers resolve this to the legacy all-or-nothing 1 —
+    // see the call sites — which is the ONE case that fallback now covers: a
+    // cohort with no history for the event's metric, which is exactly what it
+    // was written to protect.
+    return null;
   }
+  if (targetIdx.length === 0) return 0;
   if (cohortIdx.size === 0) return 0;
 
   // distributeProRata owns the split (including the zero-volume even fallback),
@@ -3000,6 +3016,17 @@ export interface EventApplication {
   /** Pro-rata'd absolute subscriber volume. Outflow keeps its negative
    *  storage convention. Unused when amountType is 'percentage'. */
   sharedVolume: number;
+  /**
+   * The view's share of this event's target — the fraction `sharedVolume` was
+   * already multiplied by. Carried SEPARATELY because `sharedVolume` cannot
+   * answer the question the record needs: 0 there means either "the view holds
+   * none of the target" or "the user asked for zero subscribers", and those
+   * are different events. An event of magnitude zero IS applied; an event
+   * whose target is absent from the view is not.
+   *
+   * Optional, defaulting to 1, so a caller that does not pro-rate is unchanged.
+   */
+  viewShare?: number;
   /** ARPU delta. A rate: never pro-rated, never a percentage. */
   arpuDelta: number;
   amountType?: 'absolute' | 'percentage';
@@ -3119,7 +3146,14 @@ export function applyEventsToMonth(
    * here is a measured ratio, never a stand-in for "could not tell".
    */
   const zeroCoverageIds: string[] = [];
-  const coversNothing = (e: EventApplication) => isPct(e) && (e.coverage ?? 1) === 0;
+  //
+  // EXTENDED TO ABSOLUTE EVENTS 2026-09-03. The two amount types are weighted
+  // by different functions — percentages by coverage, absolutes by
+  // eventProRataShare — so the gate reads whichever one applies. It stays ONE
+  // gate: a second would be a second answer to "did this event land here",
+  // and this file has already paid for that mistake once.
+  const coversNothing = (e: EventApplication) =>
+    isPct(e) ? (e.coverage ?? 1) === 0 : (e.viewShare ?? 1) === 0;
 
   // ── Phase 1: absolute events ───────────────────────────────────────────
   events.forEach(e => {

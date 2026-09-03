@@ -266,6 +266,16 @@ const baseline = sc(run(), 1);
 // export's column order. "Additive only" is therefore a literal, checkable
 // claim: the original thirteen keys must still be the first thirteen, in the
 // same order, and everything new must follow them.
+//
+// COMPATIBILITY, from `051a9b3` onward: `hasEvent` here and the
+// `Applied_Event_IDs` column in the session export both EXCLUDE zero-coverage
+// events — an event in scope at the view that lands on none of it. The columns
+// did not move and were not renamed, so a diff of two exports shows no
+// structural change; what changed is which events they name. Since the
+// 2026-09-03 contract change (EXPECTED.md, "AN EVENT MATCHING NO POPULATED
+// LEAF IS APPLIED NOWHERE — ABSOLUTE TOO") the exclusion covers absolute
+// events as well as percentages.
+
 {
   const r = run();
   const row: any = r.chartData[1];

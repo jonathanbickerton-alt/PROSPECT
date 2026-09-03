@@ -106,7 +106,14 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
     const id = String(e.ID ?? e.Name ?? '') + '|' + String(e.Start_Month ?? e.Date ?? e.Month ?? '') + '|' + String(e.Scenario ?? '');
     const hit = shareCache.get(id);
     if (hit !== undefined) return hit;
-    const v = eventProRataShare(scopeOf(e), viewScope, leavesFor(e));
+    // NULL RESOLVED EXPLICITLY — see the twin at WhatIfTab's eventShare.
+    // eventProRataShare returns null when no leaf exists for the metric (no
+    // denominator); the legacy all-or-nothing 1 covers that one case. It
+    // returns a real 0 when leaves exist and none is inside the event's
+    // target, and that 0 must survive. strictNullChecks is off here, so an
+    // unresolved null would multiply to 0 and silently drop the event.
+    const raw = eventProRataShare(scopeOf(e), viewScope, leavesFor(e));
+    const v = raw === null ? 1 : raw;
     shareCache.set(id, v);
     return v;
   };
@@ -214,6 +221,7 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
         // VOLUME events take only this view's pro-rata share (share is 1 for an
         // aggregate view, so the already-correct aggregate case is unchanged).
         sharedVolume: Number(e.Subscriber_Volume || 0) * eventShare(e),
+        viewShare: eventShare(e),
         arpuDelta: Number(e.ARPU || 0),
         amountType: e.Amount_Type === 'percentage' ? 'percentage' as const : 'absolute' as const,
         percentageBasis: e.Percentage_Basis === 'adjusted' ? 'adjusted' as const : 'baseline' as const,
