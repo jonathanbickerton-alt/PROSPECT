@@ -3,7 +3,31 @@
 ## FOR ADVISOR
 
 ```
-__ADVISOR__
+Generated: 2026-09-03 14:09 +0100 (UTC 2026-09-03 13:09)
+Certifies: 2ecdefb
+Repo: committed 2ecdefb, pushed (origin in sync)
+BASE: 20799e3 — no drift. STOP did not fire. 1247's stale Limits bullet gone.
+ITEM 1 — poolsFor vs p_eventPools, vol/arpu, at BOTH views:
+  absolute +1000@35   1000/35 vs 1000/35   AGREE
+  rebanded  500@40     500/40 vs  500/40   AGREE
+  percentage +10%@35    10/35 vs   20/35   DIFFER
+  The percent is READ AS A SUBSCRIBER COUNT. ARPUs agree everywhere; the
+  divergence is entirely SIZE, so an absolute-only fixture could not see it.
+MY OWN HARNESS ERROR: first run gave 30 at All, not 20 — I omitted
+  viewLeafForecasts. The reproduction rule failing minutes after quoting it.
+AFTER, per scenario, leaf / All (— is absence, not 0): Inflow 10.83 absolute
+  and 1.18 percentage; Retention 15.83 / 13.57; Base 0 at T, 0.94 at T+1.
+  All four verified BY HAND, not merely observed.
+D3-02 RE-POINT TESTED AND DECLINED: trap 131 zeroes Base (0.43 -> 0) and
+  leaves Retention at 15.83 / 13.57 untouched — the hand-rolled block now
+  feeds only Base. Re-pointing would pass with or without the defect, so the
+  assertions STAY on Base. The brief's own condition, measured.
+poolsFor DELETED. EventPool gains eventMonthIdx (enterMonthIdx meant
+  eventMonth+1 for Inflow, eventMonth for the re-banded pool); REQUIRED, so
+  tsc caught a THIRD push site the decision never named — the yield pool.
+GATE CAUGHT AN AGED ANCHOR: trap 115 INCONCLUSIVE at 132/133, re-anchored.
+  Second after trap 13 — traps rot on the code that changes most.
+GATE: 133/133 · 55/55 · lint+build clean. Spec 51 -> 56; traps 133 -> 135.
 ```
 
 ## Base check
@@ -215,10 +239,11 @@ reason recorded at the trap.
 ## Gate
 
 ```
-guard-traps: __/__ PENDING
-full suite:  __/__ PENDING
-lint:        PENDING
-build:       PENDING
+guard-traps: 133/133 caught, no MISSED, no INCONCLUSIVE
+             (132/133 on the first run — trap 115's anchor had aged out)
+full suite:  55/55 spec scripts green
+lint:        tsc --noEmit clean
+build:       clean
 ```
 
 ## Limits of this check
