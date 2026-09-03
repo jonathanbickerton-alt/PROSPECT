@@ -7065,6 +7065,103 @@ populated leaf is COMMUNICATED and applied nowhere, consistently at every view;
 and the applied-count caption counts events applied AT THE VIEW (built at
 `bd2cf63`).
 
+#### RECORDED FROM WORKING AGREEMENT v3.3.1 (audit 2026-09-03) — the never-re-propose list
+
+**Written here because it had no EXPECTED.md heading of its own.** The list has
+been carried in the working-agreement document since v3.3.1 and restated in
+v3.3.2, v3.3.3 and v3.3.5, each time slightly shorter. This file is the terrain;
+a list that lives only in the map is a list that can be deleted by replacing the
+map — which is exactly what happened to Q3/Q4 when v3.3.8 was removed from the
+tree at `079ebc0`.
+
+**v3.3.1, verbatim** (the fullest form; later versions abbreviate it):
+
+> - **Rejected, not to be re-proposed:** top-down disaggregation (the most
+>   re-proposed); independent fitting per level; short-leaf-threshold hybrids;
+>   hasL2+tariff extension; percentage events on Custom Promotion; a judge agent
+>   above the gate; goal-seek-as-recommendation; **summing leaf Base means** (no
+>   leaf Base mean series exists; `month.base` is null on leaves and on
+>   deriveAggregate output).
+
+**Where each item's own reasoning lives, where it has any.** Five of the eight
+have no entry anywhere in this file beyond the line above; three do, and the
+three are the ones a session has since had to reason about:
+
+| item | entry in this file |
+|---|---|
+| top-down disaggregation | NONE beyond this entry |
+| independent fitting per level | NONE beyond this entry |
+| short-leaf-threshold hybrids | NONE beyond this entry |
+| hasL2+tariff extension | "Extending `hasL2` to tariff is still the wrong fix" |
+| percentage events on Custom Promotion | "Percentage on the Promotion card — declined, and the reason is the resolution model, not the interaction count — 2026-08-02" |
+| a judge agent above the gate | NONE beyond this entry |
+| goal-seek-as-recommendation | "SETTLED: constrained mix mode, not input-vs-target" |
+| summing leaf Base means | NONE beyond this entry; the parenthetical above is the whole of the reason |
+
+**"Percentage events on Custom Promotion" is a DECLINED-UNTIL, not a rejection**
+(Jon, 2026-09-03). Its entry holds the reason and the order of work, and Jon has
+since decided to build it. A bare label on a rejection list sends a reader
+looking under the wrong word, which is why this table exists.
+
+#### RECORDED FROM WORKING AGREEMENT v3.3.6 (audit 2026-09-03) — the Δ-column direction-of-effect decision
+
+**Written here because it had no EXPECTED.md heading of its own**, though it is
+cited by name in every §3 since.
+
+**v3.3.6, verbatim:**
+
+> - **Δ-column display (Jon, 2026-08-21, option a):** churn rows render the
+>   outflow Δ as **direction of effect** — negated at the ONE named site
+>   (`outflowDelta`), spec-pinned by literal; storage untouched. Trap 113 proves
+>   the LAYER: sign flip moved to storage leaves the display literal green while
+>   D4's pins go red.
+
+And the rule it sits under, v3.3.6 verbatim:
+
+> **Display of a signed quantity may map to direction-of-effect at ONE named,
+> spec-pinned display site without touching storage** — the Δ-column decision
+> below.
+
+#### RECORDED FROM WORKING AGREEMENT v3.3.8 (audit 2026-09-03) — Q1, Q2, and the three carriers
+
+**Written here because none had an EXPECTED.md heading.** Q3 and Q4 of the same
+six answers were recovered and recorded on 2026-09-03 by report 1247; Q5 is
+covered by the R5 decisions of 2026-08-14 and Q6 by the locale-parity entry.
+Q1 and Q2 had no record in this file at all.
+
+**Jon's six answers of 2026-09-02, Q1 and Q2, v3.3.8 verbatim:**
+
+> - **Q1 held tail → option (c):** per-campaign choice, hold or revert; revert is
+>   the default and today's behaviour. **BUILD QUEUED.**
+> - **Q2 points → confirmed as built.** Closed.
+
+**The three event carriers, v3.3.8 verbatim** (the pipeline ORDER is already
+recorded under "R4 DECISIONS (Jon, 2026-08-14)"; the carriers themselves were
+not):
+
+> - **Event carriers — THREE** (`MarketEvent`, `YieldEvent` — `ibro` typed
+>   `'Inflow' | 'Retention'`, both branched by design …
+
+The v3.3.8 line is truncated in the recovered source at that point; the
+remainder of the sentence is not quoted here rather than reconstructed.
+
+#### UNRECOVERABLE — the nearest-populated-ancestor fallback (audit 2026-09-03)
+
+**No wording found in any version.** Searched: working agreement v3.3.1, v3.3.2,
+v3.3.3, v3.3.5, v3.3.6, v3.3.7, v3.3.8, v3.3.9, v3.3.10, and this file. The
+string "ancestor" appears in no working-agreement version at all, and its two
+occurrences here (roll-up index construction, bulk-run classification) are
+descriptions of how aggregates are enumerated, not a rejected proposal.
+
+It is recorded as UNRECOVERABLE rather than paraphrased. The nearest thing in
+this file is the observation under "Extending `hasL2` to tariff is still the
+wrong fix" that *"the defect is the existence of a filter-scoped fallback, not
+which cohorts reach it"* — which concerns a different mechanism and must not be
+read as the missing entry.
+
+**If this item is real, its wording exists only in the advisor's project
+instructions, outside the repo, and Jon holds the only copy.**
+
 #### A POOL FEEDS THE ARPU OF THE SCENARIO WHOSE COHORT IT DESCRIBES (Jon, 2026-09-03)
 
 **Supplements Q3/Q4 (2026-09-02); does not reopen them.** Cross-referenced to
