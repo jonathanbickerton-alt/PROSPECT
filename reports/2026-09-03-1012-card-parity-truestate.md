@@ -3,7 +3,31 @@
 ## FOR ADVISOR
 
 ```
-__ADVISOR__
+Generated: 2026-09-03 10:12 +0100 (UTC 2026-09-03 09:12)
+Verified against: HEAD 3a1d02f, branch main, tree CLEAN — NO source changed.
+Repo: committed 3a1d02f, pushed (origin in sync)
+Last gated commit: 2b818ee. No gate run — read-only session.
+ITEM 0 — THE REASON EXISTS: EXPECTED.md:4609, dated 2026-08-02, and the entry
+  exists to say the ORIGINAL reason was wrong: "interaction complexity ... was
+  the wrong reason, and the user has said so. The blocker is structural."
+  Eager vs deferred resolution. Also :4532, :7711. Nothing in docs/, reports/.
+ITEM 0 CONSTRAINT, NARROWER THAN THE ENTRY IMPLIES: promoMix and the band ARPU
+  overrides are magnitude-INDEPENDENT (shares, rates) — no change needed. Only
+  the DERIVED scalars block it: revenue/arpu :546-547, pool size :1327.
+  Rebanded-Retention basis is undefined today — product question.
+COUNTS: sliders 2 (both raw <input>, NO component exists — so the padlock is
+  BOLTED ON by the Promotion card); amount-mode controls 3, none shared, two
+  sharing a name with different domains; duration controls 2 (Pricing enum,
+  Value boolean — source itself says they mean the same thing).
+NOT TWO ENGINES: autoBalanceMix is a 9-line adapter onto the SAME rebalance
+  with locks=[]. Duplication is rendering and state, not arithmetic.
+GAPS: padlock (a), 1 call site; ARPU target (a), 0 engine changes; promo %
+  (c), 1 site (:1327 -> resolvedEventVolume) and NO new field; Dilution /
+  duration / target / applies-to (c) are missing FIELDS, not controls; lock
+  persistence (c), 2 sites + a column.
+UNASKED FINDING: :1313-1319 hand-rolls the scope predicate with `!vprodL1` —
+  the D2-03 defect, LIVE, an 8th site invisible to the exactly-7 pin.
+7 PRODUCT QUESTIONS listed, none answered. Inspection only — not reproduced.
 ```
 
 ## Base check
