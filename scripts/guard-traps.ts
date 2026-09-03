@@ -87,12 +87,14 @@ const AGGRECON = 'scripts/aggregate-reconciliation-spec.ts';
 const VIEWAPPLY = 'scripts/view-apply-mounted-spec.tsx';
 const LOCKRT = 'scripts/lock-roundtrip-spec.ts';
 const TRAPANCHORS = 'scripts/trap-anchors-spec.ts';
+const VALUEPAD = 'scripts/value-padlock-mounted-spec.tsx';
+const SLIDERROW = 'src/components/MixSliderRow.tsx';
 const DEBUNDLE = 'src/locales/de/translation.json';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const APP_COMPARE = 'src/components/ScenarioCompareTab.tsx';
 const SCENARPUENGINE = 'src/utils/scenarioArpu.ts';
-const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE];
+const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE, SLIDERROW];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -1762,6 +1764,40 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "    Promo_Mix_Locked: e.mixLocked && e.mixLocked.length ? JSON.stringify(e.mixLocked) : '',",
       "    Promo_Mix_Locked_DROPPED: '',") },
+
+  // ---------------------------------------------------------------------
+  // 140 — the two reasons collapse into one.
+  //
+  // A slider is immovable EITHER because the user held it OR because the
+  // constraints leave it a single value. The padlock must reflect only the
+  // first. Collapsing them makes the control claim a hold the user never set,
+  // which is the specific thing `held` and `immovable` are separate props to
+  // prevent. Shed in 1626, so until now the distinction was carried by a
+  // comment and a prop shape and by nothing that would fail.
+  { id: '140 the padlock claims a hold the user never set',
+    why: 'a collapsed range is not a padlock, and must not draw itself as one',
+    file: SLIDERROW, spec: VALUEPAD,
+    mutate: s => s.replace(
+      '        aria-pressed={held}',
+      '        aria-pressed={held || immovable}') },
+
+  // ---------------------------------------------------------------------
+  // 141 — the save drops the user's padlocks through a stale closure.
+  //
+  // THIS IS A DEFECT THIS SPEC ACTUALLY FOUND, not a hypothetical. The
+  // construction site reads `mixLocked: yieldMixLocked.length ? [...] :
+  // undefined` and is correct; the callback simply did not list
+  // `yieldMixLocked` among its dependencies, so it closed over the empty set
+  // the card opened with. Every source-level check of the construction site
+  // passed the whole time the saved event was coming out empty, which is why
+  // the trap is pointed at a MOUNTED spec: only clicking the padlock and then
+  // clicking save can tell the two apart.
+  { id: '141 the yield save reads a stale lock set',
+    why: 'a dependency array narrower than its read-set silently saves old state',
+    file: WHATIF, spec: VALUEPAD,
+    mutate: s => s.replace(
+      '  }, [newYieldEvent, draftMix, mixAxis, yieldTierData, yieldMixLocked, effectiveTierArpuMap,',
+      '  }, [newYieldEvent, draftMix, mixAxis, yieldTierData, effectiveTierArpuMap,') },
 ];
 
 /**
@@ -1822,7 +1858,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT) || specFails(AGGRECON) || specFails(VIEWAPPLY) || specFails(LOCKRT) || specFails(TRAPANCHORS)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT) || specFails(AGGRECON) || specFails(VIEWAPPLY) || specFails(LOCKRT) || specFails(TRAPANCHORS) || specFails(VALUEPAD)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');
@@ -1831,6 +1867,16 @@ try {
 
   for (const t of TRAPS) {
     const target = t.file ?? FILE;
+    // A TRAP ON AN UNREGISTERED FILE IS A SETUP ERROR, AND MUST SAY SO.
+    // TARGETS is what gets snapshotted and, at the end, RESTORED — so a trap
+    // whose file is missing from it would also have no restore path. Before
+    // this guard the symptom was `Cannot read properties of undefined
+    // (reading 'replace')` from toLF, twenty lines away from the cause.
+    if (!originals.has(target)) {
+      console.error(`trap ${t.id}: ${target} is not in TARGETS, so it is neither`
+        + ' snapshotted nor restored. Add it to TARGETS.');
+      process.exit(1);
+    }
     const pristine = originals.get(target)!;
     // Matched in LF so an anchor cannot miss on line endings alone; the pristine
     // snapshot is what gets restored, so the file's real endings are untouched.

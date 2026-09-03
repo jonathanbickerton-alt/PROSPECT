@@ -2481,7 +2481,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       addYieldEvent(event);
     }
     setNewYieldEvent({});
-  }, [newYieldEvent, draftMix, mixAxis, yieldTierData, addYieldEvent, editingYieldId, updateYieldEvent, setNewYieldEvent]);
+  // THE READ-SET, NOT A SUBSET OF IT. `yieldMixLocked`, `effectiveTierArpuMap`
+  // and `draftTierArpuOverride` are all READ above and none of them were listed
+  // here, so this callback closed over the values they held when the card
+  // opened: a padlock the user set, a rate they typed and an override they
+  // stated were all dropped at save. Found by the MOUNTED spec, which clicks
+  // the padlock and then clicks save; the construction site itself reads
+  // correctly, so every source-level check of it passed while the saved event
+  // came out empty.
+  }, [newYieldEvent, draftMix, mixAxis, yieldTierData, yieldMixLocked, effectiveTierArpuMap,
+      draftTierArpuOverride, addYieldEvent, editingYieldId, updateYieldEvent, setNewYieldEvent]);
 
   // ── All unique tiers across saved yield events (for table header) ──────────
   const allYieldTiers = useMemo(() => {
@@ -7601,6 +7610,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       })}
                     </div>
 
+                    {/* A COLLAPSED RANGE LOCKS, AND SAYS WHY. Mirrored from the
+                        Promotion arm rather than worded again — same key, same
+                        shape — because the two cards are meant to say the same
+                        thing here and two copies of the sentence would drift.
+                        THIS IS NOT A PADLOCK: the constraints leave one value,
+                        which is why the rows are disabled while no padlock is
+                        pressed. Without this line the card froze every slider
+                        and gave no reason at all. */}
+                    {yieldRangeCollapsed && yieldMixRange.kind === 'ok' && (
+                      <div className="mt-2 text-[11px] text-slate-600" data-testid="yield-mix-range-collapsed">
+                        {t('whatif_mix_range_collapsed')}{' '}
+                        <span className="font-semibold tabular-nums">{formatNumber(yieldMixRange.range.min)}</span>
+                      </div>
+                    )}
+
                     {/* ARPU summary */}
                     <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-4">
                       <div className="bg-slate-50 rounded-xl p-3">
@@ -7784,6 +7808,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 <td className="px-4 py-2.5 text-center" rowSpan={2}>
                                   <button
                                     type="button"
+                                    data-testid={`yield-edit-${evt.id}`}
                                     onClick={(e) => { e.stopPropagation(); handleEditYieldStart(evt); }}
                                     className={`p-1 rounded transition-colors mr-1 ${
                                       editingYieldId === evt.id
