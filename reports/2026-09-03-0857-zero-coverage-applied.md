@@ -3,7 +3,31 @@
 ## FOR ADVISOR
 
 ```
-__ADVISOR__
+Generated: 2026-09-03 08:57 +0100 (UTC 2026-09-03 07:57)
+Certifies: 051a9b3
+Repo: committed 051a9b3, pushed (origin in sync)
+BASE: 0737ebf — report-only drift, no source drift. The STOP did not fire.
+READERS OF appliedEventIds: EXACTLY THREE — App:558 (export), WhatIfTab:1559
+  (hasEvent, reaching users via the chart export), WhatIfTab:3848 (caption).
+GHOST AT ALL, before -> after: caption "1" beside +0.00 -> "0"; export id
+  present -> absent; hasEvent true -> false; KPI 0.00 unchanged. AT THE LEAF:
+  unchanged, 0 and "0" — out of scope there, for the OTHER reason.
+  CORRECTION to the brief's premise: the expander did NOT show "does not
+  apply" before. Phase 2 recorded the row, so users saw a TABLE OF ZEROES.
+KEYS (2, all six locales): whatif_event_not_in_current_view and
+  whatif_event_no_coverage_in_view. Two because the empty state now has two
+  causes; the expander picks from the ENGINE's record, not by re-asking the
+  predicate. No new caller of eventScopeMatchesView.
+SCANNER — NO BLIND CLASS; the premise is wrong. scan-i18n:467 listed the
+  string VERBATIM in I18N_PHASE2, the deferral allowlist: seen, bucketed
+  "english-only (DEFERRED)", PASS. Widening the walk finds nothing. REAL GAP:
+  I18N_PHASE2 is only READ (:474), never checked for staleness, so a deferral
+  outlives its string — the context-file block already does that check.
+PRS FALLBACK (decision in EXPECTED.md, NOT implemented): 2 of 55 specs reach
+  it — scenario-arpu 2 cannot-answer (unchanged under the contract),
+  view-apply-mounted 1 measured-zero, this session's own ghost, share
+  discarded. Blast radius ZERO — so nothing today catches it going in wrong.
+GATE: 126/126 · 55/55 · lint+build clean. Spec 18 -> 30, traps 125 -> 126.
 ```
 
 ## Base check
