@@ -69,7 +69,8 @@
     "spec:churn-fold": "tsx scripts/churn-fold-spec.ts",
     "spec:amount-control": "tsx scripts/amount-control-spec.ts",
     "spec:view-apply-mounted": "tsx scripts/view-apply-mounted-spec.tsx",
-    "spec:lock-roundtrip": "tsx scripts/lock-roundtrip-spec.ts"
+    "spec:lock-roundtrip": "tsx scripts/lock-roundtrip-spec.ts",
+    "spec:trap-anchors": "tsx scripts/trap-anchors-spec.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

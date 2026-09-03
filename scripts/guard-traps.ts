@@ -86,6 +86,7 @@ const APPLIEDCOUNT = 'scripts/applied-count-spec.ts';
 const AGGRECON = 'scripts/aggregate-reconciliation-spec.ts';
 const VIEWAPPLY = 'scripts/view-apply-mounted-spec.tsx';
 const LOCKRT = 'scripts/lock-roundtrip-spec.ts';
+const TRAPANCHORS = 'scripts/trap-anchors-spec.ts';
 const DEBUNDLE = 'src/locales/de/translation.json';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
@@ -1763,6 +1764,51 @@ const TRAPS: Trap[] = [
       "    Promo_Mix_Locked_DROPPED: '',") },
 ];
 
+/**
+ * ANCHOR DUMP — the registry, made inspectable for `spec:trap-anchors`.
+ *
+ * A mutation trap is coupled to the source text of the line it guards, so its
+ * anchor rots whenever that line is edited. THREE aged out in three days (13,
+ * 115, 123), each caught only as an INCONCLUSIVE at gate time — which is late,
+ * and only distinguishable from a pass because INCONCLUSIVE is its own state.
+ *
+ * The anchors live inside `mutate` closures rather than as fields, so they are
+ * recovered by instrumenting `String.prototype.replace` and `indexOf` while
+ * each `mutate` runs against its own pristine file.
+ *
+ * ONLY AN UNPOSITIONED SEARCH IS AN ANCHOR. `indexOf(x, start)` is a TERMINATOR
+ * located relative to something already found — trap 18 looks for
+ * `.forecast : null);` after its start, and that occurs 175 times in App.tsx
+ * quite legitimately. Demanding global uniqueness of a relative terminator
+ * would be the check being wrong, not the trap.
+ *
+ * OPT-IN, and deliberately so: the normal path below is untouched, so this
+ * cannot silently stop the gate from running.
+ */
+if (process.env.TRAP_ANCHORS === '1') {
+  const out: { id: string; file: string; anchors: string[] }[] = [];
+  const realReplace = String.prototype.replace;
+  const realIndexOf = String.prototype.indexOf;
+  for (const t of TRAPS) {
+    const file = t.file ?? FILE;
+    const captured: string[] = [];
+    (String.prototype as any).replace = function (this: string, a: any, b: any) {
+      if (typeof a === 'string') captured.push(a);
+      return (realReplace as any).call(this, a, b);
+    };
+    (String.prototype as any).indexOf = function (this: string, a: any, from?: any) {
+      if (typeof a === 'string' && a.length > 8 && from === undefined) captured.push(a);
+      return (realIndexOf as any).call(this, a, from);
+    };
+    try { t.mutate(toLF(originals.get(file) ?? '')); } catch { /* no anchors -> a finding */ }
+    (String.prototype as any).replace = realReplace;
+    (String.prototype as any).indexOf = realIndexOf;
+    out.push({ id: t.id, file, anchors: captured });
+  }
+  process.stdout.write(JSON.stringify(out));
+  process.exit(0);
+}
+
 const specFails = (spec: string = SPEC): boolean => {
   // scan-i18n only enforces under --check; without it the scanner prints its
   // inventory and exits 0, which is precisely how seventeen must-key strings
@@ -1776,7 +1822,7 @@ const results: { id: string; state: string; detail: string }[] = [];
 try {
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT) || specFails(AGGRECON) || specFails(VIEWAPPLY) || specFails(LOCKRT)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT) || specFails(AGGRECON) || specFails(VIEWAPPLY) || specFails(LOCKRT) || specFails(TRAPANCHORS)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');
