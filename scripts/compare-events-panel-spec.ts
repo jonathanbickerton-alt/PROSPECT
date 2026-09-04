@@ -191,7 +191,14 @@ const textOf = (rows: any[]) => rows.map(r => `${r.card}|${r.name}|${r.adjusts}|
 // 4. THE CELLS SAY THE RIGHT THING — hand-written expectations
 // ═══════════════════════════════════════════════════════════════════════════
 {
-  const byId = (rows: any[], id: string) => rows.find(r => r.id === id);
+  // A LOOKUP THAT CANNOT KILL THE SPEC. This returned undefined the moment a
+  // carrier stopped being parsed - trap 90's defect exactly - and every check
+  // below then died on a property access, so NONE of this spec's failures
+  // reached stdout. guard-traps read the exit code and printed CAUGHT for a
+  // trap nothing had asserted. A sentinel keeps the failures reportable.
+  const MISSING = '<<no such row>>';
+  const byId = (rows: any[], id: string): any => rows.find(r => r.id === id)
+    ?? { id, card: MISSING, adjusts: MISSING, name: MISSING, scope: MISSING, when: MISSING };
 
   const mkt = byId(panelA, 'a-mkt');
   check('CELL: a volume event reads as its scenario and signed volume',

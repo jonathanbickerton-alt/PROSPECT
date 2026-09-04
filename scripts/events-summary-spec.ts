@@ -130,6 +130,22 @@ const rows = buildEventsSummaryRows(
   t);
 
 check('coverage: every constructed event reaches the table', rows.length === 6, `${rows.length}`);
+
+// ── A ROW LOOKUP THAT CANNOT KILL THE SPEC ────────────────────────────────
+//
+// `rows.find(...)!` asserted non-null on a lookup that legitimately returns
+// undefined the moment a carrier stops reaching the summary - which is exactly
+// trap 72's defect. The spec then DIED at the first such line, so none of its
+// failures ever reached stdout and guard-traps, reading only an exit code,
+// printed CAUGHT for a trap nothing had asserted.
+//
+// The coverage checks above already state the claim; what was missing was the
+// ability to REPORT it. A sentinel row keeps every check below reportable, and
+// a missing row now fails its own check by value instead of by stack trace.
+const MISSING = '<<no such row>>';
+const R = (id: string): any => rows.find(r => r.id === id)
+  ?? { id, name: MISSING, unnamed: null, scope: MISSING, when: MISSING, pass: -1, card: MISSING };
+
 const cards = new Set(rows.map(r => r.card));
 check('coverage: all FOUR cards are represented',
   cards.has('Volume') && cards.has('Promotion') && cards.has('Value') && cards.has('Pricing'),
@@ -162,39 +178,40 @@ check('order: an EARLIER-month yield event still sorts BELOW later-month market 
   firstYield > lastMarket,
   `yield at ${firstYield}, last market at ${lastMarket} — chronological sorting would invert this`);
 check('order: and the pricing pass sits last despite holding the earliest pricing month',
-  rows[rows.length - 1].pass === 2 && rows[rows.length - 2].pass === 2);
+  rows.length >= 2 && rows[rows.length - 1].pass === 2 && rows[rows.length - 2].pass === 2,
+  `${rows.length} rows — a table this short cannot hold two pricing rows`);
 check('order: within pricing, the recurring 2026-02 event precedes the 2026-03 one',
   rows.filter(r => r.pass === 2).map(r => r.month).join() === '2026-02,2026-03',
   rows.filter(r => r.pass === 2).map(r => r.month).join());
 
 // ── 4. NAMES — campaignName, name, and the italic fallbacks ────────────────
 check('name: a market event prefers its campaignName',
-  rows.find(r => r.id === 'v1')!.name === 'Spring push');
-check('name: a yield event uses its name', rows.find(r => r.id === 'y1')!.name === 'Mix shift');
+  R('v1').name === 'Spring push');
+check('name: a yield event uses its name', R('y1').name === 'Mix shift');
 check('name: an unnamed volume event falls back and is FLAGGED as a fallback',
-  rows.find(r => r.id === 'v2')!.name === 'Unnamed volume event'
-    && rows.find(r => r.id === 'v2')!.unnamed === true);
+  R('v2').name === 'Unnamed volume event'
+    && R('v2').unnamed === true);
 check('name: the unnamed fallback is per-KIND, not one generic string',
-  rows.find(r => r.id === 'pr2')!.name === 'Unnamed pricing event');
+  R('pr2').name === 'Unnamed pricing event');
 check('name: a named event is NOT flagged as unnamed — the flag drives italics',
-  rows.find(r => r.id === 'v1')!.unnamed === false);
+  R('v1').unnamed === false);
 
 // ── 5. SCOPE AND WHEN — absence rendered, not left blank ───────────────────
 check('scope: wildcards are omitted, real dims kept',
-  rows.find(r => r.id === 'v1')!.scope === 'Corporate / Mobile',
-  rows.find(r => r.id === 'v1')!.scope);
+  R('v1').scope === 'Corporate / Mobile',
+  R('v1').scope);
 check('scope: an all-wildcard event says All rather than showing an empty cell',
-  rows.find(r => r.id === 'pr1')!.scope === 'All',
-  rows.find(r => r.id === 'pr1')!.scope);
+  R('pr1').scope === 'All',
+  R('pr1').scope);
 check('when: a yield event with rollForward says so',
-  rows.find(r => r.id === 'y1')!.when === '2026-01 · All Fwd',
-  rows.find(r => r.id === 'y1')!.when);
+  R('y1').when === '2026-01 · All Fwd',
+  R('y1').when);
 check('when: a recurring pricing event says so',
-  rows.find(r => r.id === 'pr2')!.when === '2026-02 · recurring',
-  rows.find(r => r.id === 'pr2')!.when);
+  R('pr2').when === '2026-02 · recurring',
+  R('pr2').when);
 check('when: a market event, whose carrier has NO duration field, shows the month alone',
-  rows.find(r => r.id === 'v1')!.when === '2026-06',
-  rows.find(r => r.id === 'v1')!.when);
+  R('v1').when === '2026-06',
+  R('v1').when);
 
 // ── 6. EMPTY AND PARTIAL ───────────────────────────────────────────────────
 check('empty: no events across all three carriers yields no rows',
