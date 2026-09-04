@@ -7114,6 +7114,33 @@ file, which is the condition the audit of the same day exists to end.
    composite event (REQ-D3-02); its churn line uses R7's target-rate semantics
    unchanged.
 3. **Dilution on the promo pricing arm: BUILD.**
+
+   **BUILT 2026-09-04**, riding the Pricing card's own doctrine rather than a
+   second arm: *"A dilution event IS a retention-scoped PERCENTAGE event. It
+   rides the existing mechanism entirely."* The promotion states current and
+   target dilution; `dilutionAmountPct` — the SAME exported function the
+   Pricing card calls — converts them, and the existing percentage arm applies
+   it. Equality between the two cards is therefore by construction, and is
+   pinned to 1e-9 rather than assumed. Both stated figures and the mode are
+   persisted, per R5 decision 3.
+
+   **THE DURATION HALF IS NOT BUILT, and the reason is structural — measured
+   2026-09-04, recorded for Jon to decide.** A promotion's price change is
+   **baked into the event's own `arpu` at build time**; `promoPricingMode` and
+   `promoPricingAmount` have **zero engine consumers** (they are read by
+   edit-restore, the card control, the summary string, and the export). The
+   promotion therefore never enters the pricing pass, which is the only place
+   `duration` is read (two sites). A One-Off / Recurring control on the
+   promotion's pricing arm would be a stored mode **nothing reads** — the
+   `yieldArpuMode` failure R5 decision 3 exists to prevent, in its other
+   direction.
+
+   The promotion already has a multi-month mechanism and it is a different one:
+   the **spread**, which emits one row per month. `buildEventsSummaryRows` says
+   so at the carrier level — *"MarketEvent has no duration or roll-forward
+   concept — one row is one month."* Making Recurring mean something would mean
+   deciding whether a promotion's price change becomes a real `PricingEvent`,
+   which is a product decision and not this session's.
 4. **Target NOT ported to the promo pricing arm — option (i).**
 5. **Applies-to NOT ported — option (i).** A promotion's pricing arm reaches
    only the population the promotion itself defines.
