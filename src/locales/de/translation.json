@@ -856,5 +856,7 @@
   "whatif_campaign_decline_span": "Die Kampagne erstreckt sich über mehr als 24 Monate — bearbeiten Sie die Zeilen einzeln",
   "whatif_campaign_decline_invalid_month": "Die Kampagne enthält einen ungültigen Monat — bearbeiten Sie die Zeilen einzeln",
   "whatif_event_not_in_current_view": "Dieses Ereignis gilt nicht in der aktuellen Ansicht.",
-  "whatif_event_no_coverage_in_view": "Dieses Ereignis gilt für die aktuelle Ansicht, aber die Ansicht enthält nichts, worauf es abzielt – es ändert hier also nichts."
+  "whatif_event_no_coverage_in_view": "Dieses Ereignis gilt für die aktuelle Ansicht, aber die Ansicht enthält nichts, worauf es abzielt – es ändert hier also nichts.",
+  "whatif_promo_volume_pct_label": "Volumenänderung (% der Prognose)",
+  "whatif_promo_volume_pct_help": "Ein Anteil der Prognose dieser Ansicht für den Monat — Neukunden bei einer Inflow-Promotion, Bestandskunden bei einer Retention-Promotion. Keine Preisänderung; der Promo-Preis wird weiter unten festgelegt."
 }

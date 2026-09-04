@@ -856,5 +856,7 @@
   "whatif_campaign_decline_span": "Campaign spans more than 24 months — edit rows individually",
   "whatif_campaign_decline_invalid_month": "Campaign has an invalid month — edit rows individually",
   "whatif_event_not_in_current_view": "This event does not apply in the current view.",
-  "whatif_event_no_coverage_in_view": "This event is in scope for the current view, but the view contains nothing it targets — so it changes nothing here."
+  "whatif_event_no_coverage_in_view": "This event is in scope for the current view, but the view contains nothing it targets — so it changes nothing here.",
+  "whatif_promo_volume_pct_label": "Volume change (% of the forecast)",
+  "whatif_promo_volume_pct_help": "A share of this view’s forecast for the month — acquisition for an Inflow promotion, retention for a Retention one. Not a price change; the promo price is set further down."
 }

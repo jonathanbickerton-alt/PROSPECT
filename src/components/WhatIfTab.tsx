@@ -463,6 +463,8 @@ interface BuildPromoEventsParams {
    *  it names are filtered to the CURRENT members on the way out. */
   bandArpuOverride?: Record<string, number>;
   target: 'Inflow' | 'Retention';
+  /** Subscribers or per cent. Decision 6; the absolute path is unchanged. */
+  amountType: 'absolute' | 'percentage';
   draft: PromoDraft;
   mixEnabled: boolean;
   mixAxis: 'value' | 'tariff';
@@ -488,15 +490,25 @@ interface BuildPromoEventsParams {
  *  Add, Save Edit, and Save Campaign so the mix-blend / pricing-delta /
  *  cohort-average resolution logic is never duplicated.
  *
- *  Percentage amounts are a Volume-tab capability and are deliberately absent
- *  here: this function never sets amountType, so every promo row is absolute.
- *  The card is already compositional — an optional mix arm and an optional
- *  pricing arm — and putting a percentage volume basis underneath both
- *  multiplies the interaction space for a case nobody has asked for. The
- *  exclusion is a rule, not a guard: percentage rows are also barred from
- *  campaign group-editing rather than defensively handled there. Revisit only
- *  on a real request, and cost the combinations before agreeing. */
-function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
+ *  PERCENTAGE IS BUILT (Jon, 2026-09-03, card-parity decision 6; built
+ *  2026-09-04). The exclusion recorded here was never "never" - see
+ *  EXPECTED.md "Percentage on the Promotion card - declined, and the reason
+ *  is the resolution model, not the interaction count". Its REASON was right
+ *  and its ORDER was followed: settle the pool question, teach the pools to
+ *  consume applyEventsToMonth's derivations, THEN the form.
+ *
+ *  What makes it safe is that nothing here needs to bake a magnitude. For a
+ *  percentage promotion `revenue` goes to 0 - exactly as `draftEventRate`
+ *  already does for a plain percentage volume event - and `arpu` STAYS,
+ *  because it is a PER-SUBSCRIBER RATE and so is magnitude-independent: the
+ *  mix blend and the pricing delta are the same number whether the promotion
+ *  moves 10 subscribers or 10 per cent. The pool reads that rate and takes
+ *  its SIZE from the engine's resolved delta.
+ *
+ *  The metric follows `scenario`, so a Retention percentage resolves against
+ *  the view's forecast RETENTION for the month with no arithmetic added here
+ *  - which is decision 6's stated basis. */
+export function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
   const applyPricing = (arpu: number) =>
     p.pricingMode === 'percentage' ? arpu * (1 + p.pricingAmount / 100) : arpu + p.pricingAmount;
 
@@ -529,6 +541,7 @@ function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
 
   return pcts.map((pct, i) => {
     const fraction = pct / total;
+    const isPct = p.amountType === 'percentage';
     const monthStr = format(addMonths(baseDate, i), 'yyyy-MM');
     const vol = Math.round(p.draft.subscriberVolume * fraction);
 
@@ -547,15 +560,24 @@ function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
       channel: p.draft.channel, channelL2: p.draft.channelL2,
       tariffL1: p.draft.tariffL1, tariffL2: p.draft.tariffL2,
       date: monthStr,
+      // For a percentage promotion this holds the PER CENT, spread across the
+      // ramp exactly as a percentage volume event's is.
       subscriberVolume: vol,
       customerVolume: 0,
-      revenue: vol * finalArpu,
+      // ZERO FOR A PERCENTAGE, matching draftEventRate. `vol * finalArpu`
+      // would be per-cent times a rate: a number with no meaning, which the
+      // pool's `revenue / volume` arm would then read as an ARPU.
+      revenue: isPct ? 0 : vol * finalArpu,
       arpu: finalArpu,
       name: '',
       campaignName: p.draft.campaignName,
       comment: p.draft.comment,
       contractLength: p.draft.contractLength,
       isPromotion: true,
+      amountType: p.amountType,
+      // 'baseline' is the untouched forecast, which is decision 6's wording
+      // for both arms: the view's fitted inflow, or its fitted retention.
+      percentageBasis: isPct ? 'baseline' : undefined,
       promoRebanded,
       promoMixAxis: p.mixEnabled ? p.mixAxis : undefined,
       promoMix: p.mixEnabled ? { ...p.draftMix } : undefined,
@@ -1425,7 +1447,26 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
             enterMonthIdx: idx,
             eventMonthIdx: idx,       // retention applies in its OWN month
             // Pro-rata share, consistent with Pass 1 (see eventProRataShare).
-            size: Math.max(0, e.subscriberVolume * eventShare(e)),
+            //
+            // STEP 2 OF THE RECORDED ORDER, completed 2026-09-04. This read
+            // `e.subscriberVolume * eventShare(e)` - the STORED SCALAR - while
+            // the Inflow pool moved to `resolvedEventVolume` at 2ecdefb. For a
+            // percentage promotion subscriberVolume holds the PER CENT, so the
+            // pool would have been sized at ten subscribers for a ten-per-cent
+            // promotion. The absolute path is unchanged: resolvedEventVolume
+            // returns its second argument verbatim unless amountType is
+            // 'percentage'.
+            //
+            // Retention applies in its OWN month, so these are THIS month's
+            // derivations, not the previous month's - the one difference from
+            // the Inflow pool, and why this is a second call and not a shared
+            // line.
+            size: Math.max(0, resolvedEventVolume(
+              e,
+              e.subscriberVolume * eventShare(e),
+              computed[idx]?.derivations,
+              'retention',
+            )),
           });
         });
 
@@ -2207,6 +2248,23 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const [promoTargetArpu, setPromoTargetArpu] = useState<string>('');
 
   const [promoPricingEnabled, setPromoPricingEnabled] = useState(false);
+  /**
+   * THE PROMOTION VOLUME ARM'S UNIT (Jon, 2026-09-03, decision 6).
+   *
+   * INLINE, NOT EXTRACTED, and recorded as duplication. The Volume card's
+   * control has THREE arms and its own writer in `src/utils/amountControl.ts`
+   * - `applyAmountControl` clears a churn draft, zeroes the amount and
+   * force-clears the spread. The promotion arm has two arms and no churn, so
+   * extracting one component means parameterising the churn arm away, which
+   * is a larger change than the two buttons it would replace. Recorded in the
+   * backlog beside the other amount-mode controls (1012's finding: three
+   * controls, none shared) rather than done under a form brief.
+   *
+   * NOT the same state as `promoPricingMode`, which is the PRICE arm's unit.
+   * The two are lexically separated in the form for exactly this reason.
+   */
+  const [promoAmountMode, setPromoAmountMode] = useState<'absolute' | 'percentage'>('absolute');
+
   const [promoPricingMode, setPromoPricingMode] = useState<'percentage' | 'absolute'>('percentage');
   const [promoPricingAmount, setPromoPricingAmount] = useState(0);
 
@@ -2491,7 +2549,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     if (promoMixBlocksSave) return;
 
     const events = buildPromoEvents({
-      target: promoTarget, draft: newPromo,
+      target: promoTarget,
+      amountType: promoAmountMode, draft: newPromo,
       mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
       mixLocked: promoMixLocked,
       bandArpuOverride: draftPromoBandArpu,
@@ -4081,7 +4140,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const handleSavePromoEdit = useCallback(() => {
     if (!editingPromoId || !newPromo.date || !newPromo.subscriberVolume) return;
     const events = buildPromoEvents({
-      target: promoTarget, draft: newPromo,
+      target: promoTarget,
+      amountType: promoAmountMode, draft: newPromo,
       mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
       mixLocked: promoMixLocked,
       bandArpuOverride: draftPromoBandArpu,
@@ -4104,7 +4164,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const handleSavePromoCampaign = useCallback(() => {
     if (!editingPromoCampaign || !newPromo.date || !newPromo.subscriberVolume) return;
     const events = buildPromoEvents({
-      target: promoTarget, draft: newPromo,
+      target: promoTarget,
+      amountType: promoAmountMode, draft: newPromo,
       mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
       mixLocked: promoMixLocked,
       bandArpuOverride: draftPromoBandArpu,
@@ -6905,16 +6966,60 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     />
                   </div>
                   <div>
+                    {/* THE VOLUME ARM'S UNIT AND AMOUNT (decision 6).
+
+                        LEXICALLY SEPARATED FROM THE PRICE %, which is the
+                        entry's own condition: "visually and lexically
+                        separated well beyond a shared '%' glyph". This one
+                        says VOLUME CHANGE and names the forecast it is a
+                        share of; the price arm says promo price and lives
+                        under its own checkbox far below, never adjacent. The
+                        helper line ends by naming the other control, so a
+                        user who has found the wrong one is told where the
+                        right one is. */}
                     <label className="block text-xs font-medium text-slate-500 mb-1">
-                      {promoTarget === 'Inflow' ? t('whatif_acquisition_volume') : t('whatif_retained_volume')}
+                      {promoAmountMode === 'percentage'
+                        ? t('whatif_promo_volume_pct_label')
+                        : (promoTarget === 'Inflow' ? t('whatif_acquisition_volume') : t('whatif_retained_volume'))}
                     </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={newPromo.subscriberVolume || ''}
-                      onChange={e => setNewPromo({ ...newPromo, subscriberVolume: Math.max(0, Number(e.target.value)) })}
-                      className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
-                    />
+                    <div className="flex items-stretch gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        step={promoAmountMode === 'percentage' ? 0.1 : 1}
+                        data-testid="promo-volume-amount"
+                        value={newPromo.subscriberVolume || ''}
+                        onChange={e => setNewPromo({ ...newPromo, subscriberVolume: Math.max(0, Number(e.target.value)) })}
+                        className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
+                      />
+                      <div className="flex border border-slate-200 rounded-lg overflow-hidden shrink-0">
+                        {(['absolute', 'percentage'] as const).map(mode => (
+                          <button
+                            key={mode}
+                            type="button"
+                            data-testid={`promo-amount-${mode === 'percentage' ? 'pct' : 'subs'}`}
+                            onClick={() => {
+                              // ZERO THE AMOUNT ON A SWITCH. 5000 subscribers
+                              // must not silently become 5000 per cent - the
+                              // same rule the Volume card's writer applies.
+                              if (mode !== promoAmountMode) {
+                                setPromoAmountMode(mode);
+                                setNewPromo({ ...newPromo, subscriberVolume: 0 });
+                              }
+                            }}
+                            className={`px-3 py-2 text-xs font-semibold transition-colors ${
+                              promoAmountMode === mode
+                                ? 'bg-[#e60000] text-white'
+                                : 'bg-white text-slate-500 hover:bg-slate-50'
+                            }`}
+                          >{mode === 'absolute' ? t('whatif_amount_unit_subs') : t('whatif_amount_unit_pct')}</button>
+                        ))}
+                      </div>
+                    </div>
+                    {promoAmountMode === 'percentage' && (
+                      <p className="text-[10px] text-slate-400 mt-1"
+                        data-testid="promo-volume-pct-help">{t('whatif_promo_volume_pct_help')}</p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1 flex items-center gap-1">{t('whatif_contract_length')}<span className="relative group text-slate-400 cursor-help">

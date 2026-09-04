@@ -856,5 +856,7 @@
   "whatif_campaign_decline_span": "La campagna si estende su più di 24 mesi — modificare le righe singolarmente",
   "whatif_campaign_decline_invalid_month": "La campagna contiene un mese non valido — modificare le righe singolarmente",
   "whatif_event_not_in_current_view": "Questo evento non si applica nella vista corrente.",
-  "whatif_event_no_coverage_in_view": "Questo evento rientra nell'ambito della vista corrente, ma la vista non contiene nulla a cui si rivolga, quindi non cambia nulla qui."
+  "whatif_event_no_coverage_in_view": "Questo evento rientra nell'ambito della vista corrente, ma la vista non contiene nulla a cui si rivolga, quindi non cambia nulla qui.",
+  "whatif_promo_volume_pct_label": "Variazione di volume (% della previsione)",
+  "whatif_promo_volume_pct_help": "Una quota della previsione di questa vista per il mese: acquisizione per una promozione Inflow, retention per una Retention. Non è una variazione di prezzo; il prezzo promozionale si imposta più in basso."
 }

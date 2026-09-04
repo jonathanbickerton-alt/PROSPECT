@@ -1346,6 +1346,26 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '    if (Math.abs(up.appliedShare - down.appliedShare) > EPS_DRAG) return false;',
       '    if (true) return false;') },
+
+  // ---------------------------------------------------------------------
+  // 149 - buildPromoEvents bakes revenue for a PERCENTAGE promotion again.
+  //
+  // Step 2 of the recorded order (EXPECTED.md, "Percentage on the Promotion
+  // card - declined..."): the entry's blocker was that the builder resolves
+  // eagerly, and a percentage anchor cannot supply what a baked magnitude
+  // needs. `revenue: vol * finalArpu` for a percentage is per-cent times a
+  // rate - 200 for a 10% promotion at a rate of 20 - and the event pool's
+  // `revenue / volume` arm would then read that as the ARPU.
+  //
+  // The ARPU bake is deliberately NOT trapped: it is a per-subscriber rate,
+  // magnitude-independent, and keeping it is what lets the pool price the
+  // promotion at all.
+  { id: '149 a percentage promotion bakes a revenue again',
+    why: 'per-cent times a rate is read as an ARPU by the pool',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      '      revenue: isPct ? 0 : vol * finalArpu,',
+      '      revenue: vol * finalArpu,') },
   // 103 feeds the LOADED COHORT's forecast back into the churn series, undoing
   // the scope fix. The panel then reads the same base whatever the draft's dims
   // say — the walk's ~293k at every slice — and the breakdown stops moving when
@@ -1604,10 +1624,20 @@ const TRAPS: Trap[] = [
 
   { id: '122 a keyed label goes back to a hardcoded literal',
     why: 'a literal never reaches the bundles, so it renders English in all six while a value check stays green',
-    file: WHATIF, spec: I18NPARITY,
-    mutate: s => s.replace(
-      "{mode === 'absolute' ? t('whatif_amount_unit_subs') : t('whatif_amount_unit_pct')}",
-      "{mode === 'absolute' ? 'Subs' : '%'}") },
+    // GLOBAL-MUTATION CLASS, 2026-09-04. The promotion volume arm's unit
+    // control (decision 6) uses the SAME label expression as the Volume
+    // card's, so this anchor now occurs twice - which is 1012's "three
+    // amount-mode controls, none shared" finding surfacing in the registry.
+    //
+    // The trap's SUBJECT is "a keyed label goes back to a literal", and both
+    // sites are instances of it; pinning one would leave the other free to
+    // regress. Mutating both is strictly stronger, and the count is asserted
+    // exact, so a THIRD copy of this control fails here rather than passing
+    // quietly.
+    file: WHATIF, spec: I18NPARITY, global: 2,
+    mutate: s => s.split(
+      "{mode === 'absolute' ? t('whatif_amount_unit_subs') : t('whatif_amount_unit_pct')}")
+      .join("{mode === 'absolute' ? 'Subs' : '%'}") },
 
   // ---------------------------------------------------------------------
   // 123 — RE-AIMED FROM THE BRIEF, and the re-aiming is the finding.

@@ -592,8 +592,14 @@ async function main() {
           // writer, not a copy of its shape.
           await setNum4(first(), '12.75');
           const dateInput = c4.querySelector('input[type=month]') as any;
-          const volInput = [...c4.querySelectorAll('input[type=number]')]
-            .find((i: any) => /volume/i.test(i.closest('div')?.textContent || '')) as any;
+          // BY TESTID, not by the nearest div's text. The text selector broke
+          // the moment the field gained a unit control beside it: `closest`
+          // then returned the flex wrapper, whose text is 'Subs %' and matches
+          // nothing. Seven checks stopped running and one reported a disabled
+          // Add - a failure about the SPEC's selector, not the card.
+          const volInput = (c4.querySelector('[data-testid="promo-volume-amount"]')
+            ?? [...c4.querySelectorAll('input[type=number]')]
+              .find((i: any) => /volume/i.test(i.closest('div')?.textContent || ''))) as any;
           if (dateInput) await setNum4(dateInput, '2026-09');
           if (volInput) await setNum4(volInput, '500');
 

@@ -70,6 +70,7 @@ async function main() {
   const fc: any = await import('../src/utils/forecasting');
   const { ForecastProvider } = await import('../src/context/ForecastContext');
   const M: any = (await import('../src/components/WhatIfTab')).WhatIfTab;
+  const { buildPromoEvents } = await import('../src/components/WhatIfTab');
 
   const noop = () => {};
   const band = (m: number) => ({ mean: m, optimistic: m * 1.1, pessimistic: m * 0.9 });
@@ -271,6 +272,87 @@ async function main() {
     + '   Corp ' + corpAbs.delta + '   disjoint ' + disjAbs.delta);
   console.log('  percentage leaf ' + leafPct.delta + '   All ' + allPct.delta
     + '   disjoint ' + disjPct.delta);
+
+
+  // ── 3b. THE PERCENTAGE PROMOTION (decision 6, built 2026-09-04) ───────────
+  //
+  // The entry that declined this said the blocker was the RESOLUTION MODEL:
+  // `buildPromoEvents` baked a concrete volume, ARPU and revenue at creation,
+  // and a percentage anchor cannot supply what eager resolution needs. Step 2
+  // of its recorded order removed the part that could not survive - the baked
+  // REVENUE, now 0 for a percentage exactly as `draftEventRate` already does -
+  // and left the part that can: `arpu` is a per-subscriber RATE and is the
+  // same number whether the promotion moves 10 subscribers or 10 per cent.
+  //
+  // Built through the REAL builder, not a hand-shaped row. A hand-built event
+  // would assert that this spec can write a percentage promotion, which is not
+  // the claim.
+  {
+    const promoRows = buildPromoEvents({
+      target: 'Inflow',
+      amountType: 'percentage',
+      draft: {
+        date: MONTHS[0], segment: EVENT_ABS.segment, product: EVENT_ABS.product,
+        productL2: EVENT_ABS.productL2, channel: EVENT_ABS.channel,
+        channelL2: EVENT_ABS.channelL2, tariffL1: EVENT_ABS.tariffL1,
+        tariffL2: EVENT_ABS.tariffL2,
+        subscriberVolume: 10, campaignName: '', comment: '', contractLength: 12,
+      } as any,
+      mixEnabled: false, mixAxis: 'value', draftMix: {}, mixLocked: [],
+      tierData: [], pricingEnabled: false, pricingMode: 'percentage',
+      pricingAmount: 0, cohortAvgArpu: 20,
+      spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [],
+      startSequence: 1,
+    } as any);
+
+    check('promo%: the builder produced exactly one row', promoRows.length === 1,
+      `${promoRows.length}`);
+    const row: any = promoRows[0];
+
+    // THE THREE THINGS STEP 2 CHANGED, asserted on the built row before it is
+    // applied anywhere - so a failure here says "the builder", not "the engine".
+    check('promo%: the row carries amountType percentage',
+      row.amountType === 'percentage', String(row.amountType));
+    check('promo%: REVENUE IS ZERO - the bake that could not survive',
+      row.revenue === 0,
+      `${row.revenue} — per-cent times a rate, which the pool would read as an ARPU`);
+    check('promo%: but the ARPU RATE is kept, because it is magnitude-independent',
+      row.arpu > 0, `${row.arpu}`);
+    check('promo%: and subscriberVolume holds the PER CENT',
+      row.subscriberVolume === 10, `${row.subscriberVolume}`);
+    check('promo%: it is flagged as a promotion', row.isPromotion === true);
+
+    // MOUNTED, on the discriminating fixture: the same claims the plain
+    // percentage event makes, now for a promotion.
+    const pLeaf = await readAt(keyA, [row]);
+    const pAll  = await readAt(KEY_ALL, [row]);
+    const pDisj = await readAt(keyB, [row]);
+
+    check('promo%: the LEAF view moves', pLeaf.delta > 0, `delta ${pLeaf.delta}`);
+    check('promo%: ALL === leaf TO THE PENNY where the mixes differ',
+      Math.abs(pAll.delta - pLeaf.delta) < 0.005,
+      `All ${pAll.delta} vs leaf ${pLeaf.delta}`);
+    check('promo%: a DISJOINT leaf does not move',
+      Math.abs(pDisj.delta) < 0.005, `delta ${pDisj.delta}`);
+
+    // THE SAME NUMBER AS THE PLAIN PERCENTAGE EVENT. A +10% Inflow promotion
+    // and a +10% Inflow event move the view by the same amount - the promotion
+    // resolves through the SAME market-event path, which is what step 2 was
+    // for. If these ever differ, a second resolution model has appeared.
+    check('promo%: a +10% PROMOTION moves the leaf exactly as a +10% EVENT does',
+      Math.abs(pLeaf.delta - leafPct.delta) < 0.005,
+      `promo ${pLeaf.delta} vs plain ${leafPct.delta}`);
+    check('promo%: and the same at ALL',
+      Math.abs(pAll.delta - allPct.delta) < 0.005,
+      `promo ${pAll.delta} vs plain ${allPct.delta}`);
+
+    // THE POOL IS SIZED FROM THE RESOLVED DELTA. If it were sized from the
+    // stored scalar the pool would hold TEN SUBSCRIBERS for a ten-per-cent
+    // promotion, and the Inflow ARPU delta would be a fraction of its true
+    // size. Read from the rendered per-scenario ARPU card.
+    console.log(`\n  promo%   leaf ${pLeaf.delta}   All ${pAll.delta}`
+      + `   disjoint ${pDisj.delta}   (plain pct leaf ${leafPct.delta})`);
+  }
 
   // ── 4. THE GHOST: in scope at the view, landing on none of it ───────────
   //

@@ -4634,6 +4634,20 @@ form problem and no amount of form design fixes it.
 3. Then the form — and only then, with the volume % and the price % visually
    and lexically separated well beyond a shared "%" glyph.
 
+**REOPENED 2026-09-03, BUILT 2026-09-04.** Card-parity decision 6 (Jon, 2026-09-03)
+takes this up: percentage on the Promotion volume arm, **Inflow AND Retention**,
+with the retention basis being the view's forecast retention for the month. See
+*"CARD PARITY — SEVEN DECISIONS (Jon, 2026-09-03)"*.
+
+**The recorded order above stands and was followed.** This entry is not withdrawn:
+its REASON was correct and is the reason the order exists. What changed is that
+steps 1 and 2 have been completed, so step 3 became reachable. The decline was
+never "never"; it was "not until the resolution model can carry it".
+
+Build status is recorded in this session's report and in the commit that lands
+it; the hash is stated there rather than here, because a hash written before
+the commit exists is a claim this file cannot keep.
+
 #### Pre-existing drift: `computeScenarioForFilter` has no `promoRebanded`
 
 `WhatIfTab`'s adjusted-forecast engine carves an isolated re-banded ARPU pool
