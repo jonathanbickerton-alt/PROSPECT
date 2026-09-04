@@ -1,6 +1,30 @@
 # Percentage promotion: the Retention half, the mix arm, the round-trip
 
-__ADVISOR__
+Generated: 2026-09-04 20:35 +0100 (UTC 2026-09-04 19:35)
+Certifies: 945d648
+Repo: committed 945d648, pushed (origin in sync)
+BASE: d92fdaa - diff EMPTY. No new decision surfaced.
+ITEM 1, by hand: leaf 1.36 = (400x21+40x36)/440-21; All 1.11 =
+  (500x21+40x36)/540-21 - the SAME resolved 40 over a wider denominator;
+  disjoint 0; Base 0 at T, 0.06 at T+1. Row: pct, revenue 0, arpu 36.
+THE FIXTURE COULD NOT HAVE CAUGHT IT EITHER: on retention 100, pct% x 100 IS
+  pct, so a +10% promo resolves to 10 - what the defect produces. New store
+  seeded 400/100.
+promoRebanded IS NOT OBSERVABLE IN RETENTION ARPU - it feeds BASE AT T+1 only;
+  scenarioPools never reads p_eventPools. THIRD session to pay for this (1409
+  measured it, 1526 did not); now in EXPECTED.md.
+TRAP (b) FIREABLE AND RED at Base T+1: 'FAIL ret%: the RE-BANDED POOL is sized
+  from the RESOLVED delta [base 0.02 - a pool of TEN]'; 40x16/10240 vs
+  10x16/10240. Trap 150. Trap 151 (metric 'inflow'): the pool VANISHES to 0.
+ITEM 2: THE MIX HAS NO PER-TIER VOLUMES anywhere in src/ - a pricing device,
+  one blended rate - so the briefed assertion describes no mechanism and its
+  trap no site (shed on measurement, not budget). Asserted instead: inflow
+  0.82 = (200x22+20x31)/220-22, vs 0.41 percent-sized, 0.42 mean-priced.
+ITEM 3: round-trip GREEN both arms, both routes, 23-field read-set deep-equal,
+  revenue still 0, absent Amount_Type loads ABSOLUTE. Trap 152 KEPT and red.
+COUNTS: traps 145->148; view-apply 67->84; roundtrip 86->106; anchors 159/159.
+  GATE (serial): 148/148, no MISSED/CRASHED/INCONCLUSIVE; 58/58 specs;
+  tsc+build clean.
 
 ## Base check
 
