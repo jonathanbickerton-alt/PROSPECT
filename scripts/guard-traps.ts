@@ -1366,6 +1366,53 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '      revenue: isPct ? 0 : vol * finalArpu,',
       '      revenue: vol * finalArpu,') },
+
+  // ---------------------------------------------------------------------
+  // 150 - THE OTHER HALF OF STEP 2, and the trap the 1526 session could not
+  // write. `promoRebanded` is a RETENTION pool, so the Inflow mounted case
+  // never reached it and this planted GREEN. It is fireable now because
+  // spec:view-apply-mounted carries a Retention percentage promotion.
+  //
+  // ITS OBSERVABLE IS BASE AT T+1, NOT RETENTION AT T. The per-scenario
+  // Retention ARPU is built by `scenarioPools`, a separate construction that
+  // never consults p_eventPools; the re-banded pool reaches the card only
+  // through the base lag. Measured: 0.06 correct, 0.02 defective - the pool
+  // sizes 40 and 10 in exact ratio.
+  { id: '150 the re-banded pool sizes from the stored per cent again',
+    why: 'a ten-per-cent retention promotion becomes a pool of ten subscribers',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      `            size: Math.max(0, resolvedEventVolume(
+              e,
+              e.subscriberVolume * eventShare(e),
+              computed[idx]?.derivations,
+              'retention',
+            )),`,
+      '            size: Math.max(0, e.subscriberVolume * eventShare(e)),') },
+
+  // 151 - the metric follows `scenario`, and this is the one place it can be
+  // got wrong silently: resolvedEventVolume finds NO derivation for the wrong
+  // metric and returns 0, so the pool vanishes rather than being wrong. A
+  // retention promotion then leaves Base untouched forever.
+  { id: '151 the re-banded pool resolves against the INFLOW basis',
+    why: 'no inflow derivation exists for a retention event, so the pool silently becomes zero',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      `              computed[idx]?.derivations,
+              'retention',`,
+      `              computed[idx]?.derivations,
+              'inflow',`) },
+
+  // 152 - the import default. Every save written before decision 6 carries
+  // promo rows with no Amount_Type, and they are ABSOLUTE. Defaulting the
+  // other way reinterprets a historic promotion's 500 subscribers as five
+  // hundred per cent - silently, on load, for every old workbook.
+  { id: '152 an absent Amount_Type defaults to percentage',
+    why: 'every pre-decision-6 promotion reloads as a percentage of itself',
+    file: ENGINE, spec: EVTROUND,
+    mutate: s => s.replace(
+      "    amountType:      row.Amount_Type === 'percentage' ? 'percentage' : 'absolute',",
+      "    amountType:      row.Amount_Type === 'absolute' ? 'absolute' : 'percentage',") },
   // 103 feeds the LOADED COHORT's forecast back into the churn series, undoing
   // the scope fix. The panel then reads the same base whatever the draft's dims
   // say — the walk's ~293k at every slice — and the breakdown stops moving when

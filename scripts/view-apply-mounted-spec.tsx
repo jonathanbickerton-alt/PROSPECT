@@ -84,7 +84,7 @@ async function main() {
    * agree cannot tell a history-weighted coverage from a forecast-weighted
    * one, which is exactly how this family of defect survived three sessions.
    */
-  const mkLeaf = (product: string, inflow: number) => ({
+  const mkLeaf = (product: string, inflow: number, retention = 100) => ({
     cohort: { segment: 'Corporate', product, productL2: 'All', channel: 'All',
               channelL2: 'All', tariffL1: 'All', tariffL2: 'All', scenario: 'Standard Forecast' },
     seedBaseVolume: 10000, seedBaseKnown: true,
@@ -102,7 +102,7 @@ async function main() {
       // named absence, and every retention assertion below reads the em dash —
       // measured on the first run: retention moved at the leaf and was null at
       // All, which would have looked like a scoping defect and was a fixture gap.
-      month, inflow: band(inflow), outflow: band(0), retention: band(100), arpu: band(20),
+      month, inflow: band(inflow), outflow: band(0), retention: band(retention), arpu: band(20),
       inflowArpu: band(22), outflowArpu: band(18), retentionArpu: band(21), baseArpu: band(20),
     })),
   });
@@ -115,6 +115,31 @@ async function main() {
   const store = new Map<string, any>([[keyA, A], [keyB, B]]);
   const leafMap = fc.buildRollUpIndex([keyA, keyB]).leafMap;
   const resolveForecast = (key: string) => fc.resolveFromStore(store, leafMap, key);
+
+  /**
+   * A SECOND STORE, FOR THE RETENTION PERCENTAGE CASE ONLY.
+   *
+   * The default fixture seeds retention 100 on every leaf, and that makes a
+   * retention percentage NON-DISCRIMINATING: `pct% x 100` is `pct`, so the
+   * resolved delta of a +10% promotion is 10 - exactly the number the RETIRED
+   * arithmetic produces by reading the stored per cent as a subscriber count.
+   * A pool-size assertion on that fixture would pass with or without the
+   * defect, which is the vacuous-result trap, and it is why trap (b) planted
+   * green in the 1526 session.
+   *
+   * So the retention case runs on leaves seeded 400 / 100. A +10% promotion on
+   * leaf A resolves to 40, and the retired reading gives 10. Both numbers are
+   * computed by hand below, so the check discriminates between two KNOWN
+   * values rather than between a number and its absence.
+   *
+   * The DEFAULT store is untouched: the 15.83 / 13.57 retention figures the
+   * lag assertions are built on are hand-computed against retention 100.
+   */
+  const AR = mkLeaf('Mobile Voice', 200, 400);
+  const BR = mkLeaf('Broadband', 800, 100);
+  const storeR = new Map<string, any>([[keyA, AR], [keyB, BR]]);
+  const resolveForecastR = (key: string) => fc.resolveFromStore(storeR, leafMap, key);
+  const BUNDLE_R = { store: storeR, resolveForecast: resolveForecastR };
 
   // Historical rows — the mix the history-weighted coverage would have used.
   const C = { date: 'Month', seg: 'Segment', prod: 'Product', prodL2: 'ProductL2',
@@ -156,8 +181,12 @@ async function main() {
 
   /** Mount the card AT A VIEW and read the two KPI testids back. */
   const readAt = async (viewKey: string, marketEvents: any[], expandId?: string,
-                        dataOverride?: any[]) => {
-    const resolved = resolveForecast(viewKey);
+                        dataOverride?: any[],
+                        bundle?: { store: Map<string, any>;
+                                   resolveForecast: (k: string) => any }) => {
+    const useStore = bundle ? bundle.store : store;
+    const useResolve = bundle ? bundle.resolveForecast : resolveForecast;
+    const resolved = useResolve(viewKey);
     const host = document.getElementById('root')!;
     host.replaceChildren();
     const container = document.createElement('div');
@@ -171,8 +200,8 @@ async function main() {
       root.render(React.createElement(ForecastProvider as any, {
         baseForecast: resolved.forecast, setBaseForecast: noop,
         adjustedForecast: null, setAdjustedForecast: noop,
-        forecastStore: store, setForecastStore: noop,
-        resolveForecast, canResolve: () => true,
+        forecastStore: useStore, setForecastStore: noop,
+        resolveForecast: useResolve, canResolve: () => true,
         hasLegacyBaseline: true, updatedAt: new Date().toISOString(),
         bulkRuns: [], setBulkRuns: noop,
       }, React.createElement(Harness)));
@@ -352,6 +381,194 @@ async function main() {
     // size. Read from the rendered per-scenario ARPU card.
     console.log(`\n  promo%   leaf ${pLeaf.delta}   All ${pAll.delta}`
       + `   disjoint ${pDisj.delta}   (plain pct leaf ${leafPct.delta})`);
+  }
+
+  // ── 3c. THE RETENTION HALF OF STEP 2 ───────────────────────
+  //
+  // The 1526 session finished step 2 in the source and could not exercise half
+  // of it: `promoRebanded` is a RETENTION pool and the Inflow case above never
+  // reaches it, so its trap planted GREEN and was not registered. This is that
+  // half.
+  //
+  // Runs on BUNDLE_R, whose leaf retention is 400 rather than 100 - see the
+  // store's own comment for why the default fixture cannot tell the two
+  // arithmetics apart here.
+  {
+    const TIERS = [{ tier: 'High', baseArpu: 30 }, { tier: 'Low', baseArpu: 15 }];
+    const mkRetPromo = (date: string) => buildPromoEvents({
+      target: 'Retention',
+      amountType: 'percentage',
+      bandArpuOverride: { High: 50 },       // THE STATED RE-BANDED RATE
+      draft: {
+        date, segment: EVENT_ABS.segment, product: EVENT_ABS.product,
+        productL2: EVENT_ABS.productL2, channel: EVENT_ABS.channel,
+        channelL2: EVENT_ABS.channelL2, tariffL1: EVENT_ABS.tariffL1,
+        tariffL2: EVENT_ABS.tariffL2,
+        subscriberVolume: 10, campaignName: '', comment: '', contractLength: 12,
+      } as any,
+      mixEnabled: true, mixAxis: 'value',
+      draftMix: { High: 60, Low: 40 }, mixLocked: [],
+      tierData: TIERS,
+      pricingEnabled: false, pricingMode: 'percentage', pricingAmount: 0,
+      cohortAvgArpu: 20,
+      spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [],
+      startSequence: 1,
+    } as any)[0] as any;
+
+    const rp = mkRetPromo(MONTHS[MONTHS.length - 1]);
+
+    // THE BUILT ROW. The blend is hand-computed: the stated rate outranks the
+    // band's own ARPU for High, so tierArpu is { High: 50, Low: 15 } and the
+    // blend is 0.60x50 + 0.40x15 = 36. A percentage promotion keeps that RATE
+    // and drops the REVENUE.
+    check('ret%: amountType percentage', rp.amountType === 'percentage', String(rp.amountType));
+    check('ret%: REVENUE IS ZERO', rp.revenue === 0, String(rp.revenue));
+    check('ret%: the ARPU RATE survives, at the hand-computed mix blend 36',
+      Math.abs(rp.arpu - 36) < 1e-9, String(rp.arpu) + ' — 0.6x50 + 0.4x15');
+    check('ret%: it is a RE-BANDED promotion, so it gets its own pool',
+      rp.promoRebanded === true && rp.isPromotion === true);
+    check('ret%: subscriberVolume holds the PER CENT', rp.subscriberVolume === 10);
+    check('ret%: the stated rate is carried, filtered to the members',
+      rp.promoBandArpuOverride && rp.promoBandArpuOverride.High === 50,
+      JSON.stringify(rp.promoBandArpuOverride));
+
+    // THE FIXTURE DISCRIMINATES, asserted before anything is read from it.
+    const fitted = 400;                       // leaf A's fitted retention, BUNDLE_R
+    const resolved = 0.10 * fitted;           // 40 - the resolved delta
+    const retired = 10;                       // the stored per cent, read as subscribers
+    check('ret% fixture: the resolved delta and the stored scalar DIFFER',
+      Math.abs(resolved - retired) > 1, resolved + ' vs ' + retired
+      + ' — on retention 100 these are equal and every check below is vacuous');
+
+    const rLeaf = await readAt(keyA, [rp], undefined, undefined, BUNDLE_R);
+    const rAll  = await readAt(KEY_ALL, [rp], undefined, undefined, BUNDLE_R);
+    const rDisj = await readAt(keyB, [rp], undefined, undefined, BUNDLE_R);
+    console.log('');
+    console.log('  ret%  leaf retention ' + rLeaf.arpuRetention + '  base ' + rLeaf.arpuBase
+      + '  |  All retention ' + rAll.arpuRetention + '  base ' + rAll.arpuBase
+      + '  |  disjoint retention ' + rDisj.arpuRetention);
+
+    // RETENTION ARPU AT T, BY HAND. scenarioPools sizes the retention pool from
+    // the resolved delta; the adjusted retention volume is 400 + 40 = 440, of
+    // which 40 sits in the pool at 36 and the remaining 400 at the fitted 21:
+    //   (400x21 + 40x36) / 440 - 21 = (8400 + 1440)/440 - 21 = 1.3636
+    // The retired reading gives a pool of 10 at 36 against a natural 430:
+    //   (430x21 + 10x36) / 440 - 21 = (9030 + 360)/440 - 21 = 0.3409
+    const RET_T = (400 * 21 + 40 * 36) / 440 - 21;
+    check('ret%: RETENTION ARPU at the leaf is the resolved-delta blend',
+      rLeaf.arpuRetention !== null
+        && Math.abs((rLeaf.arpuRetention as number) - RET_T) < 0.02,
+      'retention ' + rLeaf.arpuRetention + ' vs hand ' + RET_T.toFixed(4)
+      + ' — 0.34 means the per cent was read as a subscriber count');
+
+    // AT ALL. Total fitted retention is 500 and the promotion covers 400 of it,
+    // so coverage is 0.8 and the delta is 0.10 x 500 x 0.8 = 40 - the SAME 40,
+    // which is the sum over the leaves it lands on (only leaf A moves).
+    // AT ALL, BY HAND. The same resolved 40 against a wider denominator:
+    //   (500x21 + 40x36) / 540 - 21 = 11940/540 - 21 = 1.1111
+    // The DELTA is the sum over the leaves the promotion covers - only leaf A -
+    // and it is the ARPU blend, not the delta, that differs between the views.
+    const RET_ALL = (500 * 21 + 40 * 36) / 540 - 21;
+    check('ret%: ALL carries the SAME resolved 40, blended over the wider base',
+      rAll.arpuRetention !== null
+        && Math.abs((rAll.arpuRetention as number) - RET_ALL) < 0.02,
+      'retention ' + rAll.arpuRetention + ' vs hand ' + RET_ALL.toFixed(4));
+    check('ret%: a DISJOINT leaf does not move',
+      rDisj.arpuRetention === null || Math.abs(rDisj.arpuRetention as number) < 0.005,
+      'retention ' + rDisj.arpuRetention);
+
+    // THE LAG. A retention promotion in the LAST month has not reached Base.
+    const rPrev = await readAt(keyA, [mkRetPromo(MONTHS[MONTHS.length - 2])],
+                               undefined, undefined, BUNDLE_R);
+    console.log('  ret% one month EARLIER  leaf base ' + rPrev.arpuBase);
+    check('ret%: BASE is 0 at T — the lag has not delivered it',
+      rLeaf.arpuBase === null || Math.abs(rLeaf.arpuBase as number) < 0.005,
+      'base ' + rLeaf.arpuBase);
+    check('ret%: BASE carries it at T+1',
+      rPrev.arpuBase !== null && Math.abs(rPrev.arpuBase as number) > 0.005,
+      'base ' + rPrev.arpuBase);
+
+    // ── WHERE promoRebanded IS ACTUALLY OBSERVABLE ─────────────────
+    //
+    // MEASURED, not assumed. `p_eventPools`' re-banded push feeds BASE ONLY,
+    // through the T+1 lag - the per-scenario Retention ARPU is built by
+    // `scenarioPools`, a separate construction that never consults it. That is
+    // the same finding 1409 recorded when it declined to re-point the D3-02
+    // assertions, and it is why the Retention check above cannot catch a defect
+    // in the re-banded pool's SIZE.
+    //
+    // So the size assertion lives HERE, at T+1, where the pool reaches Base.
+    // The pool holds 40 at the blended 36 against a base stock whose ARPU is
+    // 20, so the whole of its effect on Base is  40 x (36 - 20) / stock. The
+    // retired reading holds TEN at the same rate, and the total adjusted stock
+    // is identical either way (D enforces p_basePool = newBAdj - eventTotal),
+    // so the two deltas stand in the pool-size ratio 40:10 exactly:
+    //     resolved   40 x 16 / 10240 = 0.0625  -> 0.06
+    //     retired    10 x 16 / 10240 = 0.0156  -> 0.02
+    // Both are known numbers, so this discriminates between two arithmetics
+    // rather than between a number and its absence.
+    check('ret%: the RE-BANDED POOL is sized from the RESOLVED delta',
+      rPrev.arpuBase !== null && Math.abs((rPrev.arpuBase as number) - 0.06) < 0.005,
+      'base ' + rPrev.arpuBase
+      + ' — 0.02 is a pool of TEN: the per cent read as a subscriber count');
+  }
+
+  // ── 3d. THE MIX ARM UNDER A PERCENTAGE ─────────────────────────
+  //
+  // WHAT THE MIX IS, MEASURED. It carries NO per-tier volumes - there is no
+  // site in src/ that splits a promotion's volume across its bands. The mix is
+  // a PRICING device: it produces one blended rate, which the event carries as
+  // `arpu` and the pool prices its whole size at. So the claim available here
+  // is not "the tiers get the resolved delta rather than the percent" but the
+  // stronger pair the pool actually makes: SIZE from the resolved delta, PRICE
+  // at the mix blend.
+  //
+  // Both are pinned by one number, which is what makes it discriminating:
+  //   correct        pool 20 @31 -> (200x22 + 20x31)/220 - 22 = 0.8182
+  //   percent-sized  pool 10 @31 -> (210x22 + 10x31)/220 - 22 = 0.4091
+  //   mean-priced    pool 20 @26.67 (a MEAN of the three ARPUs, not a blend)
+  //                              -> (200x22 + 20x26.67)/220 - 22 = 0.4242
+  // Three known values; the check separates the right one from two plausible
+  // wrong ones rather than from zero.
+  {
+    const TIERS3 = [{ tier: 'Premium', baseArpu: 40 }, { tier: 'Core', baseArpu: 30 },
+                    { tier: 'Entry', baseArpu: 10 }];
+    const MIX3 = { Premium: 50, Core: 30, Entry: 20 };   // uneven, sums to 100
+    const mixPromo = buildPromoEvents({
+      target: 'Inflow',
+      amountType: 'percentage',
+      draft: {
+        date: MONTHS[MONTHS.length - 1],
+        segment: EVENT_ABS.segment, product: EVENT_ABS.product,
+        productL2: EVENT_ABS.productL2, channel: EVENT_ABS.channel,
+        channelL2: EVENT_ABS.channelL2, tariffL1: EVENT_ABS.tariffL1,
+        tariffL2: EVENT_ABS.tariffL2,
+        subscriberVolume: 10, campaignName: '', comment: '', contractLength: 12,
+      } as any,
+      mixEnabled: true, mixAxis: 'value', draftMix: MIX3, mixLocked: [],
+      tierData: TIERS3,
+      pricingEnabled: false, pricingMode: 'percentage', pricingAmount: 0,
+      cohortAvgArpu: 20,
+      spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [],
+      startSequence: 1,
+    } as any)[0] as any;
+
+    // 0.50x40 + 0.30x30 + 0.20x10 = 20 + 9 + 2 = 31. A MEAN would be 26.67.
+    check('mix%: the row carries the share-weighted blend, not a mean',
+      Math.abs(mixPromo.arpu - 31) < 1e-9,
+      String(mixPromo.arpu) + ' — a mean of the three would be 26.67');
+    check('mix%: revenue is still zero under a mix', mixPromo.revenue === 0,
+      String(mixPromo.revenue));
+    check('mix%: an INFLOW promo with a mix is NOT re-banded — that is Retention only',
+      mixPromo.promoRebanded === false, String(mixPromo.promoRebanded));
+
+    const mLeaf = await readAt(keyA, [mixPromo]);
+    console.log('  mix%  leaf inflow ' + mLeaf.arpuInflow);
+    const MIX_T = (200 * 22 + 20 * 31) / 220 - 22;
+    check('mix%: the INFLOW pool is sized from the resolved delta AND priced at the blend',
+      mLeaf.arpuInflow !== null && Math.abs((mLeaf.arpuInflow as number) - MIX_T) < 0.02,
+      'inflow ' + mLeaf.arpuInflow + ' vs hand ' + MIX_T.toFixed(4)
+      + ' — 0.41 is a pool of ten, 0.42 is a mean-priced pool of twenty');
   }
 
   // ── 4. THE GHOST: in scope at the view, landing on none of it ───────────

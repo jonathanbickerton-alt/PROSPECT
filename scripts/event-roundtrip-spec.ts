@@ -451,6 +451,87 @@ function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[]
     plainBack.churnMode === undefined && plainBack.churnPrevBase === undefined,
     'the absence carrier must survive the sheet');
 }
+// ── A PERCENTAGE PROMOTION, BOTH ARMS, THROUGH A REAL WORKBOOK ───────────
+//
+// Decision 6 (built 2026-09-04). A percentage promotion is the one event shape
+// where the SAVED FIELDS are not a record of a magnitude: `subscriberVolume`
+// holds a per cent, `revenue` is deliberately 0, and `arpu` is a RATE that
+// survives because it is magnitude-independent. If any of those three fails to
+// come back the reloaded event is a different event wearing the same name -
+// most damagingly, a `revenue` that reappeared would be read by the pool's
+// revenue/volume arm as an ARPU.
+//
+// Shaped exactly as `buildPromoEvents` emits: revenue 0, arpu the mix blend,
+// percentageBasis 'baseline', and promoRebanded set on the Retention arm only.
+{
+  const PROMO_BASE = {
+    id: 'promo-pct-in', sequence: 3, name: '', campaignName: 'Autumn 2026',
+    segment: 'Corporate', product: 'Mobile Voice', productL2: 'All',
+    channel: 'All', channelL2: 'All', tariffL1: 'All', tariffL2: 'All',
+    date: '2026-03', customerVolume: 0, comment: '', contractLength: 12,
+    subscriberVolume: 10,       // THE PER CENT
+    revenue: 0,                 // the bake that could not survive
+    arpu: 36,                   // the mix blend - a RATE, so it does
+    amountType: 'percentage' as const,
+    percentageBasis: 'baseline' as const,
+    isPromotion: true,
+  };
+  const PROMO_IN  = { ...PROMO_BASE, scenario: 'Inflow' as const,
+                      promoRebanded: false } as MarketEvent;
+  const PROMO_RET = { ...PROMO_BASE, id: 'promo-pct-ret', scenario: 'Retention' as const,
+                      promoRebanded: true, promoMixAxis: 'value' as const,
+                      promoMix: { High: 60, Low: 40 },
+                      promoBandArpuOverride: { High: 50 },
+                      mixLocked: ['High'] } as MarketEvent;
+
+  for (const src of ['session', 'workbook'] as const) {
+    for (const ev of [PROMO_IN, PROMO_RET]) {
+      const row = throughXlsx([toRow(ev)])[0];
+      check(`PROMO%/${src}/${ev.scenario}: Amount_Type is written to the sheet`,
+        row.Amount_Type === 'percentage', String(row.Amount_Type));
+      check(`PROMO%/${src}/${ev.scenario}: Percentage_Basis is written to the sheet`,
+        row.Percentage_Basis === 'baseline', String(row.Percentage_Basis));
+
+      const back: any = marketEventFromRow(row, src);
+      // THE ENGINE'S READ-SET, deep-equalled in one comparison rather than
+      // asserted field by field - a field added to the builder and forgotten
+      // here would otherwise round-trip untested.
+      const readSet = (e: any) => ({
+        scenario: e.scenario, date: e.date, amountType: e.amountType,
+        percentageBasis: e.percentageBasis, subscriberVolume: e.subscriberVolume,
+        revenue: e.revenue, arpu: e.arpu, arpuOverride: e.arpuOverride,
+        isPromotion: e.isPromotion, promoRebanded: e.promoRebanded,
+        promoMixAxis: e.promoMixAxis, promoMix: e.promoMix,
+        promoBandArpuOverride: e.promoBandArpuOverride, mixLocked: e.mixLocked,
+        contractLength: e.contractLength, retentionLinked: e.retentionLinked,
+        segment: e.segment, product: e.product, productL2: e.productL2,
+        channel: e.channel, channelL2: e.channelL2,
+        tariffL1: e.tariffL1, tariffL2: e.tariffL2,
+      });
+      const want = readSet({ ...ev, retentionLinked: true });
+      check(`PROMO%/${src}/${ev.scenario}: the engine's READ-SET rebuilds identically`,
+        JSON.stringify(readSet(back)) === JSON.stringify(want),
+        JSON.stringify(readSet(back)) + ' vs ' + JSON.stringify(want));
+      check(`PROMO%/${src}/${ev.scenario}: revenue is STILL zero after the reload`,
+        back.revenue === 0, String(back.revenue)
+        + ' — a revived revenue would be read as an ARPU by the pool');
+    }
+  }
+
+  // AN OLD WORKBOOK. Every save written before decision 6 carries promo rows
+  // with no Amount_Type at all, and they are ABSOLUTE. Defaulting the other way
+  // would silently reinterpret every historic promotion's volume as a per cent.
+  const legacy = throughXlsx([{ ...toRow(PROMO_IN), Amount_Type: '',
+                                Percentage_Basis: '', Subscriber_Volume: 500 }])[0];
+  for (const src of ['session', 'workbook'] as const) {
+    const back: any = marketEventFromRow(legacy, src);
+    check(`PROMO% LEGACY/${src}: a promo row with no Amount_Type loads as ABSOLUTE`,
+      back.amountType === 'absolute', String(back.amountType)
+      + ' — 500 would become five hundred per cent');
+    check(`PROMO% LEGACY/${src}: and it is still a promotion`, back.isPromotion === true);
+  }
+}
+
 console.log(`event-roundtrip spec: ${pass} passed, ${fails.length} failed`);
 fails.forEach(f => console.log('  FAIL ' + f));
 process.exit(fails.length ? 1 : 0);

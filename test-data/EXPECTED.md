@@ -4648,6 +4648,27 @@ Build status is recorded in this session's report and in the commit that lands
 it; the hash is stated there rather than here, because a hash written before
 the commit exists is a claim this file cannot keep.
 
+**WHERE THE RE-BANDED POOL IS OBSERVABLE — measured 2026-09-04, not a decision.**
+The `promoRebanded` pool in `p_eventPools` feeds **Base ARPU at T+1 and nothing
+else**. The per-scenario **Retention** ARPU is built by `scenarioPools`, a
+separate construction that never consults `p_eventPools` — so a defect in the
+re-banded pool's SIZE is invisible in Retention ARPU in the promotion's own
+month, and shows only as a Base delta one month later.
+
+This is the third session to pay for the same fact. 1409 measured it when it
+declined to re-point the D3-02 assertions; 1526 did not, and wrote a Retention
+trap that planted green against an Inflow-only mounted case. It is recorded here
+rather than in a report so the next session reads it before choosing where to
+assert.
+
+**THE MIX CARRIES NO PER-TIER VOLUMES — measured 2026-09-04.** No site in `src/`
+splits a promotion's volume across its bands; `promoMix` is read by the card, by
+the edit-restore path and by the export, and its only effect on the forecast is
+the single blended RATE the event carries as `arpu`. A check written as "the
+tiers get the resolved delta rather than the per cent" would therefore be
+asserting a mechanism that does not exist. The available claim is the pool's:
+SIZE from the resolved delta, PRICE at the mix blend.
+
 #### Pre-existing drift: `computeScenarioForFilter` has no `promoRebanded`
 
 `WhatIfTab`'s adjusted-forecast engine carves an isolated re-banded ARPU pool
