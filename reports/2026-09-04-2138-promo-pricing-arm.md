@@ -1,6 +1,30 @@
 # The promotion pricing arm: Dilution and duration (decision 3)
 
-__ADVISOR__
+Generated: 2026-09-04 22:09 +0100 (UTC 2026-09-04 21:09)
+Certifies: 90e2162
+Repo: committed 90e2162, pushed (origin in sync)
+BASE: 945d648 - diff EMPTY.
+ITEM 1: dilution was ALREADY extracted; duration read at 2 behavioural sites;
+  and the finding that governs Item 3 - promoPricingMode/Amount have ZERO
+  engine consumers (2 edit-restore, 1 control, 1 summary, 2 persistence).
+ITEM 2 BUILT, riding the percentage arm per the Pricing card's own doctrine.
+  ONE function, dilutionAmountPct, 8 call sites in src/. 25->20 =
+  +6.666666666666671% on BOTH cards to 1e-9; rate 20 x 0.80/0.75 = 21.3333,
+  identical to a hand-converted % arm. ZERO new keys. Mounted leaf -0.56.
+ITEM 3 NOT BUILT - structural, recorded in EXPECTED.md for Jon. A promo's
+  price is baked into its arpu at build time and never enters the pricing
+  pass, the only place duration is read - One-Off/Recurring would be a stored
+  mode NOTHING READS. Its multi-month mechanism is the SPREAD.
+THE PRICING SPEC CAUGHT MY FIRST GATE: reusing pricingDraftBlockReason took
+  its caller count 2->3, red. No check edited - the promo got its own gate.
+  pricing-roundtrip 136/136, its diff EMPTY.
+TRAP 153 red (6 FAILs): 'the promotion carries the SAME figure, to 1e-9 [5 vs
+  the Pricing card 6.666666666666665]'. TRAP 154 red (6): 'both stated figures
+  reach the sheet'. Columns Promo_Dilution_*_Pct, APPENDED.
+CORRECTION IN PLACE: I predicted a subtraction renders -0.67; measured -0.83.
+COUNTS: traps 148->150; view-apply 84->97; roundtrip 106->117; anchors
+  161/161. GATE (serial, guard-traps to a FILE): 150/150 caught, no
+  MISSED/CRASHED/INCONCLUSIVE; 58/58 specs; tsc+build clean.
 
 ## Base check
 
