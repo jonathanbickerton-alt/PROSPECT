@@ -745,6 +745,7 @@
   "whatif_mix_release": "Sblocca questa quota",
   "whatif_mix_range_collapsed": "I blocchi lasciano un solo valore misto raggiungibile, quindi i cursori non possono muoversi:",
   "whatif_mix_target_unreachable": "Obiettivo non raggiungibile.",
+  "whatif_mix_drag_wall": "Fermato al {{share}} % — spostarlo oltre abbandonerebbe l'obiettivo.",
   "whatif_mix_bound_above": "Il valore misto più alto consentito da questi blocchi è {{bound}}, determinato da {{member}}. Sblocca una quota o abbassa l’obiettivo.",
   "whatif_mix_bound_below": "Il valore misto più basso consentito da questi blocchi è {{bound}}, determinato da {{member}}. Sblocca una quota o alza l’obiettivo.",
   "whatif_mix_target_blocked_other": "I blocchi attuali non lasciano nulla di libero da spostare.",

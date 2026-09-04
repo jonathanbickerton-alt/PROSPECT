@@ -44,6 +44,10 @@ export const MIX_TOTAL = 100;
 /** Conservation tolerance. Shares are produced by residual-absorbing
  *  arithmetic, so the only slack needed is float representation. */
 const EPS_TOTAL = 1e-9;
+/** Drag-solver tolerance. Looser than EPS_TOTAL because the least-squares
+ *  solve accumulates float error across a 2x2 inverse; still far tighter than
+ *  a penny, which is the unit any of this is displayed in. */
+const EPS_DRAG = 1e-9;
 
 /** Reachability tolerance on the ARPU scale. Applied relative to the interval
  *  being tested so a target sitting exactly on a bound is reachable rather than
@@ -625,4 +629,249 @@ export function solveForTarget(
     return { kind: 'blocked', reason: 'arpu-unknown', detail: 'the solved mix has no blend' };
   }
   return { kind: 'ok', shares: conserved, blend };
+}
+
+// ---------------------------------------------------------------------------
+// rebalanceToTarget — a drag that holds the target
+// ---------------------------------------------------------------------------
+
+/** Which end of the reachable interval a drag ran into. */
+export interface DragWall {
+  /** 'max' when the drag was pushing the moved share up, 'min' when down. */
+  bound: 'min' | 'max';
+  /** The free member whose ARPU forms the wall, or null when the wall comes
+   *  from the budget rather than from a rate. */
+  member: string | null;
+  /** The share the moved member was clamped to. */
+  clampedShare: number;
+}
+
+export type DragOutcome =
+  | { kind: 'ok'; shares: Record<string, number>; appliedShare: number; wall: null }
+  /** The drag was stopped: `shares` are the solved mix AT the wall, so the
+   *  target is still held. `wall` says where it stopped and why. */
+  | { kind: 'wall'; shares: Record<string, number>; appliedShare: number; wall: DragWall }
+  | { kind: 'blocked'; reason: MixBlockReason; detail: string };
+
+/**
+ * A DRAG THAT SATISFIES THE SUM **AND BLEND** EQUATIONS.
+ *
+ * `rebalance` conserves the total and nothing else, because it is given neither
+ * the target nor the per-member rates — it cannot hold a blend, and that is its
+ * signature rather than a defect. Its no-target callers are unchanged and it is
+ * not widened here; this is a SIBLING, called only when a target is applied.
+ *
+ * WHY IT EXISTS. The settled entry says a drag is "exactly determined by the
+ * sum and blend equations", and the implementation satisfied the sum only:
+ * measured 2026-09-04, a target of 23.93 became a blend of 21.385325 on both
+ * cards the moment a slider moved. See EXPECTED.md, "SUPPLEMENT: THE DRAG
+ * ITSELF".
+ *
+ * THE ARITHMETIC, stated because it is short and the shape decides the design.
+ * With the moved member at x, the untouched unlocked members must satisfy
+ *
+ *     sum si      = R(x) = freeBudget - x                          (the sum)
+ *     sum si * ai = B(x) = 100*target - lockedArpu - x*aM          (the blend)
+ *
+ * Both are LINEAR in x. For non-negative shares summing to R, the reachable
+ * blend contribution is exactly [R*minA, R*maxA] — all of the budget on the
+ * cheapest free member, or all on the dearest, the same vertex argument
+ * `achievableTargetRange` makes. So feasibility in x is an INTERVAL, and THE
+ * WALL IS ITS ENDPOINT. That is what makes decision 2 computable rather than a
+ * guess: the clamp point is derived, not chosen.
+ *
+ * ONE SOLVE PATH, NOT TWO. With two untouched members the two equations
+ * determine the answer uniquely, and a minimum-change solve returns exactly
+ * that unique point — so the "exactly determined" case is not special-cased, it
+ * is the degenerate case of the general one. Fewer paths, and no risk of the
+ * two disagreeing at the boundary.
+ *
+ * MINIMUM CHANGE IS NOT A RECOMMENDATION. Where the equations leave freedom the
+ * solver takes the NEAREST reachable point to where the sliders already are.
+ * Goal-seek-as-recommendation stays out of scope: choosing the closest point
+ * adds no opinion about which reachable mix is good, and any other rule would.
+ */
+export function rebalanceToTarget(
+  members: readonly string[],
+  shares: Readonly<Record<string, number>>,
+  locked: readonly string[],
+  perMemberArpus: Readonly<Record<string, number>>,
+  targetArpu: number,
+  movedMember: string,
+  newShare: number,
+): DragOutcome {
+  const view = readMix(members, shares, locked);
+  if (!isView(view)) return { kind: 'blocked', reason: view.reason, detail: view.detail };
+
+  if (!view.members.includes(movedMember)) {
+    return { kind: 'blocked', reason: 'malformed-shares', detail: `"${movedMember}" is not a member` };
+  }
+  if (typeof newShare !== 'number' || !Number.isFinite(newShare)) {
+    return { kind: 'blocked', reason: 'malformed-shares', detail: 'the requested share is not finite' };
+  }
+  if (typeof targetArpu !== 'number' || !Number.isFinite(targetArpu)) {
+    return { kind: 'blocked', reason: 'malformed-shares', detail: 'the target is not finite' };
+  }
+  if (view.locked.includes(movedMember)) {
+    return { kind: 'blocked', reason: 'range-collapsed', detail: `"${movedMember}" is locked` };
+  }
+  // EVERY member needs a rate, not just the free ones: the locked members'
+  // contribution is part of the blend equation's constant term.
+  for (const m of view.members) {
+    const a = perMemberArpus[m];
+    if (typeof a !== 'number' || !Number.isFinite(a)) {
+      return { kind: 'blocked', reason: 'arpu-unknown', detail: `"${m}" has no finite ARPU` };
+    }
+  }
+
+  const others = view.free.filter(m => m !== movedMember);
+  const lockedShare = view.locked.reduce((s, m) => s + view.shares[m], 0);
+  const lockedArpu = view.locked.reduce((s, m) => s + view.shares[m] * perMemberArpus[m], 0);
+  const freeBudget = MIX_TOTAL - lockedShare;
+  if (freeBudget < -EPS_DRAG) {
+    return { kind: 'blocked', reason: 'locks-oversubscribed', detail: `locks hold ${lockedShare}` };
+  }
+
+  const aM = perMemberArpus[movedMember];
+  const rates = others.map(m => perMemberArpus[m]);
+  const minA = rates.length ? Math.min(...rates) : 0;
+  const maxA = rates.length ? Math.max(...rates) : 0;
+  const K = MIX_TOTAL * targetArpu - lockedArpu;
+
+  let lo = 0;
+  let hi = freeBudget;
+  let loMember: string | null = null;
+  let hiMember: string | null = null;
+  let infeasible = false;
+
+  if (others.length === 0) {
+    // Nothing may flex. The blend is whatever the locks and the moved member
+    // make it, so exactly ONE position holds the target — the interval is a
+    // point, and every drag clamps to it.
+    if (Math.abs(aM) < EPS_DRAG) {
+      return { kind: 'blocked', reason: 'range-collapsed', detail: 'no free member can move the blend' };
+    }
+    const only = K / aM;
+    if (only < -EPS_DRAG || only > freeBudget + EPS_DRAG) infeasible = true;
+    lo = hi = Math.min(freeBudget, Math.max(0, only));
+  } else {
+    const lowMem = others[rates.indexOf(minA)] ?? null;
+    const highMem = others[rates.indexOf(maxA)] ?? null;
+    // B - R*minA >= 0  =>  x*(minA - aM) >= freeBudget*minA - K
+    const c1 = minA - aM;
+    const r1 = freeBudget * minA - K;
+    if (Math.abs(c1) < EPS_DRAG) { if (r1 > EPS_DRAG) infeasible = true; }
+    else if (c1 > 0) { const b = r1 / c1; if (b > lo) { lo = b; loMember = lowMem; } }
+    else { const b = r1 / c1; if (b < hi) { hi = b; hiMember = lowMem; } }
+    // R*maxA - B >= 0  =>  x*(aM - maxA) >= K - freeBudget*maxA
+    const c2 = aM - maxA;
+    const r2 = K - freeBudget * maxA;
+    if (Math.abs(c2) < EPS_DRAG) { if (r2 > EPS_DRAG) infeasible = true; }
+    else if (c2 > 0) { const b = r2 / c2; if (b > lo) { lo = b; loMember = highMem; } }
+    else { const b = r2 / c2; if (b < hi) { hi = b; hiMember = highMem; } }
+  }
+
+  if (infeasible || lo > hi + EPS_DRAG) {
+    return {
+      kind: 'blocked',
+      reason: 'range-collapsed',
+      detail: 'no position of this slider holds the target',
+    };
+  }
+
+  const requested = newShare;
+  const applied = Math.min(hi, Math.max(lo, requested));
+  const hitWall = Math.abs(applied - requested) > EPS_DRAG;
+
+  const R = freeBudget - applied;
+  const B = K - applied * aM;
+  const current = others.map(m => view.shares[m]);
+  const solved = minimumChange(current, rates, R, B);
+  if (!solved) {
+    return { kind: 'blocked', reason: 'cannot-conserve', detail: 'no non-negative mix satisfies both equations' };
+  }
+
+  const next: Record<string, number> = { ...view.shares, [movedMember]: applied };
+  others.forEach((m, i) => { next[m] = solved[i]; });
+
+  if (!hitWall) return { kind: 'ok', shares: next, appliedShare: applied, wall: null };
+  const bound: 'min' | 'max' = requested > applied ? 'max' : 'min';
+  return {
+    kind: 'wall',
+    shares: next,
+    appliedShare: applied,
+    wall: { bound, member: bound === 'max' ? hiMember : loMember, clampedShare: applied },
+  };
+}
+
+/**
+ * The nearest non-negative vector to `current` with sum s = R and sum s*a = B.
+ *
+ * Least squares under two equality constraints has a closed form via Lagrange
+ * multipliers; non-negativity is then imposed by an ACTIVE SET loop — solve,
+ * pin whatever went most negative to zero, re-solve on the rest. That
+ * terminates in at most one pass per member and is deterministic, which matters
+ * more here than optimality at the corners: two runs of the same drag must
+ * agree, every time, or the control is not predictable.
+ *
+ * Returns null when no non-negative solution exists. The caller has already
+ * restricted the moved share to the feasible interval, so that is a guard
+ * rather than an expected path.
+ */
+function minimumChange(
+  current: readonly number[],
+  rates: readonly number[],
+  R: number,
+  B: number,
+): number[] | null {
+  const n = current.length;
+  if (n === 0) return Math.abs(R) < EPS_DRAG && Math.abs(B) < EPS_DRAG ? [] : null;
+
+  const pinned = new Array<boolean>(n).fill(false);
+  for (let pass = 0; pass <= n; pass++) {
+    const idx: number[] = [];
+    for (let i = 0; i < n; i++) if (!pinned[i]) idx.push(i);
+    if (idx.length === 0) return null;
+
+    // s = c + alpha*1 + beta*a, giving two equations in alpha and beta.
+    const k = idx.length;
+    const sumA = idx.reduce((s, i) => s + rates[i], 0);
+    const sumAA = idx.reduce((s, i) => s + rates[i] * rates[i], 0);
+    const sumC = idx.reduce((s, i) => s + current[i], 0);
+    const sumCA = idx.reduce((s, i) => s + current[i] * rates[i], 0);
+    const d1 = R - sumC;
+    const d2 = B - sumCA;
+    const det = k * sumAA - sumA * sumA;
+
+    let alpha: number;
+    let beta: number;
+    if (Math.abs(det) < 1e-12) {
+      // Every free member carries the SAME rate, so the blend equation is a
+      // multiple of the sum equation. Consistent only if the two agree; when
+      // they do the sum equation alone decides and beta is zero.
+      if (Math.abs(d2 - (sumA / k) * d1) > 1e-6) return null;
+      alpha = d1 / k;
+      beta = 0;
+    } else {
+      alpha = (d1 * sumAA - d2 * sumA) / det;
+      beta = (d2 * k - d1 * sumA) / det;
+    }
+
+    const out = new Array<number>(n).fill(0);
+    let worst = -1;
+    let worstVal = 0;
+    for (const i of idx) {
+      const v = current[i] + alpha + beta * rates[i];
+      out[i] = v;
+      if (v < -EPS_DRAG && v < worstVal) { worstVal = v; worst = i; }
+    }
+    if (worst === -1) {
+      // Float dust cleaned so a caller's conformsToTotal check is not decided
+      // by 1e-17.
+      for (let i = 0; i < n; i++) if (Math.abs(out[i]) < EPS_DRAG) out[i] = 0;
+      return out;
+    }
+    pinned[worst] = true;
+  }
+  return null;
 }

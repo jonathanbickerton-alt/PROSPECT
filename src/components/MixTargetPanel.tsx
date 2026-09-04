@@ -1,5 +1,5 @@
 import React from 'react';
-import type { RangeOutcome, SolveOutcome } from '../utils/mixConstraint';
+import type { RangeOutcome, SolveOutcome, DragWall } from '../utils/mixConstraint';
 
 /**
  * THE TARGET-BLEND PANEL, used by BOTH mix cards.
@@ -41,12 +41,18 @@ export interface MixTargetPanelProps {
   range: RangeOutcome;
   /** A collapsed range has its own message elsewhere; the readout is hidden. */
   rangeCollapsed: boolean;
+  /**
+   * Where the last drag was stopped, or null. COMPUTED BY THE CARD, drawn
+   * here - this panel still decides nothing, which is the rule it was created
+   * under and the reason the solver lives in the engine.
+   */
+  wall: DragWall | null;
   t: (key: string, opts?: Record<string, unknown>) => string;
   formatNumber: (v: number) => string;
 }
 
 export function MixTargetPanel({
-  testIdPrefix, value, onChange, onApply, outcome, range, rangeCollapsed,
+  testIdPrefix, value, onChange, onApply, outcome, range, rangeCollapsed, wall,
   t, formatNumber,
 }: MixTargetPanelProps) {
   return (
@@ -82,6 +88,21 @@ export function MixTargetPanel({
           </span>
         )}
       </div>
+
+      {/* THE WALL. A drag that would leave the reachable range stops at the
+          last position where the target can still be held, and says so
+          (Jon, 2026-09-04, decision 2).
+
+          THIS IS NOT THE CLAMPING THE SETTLED ENTRY FORBIDS. That rule is
+          about the user's TYPED TARGET, which is never rewritten and is still
+          shown when unreachable. What stops here is the SLIDER, and stopping
+          it is the only way to keep the target the user asked for. */}
+      {wall && (
+        <div className="mt-2 text-[11px] text-amber-600"
+          data-testid={`${testIdPrefix}-mix-wall`}>
+          {t('whatif_mix_drag_wall', { share: formatNumber(wall.clampedShare) })}
+        </div>
+      )}
 
       {/* A COLLAPSED RANGE LOCKS, AND SAYS SO. Settled semantics: the control
           states the cause rather than offering movement that cannot happen.

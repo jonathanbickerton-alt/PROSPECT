@@ -7874,6 +7874,56 @@ combination of the remaining sliders still exists.
 **Goal-seek-as-recommendation is OUT OF SCOPE.** The system constrains what is
 reachable; it does not propose which reachable point to pick.
 
+##### SUPPLEMENT: THE DRAG ITSELF (Jon, 2026-09-04; recorded here 2026-09-04)
+
+The entry above already says what a drag does:
+
+> **Moving one slider rebalances the untouched ones deterministically.** With
+> two sliders flexing, the outcome is *exactly determined* by the sum and blend
+> equations - there is no choice to make and therefore no recommendation to
+> offer.
+
+**The implementation satisfied the SUM equation only.** Measured mounted on
+2026-09-04 (`reports/2026-09-04-1213-d4-01-target-drag.md`): with a target of
+23.93 applied, dragging one unlocked tier took the blend to 21.385325 on BOTH
+cards - the same figure to six decimals, because both drag handlers reach
+`rebalance`, which is given neither the target nor the per-member rates and
+therefore cannot hold a blend. These three decisions close that gap and fill
+the two clauses the entry never had.
+
+1. **A DRAG UNDER A TARGET SOLVES BOTH EQUATIONS.** With a target applied,
+   dragging one slider re-solves the untouched UNLOCKED sliders so the blend
+   stays ON the target and the sum stays 100. A lock narrows the reachable
+   range and the held share is untouched **to the penny**.
+
+   This is not new policy. It is the sentence quoted above, implemented.
+
+2. **A DRAG THAT WOULD LEAVE THE REACHABLE RANGE STOPS AT THE WALL.** The
+   slider clamps at the last position where the target can still be held, and
+   the readout says which bound was reached.
+
+   **This clause did not exist before today.** The entry says an unreachable
+   target is flagged BEFORE interaction, "not discovered by dragging into a
+   wall" - which presupposes a wall the code never had, because the target
+   stopped constraining the moment a slider moved. Clamping the SLIDER is not
+   the clamping that decision forbids: the user's TYPED TARGET is never
+   rewritten, and an unreachable typed target is still shown, never moved.
+
+3. **MORE THAN TWO FREE SLIDERS: MINIMUM CHANGE.** Where the two equations
+   leave freedom, the answer is the smallest total adjustment - least squares -
+   satisfying both. Deterministic, and no recommendation is being offered:
+   among the reachable points it takes the NEAREST one, which is the only
+   choice that adds no opinion about which reachable mix is good.
+
+   The entry's design note already anticipated this: *"the multi-slider tariff
+   axis is where the pinning rule carries its weight, because more than two
+   free variables means the rebalance has genuine freedom"*. The three-band
+   value axis is exactly determined and never reaches this branch.
+
+**Goal-seek-as-recommendation remains OUT OF SCOPE**, unchanged. The system
+still constrains what is reachable and still does not propose which reachable
+point to pick; minimum change is a tie-break on distance, not advice.
+
 #### Design-pass notes, carried forward
 
 - **The three-band value axis is always exactly determined.** With three bands

@@ -526,6 +526,178 @@ async function main() {
     }
   }
 
+
+  // ── (g) THE DRAG HOLDS THE TARGET, ON THE VALUE CARD ──────────────────────
+  // 1213 measured this failing: a target of 23.93 became a blend of 21.385325
+  // the moment a slider moved, on BOTH cards, because both drag paths reached
+  // `rebalance` — which is given neither the target nor the rates. These are
+  // the checks that failure would have had to pass.
+  const { c: c8 } = await openValueCard();
+  const tiers8 = tiersIn(c8);
+  const rate8 = (t: string) => Number(
+    (c8.querySelector(`[data-testid="tier-arpu-override-${t}"]`) as any).placeholder);
+  const blend8 = () => tiers8.reduce((s, t) => s + Number(rangeOf(c8, t).value) / 100 * rate8(t), 0);
+  const box8 = c8.querySelector('[data-testid="yield-mix-target"]') as any;
+  const ro8 = c8.querySelector('[data-testid="yield-mix-target-range"]') as any;
+  const n8 = ((ro8?.textContent) || '').match(/-?\d+\.\d+/g) || [];
+  check('(g) the Value card offers a reachable interval', n8.length === 2, ro8?.textContent || 'absent');
+
+  if (n8.length === 2 && box8) {
+    const lo8 = Number(n8[0]), hi8 = Number(n8[1]);
+    const T8 = Math.round(((lo8 + hi8) / 2) * 100) / 100;
+    const type8 = async (v: number) => {
+      await (act as any)(async () => {
+        nativeSetter.call(box8, String(v));
+        box8.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+        box8.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+      });
+    };
+    await type8(T8);
+    await clickIt(c8.querySelector('[data-testid="yield-mix-target-apply"]') as any);
+    const applied8 = blend8();
+
+    // THE DRAG. Small, well inside the range, so this is the plain case.
+    const mv8 = tiers8[1];
+    const from8 = Number(rangeOf(c8, mv8).value);
+    const to8 = Math.max(0, Math.min(100, from8 > 50 ? from8 - 5 : from8 + 5));
+    await setRange(rangeOf(c8, mv8), to8);
+    const after8 = blend8();
+    console.log(`  (g) value drag: target ${T8}, blend after Apply ${applied8.toFixed(6)},`
+      + ` dragged ${mv8} ${from8.toFixed(3)} -> ${to8}, blend after ${after8.toFixed(6)}`);
+    check('(g) THE BLEND IS STILL THE TARGET AFTER A DRAG',
+      Math.abs(after8 - T8) < 0.005,
+      `${after8.toFixed(6)} vs ${T8} — 1213 measured this at 21.385325 against 23.93`);
+    check('(g) and the shares still total 100',
+      Math.abs(tiers8.reduce((s, t) => s + Number(rangeOf(c8, t).value), 0) - 100) < 0.05,
+      String(tiers8.reduce((s, t) => s + Number(rangeOf(c8, t).value), 0)));
+    check('(g) and the dragged tier went where it was dragged',
+      Math.abs(Number(rangeOf(c8, mv8).value) - to8) < 1e-6,
+      `${Number(rangeOf(c8, mv8).value)} vs ${to8}`);
+
+    // ── A LOCK HOLDS UNDER A DRAG-WITH-TARGET ───────────────────────────────
+    const { c: c9 } = await openValueCard();
+    const tiers9 = tiersIn(c9);
+    const H9 = tiers9[0];
+    await clickIt(lockOf(c9, H9));
+    const heldExact9 = Number(rangeOf(c9, H9).value);
+    const ro9 = c9.querySelector('[data-testid="yield-mix-target-range"]') as any;
+    const n9 = ((ro9?.textContent) || '').match(/-?\d+\.\d+/g) || [];
+    if (n9.length === 2) {
+      const T9 = Math.round(((Number(n9[0]) + Number(n9[1])) / 2) * 100) / 100;
+      const box9 = c9.querySelector('[data-testid="yield-mix-target"]') as any;
+      await (act as any)(async () => {
+        nativeSetter.call(box9, String(T9));
+        box9.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+        box9.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+      });
+      await clickIt(c9.querySelector('[data-testid="yield-mix-target-apply"]') as any);
+      const mv9 = tiers9[1];
+      const from9 = Number(rangeOf(c9, mv9).value);
+      await setRange(rangeOf(c9, mv9), Math.max(0, Math.min(100, from9 > 50 ? from9 - 4 : from9 + 4)));
+      const rate9 = (t: string) => Number(
+        (c9.querySelector(`[data-testid="tier-arpu-override-${t}"]`) as any).placeholder);
+      const blend9 = tiers9.reduce((s, t) => s + Number(rangeOf(c9, t).value) / 100 * rate9(t), 0);
+      check('(g) a HELD tier is untouched by a drag under a target, to the penny',
+        Number(rangeOf(c9, H9).value) === heldExact9,
+        `${Number(rangeOf(c9, H9).value)} vs ${heldExact9}`);
+      check('(g) and the target is still held with a lock in play',
+        Math.abs(blend9 - T9) < 0.005, `${blend9.toFixed(6)} vs ${T9}`);
+    }
+
+    // ── THE WALL ────────────────────────────────────────────────────────────
+    // Drag hard toward a bound. The slider must STOP short of the request, the
+    // reason must render, and the target must still be held at the stop.
+    const { c: cW } = await openValueCard();
+    const tiersW = tiersIn(cW);
+    const boxW = cW.querySelector('[data-testid="yield-mix-target"]') as any;
+    const roW = cW.querySelector('[data-testid="yield-mix-target-range"]') as any;
+    const nW = ((roW?.textContent) || '').match(/-?\d+\.\d+/g) || [];
+    const TW = Math.round(((Number(nW[0]) + Number(nW[1])) / 2) * 100) / 100;
+    await (act as any)(async () => {
+      nativeSetter.call(boxW, String(TW));
+      boxW.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+      boxW.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    });
+    await clickIt(cW.querySelector('[data-testid="yield-mix-target-apply"]') as any);
+    const mvW = tiersW[0];
+    await setRange(rangeOf(cW, mvW), 100);
+    const stopped = Number(rangeOf(cW, mvW).value);
+    const rateW = (t: string) => Number(
+      (cW.querySelector(`[data-testid="tier-arpu-override-${t}"]`) as any).placeholder);
+    const blendW = tiersW.reduce((s, t) => s + Number(rangeOf(cW, t).value) / 100 * rateW(t), 0);
+    console.log(`  (g) value wall: requested 100, stopped at ${stopped.toFixed(6)},`
+      + ` blend ${blendW.toFixed(6)} vs target ${TW}`);
+    check('(g) THE DRAG STOPS AT THE WALL rather than taking the request',
+      stopped < 100 - 1e-6, `${stopped} — it went the whole way, so nothing stopped it`);
+    check('(g) the wall reason is RENDERED',
+      !!cW.querySelector('[data-testid="yield-mix-wall"]'),
+      'a slider that stops without saying why is the dead-control state');
+    check('(g) and AT THE WALL the target is still held',
+      Math.abs(blendW - TW) < 0.005,
+      `${blendW.toFixed(6)} vs ${TW} — a wall that abandoned the target would be the old bug`);
+    check('(g) and the shares still total 100 at the wall',
+      Math.abs(tiersW.reduce((s, t) => s + Number(rangeOf(cW, t).value), 0) - 100) < 0.05);
+  }
+
+  // ── (h) THE SAME, ON THE PROMOTION ARM ────────────────────────────────────
+  // Its 0958 testids have never been driven. Both cards reach one function, so
+  // a check here is not a duplicate: it is the assertion that they still do.
+  {
+    host.replaceChildren();
+    const cp = document.createElement('div');
+    host.appendChild(cp);
+    const rootP = createRoot(cp);
+    await (act as any)(async () => { rootP.render(withProvider(React.createElement(M, whatIfProps()))); });
+    await clickIt(cp.querySelector('[data-testid="whatif-tab-promotion"]') as any);
+    let mixBox: any = null;
+    for (const b of [...cp.querySelectorAll('input[type=checkbox]')] as any[]) {
+      const label = b.closest('label')?.textContent || b.parentElement?.textContent || '';
+      if (/mix/i.test(label)) { mixBox = b; break; }
+    }
+    check('(h) the Promotion mix arm is reachable', !!mixBox);
+    if (mixBox) {
+      await clickIt(mixBox);
+      const pTiers = [...cp.querySelectorAll('[data-testid^="promo-mix-lock-"]')]
+        .map((el: any) => el.getAttribute('data-testid').replace('promo-mix-lock-', ''));
+      const pRange = (t: string) => cp.querySelector(`[data-testid="promo-mix-range-${t}"]`) as any;
+      const pRate = (t: string) => Number(
+        (cp.querySelector(`[data-testid="promo-band-arpu-override-${t}"]`) as any).placeholder);
+      const pBlend = () => pTiers.reduce((s, t) => s + Number(pRange(t).value) / 100 * pRate(t), 0);
+      const pBox = cp.querySelector('[data-testid="promo-mix-target"]') as any;
+      const pRo = cp.querySelector('[data-testid="promo-mix-target-range"]') as any;
+      check('(h) the Promotion target box and range readout are present by testid',
+        !!pBox && !!pRo, 'the 0958 testids');
+      const pN = ((pRo?.textContent) || '').match(/-?\d+\.\d+/g) || [];
+      if (pBox && pN.length === 2) {
+        const pT = Math.round(((Number(pN[0]) + Number(pN[1])) / 2) * 100) / 100;
+        await (act as any)(async () => {
+          nativeSetter.call(pBox, String(pT));
+          pBox.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+          pBox.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+        });
+        await clickIt(cp.querySelector('[data-testid="promo-mix-target-apply"]') as any);
+        const pMv = pTiers[1];
+        const pFrom = Number(pRange(pMv).value);
+        await setRange(pRange(pMv), Math.max(0, Math.min(100, pFrom > 50 ? pFrom - 5 : pFrom + 5)));
+        const pAfter = pBlend();
+        console.log(`  (h) promo drag: target ${pT}, dragged ${pMv} ${pFrom.toFixed(3)},`
+          + ` blend after ${pAfter.toFixed(6)}`);
+        check('(h) THE PROMOTION ARM ALSO HOLDS THE TARGET UNDER A DRAG',
+          Math.abs(pAfter - pT) < 0.005,
+          `${pAfter.toFixed(6)} vs ${pT} — 1213 measured 21.385325 against 23.93 here too`);
+        check('(h) and its shares still total 100',
+          Math.abs(pTiers.reduce((s, t) => s + Number(pRange(t).value), 0) - 100) < 0.05);
+      }
+    }
+  }
+
+  // THE 4-MEMBER TARIFF AXIS IS NOT EXERCISED MOUNTED. This harness passes an
+  // empty tariffTree and no selectedTariffs, so the tariff axis never seeds and
+  // the mounted cases above are all three-band. The engine's 4-member case is
+  // covered by property checks in spec:mix-constraint, including the
+  // minimum-change comparison against a brute sweep; what is missing is a
+  // MOUNTED 4-member drag, and it is missing because no fixture seeds one.
+
   check('the run exercised every case', tiers.length >= 3 && tiers2.length >= 3 && tiers3.length >= 3,
     `${tiers.length}/${tiers2.length}/${tiers3.length} tiers across the mounts`);
 

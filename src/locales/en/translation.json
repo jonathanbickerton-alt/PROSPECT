@@ -745,6 +745,7 @@
   "whatif_mix_release": "Release this share",
   "whatif_mix_range_collapsed": "The holds leave one reachable blend, so the sliders cannot move:",
   "whatif_mix_target_unreachable": "Target not reachable.",
+  "whatif_mix_drag_wall": "Stopped at {{share}}% — moving further would leave the target.",
   "whatif_mix_bound_above": "The highest blend these holds allow is {{bound}}, set by {{member}}. Release a hold or lower the target.",
   "whatif_mix_bound_below": "The lowest blend these holds allow is {{bound}}, set by {{member}}. Release a hold or raise the target.",
   "whatif_mix_target_blocked_other": "The current holds leave nothing free to move.",

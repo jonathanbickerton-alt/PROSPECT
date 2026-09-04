@@ -29,6 +29,7 @@
  */
 import {
   MIX_TOTAL, conformsToTotal, blendedArpu, achievableTargetRange, rebalance, solveForTarget,
+  rebalanceToTarget,
 } from '../src/utils/mixConstraint';
 import { blendTierMixOrNull } from '../src/utils/forecasting';
 import { autoBalanceMix } from '../src/components/WhatIfTab';
@@ -451,6 +452,158 @@ const EVEN = { 'Low Value': 100 / 3, 'Mid Value': 100 / 3, 'High Value': 100 - (
     repaired.kind === 'ok' && repaired.shares['High Value'] === lockedShare
       && conformsToTotal(BANDS, repaired.shares),
     'an earlier draft always absorbed the residual on the LAST member, padlocked or not');
+}
+
+
+// ---------------------------------------------------------------------------
+// THE DRAG THAT HOLDS THE TARGET — sum AND blend (Jon, 2026-09-04)
+//
+// EXPECTED.md, "SUPPLEMENT: THE DRAG ITSELF". `rebalance` conserves the total
+// and nothing else; `rebalanceToTarget` conserves both equations, clamps at the
+// wall, and takes the nearest reachable point when the equations leave freedom.
+//
+// SYNTHETIC RATES throughout, chosen so the arithmetic is checkable by hand and
+// the assertions are not hostage to a fixture's numbers.
+// ---------------------------------------------------------------------------
+{
+  const M4 = ['a', 'b', 'c', 'd'];
+  const A4: Record<string, number> = { a: 10, b: 20, c: 30, d: 40 };
+  const even4 = { a: 25, b: 25, c: 25, d: 25 };
+  const blendOf = (s: Record<string, number>, a: Record<string, number>) =>
+    Object.keys(s).reduce((t, k) => t + (s[k] / 100) * a[k], 0);
+
+  // Blend at rest is 25. Moving `a` up must be absorbed by b/c/d such that the
+  // blend is STILL 25 — which rebalance alone could never do.
+  const T = 25;
+  const d1 = rebalanceToTarget(M4, even4, [], A4, T, 'a', 40);
+  check('drag: a reachable drag returns ok, not a wall', d1.kind === 'ok', d1.kind);
+  if (d1.kind === 'ok') {
+    check('drag: the moved member gets exactly what was asked',
+      Math.abs(d1.appliedShare - 40) < 1e-9, `${d1.appliedShare}`);
+    check('drag: the shares still total 100',
+      Math.abs(Object.values(d1.shares).reduce((s, v) => s + v, 0) - 100) < 1e-9,
+      `${Object.values(d1.shares).reduce((s, v) => s + v, 0)}`);
+    check('drag: THE BLEND IS STILL THE TARGET, to 1e-9',
+      Math.abs(blendOf(d1.shares, A4) - T) < 1e-9,
+      `${blendOf(d1.shares, A4)} vs ${T} — this is the whole point of the function`);
+    check('drag: every share is non-negative',
+      Object.values(d1.shares).every(v => v >= -1e-9), JSON.stringify(d1.shares));
+  }
+
+  // A LOCK IS UNTOUCHED, TO THE PENNY, and still the blend holds.
+  const locked4 = { a: 25, b: 25, c: 25, d: 25 };
+  const d2 = rebalanceToTarget(M4, locked4, ['d'], A4, T, 'a', 35);
+  check('drag: with d held, the drag still solves', d2.kind === 'ok', d2.kind);
+  if (d2.kind === 'ok') {
+    check('drag: the HELD share is untouched to the penny',
+      d2.shares['d'] === 25, `${d2.shares['d']} — a lock is the user's`);
+    check('drag: and the blend is still the target with a lock in play',
+      Math.abs(blendOf(d2.shares, A4) - T) < 1e-9, `${blendOf(d2.shares, A4)}`);
+  }
+
+  // MINIMUM CHANGE. With three untouched members the equations leave freedom,
+  // and the answer must be the LEAST-SQUARES point. Compared against a brute
+  // search over the same feasible set rather than against a formula restated
+  // here, which would only check the implementation against itself.
+  const d3 = rebalanceToTarget(M4, even4, [], A4, T, 'a', 34);
+  check('drag: the 4-member case solves', d3.kind === 'ok', d3.kind);
+  if (d3.kind === 'ok') {
+    const got = ['b', 'c', 'd'].map(k => d3.shares[k]);
+    const cur = [25, 25, 25];
+    const R = 100 - d3.shares['a'];
+    const B = 100 * T - d3.shares['a'] * A4['a'];
+    const dist = (v: number[]) => v.reduce((s, x, i) => s + (x - cur[i]) ** 2, 0);
+    // Brute: sweep b, derive c and d from the two equations, keep every
+    // non-negative point, take the nearest. Coarse but independent.
+    let best: number[] | null = null;
+    for (let b = 0; b <= R; b += 0.05) {
+      // c + d = R - b ; 30c + 40d = B - 20b
+      const rc = R - b;
+      const bc = B - 20 * b;
+      const d = (bc - 30 * rc) / 10;
+      const c = rc - d;
+      if (c < -1e-9 || d < -1e-9) continue;
+      const cand = [b, c, d];
+      if (!best || dist(cand) < dist(best)) best = cand;
+    }
+    check('drag: a brute sweep found a feasible point to compare against', !!best);
+    if (best) {
+      check('drag: MINIMUM CHANGE — no feasible point is nearer than the solved one',
+        dist(got) <= dist(best) + 1e-3,
+        `solved ${dist(got).toFixed(6)} vs brute ${dist(best).toFixed(6)} at ${JSON.stringify(best.map(v => +v.toFixed(3)))}`);
+      check('drag: and the brute point satisfies the same two equations',
+        Math.abs(best.reduce((s, v) => s + v, 0) - R) < 1e-6
+          && Math.abs(best[0] * 20 + best[1] * 30 + best[2] * 40 - B) < 1e-6,
+        'the comparison is only meaningful if the brute point is itself feasible');
+    }
+  }
+
+  // THE WALL. Pushing `a` far up must stop exactly where a further move would
+  // need a negative share or a locked share to move.
+  const d4 = rebalanceToTarget(M4, even4, [], A4, T, 'a', 95);
+  check('drag: a drag past the reachable range returns a WALL', d4.kind === 'wall', d4.kind);
+  if (d4.kind === 'wall') {
+    check('drag: the wall names the bound it reached',
+      d4.wall.bound === 'max', d4.wall.bound);
+    check('drag: the clamped share is what the moved member actually got',
+      d4.wall.clampedShare === d4.appliedShare, `${d4.wall.clampedShare} vs ${d4.appliedShare}`);
+    check('drag: AT THE WALL THE TARGET IS STILL HELD',
+      Math.abs(blendOf(d4.shares, A4) - T) < 1e-9,
+      `${blendOf(d4.shares, A4)} — a wall that abandoned the target would be the old bug`);
+    check('drag: at the wall the shares still total 100',
+      Math.abs(Object.values(d4.shares).reduce((s, v) => s + v, 0) - 100) < 1e-9);
+    check('drag: and the wall is where a further move would need a negative share',
+      Object.values(d4.shares).some(v => Math.abs(v) < 1e-9),
+      `${JSON.stringify(d4.shares)} — the binding constraint is a share at zero`);
+    // ONE STEP BEYOND IS STILL THE SAME WALL: the clamp is a property of the
+    // feasible set, not of how far the user dragged.
+    const d5 = rebalanceToTarget(M4, even4, [], A4, T, 'a', 99);
+    check('drag: dragging further lands on the SAME clamped share',
+      d5.kind === 'wall' && Math.abs(d5.appliedShare - d4.appliedShare) < 1e-9,
+      d5.kind === 'wall' ? `${d5.appliedShare} vs ${d4.appliedShare}` : d5.kind);
+  }
+
+  // DOWNWARD hits the other bound, and says so.
+  const d6 = rebalanceToTarget(M4, even4, [], A4, T, 'd', 0);
+  check('drag: a downward drag reports the min bound when it clamps',
+    d6.kind !== 'blocked', d6.kind);
+  if (d6.kind === 'wall') {
+    check('drag: the downward wall is the MIN bound', d6.wall.bound === 'min', d6.wall.bound);
+  }
+
+  // TWO UNTOUCHED MEMBERS: exactly determined, and the one solve path must
+  // return that unique point rather than something merely feasible.
+  const M3 = ['a', 'b', 'c'];
+  const A3: Record<string, number> = { a: 10, b: 20, c: 30 };
+  const even3 = { a: 100 / 3, b: 100 / 3, c: 100 / 3 };
+  const T3 = 20;
+  const d7 = rebalanceToTarget(M3, even3, [], A3, T3, 'a', 40);
+  check('drag: the three-band case solves', d7.kind === 'ok', d7.kind);
+  if (d7.kind === 'ok') {
+    // By hand: a=40 at rate 10 gives 400. b + c = 60, 20b + 30c = 2000 - 400.
+    // => c = (1600 - 20*60)/10 = 40, b = 20.
+    check('drag: the exactly-determined answer matches the hand solve',
+      Math.abs(d7.shares['b'] - 20) < 1e-9 && Math.abs(d7.shares['c'] - 40) < 1e-9,
+      `b=${d7.shares['b']} c=${d7.shares['c']} — expected 20 and 40`);
+  }
+
+  // A LOCKED MOVED MEMBER IS REFUSED, not silently honoured.
+  const d8 = rebalanceToTarget(M3, even3, ['a'], A3, T3, 'a', 40);
+  check('drag: dragging a LOCKED member is refused',
+    d8.kind === 'blocked' && d8.reason === 'range-collapsed', d8.kind);
+
+  // A MISSING RATE IS REFUSED. The locked members' rates matter too: they are
+  // the constant term of the blend equation.
+  const d9 = rebalanceToTarget(M3, even3, [], { a: 10, b: 20 } as any, T3, 'a', 40);
+  check('drag: a member with no finite ARPU is refused, not treated as zero',
+    d9.kind === 'blocked' && d9.reason === 'arpu-unknown', d9.kind);
+
+  // rebalance IS UNCHANGED. Its signature was not widened and its no-target
+  // callers must behave exactly as before.
+  const untouched = rebalance(M3, even3, [], 'a', 40);
+  check('drag: rebalance still conserves the total and ignores any blend',
+    untouched.kind === 'ok' && conformsToTotal(M3, untouched.shares),
+    'the sibling must not have changed the original');
 }
 
 // ---------------------------------------------------------------------------

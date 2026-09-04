@@ -1281,6 +1281,39 @@ const TRAPS: Trap[] = [
       '    if (false) {' + nl +
       "      return { kind: 'blocked' as const, missing: 0, total: leaves.length," + nl +
       '               unfittable: unfittable.length, keys: [] as string[] };') },
+
+  // ---------------------------------------------------------------------
+  // 145 - a drag under a target falls back to the sum-only rebalance.
+  //
+  // THE DEFECT THIS SESSION FIXED, and the one 1213 measured: with a target
+  // of 23.93 applied, dragging one slider took the blend to 21.385325 on BOTH
+  // cards, because both drag paths reached `rebalance` - which is given
+  // neither the target nor the rates and cannot hold a blend.
+  //
+  // Pointed at the ONE condition both cards share, so this trap reddens the
+  // Value checks AND the Promotion ones. Six at once, which is the evidence
+  // that the two cards really do reach one function.
+  { id: '145 a drag under a target stops holding it',
+    why: 'the blend walks away from the number the user asked for',
+    file: WHATIF, spec: VALUEPAD,
+    mutate: s => s.replace(
+      '  if (target === null) return null;',
+      '  if (true) return null;') },
+
+  // ---------------------------------------------------------------------
+  // 146 - the wall is skipped and the drag runs off the reachable range.
+  //
+  // Decision 2 (Jon, 2026-09-04): a drag that would leave the range stops at
+  // the last position where the target can still be held. Without the clamp
+  // the solve is attempted at an infeasible share, fails, and the mix is left
+  // alone - so the slider appears to stick with NO reason rendered, which is
+  // the dead-control state the settled entry exists to prevent.
+  { id: '146 a drag runs past the reachable range',
+    why: 'the slider stops dead with nothing on screen saying why',
+    file: MIXENGINE, spec: VALUEPAD,
+    mutate: s => s.replace(
+      '  const applied = Math.min(hi, Math.max(lo, requested));',
+      '  const applied = requested;') },
   // 103 feeds the LOADED COHORT's forecast back into the churn series, undoing
   // the scope fix. The panel then reads the same base whatever the draft's dims
   // say — the walk's ~293k at every slice — and the breakdown stops moving when

@@ -745,6 +745,7 @@
   "whatif_mix_release": "Libertar esta parcela",
   "whatif_mix_range_collapsed": "As fixações deixam um único valor misto alcançável, pelo que os cursores não podem mover-se:",
   "whatif_mix_target_unreachable": "Alvo inalcançável.",
+  "whatif_mix_drag_wall": "Parado em {{share}} % — mover mais abandonaria o alvo.",
   "whatif_mix_bound_above": "O valor misto mais alto que estas fixações permitem é {{bound}}, definido por {{member}}. Liberte uma fixação ou baixe o alvo.",
   "whatif_mix_bound_below": "O valor misto mais baixo que estas fixações permitem é {{bound}}, definido por {{member}}. Liberte uma fixação ou aumente o alvo.",
   "whatif_mix_target_blocked_other": "As fixações atuais não deixam nada livre para mover.",

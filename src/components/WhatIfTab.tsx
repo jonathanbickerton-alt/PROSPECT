@@ -12,7 +12,9 @@ import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, Pr
 import { SKIP_REASON_KEY } from '../types/forecast';
 import { EventChangeConfirmModal } from './EventChangeConfirmModal';
 import type { MarketEvent } from '../utils/forecasting';
-import { rebalance, achievableTargetRange, solveForTarget, blendedArpu, conformsToTotal } from '../utils/mixConstraint';
+import { rebalance, achievableTargetRange, solveForTarget, blendedArpu, conformsToTotal,
+         rebalanceToTarget } from '../utils/mixConstraint';
+import type { DragWall } from '../utils/mixConstraint';
 import { EventsSummaryTable } from './EventsSummaryTable';
 import { foldChurnRamp, linearChurnRamp, type ChurnFoldMonth } from '../utils/churnFold';
 import { canShowBaseForecast, resolveEventScopeForecast } from '../utils/forecasting';
@@ -770,6 +772,48 @@ export function autoBalanceMix(
   const outcome = rebalance(members, seeded, locked, changedTier, newValue);
   return outcome.kind === 'ok' ? outcome.shares : prev;
 }
+
+/**
+ * THE DRAG CONDITION, IN ONE PLACE (Jon, 2026-09-04; EXPECTED.md "SUPPLEMENT:
+ * THE DRAG ITSELF").
+ *
+ * With a target applied a drag must satisfy the SUM AND BLEND equations, not
+ * the sum alone. Both cards need that decision and neither should own it, so
+ * the condition lives here and both handlers call it.
+ *
+ * RETURNS NULL WHEN NO TARGET IS APPLIED, deliberately, rather than falling
+ * back to `rebalance` itself. The two cards' no-target paths are NOT the same
+ * function: the Value card goes through `autoBalanceMix`, which carries a
+ * seeding guard for a slider moved in the frame between a tier appearing and
+ * `seedMixPreserving` writing it into the draft. Folding that in here would
+ * either lose the guard on the Value card or impose it on the Promotion arm
+ * where it guards nothing. So the CONDITION is shared and the fallback is each
+ * card's own — which is the honest split, and one line at each call site.
+ *
+ * "Applied" means a target that is currently REACHABLE. An unreachable typed
+ * target leaves Apply disabled and must not freeze the sliders as well; that
+ * would punish the user for typing a number the card already told them it
+ * cannot hit.
+ */
+export function dragUnderTarget(
+  members: readonly string[],
+  prev: Record<string, number>,
+  locked: readonly string[],
+  rates: Record<string, number>,
+  target: number | null,
+  changedTier: string,
+  newValue: number,
+): { shares: Record<string, number>; wall: DragWall | null } | null {
+  if (target === null) return null;
+  const out = rebalanceToTarget(members, prev, locked, rates, target, changedTier, newValue);
+  if (out.kind === 'ok') return { shares: out.shares, wall: null };
+  if (out.kind === 'wall') return { shares: out.shares, wall: out.wall };
+  // A blocked solve leaves the mix ALONE rather than substituting a repaired
+  // one the user did not ask for — the same rule the Promotion arm already
+  // applies to a blocked rebalance.
+  return { shares: prev, wall: null };
+}
+
 
 // ---------------------------------------------------------------------------
 // Component
@@ -1964,9 +2008,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
 
 
-  const handleSliderChange = useCallback((changedTier: string, newValue: number) => {
-    setDraftMix(prev => autoBalanceMix(prev, changedTier, newValue, yieldMixLocked));
-  }, [yieldMixLocked]);
+  // handleSliderChange is declared further down, after the target state it now
+  // reads. A useCallback's DEPENDENCY ARRAY is evaluated during render, so a
+  // callback defined above its dependencies throws before it is ever called.
+
 
   // Computed blended ARPU from current draft
   /**
@@ -2053,6 +2098,33 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     if (yieldTargetOutcome?.kind !== 'ok') return;
     setDraftMix(yieldTargetOutcome.shares);
   }, [yieldTargetOutcome]);
+
+  /** Where a drag was stopped, or null. Cleared by every drag that is not
+   *  stopped, so it can never describe an older interaction. */
+  const [yieldWall, setYieldWall] = useState<DragWall | null>(null);
+
+  /**
+   * A DRAG. With a target applied it solves the sum AND blend equations; with
+   * no target it is the old free rebalance, seeding guard and all.
+   *
+   * The whole read-set is in the dependency array. D3-04 was a callback here
+   * that read three values it did not list and silently saved the state the
+   * card opened with; this one reads six.
+   */
+  const handleSliderChange = useCallback((changedTier: string, newValue: number) => {
+    const solved = dragUnderTarget(
+      yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap,
+      yieldTargetOutcome?.kind === 'ok' ? yieldTargetParsed : null,
+      changedTier, newValue);
+    if (solved) {
+      setYieldWall(solved.wall);
+      setDraftMix(solved.shares);
+      return;
+    }
+    setYieldWall(null);
+    setDraftMix(prev => autoBalanceMix(prev, changedTier, newValue, yieldMixLocked));
+  }, [yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap,
+      yieldTargetOutcome, yieldTargetParsed]);
 
   const draftBlendedArpu = useMemo(() => {
     // From the EFFECTIVE rates, so a tier edit moves this on screen with no
@@ -2211,15 +2283,33 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       : solveForTarget(promoMembers, promoDraftMix, promoMixLocked, promoTierArpu, promoTargetParsed),
     [promoTargetParsed, promoMembers, promoDraftMix, promoMixLocked, promoTierArpu]);
 
+  /** Where a drag was stopped, or null. See the Value card's twin. */
+  const [promoWall, setPromoWall] = useState<DragWall | null>(null);
+
   const handlePromoSliderChange = useCallback((changedTier: string, newValue: number) => {
     // Straight to the engine with the CURRENT locks, and no lock state written:
     // auto-lock is OFF. A blocked outcome leaves the mix untouched rather than
     // substituting a repaired one the user did not ask for.
+    //
+    // With a target applied the drag holds it - the SAME condition the Value
+    // card uses, from the same function, so the two cards cannot drift on the
+    // question of what a drag means.
+    const solved = dragUnderTarget(
+      promoMembers, promoDraftMix, promoMixLocked, promoTierArpu,
+      promoTargetOutcome?.kind === 'ok' ? promoTargetParsed : null,
+      changedTier, newValue);
+    if (solved) {
+      setPromoWall(solved.wall);
+      setPromoDraftMix(solved.shares);
+      return;
+    }
+    setPromoWall(null);
     setPromoDraftMix(prev => {
       const out = rebalance(promoMembers, prev, promoMixLocked, changedTier, newValue);
       return out.kind === 'ok' ? out.shares : prev;
     });
-  }, [promoMembers, promoMixLocked]);
+  }, [promoMembers, promoDraftMix, promoMixLocked, promoTierArpu,
+      promoTargetOutcome, promoTargetParsed]);
 
   /** The padlock. The ONLY thing that changes lock state. */
   const handlePromoLockToggle = useCallback((tier: string) => {
@@ -7018,6 +7108,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             outcome={promoTargetOutcome}
                             range={promoMixRange}
                             rangeCollapsed={promoRangeCollapsed}
+  wall={promoWall}
                             t={t}
                             formatNumber={formatNumber}
                           />
@@ -7544,6 +7635,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       outcome={yieldTargetOutcome}
                       range={yieldMixRange}
                       rangeCollapsed={yieldRangeCollapsed}
+  wall={yieldWall}
                       t={t}
                       formatNumber={formatNumber}
                     />
