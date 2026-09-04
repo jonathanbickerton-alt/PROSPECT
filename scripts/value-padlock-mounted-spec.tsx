@@ -340,6 +340,192 @@ async function main() {
     }
   }
 
+  // ── (e) THE OTHER TWO READS OF THE SAME SAVE ──────────────────────────────
+  // D3-04 was a dependency array narrower than its read-set. `yieldMixLocked`
+  // was the read the padlock cases caught; `effectiveTierArpuMap` and
+  // `draftTierArpuOverride` are the other two, and NOTHING here would have
+  // failed if either were dropped again. Both are exercised through the SAME
+  // save handler, because a stale closure is a property of the callback rather
+  // than of any one value it reads.
+  const { c: c5 } = await openValueCard();
+  const tiers5 = tiersIn(c5);
+  const E = tiers5[1];
+  const OVERRIDE = 42.5;
+  const ovInput = c5.querySelector(`[data-testid="tier-arpu-override-${E}"]`) as any;
+  check('(e) the per-tier ARPU override input is reachable by testid', !!ovInput);
+  if (ovInput) {
+    // The derived rate FIRST, so the assertion below distinguishes "the
+    // override was carried" from "the override happened to equal the derived
+    // figure" — a fixture whose tier already sat at 42.5 would make this pass
+    // for the wrong reason.
+    const derivedE = Number(ovInput.placeholder);
+    check('(e) the derived rate differs from the value being typed',
+      !Number.isNaN(derivedE) && Math.abs(derivedE - OVERRIDE) > 1e-9,
+      `placeholder ${ovInput.placeholder} — pick a different OVERRIDE`);
+
+    await (act as any)(async () => {
+      nativeSetter.call(ovInput, String(OVERRIDE));
+      ovInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+      ovInput.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    });
+    check('(e) the typed override is not disabled or ignored by the control',
+      Number((c5.querySelector(`[data-testid="tier-arpu-override-${E}"]`) as any).value) === OVERRIDE);
+
+    captured.length = 0;
+    const addBtn5 = [...c5.querySelectorAll('button')]
+      .find((b: any) => /add .*(event|yield)/i.test(b.textContent || '')) as any;
+    if (addBtn5) await clickIt(addBtn5);
+    check('(e) the card saved exactly one event', captured.length === 1, `${captured.length}`);
+
+    if (captured.length === 1) {
+      const ev = captured[0];
+      // READ ONE: draftTierArpuOverride — the user's stated figure, kept so
+      // provenance survives. Absent rather than {} when nothing was stated.
+      check('(e) the saved event carries the OVERRIDE the user stated',
+        !!ev.tariffBaseArpuOverride && ev.tariffBaseArpuOverride[E] === OVERRIDE,
+        JSON.stringify(ev.tariffBaseArpuOverride ?? null));
+      // READ TWO: effectiveTierArpuMap — the rate the ENGINE will read. It must
+      // be the stated figure, not the derived one, or the saved event behaves
+      // differently from the card that produced it.
+      check('(e) and the EFFECTIVE rate the engine reads is the stated one',
+        !!ev.tariffBaseArpu && ev.tariffBaseArpu[E] === OVERRIDE,
+        `${ev.tariffBaseArpu ? ev.tariffBaseArpu[E] : 'absent'} — stale map, so the engine reads the derived rate`);
+      // NOT A BLANKET. A map that set every tier to the override would satisfy
+      // both checks above and be badly wrong.
+      const otherE = tiers5.find(t => t !== E)!;
+      check('(e) and no OTHER tier picked up the override',
+        !!ev.tariffBaseArpu && ev.tariffBaseArpu[otherE] !== OVERRIDE,
+        `${otherE} also reads ${OVERRIDE}`);
+    }
+  }
+
+  // ── (f) THE ARPU TARGET ───────────────────────────────────────────────────
+  // The blend is computed BY HAND here, from the per-tier rates the card is
+  // showing, and compared with the number the user typed. Asserting only that
+  // "Apply changed the shares" would pass against a solver that hit a
+  // different blend entirely.
+  const { c: c6 } = await openValueCard();
+  const tiers6 = tiersIn(c6);
+  // THE RATES ARE READ AS DISPLAYED — the placeholder is formatNumber'd to two
+  // decimals — so this recomputation is deliberately not to full precision.
+  // That is why the target comparison below is "< 0.005" rather than exact:
+  // demanding exact equality would be testing this file's rounding against the
+  // card's, not testing the solver. The bar is still tight enough to catch
+  // trap 143, whose held-share drift is ~0.003.
+  const rateOf = (c: any, tier: string) => Number(
+    (c.querySelector(`[data-testid="tier-arpu-override-${tier}"]`) as any).placeholder);
+  const blendOf = (c: any, ts: string[]) =>
+    ts.reduce((sum, t) => sum + Number(rangeOf(c, t).value) / 100 * rateOf(c, t), 0);
+
+  const targetBox = c6.querySelector('[data-testid="yield-mix-target"]') as any;
+  const applyBtn = c6.querySelector('[data-testid="yield-mix-target-apply"]') as any;
+  const rangeOut = c6.querySelector('[data-testid="yield-mix-target-range"]') as any;
+  check('(f) the target box, Apply and the range readout are all present', !!targetBox && !!applyBtn && !!rangeOut);
+  check('(f) Apply is disabled with no target typed - blank carries no verdict',
+    !!applyBtn && applyBtn.disabled === true);
+
+  if (targetBox && applyBtn && rangeOut) {
+    const nums = (rangeOut.textContent || '').match(/-?\d+\.\d+/g) || [];
+    check('(f) the readout states a reachable interval', nums.length === 2, rangeOut.textContent || '');
+    const lo = Number(nums[0]), hi = Number(nums[1]);
+    const typeTarget = async (v: number) => {
+      await (act as any)(async () => {
+        nativeSetter.call(targetBox, String(v));
+        targetBox.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+        targetBox.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+      });
+    };
+
+    // ── REACHABLE ───────────────────────────────────────────────────────────
+    const REACH = Math.round(((lo + hi) / 2) * 100) / 100;
+    await typeTarget(REACH);
+    const before = tiers6.map(t => Number(rangeOf(c6, t).value));
+    check('(f) a reachable target enables Apply',
+      (c6.querySelector('[data-testid="yield-mix-target-apply"]') as any).disabled === false,
+      `target ${REACH} in [${lo}, ${hi}]`);
+    await clickIt(c6.querySelector('[data-testid="yield-mix-target-apply"]') as any);
+    const after = tiers6.map(t => Number(rangeOf(c6, t).value));
+    check('(f) Apply moved the shares', after.some((v, i) => v !== before[i]),
+      `${before.join(',')} -> ${after.join(',')}`);
+    const achieved = blendOf(c6, tiers6);
+    // TO THE PENNY, against the number the USER typed - not against anything
+    // the solver reported back, which would be the solver checking itself.
+    check('(f) and the achieved blend equals the target to the penny',
+      Math.abs(achieved - REACH) < 0.005,
+      `by hand ${achieved.toFixed(6)} vs target ${REACH}`);
+    // STATED ON A GREEN RUN, not only on a red one. A figure that only appears
+    // when a check fails cannot be quoted in a report without re-running the
+    // spec with the failure induced, and the reachable interval is fixture-
+    // dependent, so the next reader needs to see what this one actually hit.
+    console.log(`  target: reachable interval [${lo}, ${hi}], typed ${REACH},`
+      + ` achieved by hand ${achieved.toFixed(6)}`);
+    check('(f) and the shares still total 100',
+      Math.abs(after.reduce((s, v) => s + v, 0) - 100) < 0.05,
+      String(after.reduce((s, v) => s + v, 0)));
+
+    // ── UNREACHABLE: SHOWN, NEVER CLAMPED ───────────────────────────────────
+    const held6 = tiers6.map(t => Number(rangeOf(c6, t).value));
+    await typeTarget(hi + 10);
+    check('(f) an unreachable target DISABLES Apply',
+      (c6.querySelector('[data-testid="yield-mix-target-apply"]') as any).disabled === true);
+    check('(f) and the message is rendered, naming the wall',
+      !!c6.querySelector('[data-testid="yield-mix-target-blocked"]'),
+      'an unreachable target must be shown, not silently ignored');
+    check('(f) and the shares are UNTOUCHED - never clamped to the nearest reachable',
+      tiers6.every((t, i) => Number(rangeOf(c6, t).value) === held6[i]),
+      'the tool would be stating a number the user did not type');
+    check('(f) and the typed value is left exactly as typed',
+      Number((c6.querySelector('[data-testid="yield-mix-target"]') as any).value) === hi + 10);
+
+    // ── A HELD TIER IS UNTOUCHED BY APPLY ───────────────────────────────────
+    // The padlock's whole claim, under the one operation most likely to break
+    // it: Apply rewrites shares wholesale.
+    const { c: c7 } = await openValueCard();
+    const tiers7 = tiersIn(c7);
+    const H = tiers7[0];
+    await clickIt(lockOf(c7, H));
+    const heldExact = Number(rangeOf(c7, H).value);
+    const ro7 = c7.querySelector('[data-testid="yield-mix-target-range"]') as any;
+    const n7 = (ro7?.textContent || '').match(/-?\d+\.\d+/g) || [];
+    check('(f) the reachable interval narrows once a tier is held', n7.length === 2,
+      ro7 ? ro7.textContent : 'no readout - the range collapsed with one hold');
+    if (n7.length === 2) {
+      const tgt7 = Math.round(((Number(n7[0]) + Number(n7[1])) / 2) * 100) / 100;
+      const box7 = c7.querySelector('[data-testid="yield-mix-target"]') as any;
+      await (act as any)(async () => {
+        nativeSetter.call(box7, String(tgt7));
+        box7.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+        box7.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+      });
+      await clickIt(c7.querySelector('[data-testid="yield-mix-target-apply"]') as any);
+      check('(f) a HELD tier is untouched by Apply, to the penny',
+        Number(rangeOf(c7, H).value) === heldExact,
+        `${Number(rangeOf(c7, H).value)} vs ${heldExact} - Apply ignored the lock set`);
+      check('(f) and Apply still hit the target with the hold in place',
+        Math.abs(blendOf(c7, tiers7) - tgt7) < 0.005,
+        `by hand ${blendOf(c7, tiers7).toFixed(6)} vs target ${tgt7}`);
+      check('(f) and the padlock is still engaged after Apply',
+        lockOf(c7, H).getAttribute('aria-pressed') === 'true');
+    }
+
+    // ── THE TARGET IS DRAFT-ONLY, AND THAT IS ASSERTED, NOT ASSUMED ──────────
+    // It is a way of REACHING a mix, not a property of the event: what persists
+    // is the mix it produced. The Promotion arm behaves the same way. This
+    // check pins the CURRENT behaviour so that persisting it later is a
+    // deliberate change rather than a silent one.
+    captured.length = 0;
+    const addBtn6 = [...c6.querySelectorAll('button')]
+      .find((b: any) => /add .*(event|yield)/i.test(b.textContent || '')) as any;
+    if (addBtn6) await clickIt(addBtn6);
+    if (captured.length === 1) {
+      const keys = Object.keys(captured[0]).filter(k => /target/i.test(k));
+      check('(f) the saved event carries NO target field - the target is draft-only',
+        keys.length === 0, keys.join(','));
+    } else {
+      check('(f) the draft-only check reached a saved event', false, `${captured.length} captured`);
+    }
+  }
+
   check('the run exercised every case', tiers.length >= 3 && tiers2.length >= 3 && tiers3.length >= 3,
     `${tiers.length}/${tiers2.length}/${tiers3.length} tiers across the mounts`);
 

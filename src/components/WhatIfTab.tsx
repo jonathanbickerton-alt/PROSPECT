@@ -18,6 +18,7 @@ import { foldChurnRamp, linearChurnRamp, type ChurnFoldMonth } from '../utils/ch
 import { canShowBaseForecast, resolveEventScopeForecast } from '../utils/forecasting';
 import { scenarioAdjustedArpu } from '../utils/scenarioArpu';
 import { MixSliderRow } from './MixSliderRow';
+import { MixTargetPanel } from './MixTargetPanel';
 import type { ScenarioKey, ScenarioPricing } from '../utils/scenarioArpu';
 import { nextAmountControlState, effectiveAmountControl, churnAvailableFor,
          type AmountControl } from '../utils/amountControl';
@@ -2016,6 +2017,42 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   /** A collapsed range immobilises every slider — and is NOT a padlock. The two
    *  reasons stay separate all the way to the control; see MixSliderRow. */
   const yieldRangeCollapsed = yieldMixRange.kind === 'ok' && yieldMixRange.range.collapsed;
+
+  /**
+   * THE VALUE CARD'S TARGET BLEND. Same solver, same rules, same control as
+   * the Promotion arm - see MixTargetPanel. Blank is a real state, not zero:
+   * free sliders and a live blend, with nothing steering the user.
+   *
+   * DRAFT-ONLY, and deliberately so: the target is a way of REACHING a mix,
+   * not a property of the event. What persists is the mix it produced, which
+   * is what the engine reads. The Promotion arm does the same, and matching
+   * it is parity rather than a new decision.
+   */
+  const [yieldTargetArpu, setYieldTargetArpu] = useState<string>('');
+  const yieldTargetParsed = useMemo<number | null>(() => {
+    const raw = yieldTargetArpu.trim();
+    if (raw === '') return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  }, [yieldTargetArpu]);
+
+  /** Null when nothing is typed - the free-sliders case, which carries NO
+   *  verdict, as distinct from a target that was typed and blocked. */
+  const yieldTargetOutcome = useMemo(
+    () => yieldTargetParsed === null
+      ? null
+      : solveForTarget(yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap, yieldTargetParsed),
+    [yieldTargetParsed, yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap]);
+
+  /** Applying rewrites the UNLOCKED shares to hit the target. Only ever called
+   *  from the ok arm: an unreachable target is SHOWN, never clamped to the
+   *  nearest reachable one. The solver holds the locked members at their
+   *  shares, so a held tier is untouched by this - which is asserted mounted
+   *  rather than assumed, because it is the whole point of the padlock. */
+  const handleYieldApplyTarget = useCallback(() => {
+    if (yieldTargetOutcome?.kind !== 'ok') return;
+    setDraftMix(yieldTargetOutcome.shares);
+  }, [yieldTargetOutcome]);
 
   const draftBlendedArpu = useMemo(() => {
     // From the EFFECTIVE rates, so a tier edit moves this on screen with no
@@ -6969,62 +7006,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             </div>
                           </div>
 
-                          {/* TARGET BLEND. Blank is a real state: free sliders and a
-                              live blend, with nothing steering the user. */}
-                          <div className="mb-3 p-2.5 rounded-lg bg-slate-50 border border-slate-100">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <label className="text-[11px] font-semibold text-slate-600 whitespace-nowrap">
-                                {t('whatif_mix_target_arpu')}
-                              </label>
-                              <input
-                                type="number"
-                                step={0.01}
-                                value={promoTargetArpu}
-                                placeholder={t('whatif_mix_target_placeholder')}
-                                onChange={e => setPromoTargetArpu(e.target.value)}
-                                className="w-24 text-xs font-semibold text-slate-700 text-right tabular-nums border border-slate-200 rounded px-1.5 py-1 outline-none focus:border-[#e60000] bg-white"
-                              />
-                              <button
-                                type="button"
-                                disabled={promoTargetOutcome?.kind !== 'ok'}
-                                onClick={handlePromoApplyTarget}
-                                className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-[#e60000] text-white disabled:opacity-40 disabled:cursor-not-allowed"
-                              >{t('whatif_mix_target_apply')}</button>
-                              {promoMixRange.kind === 'ok' && !promoRangeCollapsed && (
-                                <span className="text-[11px] text-slate-500 tabular-nums">
-                                  {t('whatif_mix_reachable_range')}{' '}
-                                  {formatNumber(promoMixRange.range.min)} – {formatNumber(promoMixRange.range.max)}
-                                </span>
-                              )}
-                            </div>
-
-                            {/* A COLLAPSED RANGE LOCKS. Settled semantics: the control
-                                says so rather than offering movement that cannot
-                                happen. This is the constraints leaving one value, NOT
-                                auto-lock — auto-lock is OFF. */}
-                            {promoRangeCollapsed && promoMixRange.kind === 'ok' && (
-                              <div className="mt-2 text-[11px] text-slate-600">
-                                {t('whatif_mix_range_collapsed')}{' '}
-                                <span className="font-semibold tabular-nums">{formatNumber(promoMixRange.range.min)}</span>
-                              </div>
-                            )}
-
-                            {/* UNREACHABLE, SHOWN AND NEVER CLAMPED. The binding
-                                constraint is named — which member forms the wall and
-                                where the wall is. Moving the user's number to the
-                                nearest reachable one would be the tool stating
-                                something on their behalf. */}
-                            {promoTargetOutcome?.kind === 'blocked' && (
-                              <div className="mt-2 text-[11px] text-amber-600">
-                                <span className="font-semibold">{t('whatif_mix_target_unreachable')}</span>{' '}
-                                {(promoTargetOutcome.reason === 'above-max' || promoTargetOutcome.reason === 'below-min')
-                                  ? t(promoTargetOutcome.reason === 'above-max' ? 'whatif_mix_bound_above' : 'whatif_mix_bound_below',
-                                      { member: promoTargetOutcome.binding?.member ?? '',
-                                        bound: formatNumber(promoTargetOutcome.binding?.bound ?? 0) })
-                                  : t('whatif_mix_target_blocked_other')}
-                              </div>
-                            )}
-                          </div>
+                          {/* TARGET BLEND. Blank is a real state: free sliders and a live blend,
+                              with nothing steering the user. Moved to MixTargetPanel so the Value
+                              card's target is the SAME control rather than a second copy of the
+                              unreachable-target rule. */}
+                          <MixTargetPanel
+                            testIdPrefix="promo"
+                            value={promoTargetArpu}
+                            onChange={setPromoTargetArpu}
+                            onApply={handlePromoApplyTarget}
+                            outcome={promoTargetOutcome}
+                            range={promoMixRange}
+                            rangeCollapsed={promoRangeCollapsed}
+                            t={t}
+                            formatNumber={formatNumber}
+                          />
 
                           <div className="grid gap-x-3 mb-1 pr-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider" style={{ gridTemplateColumns: 'minmax(80px,180px) 1fr 52px 34px 90px' }}>
                             <span>{promoMixAxis === 'tariff' ? t('whatif_tariff') : t('whatif_tier')}</span>
@@ -7538,6 +7534,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       </div>
                     </div>
 
+                    {/* TARGET BLEND, the SAME control the Promotion arm uses. Second
+                        application of decision 7: one component, two call sites. */}
+                    <MixTargetPanel
+                      testIdPrefix="yield"
+                      value={yieldTargetArpu}
+                      onChange={setYieldTargetArpu}
+                      onApply={handleYieldApplyTarget}
+                      outcome={yieldTargetOutcome}
+                      range={yieldMixRange}
+                      rangeCollapsed={yieldRangeCollapsed}
+                      t={t}
+                      formatNumber={formatNumber}
+                    />
+
                     {/* Compact header row */}
                     <div className="grid gap-x-3 mb-1 pr-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider" style={{ gridTemplateColumns: 'minmax(80px,180px) 1fr 52px 90px 80px' }}>
                       <span>{mixAxis === 'tariff' ? t('whatif_tariff') : t('whatif_tier')}</span>
@@ -7609,21 +7619,6 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         );
                       })}
                     </div>
-
-                    {/* A COLLAPSED RANGE LOCKS, AND SAYS WHY. Mirrored from the
-                        Promotion arm rather than worded again — same key, same
-                        shape — because the two cards are meant to say the same
-                        thing here and two copies of the sentence would drift.
-                        THIS IS NOT A PADLOCK: the constraints leave one value,
-                        which is why the rows are disabled while no padlock is
-                        pressed. Without this line the card froze every slider
-                        and gave no reason at all. */}
-                    {yieldRangeCollapsed && yieldMixRange.kind === 'ok' && (
-                      <div className="mt-2 text-[11px] text-slate-600" data-testid="yield-mix-range-collapsed">
-                        {t('whatif_mix_range_collapsed')}{' '}
-                        <span className="font-semibold tabular-nums">{formatNumber(yieldMixRange.range.min)}</span>
-                      </div>
-                    )}
 
                     {/* ARPU summary */}
                     <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-4">

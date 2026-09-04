@@ -89,12 +89,13 @@ const LOCKRT = 'scripts/lock-roundtrip-spec.ts';
 const TRAPANCHORS = 'scripts/trap-anchors-spec.ts';
 const VALUEPAD = 'scripts/value-padlock-mounted-spec.tsx';
 const SLIDERROW = 'src/components/MixSliderRow.tsx';
+const TARGETPANEL = 'src/components/MixTargetPanel.tsx';
 const DEBUNDLE = 'src/locales/de/translation.json';
 
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const APP_COMPARE = 'src/components/ScenarioCompareTab.tsx';
 const SCENARPUENGINE = 'src/utils/scenarioArpu.ts';
-const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE, SLIDERROW];
+const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE, SLIDERROW, TARGETPANEL];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -1798,6 +1799,49 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '  }, [newYieldEvent, draftMix, mixAxis, yieldTierData, yieldMixLocked, effectiveTierArpuMap,',
       '  }, [newYieldEvent, draftMix, mixAxis, yieldTierData, effectiveTierArpuMap,') },
+
+  // ---------------------------------------------------------------------
+  // 142 — the OTHER two reads of the same save, which are only observable
+  // TOGETHER.
+  //
+  // MEASURED, not assumed. Dropping `effectiveTierArpuMap` alone leaves the
+  // spec GREEN; dropping `draftTierArpuOverride` alone leaves it GREEN. The
+  // two cover each other: the map is DERIVED from the override, so typing an
+  // override changes both, and whichever one is still listed is enough to
+  // rebuild the callback with a fresh copy of the other. Only dropping BOTH
+  // is a defect a test can see - the engine then reads the derived rate
+  // instead of the figure the user typed.
+  //
+  // So this is ONE trap where a brief asked for two, and the reason is a
+  // measurement rather than a judgement. Two traps were planted by hand
+  // first, and both were MISSED; a registry entry for either would have been
+  // a trap that can never go red.
+  { id: '142 the yield save reads a stale ARPU override',
+    why: 'the engine would read the derived rate while the card showed the stated one',
+    file: WHATIF, spec: VALUEPAD,
+    mutate: s => s.replace(
+      '  }, [newYieldEvent, draftMix, mixAxis, yieldTierData, yieldMixLocked, effectiveTierArpuMap,' + nl +
+      '      draftTierArpuOverride, addYieldEvent, editingYieldId, updateYieldEvent, setNewYieldEvent]);',
+      '  }, [newYieldEvent, draftMix, mixAxis, yieldTierData, yieldMixLocked, addYieldEvent, editingYieldId, updateYieldEvent, setNewYieldEvent]);') },
+
+  // ---------------------------------------------------------------------
+  // 143 — Apply rewrites a share the user is holding.
+  //
+  // Apply is the one operation that rewrites the mix wholesale, so it is
+  // where a padlock is most likely to be lost. The solver holds locked
+  // members at their shares; passing an EMPTY lock set still produces a
+  // perfectly reachable answer that hits the target - it just hits it by
+  // moving a tier the user said not to move.
+  //
+  // THE DRIFT IS TINY, which is the point: the held share goes from
+  // 33.333333333333336 to 33.33025985671146. A check written to a tolerance
+  // would pass this; the spec compares to the penny, exactly.
+  { id: '143 Apply moves a tier the user is holding',
+    why: 'a target may not be reached by spending a share its owner locked',
+    file: WHATIF, spec: VALUEPAD,
+    mutate: s => s.replace(
+      '      : solveForTarget(yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap, yieldTargetParsed),',
+      '      : solveForTarget(yieldMembers, draftMix, [], effectiveTierArpuMap, yieldTargetParsed),') },
 ];
 
 /**

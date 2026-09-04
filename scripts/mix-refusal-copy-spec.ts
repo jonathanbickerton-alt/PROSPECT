@@ -10,8 +10,16 @@
  * was WRONG, and the module says so in a comment written before the mistake:
  * every `detail` is diagnostic only, the card branches on `reason` and renders
  * its own keyed copy, and nothing puts `detail` on screen. Verified rather than
- * believed on 2026-09-02 — `WhatIfTab.tsx` is the sole component consuming
- * these outcomes and contains ZERO reads of `.detail`.
+ * believed on 2026-09-02 — the components consuming these outcomes contain
+ * ZERO reads of `.detail`.
+ *
+ * THAT WAS ONE FILE UNTIL 2026-09-04, when the target block moved out of
+ * `WhatIfTab.tsx` into `MixTargetPanel.tsx` so both mix cards could share it.
+ * This spec failed on the move — correctly: its premise was a claim about
+ * WHERE the branch lives, and the branch had moved. The lists below now name
+ * both files, and the `.detail` check covers the new one, which is the half
+ * that matters: a fresh component handling refusal outcomes is exactly where
+ * a diagnostic would get rendered by someone who did not know the rule.
  *
  * So the risk is not that the seventeen are untranslated. It is that:
  *
@@ -43,6 +51,7 @@ const bundle = Object.fromEntries(LOCALES.map(l =>
 
 const mixSrc = fs.readFileSync('src/utils/mixConstraint.ts', 'utf8');
 const cardSrc = fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8');
+const panelSrc = fs.readFileSync('src/components/MixTargetPanel.tsx', 'utf8');
 
 // ---------------------------------------------------------------------------
 // 1. THE UNION, read from source. Every member must be accounted for below, so
@@ -88,17 +97,23 @@ check('COPY: the table has no entry for a reason that no longer exists',
 
 // ---------------------------------------------------------------------------
 // 2. THE CARD REALLY BRANCHES THAT WAY. The table above is a claim about
-//    WhatIfTab; this reads WhatIfTab and checks it.
+//    the card's target panel; this reads MixTargetPanel and checks it. Both
+//    cards render through that ONE component, so one read covers both.
 // ---------------------------------------------------------------------------
 check('CARD: the blocked branch renders the unreachable heading',
-  cardSrc.includes("t('whatif_mix_target_unreachable')"));
+  panelSrc.includes("t('whatif_mix_target_unreachable')"));
 check('CARD: above-max and below-min name their bound',
-  cardSrc.includes("'whatif_mix_bound_above' : 'whatif_mix_bound_below'"));
+  panelSrc.includes("'whatif_mix_bound_above' : 'whatif_mix_bound_below'"));
 check('CARD: every other reason falls to keyed catch-all copy',
-  cardSrc.includes("t('whatif_mix_target_blocked_other')"),
+  panelSrc.includes("t('whatif_mix_target_blocked_other')"),
   'without this, six of the eight reasons render nothing');
 check('CARD: the branch is entered for every blocked outcome, not some',
-  /promoTargetOutcome\?\.kind === 'blocked' &&/.test(cardSrc));
+  /outcome\?\.kind === 'blocked' &&/.test(panelSrc));
+// BOTH CARDS REACH IT. A shared component is only shared if both call it;
+// one card quietly keeping an inline copy is the drift this move prevents.
+check('CARD: both mix cards render through the one target panel',
+  (cardSrc.match(/<MixTargetPanel/g) ?? []).length === 2,
+  `${(cardSrc.match(/<MixTargetPanel/g) ?? []).length} call sites — expected promo and yield`);
 
 // ---------------------------------------------------------------------------
 // 3. EVERY RENDERED KEY RESOLVES IN EVERY LOCALE, and is not the English one.
@@ -168,7 +183,8 @@ for (const k of rendered) {
 //    the exclusion in the scanner and the reason for it cannot drift apart.
 // ---------------------------------------------------------------------------
 {
-  const importers = ['src/components/WhatIfTab.tsx', 'src/utils/forecasting.ts'];
+  const importers = ['src/components/WhatIfTab.tsx', 'src/components/MixTargetPanel.tsx',
+    'src/utils/forecasting.ts'];
   for (const f of importers) {
     const t = fs.readFileSync(f, 'utf8');
     const reads = (t.match(/\.detail\b/g) ?? []).length;
