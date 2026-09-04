@@ -71,6 +71,7 @@ async function main() {
   const { ForecastProvider } = await import('../src/context/ForecastContext');
   const M: any = (await import('../src/components/WhatIfTab')).WhatIfTab;
   const { buildPromoEvents } = await import('../src/components/WhatIfTab');
+  const { dilutionAmountPct } = fc;
 
   const noop = () => {};
   const band = (m: number) => ({ mean: m, optimistic: m * 1.1, pessimistic: m * 0.9 });
@@ -569,6 +570,130 @@ async function main() {
       mLeaf.arpuInflow !== null && Math.abs((mLeaf.arpuInflow as number) - MIX_T) < 0.02,
       'inflow ' + mLeaf.arpuInflow + ' vs hand ' + MIX_T.toFixed(4)
       + ' — 0.41 is a pool of ten, 0.42 is a mean-priced pool of twenty');
+  }
+
+  // ── 3e. THE PROMOTION'S DILUTION PRICING ARM (decision 3) ────────
+  //
+  // Dilution is not a third arm of the promotion's pricing control. It is a
+  // third way of SAYING the same thing: the user states current and target
+  // dilution, `dilutionAmountPct` converts the pair, and the existing
+  // percentage arm applies it - exactly the doctrine the Pricing card records
+  // for its own dilution events ("it rides the existing mechanism entirely").
+  //
+  // THE EQUALITY IS BY CONSTRUCTION, AND IS PINNED ANYWAY. Both cards call one
+  // exported function, so they cannot compute different numbers from the same
+  // figures; the check exists so that an inline re-implementation on either
+  // side is caught the moment it appears rather than when the two drift.
+  {
+    const promoDraft = {
+      date: MONTHS[MONTHS.length - 1],
+      segment: EVENT_ABS.segment, product: EVENT_ABS.product,
+      productL2: EVENT_ABS.productL2, channel: EVENT_ABS.channel,
+      channelL2: EVENT_ABS.channelL2, tariffL1: EVENT_ABS.tariffL1,
+      tariffL2: EVENT_ABS.tariffL2,
+      subscriberVolume: 1000, campaignName: '', comment: '', contractLength: 12,
+    } as any;
+    const common = {
+      target: 'Inflow', amountType: 'absolute', draft: promoDraft,
+      mixEnabled: false, mixAxis: 'value', draftMix: {}, mixLocked: [],
+      tierData: [], cohortAvgArpu: 20,
+      spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [],
+      startSequence: 1,
+    };
+
+    const dil: any = buildPromoEvents({
+      ...common, pricingEnabled: true, pricingMode: 'dilution', pricingAmount: 0,
+      pricingDilutionCurrentPct: 25, pricingDilutionTargetPct: 20,
+    } as any)[0];
+
+    // THE PRICING CARD'S OWN FIGURE for the same inputs, from the same
+    // function the Pricing card calls at handleAddPricingEvent.
+    const cardPct = dilutionAmountPct(25, 20) as number;
+
+    // BY HAND: ratio = (1 - 20/100) / (1 - 25/100) = 0.80 / 0.75 = 1.0666...
+    // so the amount is +6.6667%, NOT the +5 a subtraction would give. That
+    // gap is the error this mode exists to remove, and it is asserted here as
+    // a distance rather than trusted.
+    check('promo dilution: the card figure is the RATIO, not the difference',
+      Math.abs(cardPct - 6.666666666666671) < 1e-9 && Math.abs(cardPct - 5) > 1,
+      String(cardPct) + ' - 5 would mean a subtraction had been written');
+    check('promo dilution: the promotion carries the SAME figure, to 1e-9',
+      Math.abs(dil.promoPricingAmount - cardPct) < 1e-9,
+      dil.promoPricingAmount + ' vs the Pricing card ' + cardPct);
+    check('promo dilution: the mode is persisted',
+      dil.promoPricingMode === 'dilution', String(dil.promoPricingMode));
+    check('promo dilution: AND both stated figures - R5 decision 3',
+      dil.promoDilutionCurrentPct === 25 && dil.promoDilutionTargetPct === 20,
+      JSON.stringify([dil.promoDilutionCurrentPct, dil.promoDilutionTargetPct]));
+
+    // THE RATE THE ARM APPLIED. Base 20 (the cohort average, no mix), so
+    // 20 x 0.80/0.75 = 21.3333. A subtraction-based conversion would give 21.
+    check('promo dilution: the applied ARPU is base x the retained-revenue ratio',
+      Math.abs(dil.arpu - 20 * (0.80 / 0.75)) < 1e-9,
+      String(dil.arpu) + ' - 21 would be the +5% a hand subtraction gives');
+
+    // AND THE STRONGEST FORM: a promotion priced in PER CENT at the converted
+    // figure is the same event. If these ever differ, the dilution arm has
+    // stopped riding the percentage arm and become a second implementation.
+    const asPct: any = buildPromoEvents({
+      ...common, pricingEnabled: true, pricingMode: 'percentage',
+      pricingAmount: cardPct,
+    } as any)[0];
+    check('promo dilution: identical to a hand-converted PERCENTAGE arm, to 1e-9',
+      Math.abs(dil.arpu - asPct.arpu) < 1e-9 && Math.abs(dil.revenue - asPct.revenue) < 1e-9,
+      dil.arpu + ' vs ' + asPct.arpu);
+
+    // INCOMPLETE OR OUT-OF-RANGE FIGURES BUILD NOTHING. Null is not zero: a
+    // promotion whose price arm cannot be resolved has no honest rate, and
+    // emitting one priced at +0% would state a change the user never made.
+    check('promo dilution: an INCOMPLETE pair builds no event',
+      buildPromoEvents({ ...common, pricingEnabled: true, pricingMode: 'dilution',
+        pricingAmount: 0, pricingDilutionCurrentPct: 25 } as any).length === 0);
+    check('promo dilution: an OUT-OF-RANGE pair builds no event',
+      buildPromoEvents({ ...common, pricingEnabled: true, pricingMode: 'dilution',
+        pricingAmount: 0, pricingDilutionCurrentPct: 100,
+        pricingDilutionTargetPct: 20 } as any).length === 0);
+
+    // MOUNTED, on the discriminating fixture. The pool holds 1000 at 21.3333
+    // against a natural inflow of 200 at the fitted 22:
+    //   (200x22 + 1000x21.33333)/1200 - 22 = 25733.33/1200 - 22 = -0.5556
+    // A promotion priced by subtraction (1000 @21) gives
+    //   (200x22 + 1000x21)/1200 - 22 = 25400/1200 - 22 = -0.8333
+    // MEASURED by planting exactly that, not predicted: the first draft of this
+    // comment said -0.67 and was wrong. The rendered figure therefore separates
+    // the two conversions, not merely zero from non-zero.
+    const dLeaf = await readAt(keyA, [dil]);
+    console.log('  promo dilution  leaf inflow ' + dLeaf.arpuInflow);
+    const DIL_T = (200 * 22 + 1000 * (20 * 0.80 / 0.75)) / 1200 - 22;
+    check('promo dilution: the MOUNTED inflow ARPU is the ratio-priced pool',
+      dLeaf.arpuInflow !== null && Math.abs((dLeaf.arpuInflow as number) - DIL_T) < 0.02,
+      'inflow ' + dLeaf.arpuInflow + ' vs hand ' + DIL_T.toFixed(4)
+      + ' - -0.83 is a pool priced at 21, the subtraction');
+
+    // THE EXISTING ARMS ARE UNCHANGED TO THE PENNY. Measured, not assumed:
+    // applyPricing was rewritten to route dilution through the percentage
+    // branch, so the other two are exactly what that rewrite could break.
+    const pctArm: any = buildPromoEvents({
+      ...common, pricingEnabled: true, pricingMode: 'percentage', pricingAmount: 10,
+    } as any)[0];
+    const absArm: any = buildPromoEvents({
+      ...common, pricingEnabled: true, pricingMode: 'absolute', pricingAmount: 2.5,
+    } as any)[0];
+    const offArm: any = buildPromoEvents({
+      ...common, pricingEnabled: false, pricingMode: 'percentage', pricingAmount: 10,
+    } as any)[0];
+    check('promo dilution: the PERCENTAGE arm still gives 20 x 1.10 = 22',
+      Math.abs(pctArm.arpu - 22) < 1e-9, String(pctArm.arpu));
+    check('promo dilution: the ABSOLUTE arm still gives 20 + 2.50 = 22.50',
+      Math.abs(absArm.arpu - 22.5) < 1e-9, String(absArm.arpu));
+    check('promo dilution: an arm turned OFF still applies nothing',
+      Math.abs(offArm.arpu - 20) < 1e-9 && offArm.promoPricingMode === undefined
+        && offArm.promoPricingAmount === undefined,
+      String(offArm.arpu));
+    check('promo dilution: a non-dilution arm carries NO stated figures',
+      pctArm.promoDilutionCurrentPct === undefined
+        && pctArm.promoDilutionTargetPct === undefined,
+      'absence is the carrier, and nothing pre-decision-3 migrates');
   }
 
   // ── 4. THE GHOST: in scope at the view, landing on none of it ───────────

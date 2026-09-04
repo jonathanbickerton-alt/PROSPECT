@@ -1413,6 +1413,43 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "    amountType:      row.Amount_Type === 'percentage' ? 'percentage' : 'absolute',",
       "    amountType:      row.Amount_Type === 'absolute' ? 'absolute' : 'percentage',") },
+
+  // ---------------------------------------------------------------------
+  // 153 - THE PROMOTION ARM RE-IMPLEMENTS DILUTION INLINE.
+  //
+  // Card-parity decision 3. Moving dilution 25% -> 20% is NOT +5% revenue; it
+  // is 0.80/0.75 = +6.667%, and doing that conversion by hand is the whole
+  // error the mode exists to remove. A subtraction written here would be
+  // plausible, self-consistent and silently 1.667 points wrong on every
+  // dilution promotion - and would put the two cards' arithmetic in
+  // disagreement while both still look correct in isolation.
+  //
+  // The registered anchor is the subtraction, because that is the shape the
+  // mistake actually takes.
+  { id: '153 the promotion arm converts dilution by subtraction',
+    why: '25 -> 20 becomes +5% instead of +6.667%, and the two cards disagree',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      `  const dilutionPct = isDilution
+    ? dilutionAmountPct(p.pricingDilutionCurrentPct, p.pricingDilutionTargetPct)
+    : null;`,
+      `  const dilutionPct = isDilution
+    ? (p.pricingDilutionCurrentPct as number) - (p.pricingDilutionTargetPct as number)
+    : null;`) },
+
+  // 154 - the stated figures are dropped at export. R5 decision 3: THE MODE
+  // AND BOTH STATED FIGURES ARE PERSISTED, not just the derived amount. A
+  // dilution promotion that saved only its converted +6.667% would reopen as a
+  // plain percentage arm showing a number the user never typed and having lost
+  // the two they did - the yieldArpuMode failure, on a second card.
+  { id: '154 the promotion dilution figures are dropped at export',
+    why: 'the promotion reopens as a plain percentage arm and both stated figures are gone',
+    file: ENGINE, spec: EVTROUND,
+    mutate: s => s.replace(
+      `    Promo_Dilution_Current_Pct: e.promoDilutionCurrentPct ?? '',
+    Promo_Dilution_Target_Pct: e.promoDilutionTargetPct ?? '',`,
+      `    Promo_Dilution_Current_Pct: '',
+    Promo_Dilution_Target_Pct: '',`) },
   // 103 feeds the LOADED COHORT's forecast back into the churn series, undoing
   // the scope fix. The panel then reads the same base whatever the draft's dims
   // say — the walk's ~293k at every slice — and the breakdown stops moving when

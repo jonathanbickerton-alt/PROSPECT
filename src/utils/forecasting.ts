@@ -169,8 +169,14 @@ export interface MarketEvent {
    *  never be pro-rated, because a volume-weighted average of (leafArpu + delta)
    *  already equals (aggregateArpu + delta). amountType is a VOLUME and must be
    *  pro-rated. Same shape, opposite rule; check which one you are holding. */
-  promoPricingMode?: 'percentage' | 'absolute';
+  promoPricingMode?: 'percentage' | 'absolute' | 'dilution';
   promoPricingAmount?: number;
+  /** R5 decision 3 applied to the promotion arm: THE MODE AND BOTH STATED
+   *  FIGURES ARE PERSISTED, not just the derived amount. A dilution promotion
+   *  that stored only its converted percentage would reopen as a plain
+   *  percentage arm showing a number the user never typed. */
+  promoDilutionCurrentPct?: number;
+  promoDilutionTargetPct?: number;
 }
 
 /**
@@ -201,7 +207,9 @@ export interface MarketEvent {
  *   promoMix            parsed from JSON; blank or unparseable -> absent, and an
  *                       empty object -> absent too, because "a mix with no
  *                       members" is not the same claim as "no mix".
- *   promoPricingMode    only 'percentage' | 'absolute' survive.
+ *   promoPricingMode    only 'percentage' | 'absolute' | 'dilution' survive.
+ *   promoDilution*Pct   '' -> undefined, 0 -> 0, through readOptionalNumber.
+ *                       A stated 0% dilution is a real statement.
  *   isPromotion,        'Yes' -> true, anything else -> false. NO carrier needed,
  *   promoRebanded       and that was checked rather than assumed: absent and
  *                       false mean the same thing here, so nothing is lost by
@@ -231,8 +239,14 @@ export interface StoredEventModifiers {
   promoMix?: Record<string, number>;
   /** The user's padlocks on that mix — absent means none. See MarketEvent. */
   mixLocked?: string[];
-  promoPricingMode?: 'percentage' | 'absolute';
+  promoPricingMode?: 'percentage' | 'absolute' | 'dilution';
   promoPricingAmount?: number;
+  /** R5 decision 3 applied to the promotion arm: THE MODE AND BOTH STATED
+   *  FIGURES ARE PERSISTED, not just the derived amount. A dilution promotion
+   *  that stored only its converted percentage would reopen as a plain
+   *  percentage arm showing a number the user never typed. */
+  promoDilutionCurrentPct?: number;
+  promoDilutionTargetPct?: number;
   arpuOverride?: number;
   promoBandArpuOverride?: Record<string, number>;
   /**
@@ -345,6 +359,11 @@ export function marketEventExportRow(e: MarketEvent): Record<string, unknown> {
     Promo_Mix_JSON: e.promoMix ? JSON.stringify(e.promoMix) : '',
     Promo_Pricing_Mode: e.promoPricingMode ?? '',
     Promo_Pricing_Amount: e.promoPricingAmount ?? '',
+    // APPENDED, never inserted — the same rule Promo_Mix_Locked follows, and
+    // for the same reason: a reader keys by NAME, but a human diffing two
+    // exports reads column order. '' is the absence carrier throughout.
+    Promo_Dilution_Current_Pct: e.promoDilutionCurrentPct ?? '',
+    Promo_Dilution_Target_Pct: e.promoDilutionTargetPct ?? '',
     /**
      * THE USER'S PADLOCKS (Jon, 2026-09-03, decision 1): a lock is the user's,
      * and only the user unlocks it — so it survives the save.
@@ -1077,8 +1096,15 @@ export function readStoredEventModifiers(row: Record<string, unknown>): StoredEv
     promoRebanded:   row.Promo_Rebanded === 'Yes',
     promoMixAxis:    axis === 'tariff' ? 'tariff' : axis === 'value' ? 'value' : undefined,
     promoMix,
-    promoPricingMode: mode === 'absolute' ? 'absolute' : mode === 'percentage' ? 'percentage' : undefined,
+    promoPricingMode: mode === 'absolute' ? 'absolute'
+      : mode === 'percentage' ? 'percentage'
+        : mode === 'dilution' ? 'dilution' : undefined,
     promoPricingAmount: readOptionalNumber(row.Promo_Pricing_Amount),
+    // Through the SAME shared scalar reader every other optional figure uses,
+    // so the '' -> undefined / 0 -> 0 rule is not re-implemented per field. A
+    // stated 0% dilution is a real statement and must not read as absence.
+    promoDilutionCurrentPct: readOptionalNumber(row.Promo_Dilution_Current_Pct),
+    promoDilutionTargetPct:  readOptionalNumber(row.Promo_Dilution_Target_Pct),
     // The editable ARPU. Same carrier, same reason, and the reason is sharper
     // here: a stated rate of 0 is a free acquisition and a blank box means "use
     // the target cohort's trailing average". Collapsing them would silently

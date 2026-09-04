@@ -29,7 +29,7 @@
  */
 import * as fs from 'fs';
 import * as XLSX from 'xlsx';
-import { readStoredEventModifiers, bySequence, marketEventExportRow, marketEventFromRow } from '../src/utils/forecasting';
+import { readStoredEventModifiers, bySequence, marketEventExportRow, marketEventFromRow, dilutionAmountPct } from '../src/utils/forecasting';
 import type { MarketEvent } from '../src/utils/forecasting';
 
 let pass = 0; const fails: string[] = [];
@@ -530,6 +530,74 @@ function throughXlsx(rows: Record<string, unknown>[]): Record<string, unknown>[]
       + ' — 500 would become five hundred per cent');
     check(`PROMO% LEGACY/${src}: and it is still a promotion`, back.isPromotion === true);
   }
+}
+
+// ── THE PROMOTION'S DILUTION ARM ROUND-TRIPS (decision 3) ────────────────
+//
+// R5 decision 3, applied to this card before it bites rather than after: THE
+// MODE AND BOTH STATED FIGURES ARE PERSISTED, not just the derived amount. A
+// dilution promotion that stored only its converted +6.6667% would reopen as a
+// plain percentage arm showing a figure the user never typed and having lost
+// the two they did - which is precisely the yieldArpuMode failure.
+//
+// Two new columns, APPENDED: Promo_Dilution_Current_Pct and
+// Promo_Dilution_Target_Pct, with '' as the absence carrier throughout.
+{
+  const DIL = {
+    ...EVENT, id: 'promo-dilution', isPromotion: true,
+    promoPricingMode: 'dilution' as const,
+    promoPricingAmount: 6.666666666666671,
+    promoDilutionCurrentPct: 25,
+    promoDilutionTargetPct: 20,
+  } as MarketEvent;
+
+  const row = throughXlsx([toRow(DIL)])[0];
+  check('DILUTION: the mode reaches the sheet',
+    row.Promo_Pricing_Mode === 'dilution', String(row.Promo_Pricing_Mode));
+  check('DILUTION: both stated figures reach the sheet',
+    row.Promo_Dilution_Current_Pct === 25 && row.Promo_Dilution_Target_Pct === 20,
+    JSON.stringify([row.Promo_Dilution_Current_Pct, row.Promo_Dilution_Target_Pct]));
+
+  for (const src of ['session', 'workbook'] as const) {
+    const back: any = marketEventFromRow(row, src);
+    check(`DILUTION/${src}: the mode survives - it does NOT come back as percentage`,
+      back.promoPricingMode === 'dilution', String(back.promoPricingMode));
+    check(`DILUTION/${src}: both stated figures survive`,
+      back.promoDilutionCurrentPct === 25 && back.promoDilutionTargetPct === 20,
+      JSON.stringify([back.promoDilutionCurrentPct, back.promoDilutionTargetPct]));
+    // THE DERIVED AMOUNT AND THE STATED PAIR MUST STILL AGREE after the round
+    // trip - the same coherence check the Pricing card's own spec makes. If a
+    // save could return figures that no longer convert to the stored amount,
+    // the row would be showing two different moments.
+    check(`DILUTION/${src}: the reloaded pair still converts to the stored amount`,
+      Math.abs((dilutionAmountPct(back.promoDilutionCurrentPct,
+        back.promoDilutionTargetPct) as number) - back.promoPricingAmount) < 1e-9,
+      `${dilutionAmountPct(back.promoDilutionCurrentPct, back.promoDilutionTargetPct)} vs ${back.promoPricingAmount}`);
+  }
+
+  // ABSENCE, not zero. A stated 0% dilution is a real figure, so the carrier
+  // has to keep "no dilution arm" distinct from "a dilution of nought".
+  const plainBack: any = marketEventFromRow(throughXlsx([toRow(EVENT)])[0], 'session');
+  check('DILUTION: a non-dilution promotion comes back with the figures ABSENT',
+    plainBack.promoDilutionCurrentPct === undefined
+      && plainBack.promoDilutionTargetPct === undefined,
+    'a legacy save must not read as a dilution of zero');
+  const zeroBack: any = marketEventFromRow(throughXlsx([toRow({
+    ...DIL, promoDilutionCurrentPct: 0, promoDilutionTargetPct: 0,
+    promoPricingAmount: 0 } as MarketEvent)])[0], 'session');
+  check('DILUTION: a stated ZERO survives as 0, not as absent',
+    zeroBack.promoDilutionCurrentPct === 0 && zeroBack.promoDilutionTargetPct === 0,
+    JSON.stringify([zeroBack.promoDilutionCurrentPct, zeroBack.promoDilutionTargetPct]));
+
+  // AN OLD WORKBOOK. Every promotion saved before decision 3 has neither
+  // column, and must load as the plain arm it was.
+  const legacy = throughXlsx([{ ...toRow(DIL), Promo_Pricing_Mode: 'percentage',
+    Promo_Dilution_Current_Pct: '', Promo_Dilution_Target_Pct: '' }])[0];
+  const legacyBack: any = marketEventFromRow(legacy, 'workbook');
+  check('DILUTION LEGACY: a pre-decision-3 promotion loads as a plain percentage arm',
+    legacyBack.promoPricingMode === 'percentage'
+      && legacyBack.promoDilutionCurrentPct === undefined,
+    String(legacyBack.promoPricingMode));
 }
 
 console.log(`event-roundtrip spec: ${pass} passed, ${fails.length} failed`);

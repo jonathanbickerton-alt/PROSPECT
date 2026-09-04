@@ -473,8 +473,15 @@ interface BuildPromoEventsParams {
   mixLocked: readonly string[];
   tierData: { tier: string; baseArpu: number }[];
   pricingEnabled: boolean;
-  pricingMode: 'percentage' | 'absolute';
+  /** Decision 3: 'dilution' beside the other two. Not a third arm - see
+   *  applyPricing below, where it converts to a percentage and rides the
+   *  existing one, exactly as the Pricing card's own dilution events do. */
+  pricingMode: 'percentage' | 'absolute' | 'dilution';
   pricingAmount: number;
+  /** The two STATED figures. Persisted alongside the derived amount per R5
+   *  decision 3; absent on a non-dilution arm. */
+  pricingDilutionCurrentPct?: number;
+  pricingDilutionTargetPct?: number;
   cohortAvgArpu: number | null;
   spreadEnabled: boolean;
   spreadMonths: number;
@@ -509,8 +516,26 @@ interface BuildPromoEventsParams {
  *  the view's forecast RETENTION for the month with no arithmetic added here
  *  - which is decision 6's stated basis. */
 export function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
+  // DILUTION RIDES THE PERCENTAGE ARM, exactly as the Pricing card's dilution
+  // events ride the pricing pass. `dilutionAmountPct` is the SAME exported
+  // function `handleAddPricingEvent` calls, so the two cards cannot compute
+  // different numbers from the same pair of figures - not because they were
+  // checked against each other, but because there is one of them.
+  //
+  // NULL IS NOT ZERO: out-of-range or incomplete figures mean there is no
+  // honest rate to apply, and a promotion whose price arm cannot be resolved
+  // has no event to build - the same rule the unknown mix blend already
+  // follows two lines below. The card blocks Add before reaching this.
+  const isDilution = p.pricingMode === 'dilution';
+  const dilutionPct = isDilution
+    ? dilutionAmountPct(p.pricingDilutionCurrentPct, p.pricingDilutionTargetPct)
+    : null;
+  if (p.pricingEnabled && isDilution && dilutionPct === null) return [];
+  // The rate the arm actually applies. For dilution this is the CONVERTED
+  // percentage, which is what makes the two cards' arithmetic one arithmetic.
+  const pricingAmount = isDilution ? (dilutionPct as number) : p.pricingAmount;
   const applyPricing = (arpu: number) =>
-    p.pricingMode === 'percentage' ? arpu * (1 + p.pricingAmount / 100) : arpu + p.pricingAmount;
+    p.pricingMode === 'absolute' ? arpu + pricingAmount : arpu * (1 + pricingAmount / 100);
 
   const pcts = p.spreadEnabled
     ? (p.spreadDistType === 'even'
@@ -593,7 +618,18 @@ export function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
       // filtered to the current members so a stale key cannot reach the event.
       promoBandArpuOverride: p.mixEnabled ? statedForMembers : undefined,
       promoPricingMode: p.pricingEnabled ? p.pricingMode : undefined,
-      promoPricingAmount: p.pricingEnabled ? p.pricingAmount : undefined,
+      // THE DERIVED amount, for dilution as for the other two - so every
+      // existing reader (the summary string, the edit restore, the export)
+      // keeps working on one field rather than branching on the mode.
+      promoPricingAmount: p.pricingEnabled ? pricingAmount : undefined,
+      // AND BOTH STATED FIGURES, by presence. R5 decision 3, verbatim: an
+      // unstored mode misrepresents the event on reopen. Storing only the
+      // converted -6.25% would reopen as a plain percentage arm showing a
+      // number the user never typed and losing the two they did.
+      ...(p.pricingEnabled && isDilution ? {
+        promoDilutionCurrentPct: p.pricingDilutionCurrentPct,
+        promoDilutionTargetPct:  p.pricingDilutionTargetPct,
+      } : {}),
       sequence: p.startSequence + i,
     };
   });
@@ -2265,8 +2301,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
    */
   const [promoAmountMode, setPromoAmountMode] = useState<'absolute' | 'percentage'>('absolute');
 
-  const [promoPricingMode, setPromoPricingMode] = useState<'percentage' | 'absolute'>('percentage');
+  const [promoPricingMode, setPromoPricingMode] = useState<'percentage' | 'absolute' | 'dilution'>('percentage');
   const [promoPricingAmount, setPromoPricingAmount] = useState(0);
+  // The two STATED dilution figures. undefined, not 0 - a stated 0% dilution
+  // is a real statement and the blocking predicate distinguishes "you have not
+  // finished" from "that cannot be", exactly as the Pricing card's does.
+  const [promoDilutionCurrent, setPromoDilutionCurrent] = useState<number | undefined>(undefined);
+  const [promoDilutionTarget, setPromoDilutionTarget] = useState<number | undefined>(undefined);
 
   // Same tier derivation as the Value tab's Yield Event form (computeTierData),
   // scoped to the promo's own dimensions and volume target — never re-implemented.
@@ -2457,6 +2498,42 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   /** Save guard: the card cannot write a non-conforming mix, and cannot write a
    *  mix whose blend is unknown. Both are absence, and neither is a zero. */
+  /**
+   * THE DILUTION ARM'S BLOCKING TERM. A LOCALE KEY or null, matching the
+   * Pricing card's convention so the reason is nameable on screen rather than
+   * a silent disable - R5 walk decision 2, which counted five blocking terms
+   * across two layers, none of which said anything. The screen surface is the
+   * effect line, which reads `whatif_dilution_awaiting` in exactly these two
+   * states.
+   *
+   * NOT `pricingDraftBlockReason`, and the reason is not tidiness. That
+   * predicate's FIRST term is `if (!draft.month)` returning a PRICING-card
+   * key, and a promotion's month is `newPromo.date`, gated separately beside
+   * this one - so calling it here would mean feeding it a field it does not
+   * own to stop it answering a question its caller already owns. Its caller
+   * count is also a claim about the Pricing card specifically (its button and
+   * its handler read ONE predicate); a third caller from another card would
+   * weaken that claim while looking like reuse.
+   *
+   * The ARITHMETIC is still shared, which is what decision 3 requires: the
+   * range test IS `dilutionAmountPct` returning null, the same function that
+   * converts the pair, so there is no second definition of what a valid
+   * dilution pair is.
+   *
+   * Null when the arm is off or is not in dilution mode: a promotion priced in
+   * per cent has nothing to say about dilution figures.
+   */
+  const promoDilutionBlockReason = !(promoPricingEnabled && promoPricingMode === 'dilution')
+    ? null
+    : (promoDilutionCurrent === undefined || promoDilutionTarget === undefined)
+      // Absence and out-of-range are DIFFERENT user situations and get
+      // different sentences: one is "you have not finished", the other is
+      // "that cannot be".
+      ? 'whatif_pricing_block_dilution_incomplete'
+      : dilutionAmountPct(promoDilutionCurrent, promoDilutionTarget) === null
+        ? 'whatif_pricing_block_dilution_range'
+        : null;
+
   const promoMixBlocksSave = promoMixEnabled && promoTierData.length > 0 &&
     (!promoMixConforms || promoDraftBlendedArpu === null);
 
@@ -2522,7 +2599,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoCustomDist([34, 33, 33]);
     setPromoMixEnabled(false);
     setPromoPricingEnabled(false);
+    setPromoPricingMode('percentage');
     setPromoPricingAmount(0);
+    // Cleared for the same reason the stated band rates are: a saved event
+    // CARRIES these, so leaving them behind lets the next promotion inherit a
+    // dilution pair the user typed for the last one.
+    setPromoDilutionCurrent(undefined);
+    setPromoDilutionTarget(undefined);
     // Both are DRAFT-TIME state that no MarketEvent carries, so neither can be
     // restored from a saved event and both must be cleared here. Left behind,
     // padlocks from the last promotion would silently constrain the next one and
@@ -2547,6 +2630,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // has left non-conforming is theirs to resolve, and silently rewriting
     // it on save is the tool stating something on their behalf.
     if (promoMixBlocksSave) return;
+    if (promoDilutionBlockReason !== null) return;
 
     const events = buildPromoEvents({
       target: promoTarget,
@@ -2555,6 +2639,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       mixLocked: promoMixLocked,
       bandArpuOverride: draftPromoBandArpu,
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
+      pricingDilutionCurrentPct: promoDilutionCurrent, pricingDilutionTargetPct: promoDilutionTarget,
       cohortAvgArpu: promoCohortAvgArpu,
       spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
       startSequence: nextSequence(marketEvents),
@@ -4072,6 +4157,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoPricingEnabled(event.promoPricingAmount !== undefined);
     setPromoPricingMode(event.promoPricingMode ?? 'percentage');
     setPromoPricingAmount(event.promoPricingAmount ?? 0);
+    setPromoDilutionCurrent(event.promoDilutionCurrentPct);
+    setPromoDilutionTarget(event.promoDilutionTargetPct);
     setPromoSpreadEnabled(false);
     setEditingPromoId(event.id);
     setEditingPromoCampaign(null);
@@ -4129,6 +4216,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoPricingEnabled(first.promoPricingAmount !== undefined);
     setPromoPricingMode(first.promoPricingMode ?? 'percentage');
     setPromoPricingAmount(first.promoPricingAmount ?? 0);
+    setPromoDilutionCurrent(first.promoDilutionCurrentPct);
+    setPromoDilutionTarget(first.promoDilutionTargetPct);
     setPromoSpreadEnabled(true);
     setPromoSpreadMonths(span);
     setPromoSpreadDistType(isEven ? 'even' : 'custom');
@@ -4146,6 +4235,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       mixLocked: promoMixLocked,
       bandArpuOverride: draftPromoBandArpu,
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
+      pricingDilutionCurrentPct: promoDilutionCurrent, pricingDilutionTargetPct: promoDilutionTarget,
       cohortAvgArpu: promoCohortAvgArpu,
       spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [100],
       // The row KEEPS its slot. nextSequence here handed an edited event a
@@ -4170,6 +4260,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       mixLocked: promoMixLocked,
       bandArpuOverride: draftPromoBandArpu,
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
+      pricingDilutionCurrentPct: promoDilutionCurrent, pricingDilutionTargetPct: promoDilutionTarget,
       cohortAvgArpu: promoCohortAvgArpu,
       spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
       startSequence: nextSequence(marketEvents),
@@ -7412,31 +7503,106 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   {promoPricingEnabled && (
                     <div className="mt-3 p-4 bg-slate-50/50 border border-slate-200 rounded-xl">
                       <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_amount')}</label>
+                      {/* DILUTION SITS BESIDE % AND EUR, decision 3 - a third way
+                          of SAYING the same kind of thing, not a third arm. The
+                          keys are the Pricing card's own, unchanged: two cards
+                          that mean the same thing say it in the same words, and
+                          a new key here would be the copy drifting. */}
                       <div className="flex rounded-lg overflow-hidden border border-slate-200 w-full max-w-xs">
                         <button
+                          data-testid="promo-pricing-mode-pct"
                           onClick={() => setPromoPricingMode('percentage')}
                           className={`px-3 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
                             promoPricingMode === 'percentage' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
                           }`}
                         >%</button>
                         <button
+                          data-testid="promo-pricing-mode-abs"
                           onClick={() => setPromoPricingMode('absolute')}
                           className={`px-3 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
                             promoPricingMode === 'absolute' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
                           }`}
                         >€</button>
-                        <input
-                          type="number"
-                          step={promoPricingMode === 'percentage' ? 0.1 : 0.01}
-                          value={promoPricingAmount || ''}
-                          onChange={e => setPromoPricingAmount(Number(e.target.value))}
-                          className="flex-1 text-sm px-3 py-2 bg-white outline-none min-w-0"
-                          placeholder={promoPricingMode === 'percentage' ? t('whatif_5_or_10') : t('whatif_2_50_or_1_00')}
-                        />
+                        <button
+                          data-testid="promo-pricing-mode-dilution"
+                          onClick={() => {
+                            setPromoPricingMode('dilution');
+                            // THE STALE DIRECT AMOUNT GOES, exactly as it does on
+                            // the Pricing card: a figure typed in the other mode
+                            // does not belong to this one.
+                            setPromoPricingAmount(0);
+                          }}
+                          className={`px-3 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
+                            promoPricingMode === 'dilution' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >{t('whatif_pricing_mode_dilution')}</button>
+                        {promoPricingMode !== 'dilution' && (
+                          <input
+                            type="number"
+                            step={promoPricingMode === 'percentage' ? 0.1 : 0.01}
+                            data-testid="promo-pricing-amount"
+                            value={promoPricingAmount || ''}
+                            onChange={e => setPromoPricingAmount(Number(e.target.value))}
+                            className="flex-1 text-sm px-3 py-2 bg-white outline-none min-w-0"
+                            placeholder={promoPricingMode === 'percentage' ? t('whatif_5_or_10') : t('whatif_2_50_or_1_00')}
+                          />
+                        )}
                       </div>
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        {promoPricingMode === 'percentage' ? t('whatif_positive_price_rise_negative_discount_promoti') : t('whatif_absolute_arpu_change_per_subscriber')}
-                      </p>
+                      {promoPricingMode === 'dilution' ? (
+                        <div className="mt-2" data-testid="promo-dilution-inputs">
+                          <div className="flex gap-2 max-w-xs">
+                            {([
+                              ['current', promoDilutionCurrent, setPromoDilutionCurrent,
+                               t('whatif_dilution_current')] as const,
+                              ['target', promoDilutionTarget, setPromoDilutionTarget,
+                               t('whatif_dilution_target')] as const,
+                            ]).map(([slot, value, setter, label]) => (
+                              <div key={slot} className="flex-1">
+                                <span className="block text-[10px] text-slate-400 mb-0.5">{label}</span>
+                                <input
+                                  type="number"
+                                  step={0.1}
+                                  min={0}
+                                  max={99.99}
+                                  data-testid={`promo-dilution-${slot}`}
+                                  value={value ?? ''}
+                                  onChange={e => {
+                                    // CLEARED IS UNSET, NOT ZERO. Number('') is 0
+                                    // and a stated 0% dilution is a real figure.
+                                    const raw = e.target.value;
+                                    setter(raw === '' ? undefined : Number(raw));
+                                  }}
+                                  className="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-[#e60000]"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                          {/* THE CONVERSION, SHOWN. 25 -> 20 is +6.67%, not +5%,
+                              and doing that by hand is the error this mode
+                              removes - so the figure it will apply is on screen
+                              before Add, through the same function that applies
+                              it. */}
+                          <div className="mt-1.5 text-[11px]" data-testid="promo-dilution-effect">
+                            {(() => {
+                              const pct = dilutionAmountPct(promoDilutionCurrent, promoDilutionTarget);
+                              if (pct === null) {
+                                return <span className="text-slate-400">{t('whatif_dilution_awaiting')}</span>;
+                              }
+                              const sign = pct > 0 ? '+' : '';
+                              return (
+                                <span className="font-semibold text-slate-700">
+                                  {t('whatif_dilution_effect', { value: `${sign}${pct.toFixed(2)}` })}
+                                </span>
+                              );
+                            })()}
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-1">{t('whatif_dilution_volume_note')}</p>
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          {promoPricingMode === 'percentage' ? t('whatif_positive_price_rise_negative_discount_promoti') : t('whatif_absolute_arpu_change_per_subscriber')}
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -7479,7 +7645,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     <div className="flex gap-2 shrink-0">
                       <button
                         onClick={editingPromoCampaign ? handleSavePromoCampaign : handleSavePromoEdit}
-                        disabled={!newPromo.date || !newPromo.subscriberVolume || (promoMixEnabled && promoTierData.length === 0) || promoMixBlocksSave}
+                        disabled={!newPromo.date || !newPromo.subscriberVolume || (promoMixEnabled && promoTierData.length === 0) || promoMixBlocksSave || promoDilutionBlockReason !== null}
                         className="bg-[#e60000] text-white text-sm font-semibold py-2 px-5 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         {editingPromoCampaign ? t('whatif_save_campaign') : t('whatif_save_changes')}
@@ -7492,7 +7658,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   ) : (
                     <button
                       onClick={handleAddPromotionEvent}
-                      disabled={!newPromo.date || !newPromo.subscriberVolume || (promoMixEnabled && promoTierData.length === 0) || promoMixBlocksSave}
+                      disabled={!newPromo.date || !newPromo.subscriberVolume || (promoMixEnabled && promoTierData.length === 0) || promoMixBlocksSave || promoDilutionBlockReason !== null}
                       className="bg-[#e60000] text-white text-sm font-semibold py-2 px-5 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
                     >{t('whatif_add_promotion')}</button>
                   )}
