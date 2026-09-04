@@ -65,18 +65,35 @@ const readLF = (f: string) => {
 };
 
 /**
- * THE SIX ANCHORS THAT ARE NOT UNIQUE TODAY — recorded, not exempted.
+ * THE ANCHORS THAT ARE NOT UNIQUE, AND WHY EACH ONE STAYS THAT WAY.
  *
- * Each occurs 2-3 times in its file, so `replace()` plants at the FIRST match.
- * All six are CAUGHT by the harness today, so they plant somewhere effective;
- * what they cannot prove is that they plant where their author intended, and a
- * line inserted above any of them would move the trap silently.
+ * WAS SIX, IS TWO (2026-09-04). Four were fixed one at a time - 24, 26, 51
+ * and 124 - each by extending the anchor with adjacent context until it
+ * occurred EXACTLY once at the site the trap's name describes, verified by
+ * counting BEFORE replacing and by planting the trap by hand afterwards.
  *
- * They are recorded rather than fixed because fixing them is anchor surgery on
- * six traps across three files, and doing it under time pressure is how trap 22
- * got broken and reverted inside this very session. It is its own brief.
+ * THE TWO THAT REMAIN ARE NOT LEFTOVERS. Each was measured and stopped on:
  *
- * THE COUNT IS EXACT IN BOTH DIRECTIONS. A seventh fails here — which is the
+ *   22  Its two sites are BYTE-IDENTICAL for 26 lines - the volume KPI row
+ *       and the ARPU KPI row - and the catching spec asserts
+ *       `occurrences === 2`, i.e. its subject is the PAIR. A unique anchor
+ *       would span 18 lines including a comment block, making the trap far
+ *       more rot-prone, and would tie it to one row when the assertion is
+ *       about both. Uniqueness is the wrong requirement here, not an unmet
+ *       one. The natural fix is a trap that mutates EVERY occurrence, which
+ *       changes the harness contract and is Jon's call.
+ *
+ *  102  Measured 2026-09-04: at its intended site the catching spec does not
+ *       fail, it CRASHES - `Cannot read properties of undefined (reading
+ *       'subscriberVolume')` - because with the churn add gated off no event
+ *       is produced and the spec dereferences a row that is not there.
+ *       guard-traps reads an exit code, so a crash and a failed assertion are
+ *       indistinguishable to it and the trap has been reporting CAUGHT while
+ *       nothing asserted the defect. ITS ANCHOR IS NOT THE PROBLEM; making it
+ *       unique would only make a broken trap unique. The assertion is the
+ *       defect, and fixing it is its own piece of work.
+ *
+ * THE COUNT IS EXACT IN BOTH DIRECTIONS. A third fails here - which is the
  * whole point, since new rot is what this spec exists to catch. And FIXING one
  * also fails, forcing this list to be updated rather than letting it quietly
  * describe a state that no longer exists. An allowlist that can only grow is
@@ -84,11 +101,7 @@ const readLF = (f: string) => {
  */
 const KNOWN_NON_UNIQUE = new Set([
   '22 the cohort-months label loses its grain',
-  '24 the blocked state collapses into covered',
-  '26 the error banner survives a selection change',
-  '51 a restored session drops its saved historical months',
   '102 the churn add falls behind the spread gate',
-  '124 the forecastType identifier is translated',
 ]);
 const seenNonUnique = new Set<string>();
 

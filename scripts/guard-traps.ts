@@ -351,7 +351,21 @@ const TRAPS: Trap[] = [
   // leaves; one says the scope is complete and the other says it cannot be.
   { id: '24 the blocked state collapses into covered', why: 'a scope with unfittable leaves claims full coverage',
     file: APP, spec: WALKFIX,
-    mutate: s => s.replace('    if (unfittable.length > 0) {', '    if (false) {') },
+    // ANCHOR EXTENDED 2026-09-04. `if (unfittable.length > 0) {` occurs TWICE
+    // in App.tsx - the leaf-scope reader at 1606 and the book reader at 1653 -
+    // and replace() took the first. That happened to be the intended one, but
+    // by ordering rather than by anything the trap said. Measured: planting at
+    // 1606 reddens spec:walk-fixes; planting at 1653 leaves it 82/82, so the
+    // second site's blocked branch is NOT covered by any spec - recorded as a
+    // finding, not fixed here. The return line disambiguates: only the leaf
+    // reader's lacks `keys`.
+    mutate: s => s.replace(
+      '    if (unfittable.length > 0) {' + nl +
+      "      return { kind: 'blocked' as const, missing: 0, total: leaves.length," + nl +
+      '               unfittable: unfittable.length };',
+      '    if (false) {' + nl +
+      "      return { kind: 'blocked' as const, missing: 0, total: leaves.length," + nl +
+      '               unfittable: unfittable.length };') },
   // Trap 25: the run ends without showing anything. The user story stops at a
   // placeholder and the user is left to guess whether it worked.
   { id: '25 generation ends on a placeholder', why: 'the derived forecast is never rendered',
@@ -374,8 +388,17 @@ const TRAPS: Trap[] = [
     // version broke the moment setNotice was added between them, and correctly
     // reported INCONCLUSIVE rather than a false catch.
     mutate: s => {
-      const i = s.indexOf(`    setError('');${nl}    setNotice('');`);
-      if (i === -1) return s;
+      // EXTENDED UPWARD 2026-09-04, deliberately not downward. The two-line
+      // body start occurs TWICE in App.tsx - the selection effect at 1698 and
+      // generateStandardForecast at 2128 - so `indexOf` found the intended one
+      // by ordering alone. Adding the `useEffect(() => {` line above makes it
+      // unique at 1697 while leaving the span between setNotice and the
+      // terminator free, which is the exact property the note above records:
+      // pinning that span is what broke the first version.
+      const head = `  useEffect(() => {${nl}    setError('');${nl}    setNotice('');`;
+      const at = s.indexOf(head);
+      if (at === -1) return s;
+      const i = at + `  useEffect(() => {${nl}`.length;
       const j = s.indexOf('    setStdGenerateResult(null);', i);
       if (j === -1) return s;
       return s.slice(0, i) + '    /* cleared nothing */' + s.slice(j + '    setStdGenerateResult(null);'.length);
@@ -613,9 +636,18 @@ const TRAPS: Trap[] = [
   { id: '51 a restored session drops its saved historical months',
     why: 'asOf goes null, no leaf passes the gate, and a fully-seeded save loses its Base',
     file: APP, spec: RESTOREBASE,
+    // ANCHOR EXTENDED 2026-09-04. The line occurs THREE times in App.tsx
+    // (774, 893, 1028 - the three import sites), and replace() took the first.
+    // MEASURED: all three redden spec:restore-base identically, because its
+    // checks are about the SET of sites ('all three sites use the shared
+    // parser'), so no one of them is more intended than another. Pinned to 774
+    // - where it already planted, so nothing about what is caught changes - by
+    // the following line, whose double space before `?? 0` the other two lack.
     mutate: s => s.replace(
-      'historicalMonths:      parseStoredMonths(first.Historical_Months),',
-      'historicalMonths:      [],') },
+      '                historicalMonths:      parseStoredMonths(first.Historical_Months),' + nl +
+      '                lastHistoricalInflow:  Number(first.Last_Historical_Inflow  ?? 0),',
+      '                historicalMonths:      [],' + nl +
+      '                lastHistoricalInflow:  Number(first.Last_Historical_Inflow  ?? 0),') },
   // Trap 52: a promo field is dropped from the shared reader, so it stops
   // round-tripping — the prerequisite defect for the mix-mode build, in one
   // line. promoMix is the field chosen because it is the structured one: a
@@ -1501,9 +1533,18 @@ const TRAPS: Trap[] = [
   { id: '124 the forecastType identifier is translated',
     why: 'a translated cohort-key segment silently stops matching every previously saved session',
     file: APP, spec: FTSPLIT,
+    // ANCHOR EXTENDED 2026-09-04. The string occurred twice in App.tsx: the
+    // real assignment at 3721 and a PROSE MENTION of it at 3795, inside the
+    // comment recording why the What-If branch was deleted. replace() took the
+    // first, which was the right one - but only because the code happens to
+    // precede the comment about it. Adding the `scenario: scen,` line pins it
+    // to the assignment, and a comment can no longer decide where a trap
+    // plants by being moved above the code it describes.
     mutate: s => s.replace(
-      "forecastType: 'Standard Forecast',",
-      "forecastType: 'Standardprognose',") },
+      "                forecastType: 'Standard Forecast'," + nl +
+      '                scenario: scen,',
+      "                forecastType: 'Standardprognose'," + nl +
+      '                scenario: scen,') },
 
   // ---------------------------------------------------------------------
   // 125 — UAT-D2-02. The ARPU companion is money per subscriber; the row's
