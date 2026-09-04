@@ -33,7 +33,7 @@ import fs from 'fs';
 let pass = 0; const fails: string[] = [];
 const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails.push(n + (d ? `  [${d}]` : '')); };
 
-type Dumped = { id: string; file: string; anchors: string[] };
+type Dumped = { id: string; file: string; anchors: string[]; global?: number };
 
 // The registry, read from the harness itself rather than re-declared here. A
 // copy of the trap list in this file would be one more thing to drift.
@@ -65,43 +65,28 @@ const readLF = (f: string) => {
 };
 
 /**
- * THE ANCHORS THAT ARE NOT UNIQUE, AND WHY EACH ONE STAYS THAT WAY.
+ * THE NON-UNIQUE BASELINE — NOW EMPTY, AND KEPT.
  *
- * WAS SIX, IS TWO (2026-09-04). Four were fixed one at a time - 24, 26, 51
- * and 124 - each by extending the anchor with adjacent context until it
- * occurred EXACTLY once at the site the trap's name describes, verified by
- * counting BEFORE replacing and by planting the trap by hand afterwards.
+ * Was six on 2026-09-03, two on 2026-09-04 after four were fixed one at a
+ * time, and is now ZERO:
  *
- * THE TWO THAT REMAIN ARE NOT LEFTOVERS. Each was measured and stopped on:
+ *   22   moved to the GLOBAL-MUTATION CLASS instead of being made unique.
+ *        Its two sites are byte-identical for 26 lines and the catching spec
+ *        asserts `occurrences === 2`, so uniqueness was the wrong question:
+ *        the trap now takes BOTH sites and declares the count.
+ *   102  anchor extended to three lines, unique at the add path.
  *
- *   22  Its two sites are BYTE-IDENTICAL for 26 lines - the volume KPI row
- *       and the ARPU KPI row - and the catching spec asserts
- *       `occurrences === 2`, i.e. its subject is the PAIR. A unique anchor
- *       would span 18 lines including a comment block, making the trap far
- *       more rot-prone, and would tie it to one row when the assertion is
- *       about both. Uniqueness is the wrong requirement here, not an unmet
- *       one. The natural fix is a trap that mutates EVERY occurrence, which
- *       changes the harness contract and is Jon's call.
+ * THE EMPTY LIST IS KEPT ON PURPOSE. The check below asserts the recorded
+ * set is EXACTLY what is found, so an empty set is not dead scaffolding - it
+ * is the assertion that NO trap is silently non-unique. Deleting it would
+ * remove the only thing that fails when a new one appears; the list going
+ * empty is the success condition, not the end of the check's usefulness.
  *
- *  102  Measured 2026-09-04: at its intended site the catching spec does not
- *       fail, it CRASHES - `Cannot read properties of undefined (reading
- *       'subscriberVolume')` - because with the churn add gated off no event
- *       is produced and the spec dereferences a row that is not there.
- *       guard-traps reads an exit code, so a crash and a failed assertion are
- *       indistinguishable to it and the trap has been reporting CAUGHT while
- *       nothing asserted the defect. ITS ANCHOR IS NOT THE PROBLEM; making it
- *       unique would only make a broken trap unique. The assertion is the
- *       defect, and fixing it is its own piece of work.
- *
- * THE COUNT IS EXACT IN BOTH DIRECTIONS. A third fails here - which is the
- * whole point, since new rot is what this spec exists to catch. And FIXING one
- * also fails, forcing this list to be updated rather than letting it quietly
- * describe a state that no longer exists. An allowlist that can only grow is
- * the "exemption wired to nothing" this project has already paid for once.
+ * A trap that genuinely wants many sites declares `global` and is counted
+ * exactly. Anything else must be unique. There is no third option, and no
+ * way to be exempt by omission.
  */
 const KNOWN_NON_UNIQUE = new Set([
-  '22 the cohort-months label loses its grain',
-  '102 the churn add falls behind the spread gate',
 ]);
 const seenNonUnique = new Set<string>();
 
@@ -124,6 +109,18 @@ for (const t of traps) {
     if (n === 0) {
       check(`trap ${t.id}: anchor ${i + 1} still matches ${t.file.split('/').pop()}`,
         false, 'ZERO — the anchor has aged out; the trap plants nothing');
+      return;
+    }
+    // THE GLOBAL-MUTATION CLASS (Jon, 2026-09-04, decision 2). The trap takes
+    // EVERY occurrence, so "which one does replace() pick" is not a question it
+    // can get wrong. The count replaces the uniqueness check and is asserted
+    // EXACT in both directions: a new occurrence fails here, and so does one
+    // disappearing. That is the difference between this and an exemption --
+    // I18N_PHASE2 passed a live literal as DEFERRED and checked nothing.
+    if (t.global !== undefined) {
+      check(`trap ${t.id}: anchor ${i + 1} occurs EXACTLY ${t.global} times in ${t.file.split('/').pop()}`,
+        n === t.global,
+        `${n} occurrences — a global trap declares its count; update it deliberately or fix the drift`);
       return;
     }
     if (n > 1 && KNOWN_NON_UNIQUE.has(t.id)) { seenNonUnique.add(t.id); pass++; return; }

@@ -30,6 +30,8 @@
  */
 import * as fs from 'fs';
 import { spawnSync } from 'child_process';
+import os from 'os';
+import path from 'path';
 
 const FILE = 'src/components/ForecastVsActualsTab.tsx';
 const FVA_TAB = FILE;
@@ -142,7 +144,18 @@ const MIX_BLOCK = ANCHOR + nl +
  * a change that rewrites a line under a trap must re-aim the trap in the same
  * commit, and INCONCLUSIVE is the signal that it did not.
  */
-type Trap = { id: string; why: string; file?: string; spec?: string; mutate: (s: string) => string };
+/**
+ * A TRAP. `global` declares the GLOBAL-MUTATION CLASS (Jon, 2026-09-04,
+ * decision 2): the trap mutates EVERY occurrence of its anchor, and the number
+ * is how many it expects to find.
+ *
+ * Such a trap is exempt from `spec:trap-anchors`' uniqueness check - not
+ * because uniqueness is inconvenient for it, but because it is the wrong
+ * question: the trap does not choose between occurrences, it takes all of
+ * them. What replaces the check is the COUNT, asserted exact in both
+ * directions, so a third occurrence and a drop to one both fail.
+ */
+type Trap = { id: string; why: string; file?: string; spec?: string; global?: number; mutate: (s: string) => string };
 
 const TRAPS: Trap[] = [
   { id: '1 original spelling', why: 'the sentence the old guard pinned',
@@ -334,10 +347,16 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace('            {uncovered > 0', '            {false') },
   // Trap 22: the grain comes off the cohort-months label. The number is
   // unchanged and the word is wrong, which is the shape that survives review.
+  // GLOBAL-MUTATION CLASS, 2026-09-04. The anchor occurs TWICE - the volume
+  // KPI row and the ARPU KPI row, byte-identical for 26 lines - and the
+  // catching spec asserts `occurrences === 2`, so its subject is the PAIR.
+  // A unique anchor would span 18 lines including a comment block and would
+  // pin the trap to one row the assertion is not about. Measured 2026-09-04:
+  // planting at either site alone reddens the same check.
   { id: '22 the cohort-months label loses its grain', why: '240 cohort-months reads as a 240-month period',
-    file: FVA_TAB, spec: COVCOPY,
-    mutate: s => s.replace("t('actuals_cohort_months_compared', { n: summaryMape.monthsWithActuals })",
-                           'summaryMape.monthsWithActuals') },
+    file: FVA_TAB, spec: COVCOPY, global: 2,
+    mutate: s => s.split("t('actuals_cohort_months_compared', { n: summaryMape.monthsWithActuals })")
+                  .join('summaryMape.monthsWithActuals') },
   // Trap 23: `missing` goes back to meaning has-no-forecast. The button then
   // offers a generate for a leaf that cannot be fitted, produces nothing, and
   // offers it again - the loop Jon's walk stopped on.
@@ -1228,9 +1247,40 @@ const TRAPS: Trap[] = [
   // the control's transitions exhaustively, and neither can reach routing.
   { id: '102 the churn add falls behind the spread gate', why: 'every churn Add emits one zero-volume event with no churn fields',
     file: WHATIF, spec: MIXCARD,
+    // ANCHOR EXTENDED 2026-09-04. `if (isChurnDraft) {` occurs THREE times in
+    // WhatIfTab (3159 the ADD path, 3559, 3782), and replace() took the first.
+    // That was the intended one - the trap's name says ADD - but by ordering,
+    // not by anything the trap stated. The `usable` line disambiguates: only
+    // the add path filters on `delta !== 0`.
     mutate: s => s.replace(
-      '    if (isChurnDraft) {',
-      '    if (false && isChurnDraft) {') },
+      '    if (isChurnDraft) {' + nl +
+      '      if (churnBlockReason) return;' + nl +
+      '      const usable = churnFold.filter(m => !m.absence && m.delta !== 0);',
+      '    if (false && isChurnDraft) {' + nl +
+      '      if (churnBlockReason) return;' + nl +
+      '      const usable = churnFold.filter(m => !m.absence && m.delta !== 0);') },
+
+  // ---------------------------------------------------------------------
+  // 144 - the OVERALL door's blocked branch, which nothing watched.
+  //
+  // The Step 1 door's copy has been trapped since trap 24. This is the SAME
+  // decision at the widest scope, and MEASURED 2026-09-04 it was guarded by
+  // nothing at all: gating it to a constant left the entire suite green,
+  // because spec:walk-fixes sliced App.tsx from `stdAggregateState` and that
+  // slice ends 40 lines above this branch.
+  //
+  // A blocked book reporting itself covered is the original lie relocated to
+  // the one view that shows everything.
+  { id: '144 the OVERALL door collapses blocked into covered',
+    why: 'a book whose remaining leaves cannot be fitted would claim full coverage',
+    file: APP, spec: WALKFIX,
+    mutate: s => s.replace(
+      '    if (unfittable.length > 0) {' + nl +
+      "      return { kind: 'blocked' as const, missing: 0, total: leaves.length," + nl +
+      '               unfittable: unfittable.length, keys: [] as string[] };',
+      '    if (false) {' + nl +
+      "      return { kind: 'blocked' as const, missing: 0, total: leaves.length," + nl +
+      '               unfittable: unfittable.length, keys: [] as string[] };') },
   // 103 feeds the LOADED COHORT's forecast back into the churn series, undoing
   // the scope fix. The panel then reads the same base whatever the draft's dims
   // say — the walk's ~293k at every slice — and the breakdown stops moving when
@@ -1907,15 +1957,24 @@ const TRAPS: Trap[] = [
  * cannot silently stop the gate from running.
  */
 if (process.env.TRAP_ANCHORS === '1') {
-  const out: { id: string; file: string; anchors: string[] }[] = [];
+  const out: { id: string; file: string; anchors: string[]; global?: number }[] = [];
   const realReplace = String.prototype.replace;
   const realIndexOf = String.prototype.indexOf;
+  const realSplit = String.prototype.split;
   for (const t of TRAPS) {
     const file = t.file ?? FILE;
     const captured: string[] = [];
     (String.prototype as any).replace = function (this: string, a: any, b: any) {
       if (typeof a === 'string') captured.push(a);
       return (realReplace as any).call(this, a, b);
+    };
+    // GLOBAL-MUTATION TRAPS SPLICE WITH `split`/`join`, so the anchor lives in
+    // a split() argument. Without this the class would report 'no anchor
+    // recovered', which trap-anchors correctly treats as a finding - a silent
+    // exemption would be worse, but a visible false one is still noise.
+    (String.prototype as any).split = function (this: string, a: any, lim?: any) {
+      if (typeof a === 'string' && a.length > 8) captured.push(a);
+      return (realSplit as any).call(this, a, lim);
     };
     (String.prototype as any).indexOf = function (this: string, a: any, from?: any) {
       if (typeof a === 'string' && a.length > 8 && from === undefined) captured.push(a);
@@ -1924,23 +1983,85 @@ if (process.env.TRAP_ANCHORS === '1') {
     try { t.mutate(toLF(originals.get(file) ?? '')); } catch { /* no anchors -> a finding */ }
     (String.prototype as any).replace = realReplace;
     (String.prototype as any).indexOf = realIndexOf;
-    out.push({ id: t.id, file, anchors: captured });
+    (String.prototype as any).split = realSplit;
+    out.push({ id: t.id, file, anchors: captured, global: t.global });
   }
   process.stdout.write(JSON.stringify(out));
   process.exit(0);
 }
 
-const specFails = (spec: string = SPEC): boolean => {
+/**
+ * THE VERDICT ON A SPEC RUN — three states, not two (Jon, 2026-09-04,
+ * decision 1; see EXPECTED.md "GATE HYGIENE - THREE DECISIONS").
+ *
+ * This used to return a boolean read off the exit code, which made a CRASH and
+ * a FAILED ASSERTION the same event. They are not:
+ *
+ *   'failed'   the spec ran and at least one check reported FAIL. The mutation
+ *              was noticed BY NAME. This is the only thing that may count as
+ *              CAUGHT.
+ *   'crashed'  the spec exited non-zero with NO FAIL line - it died rather than
+ *              asserting. The mutation landed and nothing judged it.
+ *   'green'    the spec passed.
+ *
+ * Trap 102 printed [CAUGHT] in every gate run for as long as it existed, while
+ * spec:mix-card was dereferencing a row the mutation had removed. A gate cannot
+ * certify what it cannot distinguish.
+ */
+type SpecVerdict = 'green' | 'failed' | 'crashed';
+
+// A line that STARTS with FAIL, in either stream. No ``: specs print
+// 'FAIL', 'FAILED' and 'FAILURE', and every one of them is an assertion
+// reporting - the word boundary would reject two thirds of that for nothing.
+const FAIL_LINE = /^\s*FAIL/m;
+
+const specVerdict = (spec: string = SPEC): SpecVerdict => {
   // scan-i18n only enforces under --check; without it the scanner prints its
   // inventory and exits 0, which is precisely how seventeen must-key strings
   // sat tolerated. Passing the flag here is what makes trap 123 mean anything.
   const args = spec === I18NSCAN ? ['tsx', spec, '--check'] : ['tsx', spec];
-  return spawnSync('npx', args, { encoding: 'utf8', shell: process.platform === 'win32' }).status !== 0;
+  const r = spawnSync('npx', args, { encoding: 'utf8', shell: process.platform === 'win32' });
+  if (r.status === 0) return 'green';
+  // BOTH STREAMS. Specs print their FAIL lines to stdout; a spec that dies
+  // prints a stack to stderr. Reading only one would misclassify whichever
+  // stream a future spec chooses.
+  const out = `${r.stdout ?? ''}${nl}${r.stderr ?? ''}`;
+  return FAIL_LINE.test(out) ? 'failed' : 'crashed';
 };
+
+/** Red in ANY way. The positive control cares only that a spec is not green. */
+const specFails = (spec: string = SPEC): boolean => specVerdict(spec) !== 'green';
 
 const results: { id: string; state: string; detail: string }[] = [];
 
 try {
+  // ── THE CLASSIFIER IS ITSELF CONTROLLED ─────────────────────────────────
+  // A CRASHED/CAUGHT distinction that silently degraded to "everything is
+  // CAUGHT" would restore the exact defect it was built to end, and would do
+  // so invisibly - every trap would still report CAUGHT and the gate would
+  // still be green. So the two classifications are exercised against specs
+  // written to produce them, on every run, before any trap is planted.
+  {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gt-control-'));
+    // Written OUTSIDE the repo: a control fixture in scripts/ would be
+    // untracked clutter, and would be picked up by the suite runner.
+    const crasher = path.join(dir, 'crasher.ts');
+    const failer = path.join(dir, 'failer.ts');
+    fs.writeFileSync(crasher, 'throw new Error("deliberate");' + nl);
+    fs.writeFileSync(failer,
+      'console.log("  FAIL  deliberate");' + nl + 'process.exit(1);' + nl);
+    const vc = specVerdict(crasher), vf = specVerdict(failer);
+    fs.rmSync(dir, { recursive: true, force: true });
+    if (vc !== 'crashed' || vf !== 'failed') {
+      console.log(nl + 'GUARD TRAPS' + nl + '='.repeat(72));
+      console.log('[INCONCLUSIVE] control. The CRASHED/CAUGHT classifier is broken:');
+      console.log(`               a throwing spec read '${vc}' (want 'crashed'),`);
+      console.log(`               a FAIL-printing spec read '${vf}' (want 'failed').`);
+      console.log('               Every trap would be misreported. Fix this first.');
+      process.exit(1);
+    }
+  }
+
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
   if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT) || specFails(AGGRECON) || specFails(VIEWAPPLY) || specFails(LOCKRT) || specFails(TRAPANCHORS) || specFails(VALUEPAD)) {
@@ -1974,9 +2095,16 @@ try {
       continue;
     }
     fs.writeFileSync(target, mutated);
-    results.push(specFails(t.spec)
-      ? { id: t.id, state: 'CAUGHT', detail: t.why }
-      : { id: t.id, state: 'MISSED', detail: 'planted and the spec stayed GREEN — ' + t.why });
+    // THREE OUTCOMES, NOT TWO. A spec that dies is not a spec that caught
+    // something: the mutation landed and nothing named it.
+    const v = specVerdict(t.spec);
+    results.push(
+      v === 'failed'
+        ? { id: t.id, state: 'CAUGHT', detail: t.why }
+        : v === 'crashed'
+          ? { id: t.id, state: 'CRASHED',
+              detail: `${t.spec} exited non-zero with NO FAIL line — the mutation landed and nothing asserted it` }
+          : { id: t.id, state: 'MISSED', detail: 'planted and the spec stayed GREEN — ' + t.why });
     fs.writeFileSync(target, pristine);   // one trap at a time, never compounded
   }
 } finally {
@@ -1991,5 +2119,14 @@ console.log('='.repeat(72));
 const caught = results.filter(r => r.state === 'CAUGHT').length;
 const bad = results.filter(r => r.state !== 'CAUGHT');
 console.log(`${caught}/${results.length} caught`);
-if (bad.length) console.log('A MISSED or INCONCLUSIVE trap means the guard does not protect what it claims to.');
+if (bad.length) {
+  console.log('A MISSED, INCONCLUSIVE or CRASHED trap means the guard does not protect what it claims to.');
+  // Each state names a DIFFERENT repair, so the summary says which.
+  const crashed = results.filter(r => r.state === 'CRASHED');
+  if (crashed.length) {
+    console.log(`${crashed.length} CRASHED — the mutation landed and the spec DIED instead of asserting.`);
+    console.log('  The repair is an assertion in the spec, not a new anchor in the registry:');
+    for (const c of crashed) console.log(`    ${c.id}`);
+  }
+}
 process.exit(bad.length ? 1 : 0);

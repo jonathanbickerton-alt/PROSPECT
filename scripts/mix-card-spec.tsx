@@ -1632,6 +1632,25 @@ async function main() {
       if (addG) await (act as any)(async () => { addG.click(); });
 
       check('R7 group: a three-month churn campaign exists', stored.length === 3, `${stored.length}`);
+
+      // ── TRAP 102'S CLAIM, ASSERTED (Jon, 2026-09-04, decision 3) ─────────
+      //
+      // Gating the churn branch off does not stop the Add. It falls through to
+      // the PLAIN path, which emits ONE event with zero volume and none of the
+      // churn fields - exactly what trap 102's `why` describes, and a thing no
+      // check here said out loud. The count check above notices, but the spec
+      // then ran on and DIED twenty checks later dereferencing a row that was
+      // never produced; guard-traps read the non-zero exit and printed CAUGHT,
+      // so the trap reported healthy for its whole life while nothing asserted
+      // the defect. This states the claim in one place, by name.
+      {
+        const withChurn = stored.filter((e: any) => e.churnCurrentPct !== undefined).length;
+        const zeroVol = stored.filter((e: any) => Number(e.subscriberVolume) === 0).length;
+        check('R7 group: the Add took the CHURN path, not the plain one',
+          stored.length === 3 && withChurn === 3 && zeroVol === 0,
+          `${stored.length} row(s), ${withChurn} carrying churn fields, ${zeroVol} at zero volume` +
+          ' — one zero-volume row with no churn fields IS the spread-gate defect');
+      }
       const beforeRows = stored.map((e: any) => ({ ...e }));
       const CAMP = beforeRows[0]?.campaignName;
       check('R7 group: its rows share one campaignName',
@@ -1735,7 +1754,12 @@ async function main() {
       // The literal is derived from the row itself rather than typed, because
       // the delta depends on the fixture's rate — but the SIGN and the
       // MAGNITUDE-MATCH are the claim, and both are exact.
-      const storedDelta = Number(afterRows[0].subscriberVolume);
+      // GUARDED. This line is where the spec used to DIE when the churn add
+      // produced nothing: a crash instead of a report, which cost every FAIL
+      // line above it. A spec that cannot finish cannot be read.
+      check('R7 group (j): there is a stored row to read a delta from',
+        afterRows.length > 0, `${afterRows.length} rows — the churn add produced none`);
+      const storedDelta = Number(afterRows[0]?.subscriberVolume ?? NaN);
       const deltaCells = [...qa('td')].map((td: any) => (td.textContent || '').trim());
       // MATCHED ON THE CLAIM, NOT ON THE FORMATTING. The first version looked
       // for a thousands-separated integer and failed against a cell reading
@@ -1756,8 +1780,9 @@ async function main() {
         !!deltaCell && deltaCell.neg === true,
         `a stored +${storedDelta.toFixed(2)} shown positive reads as MORE churn, not less`);
       check('R7 group (j): while STORAGE stays POSITIVE — D4, the two layers apart',
-        Number(afterRows[0].subscriberVolume) > 0,
-        'the negation must live on the display layer only');
+        afterRows.length > 0 && Number(afterRows[0].subscriberVolume) > 0,
+        afterRows.length ? 'the negation must live on the display layer only'
+                         : 'no stored row at all - the churn add produced none');
     }
     // ═══════════════════════════════════════════════════════════════════════
     // PRICING BASELINE SCOPE — all four figures, driven on the real path.

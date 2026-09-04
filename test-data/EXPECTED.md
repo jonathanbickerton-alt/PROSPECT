@@ -8874,3 +8874,53 @@ after any change:
 
 **Verdict rule:** "SAFE FOR USER TESTING" only if all pass. Otherwise list
 the failures and the cohort/filter combination that exposed each.
+
+#### GATE HYGIENE — THREE DECISIONS (Jon, 2026-09-04; recorded here 2026-09-04)
+
+Recorded before the build, because all three change what a green gate MEANS.
+They come from `reports/2026-09-04-1039-anchor-fixes.md`, which measured trap
+102 catching by crash and trap 22 catching correctly at a site the uniqueness
+rule could not sanction.
+
+1. **CRASHED is its own state, beside MISSED and INCONCLUSIVE.** `CAUGHT`
+   requires at least one FAIL line in the catching spec's output. A non-zero
+   exit with no FAIL line is `CRASHED`, and **a CRASHED trap does not count as
+   caught**.
+
+   **Why this is not a refinement of INCONCLUSIVE.** INCONCLUSIVE says the
+   mutation never landed — the anchor aged out, nothing was planted. CRASHED
+   says the mutation landed perfectly and the spec then died instead of
+   asserting. The first is a broken trap; the second is a **missing
+   assertion**, and the fix is in the spec rather than the registry.
+
+   **The failure this ends.** `guard-traps` read an exit code, so a crash and
+   a failed assertion were the same event to it. Trap 102 printed `[CAUGHT]`
+   in every gate run for as long as it has existed while nothing asserted the
+   defect its `why` describes. A gate cannot certify what it cannot
+   distinguish.
+
+2. **A GLOBAL-MUTATION TRAP CLASS EXISTS.** A trap may declare that it mutates
+   EVERY occurrence of its anchor. Such a trap is **exempt from the uniqueness
+   check**, and instead **records its occurrence count, asserted exact**.
+
+   **Why an exemption rather than an anchor fix.** Trap 22's two sites are
+   byte-identical for 26 lines, and its catching spec asserts
+   `occurrences === 2` — its subject is the PAIR. A unique anchor would span
+   18 lines including a comment block, and would tie the trap to one of the
+   two rows the assertion is about. **Uniqueness was the wrong requirement for
+   that trap, not an unmet one.**
+
+   **The exemption is wired to something.** The count is asserted exact in
+   both directions: a third occurrence fails, and a drop to one fails. This is
+   deliberately not the shape of `I18N_PHASE2`, an exemption that passed a
+   live literal as DEFERRED and so checked nothing.
+
+3. **A TRAP'S `why` IS A CLAIM SOME SPEC MUST ASSERT.** Trap 102's — every
+   churn Add emits one zero-volume event with no churn fields — is asserted in
+   `spec:mix-card`. The book reader's blocked branch at `App.tsx:1653` is
+   covered.
+
+   **Both were found by measurement, not review**: 102 by planting at its
+   intended site and watching the spec die, 1653 by planting there and watching
+   the whole suite stay green. Neither was visible from reading the registry.
+

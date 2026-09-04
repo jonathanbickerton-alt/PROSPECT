@@ -220,6 +220,33 @@ function stateOf(store: Map<string, BaseForecast>, unfittable: ReadonlySet<strin
   check('MACHINE: the blocked branch is reachable — it is not gated on a constant',
     /if \(unfittable\.length > 0\)/.test(code),
     'the branch is present but dead');
+
+  // -- THE OVERALL DOOR HAS THE SAME BRANCH, AND NOTHING WATCHED IT --------
+  //
+  // MEASURED 2026-09-04: gating the book reader's `if (unfittable.length > 0)`
+  // at App.tsx:1653 to a constant left the ENTIRE suite green. The slice above
+  // spans only lines 1591-1612 - the Step 1 door - so the Overall door's copy
+  // of the same decision sat outside every check's field of view.
+  //
+  // Sliced SEPARATELY rather than by widening the slice above: one slice
+  // covering both would pass with either branch alive, which is exactly how
+  // this went unnoticed.
+  {
+    const s2 = app.indexOf('const overallDoorState = useMemo');
+    check('OVERALL ANCHOR: overallDoorState was found', s2 !== -1,
+      'renamed - the checks below are blind, fix this before trusting them');
+    const e2 = app.indexOf('populatedCohorts, forecastStore, unfittableLeaves, makeForecastKey]', s2);
+    const book = s2 === -1 ? '' : app.slice(s2, e2).replace(/\/\/.*/g, '');
+    check('OVERALL: the door has a blocked state at all',
+      /kind: 'blocked'/.test(book),
+      'the two zero states are collapsed at the widest scope');
+    check('OVERALL: blocked is decided BEFORE covered',
+      book.indexOf("kind: 'blocked'") < book.indexOf("kind: 'covered'"),
+      'covered wins first, so blocked is unreachable');
+    check('OVERALL: the blocked branch is reachable, not gated on a constant',
+      /if \(unfittable\.length > 0\)/.test(book),
+      'present but dead - a blocked book would report itself covered');
+  }
   check('MACHINE: all four states are produced',
     ["'generate'", "'blocked'", "'covered'", "'never'"].every(k => code.includes(`kind: ${k}`)),
     'a state was dropped');
