@@ -744,6 +744,7 @@
   "whatif_mix_hold_aria": "Fijar esta proporción mientras las demás se reequilibran",
   "whatif_mix_release": "Liberar esta proporción",
   "whatif_mix_range_collapsed": "Las fijaciones dejan un único valor mixto alcanzable, por lo que los controles no pueden moverse:",
+  "whatif_mix_exactly_determined": "El objetivo y las fijaciones dejan un único valor mixto alcanzable, por lo que estos controles no pueden moverse:",
   "whatif_mix_target_unreachable": "Objetivo no alcanzable.",
   "whatif_mix_drag_wall": "Detenido en {{share}} %: moverlo más abandonaría el objetivo.",
   "whatif_mix_bound_above": "El valor mixto más alto que permiten estas fijaciones es {{bound}}, determinado por {{member}}. Libere una fijación o reduzca el objetivo.",

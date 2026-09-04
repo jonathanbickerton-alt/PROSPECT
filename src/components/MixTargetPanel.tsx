@@ -47,12 +47,20 @@ export interface MixTargetPanelProps {
    * under and the reason the solver lives in the engine.
    */
   wall: DragWall | null;
+  /**
+   * The target and the holds leave ONE reachable mix. A different claim from
+   * `wall`: the wall says a move was stopped, this says there is no move to
+   * make. Rendering the wall copy here would report an interaction that never
+   * happened, so the two are separate props and separate messages.
+   */
+  exactlyDetermined: boolean;
   t: (key: string, opts?: Record<string, unknown>) => string;
   formatNumber: (v: number) => string;
 }
 
 export function MixTargetPanel({
   testIdPrefix, value, onChange, onApply, outcome, range, rangeCollapsed, wall,
+  exactlyDetermined,
   t, formatNumber,
 }: MixTargetPanelProps) {
   return (
@@ -89,6 +97,20 @@ export function MixTargetPanel({
         )}
       </div>
 
+      {/* EXACTLY DETERMINED (Jon, 2026-09-04, D4-03). The sliders are
+          disabled and NOT shown as held - the two-reasons rule, at a third
+          site. It takes precedence over the wall message because a mix with
+          no move to make cannot also have had a move stopped. */}
+      {exactlyDetermined && (
+        <div className="mt-2 text-[11px] text-slate-600"
+          data-testid={`${testIdPrefix}-mix-determined`}>
+          {t('whatif_mix_exactly_determined')}{' '}
+          {range.kind === 'ok' && (
+            <span className="font-semibold tabular-nums">{formatNumber(range.range.min)}</span>
+          )}
+        </div>
+      )}
+
       {/* THE WALL. A drag that would leave the reachable range stops at the
           last position where the target can still be held, and says so
           (Jon, 2026-09-04, decision 2).
@@ -97,7 +119,7 @@ export function MixTargetPanel({
           about the user's TYPED TARGET, which is never rewritten and is still
           shown when unreachable. What stops here is the SLIDER, and stopping
           it is the only way to keep the target the user asked for. */}
-      {wall && (
+      {wall && !exactlyDetermined && (
         <div className="mt-2 text-[11px] text-amber-600"
           data-testid={`${testIdPrefix}-mix-wall`}>
           {t('whatif_mix_drag_wall', { share: formatNumber(wall.clampedShare) })}

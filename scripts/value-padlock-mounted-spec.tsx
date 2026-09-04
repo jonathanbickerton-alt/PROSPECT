@@ -698,6 +698,220 @@ async function main() {
   // minimum-change comparison against a brute sweep; what is missing is a
   // MOUNTED 4-member drag, and it is missing because no fixture seeds one.
 
+
+  // ── (i) THE TYPED BOX COMMITS ON ENTER OR BLUR, NOT PER KEYSTROKE ─────────
+  // D4-02 option (a). Typing "35" passes through "3"; committing that would
+  // rebalance to a 3% mix and, under a target, could CLAMP at the wall — so the
+  // user lands on a number they never typed and never saw. The draft exists
+  // because the wall exists.
+  {
+    const { c: cb } = await openValueCard();
+    const tiersB = tiersIn(cb);
+    const pctOf = (t: string) => cb.querySelector(`[data-testid="yield-mix-pct-${t}"]`) as any;
+    check('(i) the mix % box is reachable by testid', !!pctOf(tiersB[0]),
+      'D4-02 needs the box addressable; it had no testid before');
+
+    const roB = cb.querySelector('[data-testid="yield-mix-target-range"]') as any;
+    const nB = ((roB?.textContent) || '').match(/-?\d+\.\d+/g) || [];
+    const TB = Math.round(((Number(nB[0]) + Number(nB[1])) / 2) * 100) / 100;
+    const boxB = cb.querySelector('[data-testid="yield-mix-target"]') as any;
+    await (act as any)(async () => {
+      nativeSetter.call(boxB, String(TB));
+      boxB.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    });
+    await clickIt(cb.querySelector('[data-testid="yield-mix-target-apply"]') as any);
+
+    const target8 = tiersB[1];
+    const box = pctOf(target8);
+    const otherShares = () => tiersB.filter(t => t !== target8).map(t => Number(rangeOf(cb, t).value));
+    const before = otherShares();
+
+    // KEYSTROKE ONE: "3".
+    await (act as any)(async () => {
+      nativeSetter.call(box, '3');
+      box.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    });
+    check('(i) after one keystroke the box shows the draft',
+      pctOf(target8).value === '3', `"${pctOf(target8).value}"`);
+    check('(i) and NOTHING has rebalanced yet',
+      otherShares().every((v, k) => v === before[k]),
+      `${before.join(',')} -> ${otherShares().join(',')} — a 3% mix the user never asked for`);
+
+    // KEYSTROKE TWO: "35".
+    await (act as any)(async () => {
+      nativeSetter.call(box, '35');
+      box.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    });
+    check('(i) after the second keystroke the box shows 35',
+      pctOf(target8).value === '35', `"${pctOf(target8).value}"`);
+    check('(i) and STILL nothing has rebalanced',
+      otherShares().every((v, k) => v === before[k]),
+      `${otherShares().join(',')}`);
+
+    // ENTER COMMITS.
+    await (act as any)(async () => {
+      pctOf(target8).dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    const committedShares = tiersB.map(t => Number(rangeOf(cb, t).value));
+    check('(i) ENTER commits — the mix moved',
+      otherShares().some((v, k) => v !== before[k]), `${otherShares().join(',')}`);
+    const rateB = (t: string) => Number(
+      (cb.querySelector(`[data-testid="tier-arpu-override-${t}"]`) as any).placeholder);
+    const blendB = tiersB.reduce((s, t) => s + Number(rangeOf(cb, t).value) / 100 * rateB(t), 0);
+    check('(i) and the commit held the target, exactly as a drag would',
+      Math.abs(blendB - TB) < 0.005, `${blendB.toFixed(6)} vs ${TB}`);
+    console.log(`  (i) typed 35 under target ${TB}: committed mix `
+      + `${committedShares.map(v => v.toFixed(3)).join(', ')}, blend ${blendB.toFixed(6)}`);
+
+    // THE COMMIT TAKES THE SAME PATH A DRAG TAKES: a second mount dragged to
+    // the same value must land on the same mix. Not "close" — the same.
+    const { c: cd } = await openValueCard();
+    const tiersD = tiersIn(cd);
+    const boxD = cd.querySelector('[data-testid="yield-mix-target"]') as any;
+    await (act as any)(async () => {
+      nativeSetter.call(boxD, String(TB));
+      boxD.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    });
+    await clickIt(cd.querySelector('[data-testid="yield-mix-target-apply"]') as any);
+    await setRange(rangeOf(cd, tiersD[1]), 35);
+    const dragged = tiersD.map(t => Number(rangeOf(cd, t).value));
+    check('(i) TYPING 35 AND DRAGGING TO 35 LAND ON THE SAME MIX',
+      dragged.every((v, k) => Math.abs(v - committedShares[k]) < 1e-9),
+      `${dragged.map(v => v.toFixed(6)).join(',')} vs ${committedShares.map(v => v.toFixed(6)).join(',')}`);
+
+    // ESCAPE REVERTS.
+    const settled = Number(rangeOf(cb, target8).value);
+    await (act as any)(async () => {
+      nativeSetter.call(pctOf(target8), '77');
+      pctOf(target8).dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    });
+    await (act as any)(async () => {
+      pctOf(target8).dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    check('(i) ESCAPE restores the committed value',
+      Math.abs(Number(rangeOf(cb, target8).value) - settled) < 1e-9,
+      `${Number(rangeOf(cb, target8).value)} vs ${settled}`);
+
+    // BLUR COMMITS.
+    const beforeBlur = otherShares();
+    await (act as any)(async () => {
+      nativeSetter.call(pctOf(target8), '20');
+      pctOf(target8).dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    });
+    check('(i) blur has not happened yet, so nothing moved',
+      otherShares().every((v, k) => v === beforeBlur[k]));
+    await (act as any)(async () => {
+      // REACT IMPLEMENTS onBlur VIA THE BUBBLING `focusout`, not `blur`.
+      // A non-bubbling 'blur' never reaches the delegated listener, so the
+      // first version of this check failed against a control that works.
+      pctOf(target8).dispatchEvent(new dom.window.FocusEvent('focusout', { bubbles: true }));
+    });
+    check('(i) BLUR commits',
+      otherShares().some((v, k) => v !== beforeBlur[k]), `${otherShares().join(',')}`);
+
+    // WITHOUT A TARGET, the same box behaves the same way and rebalances to 100.
+    const { c: cn } = await openValueCard();
+    const tiersN = tiersIn(cn);
+    const boxN = cn.querySelector(`[data-testid="yield-mix-pct-${tiersN[1]}"]`) as any;
+    const beforeN = tiersN.map(t => Number(rangeOf(cn, t).value));
+    await (act as any)(async () => {
+      nativeSetter.call(boxN, '45');
+      boxN.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    });
+    check('(i) with NO target the box still holds a draft — one behaviour',
+      tiersN.map(t => Number(rangeOf(cn, t).value)).every((v, k) => v === beforeN[k]),
+      'commit-on-keystroke when free would make the control mode-dependent');
+    await (act as any)(async () => {
+      boxN.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    const sumN = tiersN.reduce((s, t) => s + Number(rangeOf(cn, t).value), 0);
+    check('(i) and Enter rebalances to 100 as a drag would',
+      Math.abs(sumN - 100) < 0.05 && Math.abs(Number(rangeOf(cn, tiersN[1]).value) - 45) < 1e-6,
+      `sum ${sumN}, moved ${Number(rangeOf(cn, tiersN[1]).value)}`);
+  }
+
+  // ── (j) THE PROMOTION ARM, SAME BOX ───────────────────────────────────────
+  {
+    host.replaceChildren();
+    const cq = document.createElement('div');
+    host.appendChild(cq);
+    const rootQ = createRoot(cq);
+    await (act as any)(async () => { rootQ.render(withProvider(React.createElement(M, whatIfProps()))); });
+    await clickIt(cq.querySelector('[data-testid="whatif-tab-promotion"]') as any);
+    let mb: any = null;
+    for (const b of [...cq.querySelectorAll('input[type=checkbox]')] as any[]) {
+      const label = b.closest('label')?.textContent || b.parentElement?.textContent || '';
+      if (/mix/i.test(label)) { mb = b; break; }
+    }
+    if (mb) {
+      await clickIt(mb);
+      const pT = [...cq.querySelectorAll('[data-testid^="promo-mix-lock-"]')]
+        .map((el: any) => el.getAttribute('data-testid').replace('promo-mix-lock-', ''));
+      const pR = (t: string) => cq.querySelector(`[data-testid="promo-mix-range-${t}"]`) as any;
+      const pBox = cq.querySelector(`[data-testid="promo-mix-pct-${pT[1]}"]`) as any;
+      check('(j) the Promotion mix % box is reachable by testid', !!pBox);
+      if (pBox) {
+        const beforeP = pT.filter(t => t !== pT[1]).map(t => Number(pR(t).value));
+        await (act as any)(async () => {
+          nativeSetter.call(pBox, '3');
+          pBox.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+        });
+        check('(j) one keystroke on the Promotion arm rebalances NOTHING',
+          pT.filter(t => t !== pT[1]).map(t => Number(pR(t).value)).every((v, k) => v === beforeP[k]),
+          'the same behaviour on both cards, which is what option (a) is for');
+        await (act as any)(async () => {
+          nativeSetter.call(pBox, '35');
+          pBox.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+          pBox.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        });
+        check('(j) and ENTER commits on the Promotion arm too',
+          Math.abs(Number(pR(pT[1]).value) - 35) < 1e-6, `${Number(pR(pT[1]).value)}`);
+      }
+    }
+  }
+
+  // ── (k) EXACTLY DETERMINED IS A COLLAPSED RANGE, NOT A WALL ───────────────
+  // D4-03. Three tiers, a target, one lock: the two free tiers are then fixed
+  // by the two equations, so there is no move to make — which is a different
+  // claim from "a move was stopped".
+  {
+    const { c: ck } = await openValueCard();
+    const tiersK = tiersIn(ck);
+    const roK = ck.querySelector('[data-testid="yield-mix-target-range"]') as any;
+    const nK = ((roK?.textContent) || '').match(/-?\d+\.\d+/g) || [];
+    const TK = Math.round(((Number(nK[0]) + Number(nK[1])) / 2) * 100) / 100;
+    const boxK = ck.querySelector('[data-testid="yield-mix-target"]') as any;
+    await (act as any)(async () => {
+      nativeSetter.call(boxK, String(TK));
+      boxK.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    });
+    await clickIt(ck.querySelector('[data-testid="yield-mix-target-apply"]') as any);
+    const HK = tiersK[0];
+    await clickIt(lockOf(ck, HK));
+
+    const free = tiersK.filter(t => t !== HK);
+    check('(k) with a target and one hold, the free tiers are DISABLED',
+      free.every(t => rangeOf(ck, t).disabled === true),
+      free.map(t => `${t}=${rangeOf(ck, t).disabled}`).join(' '));
+    check('(k) and are NOT shown as held — the two-reasons rule at a third site',
+      free.every(t => lockOf(ck, t).getAttribute('aria-pressed') !== 'true'),
+      'a slider fixed by the constraints is not a slider the user padlocked');
+    check('(k) the EXACTLY-DETERMINED reason is rendered',
+      !!ck.querySelector('[data-testid="yield-mix-determined"]'),
+      'the sliders went dead with nothing saying why');
+    check('(k) and the WALL message is NOT shown — no move was stopped',
+      !ck.querySelector('[data-testid="yield-mix-wall"]'),
+      'the wall reports an interaction; there was none');
+
+    // RELEASING THE LOCK GIVES THE MOVE BACK.
+    await clickIt(lockOf(ck, HK));
+    check('(k) releasing the hold re-enables the free tiers',
+      free.every(t => rangeOf(ck, t).disabled === false),
+      free.map(t => `${t}=${rangeOf(ck, t).disabled}`).join(' '));
+    check('(k) and the reason clears',
+      !ck.querySelector('[data-testid="yield-mix-determined"]'));
+  }
+
   check('the run exercised every case', tiers.length >= 3 && tiers2.length >= 3 && tiers3.length >= 3,
     `${tiers.length}/${tiers2.length}/${tiers3.length} tiers across the mounts`);
 

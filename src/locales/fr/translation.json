@@ -744,6 +744,7 @@
   "whatif_mix_hold_aria": "Bloquer cette part pendant que les autres se rééquilibrent",
   "whatif_mix_release": "Débloquer cette part",
   "whatif_mix_range_collapsed": "Les blocages ne laissent qu’une seule valeur mixte atteignable, les curseurs ne peuvent donc pas bouger :",
+  "whatif_mix_exactly_determined": "La cible et les blocages ne laissent qu’une seule valeur mixte atteignable, ces curseurs ne peuvent donc pas bouger :",
   "whatif_mix_target_unreachable": "Cible inatteignable.",
   "whatif_mix_drag_wall": "Arrêté à {{share}} % — aller plus loin quitterait la cible.",
   "whatif_mix_bound_above": "La valeur mixte la plus élevée permise par ces blocages est {{bound}}, fixée par {{member}}. Débloquez une part ou baissez la cible.",

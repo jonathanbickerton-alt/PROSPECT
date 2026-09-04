@@ -13,7 +13,7 @@ import { SKIP_REASON_KEY } from '../types/forecast';
 import { EventChangeConfirmModal } from './EventChangeConfirmModal';
 import type { MarketEvent } from '../utils/forecasting';
 import { rebalance, achievableTargetRange, solveForTarget, blendedArpu, conformsToTotal,
-         rebalanceToTarget } from '../utils/mixConstraint';
+         rebalanceToTarget, exactlyDeterminedUnderTarget } from '../utils/mixConstraint';
 import type { DragWall } from '../utils/mixConstraint';
 import { EventsSummaryTable } from './EventsSummaryTable';
 import { foldChurnRamp, linearChurnRamp, type ChurnFoldMonth } from '../utils/churnFold';
@@ -2104,6 +2104,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const [yieldWall, setYieldWall] = useState<DragWall | null>(null);
 
   /**
+   * EXACTLY DETERMINED: the target and the holds leave one reachable mix
+   * (Jon, 2026-09-04, D4-03). Recomputed, never remembered - the same rule
+   * the reachable range follows, and for the same reason.
+   */
+  const yieldExactlyDetermined = useMemo(
+    () => (yieldTargetOutcome?.kind === 'ok' && yieldTargetParsed !== null)
+      && exactlyDeterminedUnderTarget(yieldMembers, draftMix, yieldMixLocked,
+           effectiveTierArpuMap, yieldTargetParsed),
+    [yieldTargetOutcome, yieldTargetParsed, yieldMembers, draftMix,
+     yieldMixLocked, effectiveTierArpuMap]);
+
+  /**
    * A DRAG. With a target applied it solves the sum AND blend equations; with
    * no target it is the old free rebalance, seeding guard and all.
    *
@@ -2285,6 +2297,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   /** Where a drag was stopped, or null. See the Value card's twin. */
   const [promoWall, setPromoWall] = useState<DragWall | null>(null);
+
+  /** The Value card's twin; see its comment. */
+  const promoExactlyDetermined = useMemo(
+    () => (promoTargetOutcome?.kind === 'ok' && promoTargetParsed !== null)
+      && exactlyDeterminedUnderTarget(promoMembers, promoDraftMix, promoMixLocked,
+           promoTierArpu, promoTargetParsed),
+    [promoTargetOutcome, promoTargetParsed, promoMembers, promoDraftMix,
+     promoMixLocked, promoTierArpu]);
 
   const handlePromoSliderChange = useCallback((changedTier: string, newValue: number) => {
     // Straight to the engine with the CURRENT locks, and no lock state written:
@@ -7109,6 +7129,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             range={promoMixRange}
                             rangeCollapsed={promoRangeCollapsed}
   wall={promoWall}
+  exactlyDetermined={promoExactlyDetermined}
                             t={t}
                             formatNumber={formatNumber}
                           />
@@ -7132,7 +7153,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               // padlock only ever reflects the first — collapsing the
                               // two would make the control claim the user held
                               // something they did not.
-                              const immovable = held || promoRangeCollapsed;
+                              // THREE reasons now; the padlock reflects only
+                              // the first, as it always has.
+                              const immovable = held || promoRangeCollapsed
+                                || promoExactlyDetermined;
                               return (
                                 <MixSliderRow
                                   key={tier}
@@ -7636,6 +7660,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       range={yieldMixRange}
                       rangeCollapsed={yieldRangeCollapsed}
   wall={yieldWall}
+  exactlyDetermined={yieldExactlyDetermined}
                       t={t}
                       formatNumber={formatNumber}
                     />
@@ -7661,7 +7686,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             tier={tier}
                             mixPct={mixPct}
                             held={yieldMixLocked.includes(tier)}
-                            immovable={yieldMixLocked.includes(tier) || yieldRangeCollapsed}
+                            // THREE reasons a row cannot move now, and the
+                            // padlock still reflects only the FIRST.
+                            immovable={yieldMixLocked.includes(tier) || yieldRangeCollapsed
+                              || yieldExactlyDetermined}
                             onChange={handleSliderChange}
                             onToggleLock={handleYieldLockToggle}
                             testIdPrefix="yield"

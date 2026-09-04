@@ -875,3 +875,41 @@ function minimumChange(
   }
   return null;
 }
+
+/**
+ * IS THE MIX EXACTLY DETERMINED BY THE TARGET AND THE HOLDS?
+ *
+ * True when NO free member has room to move: the target and the padlocks
+ * between them leave exactly one reachable mix (Jon, 2026-09-04, D4-03).
+ *
+ * A READ, not a write - it describes the mix it is given and never rejects,
+ * which is the module's existing split. The card uses it to choose which
+ * REASON to render, and the distinction matters: a collapsed range says there
+ * is no move to make, while a wall says a move was stopped. Showing the wall
+ * copy here would report an interaction that never happened.
+ *
+ * Derived from the same feasible-interval arithmetic `rebalanceToTarget` uses
+ * rather than re-stated, so the two cannot disagree about what a single point
+ * is: a member is fixed exactly when dragging it anywhere returns that same
+ * share back.
+ */
+export function exactlyDeterminedUnderTarget(
+  members: readonly string[],
+  shares: Readonly<Record<string, number>>,
+  locked: readonly string[],
+  perMemberArpus: Readonly<Record<string, number>>,
+  targetArpu: number,
+): boolean {
+  const view = readMix(members, shares, locked);
+  if (!isView(view)) return false;
+  const free = view.free;
+  if (free.length === 0) return false;
+  for (const m of free) {
+    // Ask for both extremes. If either moves the member, it is not fixed.
+    const up = rebalanceToTarget(members, shares, locked, perMemberArpus, targetArpu, m, MIX_TOTAL);
+    const down = rebalanceToTarget(members, shares, locked, perMemberArpus, targetArpu, m, 0);
+    if (up.kind === 'blocked' || down.kind === 'blocked') return false;
+    if (Math.abs(up.appliedShare - down.appliedShare) > EPS_DRAG) return false;
+  }
+  return true;
+}

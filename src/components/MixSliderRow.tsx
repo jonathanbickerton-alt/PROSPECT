@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
 /**
  * ONE MIX SLIDER ROW, used by BOTH cards.
@@ -70,15 +70,29 @@ export function MixSliderRow({
         onChange={e => onChange(tier, Number(e.target.value))}
         className="w-full accent-[#e60000] h-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
       />
-      <input
-        type="number"
-        min={0}
-        max={100}
-        step={0.1}
-        value={parseFloat(mixPct.toFixed(1))}
-        disabled={immovable}
-        onChange={e => onChange(tier, Number(e.target.value))}
-        className="w-full text-xs font-semibold text-slate-700 text-right tabular-nums border border-slate-200 rounded px-1 py-0.5 outline-none focus:border-[#e60000] bg-white disabled:bg-slate-50 disabled:text-slate-400"
+      {/* THE NUMERIC ECHO COMMITS ON ENTER OR BLUR, NOT ON EVERY KEYSTROKE
+          (Jon, 2026-09-04, D4-02 option (a); EXPECTED.md "SUPPLEMENT: THE
+          TYPED BOX, AND EXACTLY DETERMINED").
+
+          ONE BEHAVIOUR, WITH AND WITHOUT A TARGET. The alternative was
+          commit-on-keystroke when free and commit-on-Enter under a target,
+          which makes the same control behave differently because of a number
+          typed in a different box.
+
+          WHY A DRAFT AT ALL. Typing "35" passes through "3". Committing each
+          keystroke rebalances every other slider to a 3% mix and then again
+          to 35% - and under a target the intermediate can hit the WALL and
+          clamp, leaving the user at a number they never typed and never saw.
+          The draft exists because the wall exists.
+
+          The commit calls the SAME onChange a drag does, so the wall applies
+          at commit exactly as at the end of a drag. */}
+      <MixPctBox
+        tier={tier}
+        mixPct={mixPct}
+        immovable={immovable}
+        onCommit={onChange}
+        testIdPrefix={testIdPrefix}
       />
       {/* THE PADLOCK. Manual only — clicking it is the one thing that changes
           lock state. Moving a slider does not: auto-lock is OFF, settled
@@ -96,5 +110,59 @@ export function MixSliderRow({
       >{held ? '\u{1F512}' : '\u{1F513}'}</button>
       {children}
     </div>
+  );
+}
+
+/**
+ * The mix-percentage box. Local draft while focused; commits on Enter or blur;
+ * Escape restores the committed value.
+ *
+ * A SEPARATE COMPONENT because it owns state and MixSliderRow does not - the
+ * row is a pure render of what the card hands it, and putting a draft in it
+ * would give every row's identity a lifetime it did not have.
+ */
+function MixPctBox({ tier, mixPct, immovable, onCommit, testIdPrefix }: {
+  tier: string;
+  mixPct: number;
+  immovable: boolean;
+  onCommit: (tier: string, next: number) => void;
+  testIdPrefix: string;
+}) {
+  const committed = parseFloat(mixPct.toFixed(1));
+  const [draft, setDraft] = useState<string | null>(null);
+  // WHEN THE CARD MOVES THE SHARE, THE BOX FOLLOWS - unless the user is
+  // mid-edit, in which case their draft is theirs until they commit or
+  // cancel. Dragging the slider of a row whose box is focused is not a case
+  // this needs to win: the draft is discarded on blur, which is what focus
+  // leaving to grab a slider does.
+  useEffect(() => { setDraft(null); }, [committed]);
+
+  const commit = () => {
+    if (draft === null) return;
+    const n = Number(draft);
+    setDraft(null);
+    // A BLANK OR UNPARSEABLE BOX IS A CANCEL, not a zero. Committing NaN as 0
+    // would silently empty a tier the user was only part-way through typing.
+    if (draft.trim() === '' || !Number.isFinite(n)) return;
+    onCommit(tier, n);
+  };
+
+  return (
+    <input
+      type="number"
+      min={0}
+      max={100}
+      step={0.1}
+      value={draft ?? String(committed)}
+      disabled={immovable}
+      data-testid={`${testIdPrefix}-mix-pct-${tier}`}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') { commit(); return; }
+        if (e.key === 'Escape') { setDraft(null); }
+      }}
+      className="w-full text-xs font-semibold text-slate-700 text-right tabular-nums border border-slate-200 rounded px-1 py-0.5 outline-none focus:border-[#e60000] bg-white disabled:bg-slate-50 disabled:text-slate-400"
+    />
   );
 }

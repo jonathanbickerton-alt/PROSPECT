@@ -1314,6 +1314,38 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '  const applied = Math.min(hi, Math.max(lo, requested));',
       '  const applied = requested;') },
+
+  // ---------------------------------------------------------------------
+  // 147 - the mix % box commits on every keystroke again.
+  //
+  // D4-02 option (a): the box holds a DRAFT while focused and commits on
+  // Enter or blur. Typing '35' passes through '3'; committing that rebalances
+  // every other slider to a 3% mix - and under a target the intermediate can
+  // hit the WALL and CLAMP, so the user lands on a number they never typed
+  // and never saw. Measured: the trap takes the other tiers from
+  // 42.11/28.95 to 32.37/64.63 on the way to a value the user was still
+  // typing.
+  { id: '147 the mix % box commits mid-keystroke',
+    why: 'a half-typed number rebalances the mix, and under a target it can clamp',
+    file: SLIDERROW, spec: VALUEPAD,
+    mutate: s => s.replace(
+      '      onChange={e => setDraft(e.target.value)}',
+      '      onChange={e => onCommit(tier, Number(e.target.value))}') },
+
+  // ---------------------------------------------------------------------
+  // 148 - exactly-determined stops being detected.
+  //
+  // D4-03: when the target and the holds leave one reachable mix there is no
+  // move to make, and the card must say so rather than leaving sliders dead.
+  // Without the detection the rows are enabled but every drag returns them to
+  // the same share - a control that accepts input and ignores it, which is
+  // worse than one that is visibly disabled.
+  { id: '148 an exactly-determined mix looks movable',
+    why: 'the sliders accept a drag the constraints will silently undo',
+    file: MIXENGINE, spec: VALUEPAD,
+    mutate: s => s.replace(
+      '    if (Math.abs(up.appliedShare - down.appliedShare) > EPS_DRAG) return false;',
+      '    if (true) return false;') },
   // 103 feeds the LOADED COHORT's forecast back into the churn series, undoing
   // the scope fix. The panel then reads the same base whatever the draft's dims
   // say — the walk's ~293k at every slice — and the breakdown stops moving when

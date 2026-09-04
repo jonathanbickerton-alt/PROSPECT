@@ -744,6 +744,7 @@
   "whatif_mix_hold_aria": "Diesen Anteil halten, während die anderen ausgleichen",
   "whatif_mix_release": "Diesen Anteil freigeben",
   "whatif_mix_range_collapsed": "Die Haltungen lassen nur einen erreichbaren Mischwert zu, die Regler sind daher unbeweglich:",
+  "whatif_mix_exactly_determined": "Ziel und Haltungen lassen nur einen erreichbaren Mischwert zu, diese Regler sind daher unbeweglich:",
   "whatif_mix_target_unreachable": "Ziel nicht erreichbar.",
   "whatif_mix_drag_wall": "Bei {{share}} % angehalten – eine weitere Bewegung würde das Ziel verlassen.",
   "whatif_mix_bound_above": "Der höchste mit diesen Haltungen mögliche Mischwert ist {{bound}}, bestimmt durch {{member}}. Geben Sie eine Haltung frei oder senken Sie das Ziel.",

@@ -7924,6 +7924,50 @@ the two clauses the entry never had.
 still constrains what is reachable and still does not propose which reachable
 point to pick; minimum change is a tie-break on distance, not advice.
 
+##### SUPPLEMENT: THE TYPED BOX, AND EXACTLY DETERMINED (Jon, 2026-09-04;
+##### recorded here 2026-09-04)
+
+Two decisions the drag supplement above left open. Both are about the same
+thing from different ends: what the card does when the constraints, rather
+than the user, are deciding.
+
+**D4-02, option (a): THE MIX % BOX COMMITS ON ENTER OR BLUR, IN ALL MODES.**
+While it holds focus it carries a DRAFT and nothing rebalances; Escape
+restores the committed value.
+
+   **One behaviour, with and without a target.** The alternative considered
+   was commit-on-keystroke without a target and commit-on-Enter with one,
+   which would have made the same control behave differently depending on a
+   number typed in a different box. A user cannot be expected to hold that
+   in their head, and nothing about the box's job changes when a target
+   exists.
+
+   **Why a draft at all.** Typing "35" passes through "3". Committing each
+   keystroke rebalances every other slider to a 3% mix and then again to 35%,
+   so the intermediate state is not merely noise - under a target it can hit
+   the wall and CLAMP, leaving the user at a number they never typed and
+   never saw. The draft exists because the wall exists.
+
+   **The commit takes the SAME path a drag takes.** Not a parallel one: the
+   box and the slider are two ways of stating the same intent, and the wall
+   applies at commit exactly as it does at the end of a drag.
+
+**D4-03, yes: WHEN THE TARGET AND THE HOLDS LEAVE ONE REACHABLE POSITION,**
+**THAT IS A COLLAPSED RANGE, NOT A WALL.** The card renders the
+collapsed-range reason; the affected sliders are DISABLED and are NOT shown
+as held.
+
+   **The two-reasons rule, at a third site.** A slider that cannot move
+   because the constraints determine it is not a slider the user padlocked.
+   That distinction is already load-bearing in MixSliderRow (`held` and
+   `immovable` are separate props for exactly this reason) and it extends
+   unchanged to a range collapsed by a TARGET rather than by padlocks alone.
+
+   **A wall is a different event and must not borrow this copy.** The wall
+   says a MOVE was stopped; the collapsed range says there is no move to
+   make. Showing the wall message here would report an interaction that did
+   not happen.
+
 #### Design-pass notes, carried forward
 
 - **The three-band value axis is always exactly determined.** With three bands
