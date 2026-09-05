@@ -262,6 +262,12 @@ async function main() {
       const txt = String(el.textContent).trim();
       return txt === '—' ? null : Number(txt.replace(/[+,\s]/g, ''));
     };
+    /** The SAME cell as rendered - sign and all. `perScen` strips the sign to
+     *  make a number, and a check on that number cannot see a lost sign. */
+    const perScenText = (k: string) => {
+      const el = q('impact-arpu-delta-' + k);
+      return el ? String(el.textContent).trim() : null;
+    };
     // OPEN THE DERIVATION EXPANDER, if asked for. The empty state is the whole
     // point of the ghost case, and it renders only for an expanded percentage
     // row — so a spec that never clicks the chevron cannot see the copy it is
@@ -301,6 +307,7 @@ async function main() {
       arpuDelta: arpuEl ? Number(String(arpuEl.textContent).replace(/[+,\s]/g, '')) : NaN,
       arpuInflow: perScen('inflow'), arpuOutflow: perScen('outflow'),
       arpuRetention: perScen('retention'), arpuBase: perScen('base'),
+      arpuBaseText: perScenText('base'),
       expanderFound: expandId ? !!q('event-expand-' + expandId) : null,
       expanderText,
     };
@@ -964,6 +971,14 @@ async function main() {
         [mkYieldFor(targetDelta)]);
       return r.arpuBase;
     };
+    /** The rendered TEXT of the same cell, sign included. `readDelta` parses a
+     *  number out of it, which cannot tell "+0.01" from "0.01" or from a lost
+     *  sign - and the sign is half of what a delta says. */
+    const readDeltaText = async (targetDelta: number) => {
+      const r = await readAt(keyA, [], undefined, undefined, BUNDLE_P, false,
+        [mkYieldFor(targetDelta)]);
+      return r.arpuBaseText;
+    };
 
     // 0.004: BELOW what two decimals can express, so both paths read 0.00.
     // The check exists so the new path is not mistaken for "always shows more"
@@ -982,6 +997,14 @@ async function main() {
     check('precision: a true delta of 0.006 reads 0.01, NOT 0.00',
       d006 !== null && Math.abs((d006 as number) - 0.01) < 1e-9,
       String(d006) + ' — 0.00 means the pair was rounded before it was subtracted');
+
+    // AT THE CARD, AS A USER READS IT. The check above parses a number out of
+    // the cell; this one pins the STRING, sign included - "+0.01" is what the
+    // KPI shows, and a delta that lost its sign would satisfy the number.
+    const t006 = await readDeltaText(0.006);
+    console.log('  precision  0.006 renders "' + t006 + '"');
+    check('precision: the card RENDERS "+0.01" for a true 0.006',
+      t006 === '+0.01', '"' + t006 + '"');
   }
 
   // ── 3h. D5-03: THE UNIT CONTROL SURVIVES AN EDIT ────────────────
@@ -1306,6 +1329,322 @@ async function main() {
       check('D5-04: the BAKED RATE survives - the field the old route zeroed',
         after.arpu === before.arpu && after.arpu === 36,
         before.arpu + ' -> ' + after.arpu);
+    }
+  }
+
+  // ── 3j. THE DILUTION CONTROL, DRIVEN THROUGH THE DOM ────────────
+  //
+  // 2138 built Dilution on the promotion's pricing arm and pinned the
+  // arithmetic to 1e-9 against the Pricing card - but only through
+  // `buildPromoEvents`. Its own Limits said so: "no mounted case drives the
+  // CONTROL ... a defect in the wiring between the control and the builder
+  // would not be caught here", and the gating was unasserted entirely.
+  //
+  // This drives the control: press the mode, type both figures, read the
+  // effect line, press Add, and inspect what the card built.
+  {
+    const host = document.getElementById('root')!;
+    host.replaceChildren();
+    const container = document.createElement('div');
+    host.appendChild(container);
+    const root = createRoot(container);
+    const added: any[] = [];
+    const Harness = () => {
+      const [newEvent, setNewEvent] = (React as any).useState({});
+      // AN ARPU COLUMN, for the same reason the D5-04 mount needs one:
+      // `computeCohortTrailingArpu` cannot produce a rate without a revenue or
+      // arpu column, and the shared props pass '' for both. Without it the
+      // card's base rate is null, the built arpu is 0, and a ratio assertion
+      // on zero is TRUE FOR EVERY RATIO - the vacuous-result trap. Measured:
+      // the first run of this block printed `arpu 0` and passed.
+      const props = propsFor([], data.map((r: any) => ({ ...r, Arpu: 25 })));
+      props.wiArpuCol = 'Arpu';
+      props.setMarketEvents = (next: any) => { added.push(next); };
+      return React.createElement(M, { ...props, newEvent, setNewEvent });
+    };
+    await (act as any)(async () => {
+      root.render(React.createElement(ForecastProvider as any, {
+        baseForecast: resolveForecast(keyA).forecast, setBaseForecast: noop,
+        adjustedForecast: null, setAdjustedForecast: noop,
+        forecastStore: store, setForecastStore: noop,
+        resolveForecast, canResolve: () => true,
+        hasLegacyBaseline: true, updatedAt: new Date().toISOString(),
+        bulkRuns: [], setBulkRuns: noop,
+      }, React.createElement(Harness)));
+    });
+    const q = (id: string) => container.querySelector('[data-testid="' + id + '"]') as any;
+    const click = async (el: any) => { await (act as any)(async () => {
+      el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); }); };
+    /** A real React-controlled input write: the native setter, then `input`. */
+    const typeInto = async (el: any, value: string) => {
+      const proto = el.tagName === 'SELECT'
+        ? dom.window.HTMLSelectElement.prototype : dom.window.HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')!.set!;
+      await (act as any)(async () => {
+        setter.call(el, value);
+        el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+      });
+    };
+
+    await click(q('whatif-tab-promotion'));
+    await typeInto(q('promo-month'), MONTHS[0]);
+    await typeInto(q('promo-volume-amount'), '1000');
+    await click(q('promo-pricing-arm'));
+    await click(q('promo-pricing-mode-dilution'));
+
+    check('dilution control: the two figure inputs render',
+      !!q('promo-dilution-current') && !!q('promo-dilution-target'),
+      'the mode button did not open the dilution inputs');
+
+    // ── GATING, BRANCH 1: INCOMPLETE ────────────────────────────────
+    await typeInto(q('promo-dilution-current'), '25');
+    const awaitingText = q('promo-dilution-effect')
+      ? String(q('promo-dilution-effect').textContent).trim() : null;
+    const addDisabledIncomplete = q('promo-add') ? q('promo-add').disabled : null;
+    console.log('');
+    console.log('  dilution INCOMPLETE  effect "' + awaitingText
+      + '"  add disabled ' + addDisabledIncomplete);
+    check('dilution gating: an INCOMPLETE pair disables Add',
+      addDisabledIncomplete === true, String(addDisabledIncomplete));
+    check('dilution gating: and names the reason on screen',
+      awaitingText === i18n.t('whatif_dilution_awaiting'),
+      '"' + awaitingText + '" vs "' + i18n.t('whatif_dilution_awaiting') + '"');
+
+    // ── GATING, BRANCH 2: OUT OF RANGE ──────────────────────────────
+    // A current dilution of 100 makes the retained-revenue ratio divide by
+    // zero, so `dilutionAmountPct` returns null - absence, not a substituted
+    // 1.0. Absence and out-of-range are DIFFERENT user situations, and the
+    // block predicate keeps them apart; the effect line shows the same
+    // awaiting copy for both, which is what it has, stated rather than
+    // asserted as if it were two messages.
+    await typeInto(q('promo-dilution-current'), '100');
+    await typeInto(q('promo-dilution-target'), '20');
+    const rangeText = q('promo-dilution-effect')
+      ? String(q('promo-dilution-effect').textContent).trim() : null;
+    const addDisabledRange = q('promo-add') ? q('promo-add').disabled : null;
+    console.log('  dilution OUT OF RANGE  effect "' + rangeText
+      + '"  add disabled ' + addDisabledRange);
+    check('dilution gating: an OUT-OF-RANGE pair also disables Add',
+      addDisabledRange === true, String(addDisabledRange)
+      + ' — dilutionAmountPct returns null, and null is not zero');
+    check('dilution gating: the range branch is reached, not the incomplete one',
+      (fc.dilutionAmountPct(100, 20) === null)
+        && (fc.dilutionAmountPct(25, undefined) === null),
+      'both return null, so only the block predicate can tell them apart');
+
+    // ── THE EFFECT LINE, AGAINST THE SHARED FUNCTION ────────────────
+    await typeInto(q('promo-dilution-current'), '25');
+    await typeInto(q('promo-dilution-target'), '20');
+    const effectText = q('promo-dilution-effect')
+      ? String(q('promo-dilution-effect').textContent).trim() : '';
+    const shown = Number((effectText.match(/-?\d+(?:\.\d+)?/) ?? ['NaN'])[0]);
+    const expected = fc.dilutionAmountPct(25, 20) as number;
+    console.log('  dilution 25->20  rendered "' + effectText
+      + '"  shown ' + shown + '  dilutionAmountPct ' + expected);
+    check('dilution control: the rendered effect equals dilutionAmountPct',
+      Math.abs(shown - Number(expected.toFixed(2))) < 1e-9,
+      shown + ' vs ' + expected.toFixed(2)
+      + ' — the card renders the same function the builder applies');
+    check('dilution control: and that figure is the RATIO, not the difference',
+      Math.abs(shown - 6.67) < 1e-9 && Math.abs(shown - 5) > 1,
+      String(shown) + ' — 5.00 would mean a subtraction reached the screen');
+
+    // ── ADD, AND WHAT THE CARD BUILT ────────────────────────────────
+    const addDisabledComplete = q('promo-add') ? q('promo-add').disabled : null;
+    check('dilution gating: a COMPLETE pair enables Add',
+      addDisabledComplete === false, String(addDisabledComplete));
+    await click(q('promo-add'));
+    await (act as any)(async () => { root.unmount(); });
+
+    const built = added.length ? added[added.length - 1][0] : null;
+    console.log('  dilution ADD  rows ' + (added.length ? added[added.length - 1].length : 0)
+      + '  arpu ' + (built ? built.arpu : null)
+      + '  mode ' + (built ? built.promoPricingMode : null));
+    check('dilution control: Add built exactly one row', !!built && added.length === 1,
+      String(added.length));
+    if (built) {
+      // BY HAND. No mix arm, so the base rate is the cohort trailing average
+      // the card resolves - read from the built row's own baseline rather
+      // than assumed, then the ratio applied to it.
+      const ratio = fc.retainedRevenueRatio(25, 20) as number;
+      const BASE = 25;   // the fixture's trailing ARPU, every row priced at 25
+      check('dilution control: the mode is persisted from the CONTROL',
+        built.promoPricingMode === 'dilution', String(built.promoPricingMode));
+      check('dilution control: and both stated figures',
+        built.promoDilutionCurrentPct === 25 && built.promoDilutionTargetPct === 20,
+        JSON.stringify([built.promoDilutionCurrentPct, built.promoDilutionTargetPct]));
+      // NON-ZERO FIRST. A rate of 0 satisfies `arpu === base x ratio` for every
+      // ratio, so the discriminating check is worthless without this one in
+      // front of it.
+      check('dilution control: the base rate is NON-ZERO, so the next check discriminates',
+        built.arpu > 0, String(built.arpu)
+        + ' — 0 makes any ratio assertion trivially true');
+      check('dilution control: arpu is base x the retained-revenue ratio, by hand',
+        Math.abs(built.arpu - BASE * ratio) < 1e-9,
+        built.arpu + ' vs ' + (BASE * ratio) + ' — 25 x 0.80/0.75');
+      // The stronger form: the derived amount on the row IS the function's.
+      check('dilution control: promoPricingAmount equals dilutionAmountPct to 1e-9',
+        Math.abs(built.promoPricingAmount - expected) < 1e-9,
+        built.promoPricingAmount + ' vs ' + expected);
+    }
+  }
+
+  // ── 3k. THE CAMPAIGN ROUTE, DRIVEN ──────────────────────────────
+  //
+  // 1950 built `editCampaignFromVolumeTable` and said so in its own Limits:
+  // "the campaign pill's route is asserted by neither a mounted click nor a
+  // trap. It shares the router with nothing else, so nothing would catch it
+  // breaking." This is that click.
+  //
+  // A TWO-ROW CAMPAIGN FROM ONE BUILDER CALL, so the rows share an amountType
+  // and an arm by construction - which is the assumption the campaign restore
+  // makes when it reads `first` and speaks for the group.
+  //
+  // The arm is the DILUTION pricing arm rather than a mix: a mix needs tier
+  // data the shared props cannot produce (no revenue or arpu column), and a
+  // mix with zero tiers correctly disables Save. The dilution arm needs
+  // neither, and exercises the D5-03 mode restore and the 2138 arm together.
+  {
+    const CAMPAIGN = 'Autumn promo';
+    // ABSOLUTE, AND THAT IS A RULE RATHER THAN A CONVENIENCE. `groupByCampaign`
+    // BARS any campaign containing a percentage row from group edit: the group
+    // edit reverse-engineers a ramp by SUMMING volumes, and that arithmetic is
+    // meaningless on a per cent. Measured, not assumed - the first run of this
+    // block found no pressable pill at all, which is the bar firing correctly.
+    // So the campaign route can only be driven on an absolute campaign, and
+    // the unit restored here is Subs.
+    const ROWS = buildPromoEvents({
+      target: 'Inflow', amountType: 'absolute',
+      draft: {
+        date: MONTHS[0], segment: EVENT_ABS.segment, product: EVENT_ABS.product,
+        productL2: EVENT_ABS.productL2, channel: EVENT_ABS.channel,
+        channelL2: EVENT_ABS.channelL2, tariffL1: EVENT_ABS.tariffL1,
+        tariffL2: EVENT_ABS.tariffL2,
+        subscriberVolume: 1000, campaignName: CAMPAIGN, comment: '', contractLength: 12,
+      } as any,
+      mixEnabled: false, mixAxis: 'value', draftMix: {}, mixLocked: [],
+      tierData: [],
+      pricingEnabled: true, pricingMode: 'dilution', pricingAmount: 0,
+      pricingDilutionCurrentPct: 25, pricingDilutionTargetPct: 20,
+      cohortAvgArpu: 25,
+      spreadEnabled: true, spreadMonths: 2, spreadDistType: 'even', customDist: [],
+      startSequence: 1,
+    } as any) as any[];
+
+    const readSet = (e: any) => ({
+      scenario: e.scenario, date: e.date, amountType: e.amountType,
+      percentageBasis: e.percentageBasis, subscriberVolume: e.subscriberVolume,
+      revenue: e.revenue, arpu: e.arpu, arpuOverride: e.arpuOverride,
+      isPromotion: e.isPromotion, promoRebanded: e.promoRebanded,
+      promoMixAxis: e.promoMixAxis, promoMix: e.promoMix,
+      promoBandArpuOverride: e.promoBandArpuOverride, mixLocked: e.mixLocked,
+      promoPricingMode: e.promoPricingMode, promoPricingAmount: e.promoPricingAmount,
+      promoDilutionCurrentPct: e.promoDilutionCurrentPct,
+      promoDilutionTargetPct: e.promoDilutionTargetPct,
+      contractLength: e.contractLength, retentionLinked: e.retentionLinked,
+      segment: e.segment, product: e.product, productL2: e.productL2,
+    });
+
+    check('campaign: the builder produced TWO rows from one call',
+      ROWS.length === 2, String(ROWS.length)
+      + ' — a one-row campaign takes the single-row path and tests nothing here');
+
+    const committed: any[] = [];
+    const host = document.getElementById('root')!;
+    host.replaceChildren();
+    const container = document.createElement('div');
+    host.appendChild(container);
+    const root = createRoot(container);
+    const Harness = () => {
+      const [newEvent, setNewEvent] = (React as any).useState({});
+      const props = propsFor(ROWS, data.map((r: any) => ({ ...r, Arpu: 25 })));
+      props.wiArpuCol = 'Arpu';
+      props.setMarketEvents = (next: any) => { committed.push(next); };
+      return React.createElement(M, { ...props, newEvent, setNewEvent });
+    };
+    await (act as any)(async () => {
+      root.render(React.createElement(ForecastProvider as any, {
+        baseForecast: resolveForecast(keyA).forecast, setBaseForecast: noop,
+        adjustedForecast: null, setAdjustedForecast: noop,
+        forecastStore: store, setForecastStore: noop,
+        resolveForecast, canResolve: () => true,
+        hasLegacyBaseline: true, updatedAt: new Date().toISOString(),
+        bulkRuns: [], setBulkRuns: noop,
+      }, React.createElement(Harness)));
+    });
+    const q = (id: string) => container.querySelector('[data-testid="' + id + '"]') as any;
+    const click = async (el: any) => { await (act as any)(async () => {
+      el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); }); };
+    const tabActive = (tab: string) => {
+      const el = q('whatif-tab-' + tab);
+      return el ? String(el.className).includes('bg-white') : null;
+    };
+
+    // THE PILL EXISTS AND IS PRESSABLE. Before 2864d60 a promotion campaign's
+    // pill rendered as a disabled span, so this check would have found no
+    // button at all - and an assertion on an absent control proves nothing.
+    const pill = q('edit-campaign');
+    check('campaign: the Volume table shows a PRESSABLE campaign pill for a promotion',
+      !!pill, 'a disabled span means the route has nothing to fire');
+    check('campaign: and the Volume tab is where the drive starts',
+      tabActive('volume') === true);
+
+    if (pill) await click(pill);
+    console.log('');
+    console.log('  campaign route   promo tab ' + tabActive('promotion')
+      + '  volume tab ' + tabActive('volume')
+      + '  subs-pressed ' + (q('promo-amount-subs')
+        ? String(q('promo-amount-subs').className).includes('bg-[#e60000]') : null)
+      + '  dilution current ' + (q('promo-dilution-current')
+        ? q('promo-dilution-current').value : null));
+
+    check('campaign: the pill SWITCHES to the Promotion tab',
+      tabActive('promotion') === true && tabActive('volume') === false,
+      'promo ' + tabActive('promotion') + ' volume ' + tabActive('volume'));
+    check('campaign: the campaign editor restored the SUBS unit from the first row',
+      q('promo-amount-subs')
+        && String(q('promo-amount-subs').className).includes('bg-[#e60000]')
+        && !String(q('promo-amount-pct').className).includes('bg-[#e60000]'),
+      'the D5-03 restore, reached through the campaign pill');
+    check('campaign: and the dilution arm, both stated figures',
+      q('promo-dilution-current') && q('promo-dilution-target')
+        && Number(q('promo-dilution-current').value) === 25
+        && Number(q('promo-dilution-target').value) === 20,
+      JSON.stringify([q('promo-dilution-current')?.value, q('promo-dilution-target')?.value]));
+
+    // SAVE, CHANGING NOTHING.
+    const saveBtn = Array.from(container.querySelectorAll('button'))
+      .find((b: any) => /save campaign|save changes/i.test(String(b.textContent))) as any;
+    check('campaign: the campaign editor is open, with a save control', !!saveBtn,
+      'no save button — the deep-equal below would compare nothing');
+    if (saveBtn) await click(saveBtn);
+    await (act as any)(async () => { root.unmount(); });
+
+    const next = committed.length ? committed[committed.length - 1] : null;
+    console.log('  campaign commits ' + committed.length
+      + '  rows back ' + (next ? next.length : 0));
+    check('campaign: the save committed', committed.length === 1 && !!next,
+      String(committed.length));
+    if (next) {
+      const savedRows = next.filter((e: any) => e.campaignName === CAMPAIGN);
+      check('campaign: BOTH rows came back', savedRows.length === 2,
+        String(savedRows.length));
+      const moved: string[] = [];
+      ROWS.forEach((before: any, i: number) => {
+        const after = savedRows[i];
+        if (!after) { moved.push('row ' + i + ' missing'); return; }
+        Object.keys(readSet(before)).forEach(k => {
+          if (JSON.stringify((readSet(before) as any)[k])
+              !== JSON.stringify((readSet(after) as any)[k])) {
+            moved.push('row ' + i + '.' + k + ': '
+              + JSON.stringify((readSet(before) as any)[k]) + ' -> '
+              + JSON.stringify((readSet(after) as any)[k]));
+          }
+        });
+      });
+      console.log('  campaign changed: ' + (moved.length ? moved.join(' | ') : 'NONE'));
+      check('campaign: EVERY row\'s 23-field read-set is identical after a no-change save',
+        moved.length === 0, moved.join(' | ') || 'none');
     }
   }
 

@@ -7176,6 +7176,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     <label className="block text-xs font-medium text-slate-500 mb-1">{t('common_month')}</label>
                     <input
                       type="month"
+                      data-testid="promo-month"
                       value={newPromo.date}
                       onChange={e => setNewPromo({ ...newPromo, date: e.target.value })}
                       className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
@@ -7617,6 +7618,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   <label className="inline-flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
+                      data-testid="promo-pricing-arm"
                       checked={promoPricingEnabled}
                       onChange={e => setPromoPricingEnabled(e.target.checked)}
                       className="w-4 h-4 rounded border-slate-300 text-[#e60000] focus:ring-[#e60000]"
@@ -7783,6 +7785,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   ) : (
                     <button
                       onClick={handleAddPromotionEvent}
+                      data-testid="promo-add"
                       disabled={!newPromo.date || !newPromo.subscriberVolume || (promoMixEnabled && promoTierData.length === 0) || promoMixBlocksSave || promoDilutionBlockReason !== null}
                       className="bg-[#e60000] text-white text-sm font-semibold py-2 px-5 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
                     >{t('whatif_add_promotion')}</button>

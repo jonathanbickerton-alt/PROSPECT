@@ -1505,6 +1505,37 @@ const TRAPS: Trap[] = [
   // the mounted write list reads [["absolute",10]] under this mutation and
   // [["percentage",10]] without it. A hundred-fold change of meaning, silent.
   // ---------------------------------------------------------------------
+  // 161 - the dilution control stops writing the TARGET figure.
+  //
+  // 2138 pinned the arithmetic through `buildPromoEvents` and said in its own
+  // Limits that no mounted case drove the CONTROL, so "a defect in the wiring
+  // between the control and the builder would not be caught here". This is
+  // that wiring: with the target's setter inert, the pair never completes, the
+  // effect line stays on the awaiting copy, Add stays disabled and no event is
+  // built - all of it silent, because every individual piece looks correct.
+  { id: '161 the dilution target input stops writing its figure',
+    why: 'the pair never completes, so the arm is unusable and says nothing about why',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      "                              ['target', promoDilutionTarget, setPromoDilutionTarget,",
+      "                              ['target', promoDilutionTarget, () => {},") },
+
+  // 162 - the CAMPAIGN half of the D5-04 router stops asking. 1950 built it
+  // and said so: "the campaign pill's route is asserted by neither a mounted
+  // click nor a trap. It shares the router with nothing else, so nothing would
+  // catch it breaking." Trapped separately from 160, which is the ROW half:
+  // the two branches are independent and a reader repairing one would not
+  // necessarily look at the other.
+  { id: '162 the campaign route stops asking whether the campaign is a promotion',
+    why: 'a promotion campaign opens the Volume form, whose save cannot carry its arms',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      `  const editCampaignFromVolumeTable = useCallback((campaign: string, isPromo: boolean) => {
+    if (isPromo) {`,
+      `  const editCampaignFromVolumeTable = useCallback((campaign: string, isPromo: boolean) => {
+    if (false) {`) },
+
+  // ---------------------------------------------------------------------
   // 159 - D5-04, option 1. The Volume table's pencil goes back to opening the
   // VOLUME form for a promotion.
   //
