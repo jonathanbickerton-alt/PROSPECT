@@ -52,6 +52,8 @@
     "spec:step2-unlock": "tsx scripts/step2-unlock-spec.tsx",
     "spec:base-seed": "tsx scripts/base-seed-spec.ts",
     "spec:restore-base": "tsx scripts/restore-base-spec.ts",
+    "suite": "tsx scripts/suite.ts",
+    "spec:survival": "tsx scripts/survival-spec.ts",
     "spec:event-roundtrip": "tsx scripts/event-roundtrip-spec.ts",
     "spec:mix-constraint": "tsx scripts/mix-constraint-spec.ts",
     "spec:mix-card": "tsx scripts/mix-card-spec.tsx",

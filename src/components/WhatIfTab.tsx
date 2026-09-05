@@ -4331,11 +4331,46 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
      * compatibility; only this consumer is gone. The D3-02 regression now
      * observes the pool through Base ARPU, which is what it actually feeds.
      */
+    /**
+     * SUBTRACT, THEN ROUND — not round, then subtract (Jon, 2026-09-05).
+     *
+     * This read the two chartData COLUMNS, and those are rounded to two
+     * decimals at their source (`perScenarioColumns`) because they are chart
+     * and export values. Subtracting two already-rounded figures gave a delta
+     * carrying up to a full penny of pure rounding: a true movement of 0.006
+     * against a baseline of 19.996 rendered 0.00, because both sides rounded
+     * to 20.00 on the way in.
+     *
+     * The unrounded pair is available and is what the columns were rounded
+     * FROM: the adjusted rate is `adjustedMonths[i].scenarioArpu[key].arpu`
+     * and the baseline is the forecast band's own mean — the same two
+     * quantities `perScenarioColumns` reads. `chartData` and `adjustedMonths`
+     * are produced by one pass over one array, so index i is the same month in
+     * both; the last row of one is the last month of the other.
+     *
+     * THE COLUMNS ARE UNTOUCHED. They are pinned by their own checks and are
+     * what the export carries; only this consumer stops going through them.
+     *
+     * ABSENCE STILL TRAVELS, and now from the source rather than from a
+     * rounded copy of it: a band that could not be fitted has no mean and a
+     * scenario the engine could not price has `arpu: null`. Either one is an
+     * em dash, never a subtraction against zero.
+     */
+    const RAW_SOURCE = {
+      Inflow:    ['inflow',    'inflowArpu'],
+      Outflow:   ['outflow',   'outflowArpu'],
+      Retention: ['retention', 'retentionArpu'],
+      Base:      ['base',      'baseArpu'],
+    } as const;
+    const lastAdj = adjustedMonths[adjustedMonths.length - 1];
+    const lastFc: any = baseForecast?.months?.[adjustedMonths.length - 1];
     const arpuByScenario = SCENARIO_LIST.map(kpi => {
-      const adj = last[`${kpi} ARPU (Adjusted)`];
-      const bas = last[`${kpi} ARPU (Baseline)`];
-      const known = typeof adj === 'number' && typeof bas === 'number';
-      return { kpi, delta: known ? (adj as number) - (bas as number) : null };
+      const [scenKey, bandKey] = RAW_SOURCE[kpi];
+      const adj = lastAdj?.scenarioArpu?.[scenKey]?.arpu;
+      const bas = lastFc?.[bandKey]?.mean;
+      const known = typeof adj === 'number' && Number.isFinite(adj)
+        && typeof bas === 'number' && Number.isFinite(bas);
+      return { kpi, delta: known ? adj - bas : null };
     });
     // COUNTED AT THIS VIEW, not from the array (Jon, 2026-09-02).
     //
@@ -4355,7 +4390,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const appliedHere = new Set<string>();
     for (const m of adjustedMonths) for (const id of m.appliedEventIds ?? []) appliedHere.add(id);
     return { baseDelta, arpuByScenario, eventCount: appliedHere.size };
-  }, [chartData, adjustedMonths]);
+    // baseForecast is READ above - the dependency array is the read-set, and
+    // a narrower one is how a stale closure ships (D3-04).
+  }, [chartData, adjustedMonths, baseForecast]);
 
   // -------------------------------------------------------------------------
   // Retention event validation — warn when event volume exceeds forecast Outflow

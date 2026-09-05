@@ -1468,6 +1468,40 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "  if (e.amountType !== 'percentage') return fmtAbsolute(e.subscriberVolume);",
       "  if (true) return fmtAbsolute(e.subscriberVolume);") },
+
+  // ---------------------------------------------------------------------
+  // 156 - THE SYNTHETIC YIELD POOL IS SIZED FROM THE WRONG MONTH.
+  //
+  // It re-prices the PREVIOUS month's natural inflow - that is what makes its
+  // eventMonthIdx idx-1 and what lets the lag deliver it. Sized from the
+  // current month it re-prices subscribers who have not reached the stock,
+  // and every Base ARPU figure downstream is computed over the wrong cohort.
+  //
+  // MEASURED, both numbers known before the plant: on the yield fixture the
+  // correct reading is -0.09 at T+1 and -0.21 at T+2; the defect reads -0.13
+  // and -0.30. The spec pins the correct pair against hand arithmetic, so the
+  // trap separates two known values rather than a value from zero.
+  { id: '156 the yield pool re-prices THIS month instead of last',
+    why: 'Base ARPU is computed over subscribers the lag has not delivered',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      '              size: Math.max(0, p_prevBBaseIn),',
+      '              size: Math.max(0, m.baseline.inflow),') },
+
+  // 157 - the KPI rounds before it subtracts.
+  //
+  // The chartData ARPU columns are 2dp at source because they are chart and
+  // export values. Subtracting that pair gives a delta carrying up to a full
+  // penny of pure rounding: against a baseline of 19.996 a true movement of
+  // 0.006 renders 0.00, because both sides round to 20.00 on the way in.
+  // The fixture is built so the two paths DISAGREE - a baseline of exactly 20
+  // would let the old arithmetic land on the right answer by luck.
+  { id: '157 the per-scenario delta is rounded before it is subtracted',
+    why: 'a true movement of 0.006 disappears entirely at a baseline of 19.996',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      '      return { kpi, delta: known ? adj - bas : null };',
+      '      return { kpi, delta: known ? +adj.toFixed(2) - +bas.toFixed(2) : null };') },
   // 103 feeds the LOADED COHORT's forecast back into the churn series, undoing
   // the scope fix. The panel then reads the same base whatever the draft's dims
   // say — the walk's ~293k at every slice — and the breakdown stops moving when

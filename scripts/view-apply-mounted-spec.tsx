@@ -142,6 +142,48 @@ async function main() {
   const resolveForecastR = (key: string) => fc.resolveFromStore(storeR, leafMap, key);
   const BUNDLE_R = { store: storeR, resolveForecast: resolveForecastR };
 
+  /**
+   * THE YIELD FIXTURE, and why its inflow VARIES month to month.
+   *
+   * The synthetic yield pool is built from the PREVIOUS month's natural inflow
+   * (`p_prevBBaseIn`, `eventMonthIdx = idx - 1`). On a fixture whose inflow is
+   * the same every month, "previous month" and "this month" are the same
+   * number, so a pool sized from the wrong one is indistinguishable from a
+   * pool sized correctly — the vacuous-result trap, in the exact shape that
+   * made trap (b) plant green in the 1526 session.
+   *
+   * So leaf A carries 200 / 300 / 400. A pool sized from the current month
+   * differs from one sized from the previous month at every step.
+   *
+   * TWO HORIZONS, because the card's KPI reads the LAST month only. A
+   * two-month store puts T+1 last; a three-month store puts T+2 last. That is
+   * what lets both months be read from the same rendered figure rather than
+   * from a chart row the KPI does not use.
+   */
+  const mkYLeaf = (product: string, inflows: number[]) => ({
+    cohort: { segment: 'Corporate', product, productL2: 'All', channel: 'All',
+              channelL2: 'All', tariffL1: 'All', tariffL2: 'All', scenario: 'Standard Forecast' },
+    seedBaseVolume: 10000, seedBaseKnown: true,
+    historicalMonths: ['2025-10', '2025-11', '2025-12'],
+    lastHistoricalInflow: inflows[0], lastHistoricalOutflow: 0,
+    provenance: 'fitted' as const,
+    months: inflows.map((inf, i) => ({
+      month: MONTHS[i], inflow: band(inf), outflow: band(0), retention: band(100),
+      arpu: band(20), inflowArpu: band(22), outflowArpu: band(18),
+      retentionArpu: band(21), baseArpu: band(20),
+    })),
+  });
+
+  const mkYBundle = (n: number) => {
+    const ya = mkYLeaf('Mobile Voice', [200, 300, 400].slice(0, n));
+    const yb = mkYLeaf('Broadband', [800, 800, 800].slice(0, n));
+    const st = new Map<string, any>([[keyA, ya], [keyB, yb]]);
+    return { store: st, resolveForecast: (k: string) => fc.resolveFromStore(st, leafMap, k) };
+  };
+  const BUNDLE_Y2 = mkYBundle(2);   // last month is T+1
+  const BUNDLE_Y3 = mkYBundle(3);   // last month is T+2
+
+
   // Historical rows — the mix the history-weighted coverage would have used.
   const C = { date: 'Month', seg: 'Segment', prod: 'Product', prodL2: 'ProductL2',
               chan: 'Channel', chanL2: 'ChannelL2', metric: 'Metric', val: 'Volume' };
@@ -161,7 +203,7 @@ async function main() {
 
   const EVENT_PCT = { ...EVENT_ABS, id: 'evt-pct', amountType: 'percentage', subscriberVolume: 10 } as any;
 
-  const propsFor = (marketEvents: any[], dataOverride?: any[]) => ({
+  const propsFor = (marketEvents: any[], dataOverride?: any[], yEvents: any[] = []) => ({
     data: dataOverride ?? data,
     wiDateCol: C.date, wiSegmentCol: C.seg, wiProductCol: C.prod, wiProductL2Col: C.prodL2,
     wiChannelCol: C.chan, wiChannelL2Col: C.chanL2, wiMetricCol: C.metric,
@@ -172,7 +214,7 @@ async function main() {
     selectedTariffs: [], setSelectedTariffs: noop, cohortAvgArpu: 20,
     marketEvents, setMarketEvents: noop,
     addMarketEvent: noop, removeMarketEvent: noop, updateMarketEvent: noop,
-    yieldEvents: [], newYieldEvent: {}, setNewYieldEvent: noop, addYieldEvent: noop,
+    yieldEvents: yEvents, newYieldEvent: {}, setNewYieldEvent: noop, addYieldEvent: noop,
     removeYieldEvent: noop, clearAllYieldEvents: noop,
     pricingEvents: [], newPricingEvent: {}, setNewPricingEvent: noop, addPricingEvent: noop,
     removePricingEvent: noop, clearAllPricingEvents: noop,
@@ -185,7 +227,8 @@ async function main() {
                         dataOverride?: any[],
                         bundle?: { store: Map<string, any>;
                                    resolveForecast: (k: string) => any },
-                        openPromoTab?: boolean) => {
+                        openPromoTab?: boolean,
+                        yEvents: any[] = []) => {
     const useStore = bundle ? bundle.store : store;
     const useResolve = bundle ? bundle.resolveForecast : resolveForecast;
     const resolved = useResolve(viewKey);
@@ -196,7 +239,7 @@ async function main() {
     const root = createRoot(container);
     const Harness = () => {
       const [newEvent, setNewEvent] = (React as any).useState({});
-      return React.createElement(M, { ...propsFor(marketEvents, dataOverride), newEvent, setNewEvent });
+      return React.createElement(M, { ...propsFor(marketEvents, dataOverride, yEvents), newEvent, setNewEvent });
     };
     await (act as any)(async () => {
       root.render(React.createElement(ForecastProvider as any, {
@@ -745,6 +788,199 @@ async function main() {
       pctArm.promoDilutionCurrentPct === undefined
         && pctArm.promoDilutionTargetPct === undefined,
       'absence is the carrier, and nothing pre-decision-3 migrates');
+  }
+
+  // ── 3f. THE SYNTHETIC YIELD POOL, VERIFIED BY HAND ──────────────
+  //
+  // The 0747 session found that a yield event, not a promotion, moved Base
+  // ARPU on Jon's save (−0.27 on its own). It did not verify that −0.27 was
+  // RIGHT. This does, on a fixture whose every quantity is known.
+  //
+  // THE ARITHMETIC, from the source rather than assumed. The base term takes
+  // the pools the lag has DELIVERED (`eventMonthIdx < idx`), sets
+  // `naturalVolume = newBAdj − Σ size`, and `scenarioAdjustedArpu` returns
+  // `(baseArpu × natural + Σ size×rate) / newBAdj`. Subtracting the baseline
+  // `baseArpu` collapses that to
+  //
+  //     Base ARPU delta = Σ delivered size × (rate − baseArpu) / stock
+  //
+  // which is the formula every figure below is computed from.
+  {
+    // THE YIELD EVENT. Mix 25/75 over bands at 40 and 10:
+    //   raw blend        0.25x40 + 0.75x10 = 17.50
+    //   equal weight     (40 + 10) / 2     = 25.00
+    //   ratio            17.50 / 25.00     = 0.70
+    //   pool rate        fitted inflow ARPU 22 x 0.70 = 15.40
+    // Well below the fitted 22, and below the fitted BASE blend of 20 - which
+    // is what makes the contribution negative and the sign meaningful.
+    const YIELD_EV = {
+      id: 'y1', name: 'yield mix', ibro: 'Inflow',
+      segment: 'All', product: 'All', channelL1: 'All', channelL2: 'All',
+      month: MONTHS[0], rollForward: true, mixAxis: 'value',
+      tariffMix: { High: 25, Low: 75 },
+      tariffBaseArpu: { High: 40, Low: 10 },
+    } as any;
+
+    const RATE = 22 * ((0.25 * 40 + 0.75 * 10) / ((40 + 10) / 2));
+    check('yield: the pool rate is the mix blend scaled onto the fitted inflow ARPU',
+      Math.abs(RATE - 15.4) < 1e-9, String(RATE));
+
+    // THE FIXTURE DISCRIMINATES, asserted before anything is read from it.
+    const yInflows = BUNDLE_Y3.resolveForecast(keyA).forecast.months
+      .map((m: any) => m.inflow.mean);
+    check('yield fixture: the inflow VARIES month to month',
+      new Set(yInflows).size === yInflows.length,
+      yInflows.join('/') + ' — equal inflows make a pool sized from the wrong'
+      + ' month unobservable, which is the vacuous-result trap');
+
+    /** Base ARPU delta, by hand, from the formula above. */
+    const handDelta = (sizes: number[], stock: number) =>
+      sizes.reduce((t, sz) => t + sz * (RATE - 20), 0) / stock;
+
+    // ── T+1: the two-month store, so the LAST month is idx 1 ────────
+    //
+    // Stock, by hand from the engine's own recursion
+    // (newBAdj = prev stock + prev adjusted inflow − prev adjusted outflow,
+    //  seeded at seedBaseVolume with lastHistoricalInflow as the first inflow):
+    //   idx 0   10000 + 200 = 10200
+    //   idx 1   10200 + 200 = 10400
+    // Pool at idx 1: sized from the PREVIOUS month's natural inflow, 200, and
+    // its eventMonthIdx is 0, so the lag has delivered it in this same month.
+    const T1_HAND = handDelta([200], 10400);
+    const yT1 = await readAt(keyA, [], undefined, undefined, BUNDLE_Y2, false, [YIELD_EV]);
+    console.log('');
+    console.log('  yield T+1 leaf  base ' + yT1.arpuBase
+      + '   hand ' + T1_HAND.toFixed(6));
+    check('yield: BASE ARPU at T+1 equals the hand figure',
+      yT1.arpuBase !== null && Math.abs((yT1.arpuBase as number) - T1_HAND) < 0.005,
+      'rendered ' + yT1.arpuBase + ' vs hand ' + T1_HAND.toFixed(6)
+      + ' — 200 x (15.40 − 20) / 10400');
+
+    // ── T+2: the three-month store, so the LAST month is idx 2 ──────
+    //
+    //   idx 0   10000 + 200 = 10200
+    //   idx 1   10200 + 200 = 10400
+    //   idx 2   10400 + 300 = 10700
+    // TWO pools are delivered by now - the yield event rolls forward, so one
+    // was pushed at idx 1 (sized 200, the inflow of idx 0) and another at
+    // idx 2 (sized 300, the inflow of idx 1). Both have eventMonthIdx < 2.
+    const T2_HAND = handDelta([200, 300], 10700);
+    const yT2 = await readAt(keyA, [], undefined, undefined, BUNDLE_Y3, false, [YIELD_EV]);
+    console.log('  yield T+2 leaf  base ' + yT2.arpuBase
+      + '   hand ' + T2_HAND.toFixed(6));
+    check('yield: BASE ARPU at T+2 equals the hand figure',
+      yT2.arpuBase !== null && Math.abs((yT2.arpuBase as number) - T2_HAND) < 0.005,
+      'rendered ' + yT2.arpuBase + ' vs hand ' + T2_HAND.toFixed(6)
+      + ' — (200 + 300) x (15.40 − 20) / 10700');
+
+    // THE TWO MONTHS MUST DIFFER, or one figure is doing both jobs and a
+    // constant-in-time defect would satisfy both checks.
+    check('yield: T+1 and T+2 are different figures',
+      Math.abs(T1_HAND - T2_HAND) > 0.05,
+      T1_HAND.toFixed(4) + ' vs ' + T2_HAND.toFixed(4));
+
+    // WHAT A CURRENT-MONTH POOL WOULD READ, computed here so the trap's
+    // failure line separates two KNOWN numbers rather than a number and zero:
+    //   T+1  300 x (15.40 − 20) / 10400 = -0.1327
+    //   T+2  (300 + 400) x (15.40 − 20) / 10700 = -0.3009
+    console.log('  yield defect would read  T+1 '
+      + handDelta([300], 10400).toFixed(4)
+      + '   T+2 ' + handDelta([300, 400], 10700).toFixed(4));
+
+    // ── AT ALL, the same formula on the aggregate's own quantities ──
+    // Not a second hand figure: the fitted inflows and the seed are READ from
+    // the resolved aggregate, so this checks the ENGINE's ARPU against an
+    // independently computed one rather than against a number typed twice.
+    const aggT2 = BUNDLE_Y3.resolveForecast(KEY_ALL).forecast;
+    const aggIn = aggT2.months.map((m: any) => m.inflow.mean);
+    const aggSeed = aggT2.seedBaseVolume;
+    const aggStock = aggSeed + aggIn[0] + aggIn[0] + aggIn[1];   // idx 0,1,2 recursion
+    const ALL_HAND = handDelta([aggIn[0], aggIn[1]], aggStock);
+    const yAll = await readAt(KEY_ALL, [], undefined, undefined, BUNDLE_Y3, false, [YIELD_EV]);
+    console.log('  yield T+2 ALL   base ' + yAll.arpuBase
+      + '   hand ' + ALL_HAND.toFixed(6)
+      + '   (inflows ' + aggIn.join('/') + ', seed ' + aggSeed + ')');
+    check('yield: BASE ARPU at ALL equals the same formula on the aggregate',
+      yAll.arpuBase !== null && Math.abs((yAll.arpuBase as number) - ALL_HAND) < 0.005,
+      'rendered ' + yAll.arpuBase + ' vs hand ' + ALL_HAND.toFixed(6));
+  }
+
+  // ── 3g. THE KPI SUBTRACTS BEFORE IT ROUNDS ──────────────────────
+  //
+  // `perScenarioColumns` rounds both `<scenario> ARPU (Baseline)` and
+  // `(Adjusted)` to two decimals, because those columns are chart and export
+  // values. The KPI used to subtract that already-rounded pair, so its delta
+  // carried up to a full penny of pure rounding.
+  //
+  // THE FIXTURE IS BUILT SO THE TWO PATHS DISAGREE. A base ARPU of exactly 20
+  // would not show it: 20.000 and 20.006 round to 20.00 and 20.01, and the
+  // old subtraction lands on 0.01 by luck. At 19.996 both sides round to
+  // 20.00 and the movement disappears entirely - which is the case that
+  // separates "rounded once, at the end" from "rounded twice, at the start".
+  {
+    const BASE_ARPU = 19.996;
+    const STOCK = 10400;        // 10000 + 200 + 200, the two-month recursion
+    const POOL = 200;           // the previous month's natural inflow
+
+    // The yield ratio with bands {A: a, B: 0} is 2p/100 whatever `a` is -
+    // rawBlend = (p/100)a, equalWeight = a/2 - so the mix share alone sets the
+    // pool's rate, and the share needed for a chosen delta is solved for here
+    // rather than typed as a magic number.
+    const shareFor = (targetDelta: number) => {
+      const rate = BASE_ARPU + targetDelta * STOCK / POOL;
+      return rate * 50 / 22;    // rate = 22 x (2p/100) = 22p/50
+    };
+    const mkYieldFor = (targetDelta: number) => ({
+      id: 'yp', name: 'precision', ibro: 'Inflow',
+      segment: 'All', product: 'All', channelL1: 'All', channelL2: 'All',
+      month: MONTHS[0], rollForward: true, mixAxis: 'value',
+      tariffMix: { A: shareFor(targetDelta), B: 100 - shareFor(targetDelta) },
+      tariffBaseArpu: { A: 40, B: 0 },
+    } as any);
+
+    const mkPLeaf = (product: string, inflows: number[]) => ({
+      cohort: { segment: 'Corporate', product, productL2: 'All', channel: 'All',
+                channelL2: 'All', tariffL1: 'All', tariffL2: 'All',
+                scenario: 'Standard Forecast' },
+      seedBaseVolume: 10000, seedBaseKnown: true,
+      historicalMonths: ['2025-10', '2025-11', '2025-12'],
+      lastHistoricalInflow: inflows[0], lastHistoricalOutflow: 0,
+      provenance: 'fitted' as const,
+      months: inflows.map((inf, i) => ({
+        month: MONTHS[i], inflow: band(inf), outflow: band(0), retention: band(100),
+        arpu: band(20), inflowArpu: band(22), outflowArpu: band(18),
+        retentionArpu: band(21), baseArpu: band(BASE_ARPU),
+      })),
+    });
+    const pA = mkPLeaf('Mobile Voice', [200, 200]);
+    const pB = mkPLeaf('Broadband', [800, 800]);
+    const storeP = new Map<string, any>([[keyA, pA], [keyB, pB]]);
+    const BUNDLE_P = { store: storeP,
+      resolveForecast: (k: string) => fc.resolveFromStore(storeP, leafMap, k) };
+
+    const readDelta = async (targetDelta: number) => {
+      const r = await readAt(keyA, [], undefined, undefined, BUNDLE_P, false,
+        [mkYieldFor(targetDelta)]);
+      return r.arpuBase;
+    };
+
+    // 0.004: BELOW what two decimals can express, so both paths read 0.00.
+    // The check exists so the new path is not mistaken for "always shows more"
+    // - it shows the TRUTH, and the truth here rounds to nothing.
+    const d004 = await readDelta(0.004);
+    console.log('');
+    console.log('  precision  true 0.004 -> rendered ' + d004
+      + '   |  true 0.006 -> rendered ' + (await readDelta(0.006)));
+    check('precision: a true delta of 0.004 reads 0.00 - it is below the display',
+      d004 !== null && Math.abs(d004 as number) < 0.005, String(d004));
+
+    // 0.006: the discriminating case. Subtract-then-round reads 0.01;
+    // round-then-subtract reads 0.00, because 19.996 and 20.002 both round to
+    // 20.00 and the movement is destroyed before the subtraction happens.
+    const d006 = await readDelta(0.006);
+    check('precision: a true delta of 0.006 reads 0.01, NOT 0.00',
+      d006 !== null && Math.abs((d006 as number) - 0.01) < 1e-9,
+      String(d006) + ' — 0.00 means the pair was rounded before it was subtracted');
   }
 
   // ── 4. THE GHOST: in scope at the view, landing on none of it ───────────

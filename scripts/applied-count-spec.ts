@@ -125,9 +125,19 @@ check('fixture: the store holds TWO events, so a view-scoped count can differ fr
   check('CARD: gathered from the engine\'s own appliedEventIds',
     src.includes('for (const m of adjustedMonths) for (const id of m.appliedEventIds ?? []) appliedHere.add(id);'),
     're-deriving it beside the engine would drift from what the engine did');
+  // RE-AIMED 2026-09-05, not loosened. The dep array grew to
+  // [chartData, adjustedMonths, baseForecast] because the memo now READS
+  // baseForecast: the per-scenario deltas are computed from the unrounded
+  // band means rather than from the 2dp chartData columns. A dependency array
+  // is the read-set, so a real read arriving must move this literal — the
+  // check is doing its job by failing, and pinning the new literal keeps it
+  // exactly as strong as the old one.
   check('CARD: the memo depends on adjustedMonths, not on the array length',
-    src.includes('}, [chartData, adjustedMonths]);'),
+    src.includes('}, [chartData, adjustedMonths, baseForecast]);'),
     'a stale dep would freeze the count on a filter change — the 2343 prop-stability lesson');
+  check('CARD: and it still does NOT key on the raw array length',
+    !src.includes('marketEvents.length]'),
+    'the count must follow what the engine applied, not how many rows exist');
 }
 
 console.log(`applied-count spec: ${pass} passed, ${fails.length} failed`);
