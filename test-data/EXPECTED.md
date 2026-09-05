@@ -7153,6 +7153,32 @@ Pinned in `spec:view-apply-mounted` as **measured, not endorsed**: two fields
 move and one of them is the baked rate. Whichever option lands, that check must
 change, and its failing is the signal that the decision arrived.
 
+##### DECIDED (Jon, 2026-09-05) — OPTION 1: A PROMOTION IS EDITED FROM ITS SOURCE
+
+**The Volume table's pencil on a promotion-built row routes to the Promotion
+card's own editor. The Volume form is never opened for a promotion-built row.**
+The campaign pencil on a promotion campaign routes the same way.
+
+**The reason, from the measurements above rather than from taste:** the Volume
+form **cannot represent a promotion's arms** — it has no mix, no per-band rate,
+no lock set, no pricing arm — and a no-change save from it **zeroed the baked
+rate** (`arpu` 36 → 0, 1903). An editor that cannot show what it is editing
+will silently drop it, and it did.
+
+**The row stays visible in the Volume table.** Option 1 changes where the
+pencil goes, not what the table lists: a user looking for every market event
+still finds the promotion there. This is deliberately NOT option 2
+(promo rows read-only in the Volume table) — the campaign grouping already
+excludes promotions from ITS path, and adding a second exclusion would leave a
+user who can see a row unable to act on it from where they see it.
+
+**The pinned check must change with this decision.** The 1903 check asserted
+"exactly two fields move and one is the baked rate", labelled measured-not-
+endorsed. Under option 1 a no-change edit-and-save must leave the 23-field
+engine read-set **identical**, `arpu` included. That check going red on the
+first run of this session is the signal that the decision landed, and its
+red line is quoted in the session report.
+
 #### D5-02 DOES NOT REPRODUCE — the promotion is innocent, and the yield event moved it (measured 2026-09-05)
 
 **Not a decision. A measurement, recorded so the next session does not re-open
