@@ -2598,6 +2598,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoSpreadDistType('even');
     setPromoCustomDist([34, 33, 33]);
     setPromoMixEnabled(false);
+    // D5-03's other half. With no writer but the toggle, the mode SURVIVED a
+    // reset: editing a percentage promotion and then starting a new one left
+    // the new draft silently in per-cent. A saved event carries this field, so
+    // it is cleared here for the same reason the stated band rates are.
+    setPromoAmountMode('absolute');
     setPromoPricingEnabled(false);
     setPromoPricingMode('percentage');
     setPromoPricingAmount(0);
@@ -2648,7 +2653,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
     setMarketEvents([...marketEvents, ...events]);
     resetPromoDraft();
-  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, marketEvents, setMarketEvents, resetPromoDraft]);
+  // THE DEPENDENCY ARRAY IS THE READ-SET (D3-04). All three promo builders
+  // read promoAmountMode, promoMixLocked and the two dilution figures, and
+  // none of them declared any of the four. It happened to work because
+  // newPromo is listed and every restore also sets it - which is the shape
+  // this codebase has stopped relying on twice already.
+  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, marketEvents, setMarketEvents, resetPromoDraft]);
 
   // ── Unique options for Yield Event form ───────────────────────────────────
   const ySegmentOptions = useMemo(
@@ -4154,6 +4164,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // restores with none rather than a phantom lock.
     setPromoMixLocked(event.mixLocked ? [...event.mixLocked] : []);
     setPromoTargetArpu('');
+    // D5-03. THE UNIT CONTROL IS RESTORED FROM THE EVENT, and the omission
+    // was not a display bug: `handleSavePromoEdit` passes `promoAmountMode`
+    // straight to `buildPromoEvents`, so reopening a +10% promotion and
+    // pressing Save Changes without touching the toggle REWROTE IT as ten
+    // subscribers. The screenshot showed the symptom; the corruption was one
+    // click further on.
+    //
+    // The Volume card has always done this — `setStoredAmountControl(
+    // event.amountType === 'percentage' ? 'pct' : 'subs')` — and the
+    // promotion card is the third inline copy of that control, which is
+    // exactly the duplication 1012 recorded and 1526 shed the extraction of.
+    setPromoAmountMode(event.amountType === 'percentage' ? 'percentage' : 'absolute');
     setPromoPricingEnabled(event.promoPricingAmount !== undefined);
     setPromoPricingMode(event.promoPricingMode ?? 'percentage');
     setPromoPricingAmount(event.promoPricingAmount ?? 0);
@@ -4213,6 +4235,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // inheriting whatever the previous draft had.
     setPromoMixLocked([]);
     setPromoTargetArpu('');
+    // D5-03, the campaign path. Every row of a campaign is built by ONE call
+    // to buildPromoEvents, so they share an amountType by construction and the
+    // first row speaks for the group — the same assumption the mix, the axis
+    // and the pricing arm above already make.
+    setPromoAmountMode(first.amountType === 'percentage' ? 'percentage' : 'absolute');
     setPromoPricingEnabled(first.promoPricingAmount !== undefined);
     setPromoPricingMode(first.promoPricingMode ?? 'percentage');
     setPromoPricingAmount(first.promoPricingAmount ?? 0);
@@ -4249,7 +4276,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     updateMarketEvent(editingPromoId, { ...events[0], id: editingPromoId });
     setEditingPromoId(null);
     resetPromoDraft();
-  }, [editingPromoId, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, marketEvents, updateMarketEvent, resetPromoDraft]);
+  // THE DEPENDENCY ARRAY IS THE READ-SET (D3-04). All three promo builders
+  // read promoAmountMode, promoMixLocked and the two dilution figures, and
+  // none of them declared any of the four. It happened to work because
+  // newPromo is listed and every restore also sets it - which is the shape
+  // this codebase has stopped relying on twice already.
+  }, [editingPromoId, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, marketEvents, updateMarketEvent, resetPromoDraft]);
 
   const handleSavePromoCampaign = useCallback(() => {
     if (!editingPromoCampaign || !newPromo.date || !newPromo.subscriberVolume) return;
@@ -4277,7 +4309,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setMarketEvents([...promoSurvivors, ...resequenceRebuild(events, promoReplaced, promoSurvivors)]);
     setEditingPromoCampaign(null);
     resetPromoDraft();
-  }, [editingPromoCampaign, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, marketEvents, setMarketEvents, resetPromoDraft]);
+  // THE DEPENDENCY ARRAY IS THE READ-SET (D3-04). All three promo builders
+  // read promoAmountMode, promoMixLocked and the two dilution figures, and
+  // none of them declared any of the four. It happened to work because
+  // newPromo is listed and every restore also sets it - which is the shape
+  // this codebase has stopped relying on twice already.
+  }, [editingPromoCampaign, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, marketEvents, setMarketEvents, resetPromoDraft]);
 
   const handleCancelPromoEdit = useCallback(() => {
     setEditingPromoId(null);
@@ -7769,6 +7806,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             <td className="px-5 py-3 text-center">
                               <button
                                 type="button"
+                                data-testid={`promo-row-edit-${e.id}`}
                                 onClick={(ev) => { ev.stopPropagation(); handleEditPromoStart(e); }}
                                 className={`p-1 rounded transition-colors ${
                                   isEditingRow ? 'text-amber-600 bg-amber-100' : 'text-slate-400 hover:text-[#e60000] hover:bg-[#e60000]/5'

@@ -203,7 +203,8 @@ async function main() {
 
   const EVENT_PCT = { ...EVENT_ABS, id: 'evt-pct', amountType: 'percentage', subscriberVolume: 10 } as any;
 
-  const propsFor = (marketEvents: any[], dataOverride?: any[], yEvents: any[] = []) => ({
+  const propsFor = (marketEvents: any[], dataOverride?: any[], yEvents: any[] = [],
+                    onUpdate: (id: string, patch: any) => void = noop) => ({
     data: dataOverride ?? data,
     wiDateCol: C.date, wiSegmentCol: C.seg, wiProductCol: C.prod, wiProductL2Col: C.prodL2,
     wiChannelCol: C.chan, wiChannelL2Col: C.chanL2, wiMetricCol: C.metric,
@@ -213,7 +214,7 @@ async function main() {
     channelTree: new Map<string, string[]>(), tariffTree: new Map<string, string[]>(),
     selectedTariffs: [], setSelectedTariffs: noop, cohortAvgArpu: 20,
     marketEvents, setMarketEvents: noop,
-    addMarketEvent: noop, removeMarketEvent: noop, updateMarketEvent: noop,
+    addMarketEvent: noop, removeMarketEvent: noop, updateMarketEvent: onUpdate,
     yieldEvents: yEvents, newYieldEvent: {}, setNewYieldEvent: noop, addYieldEvent: noop,
     removeYieldEvent: noop, clearAllYieldEvents: noop,
     pricingEvents: [], newPricingEvent: {}, setNewPricingEvent: noop, addPricingEvent: noop,
@@ -981,6 +982,308 @@ async function main() {
     check('precision: a true delta of 0.006 reads 0.01, NOT 0.00',
       d006 !== null && Math.abs((d006 as number) - 0.01) < 1e-9,
       String(d006) + ' — 0.00 means the pair was rounded before it was subtracted');
+  }
+
+  // ── 3h. D5-03: THE UNIT CONTROL SURVIVES AN EDIT ────────────────
+  //
+  // Jon's 05 Sep screenshot: reopening a +10% promotion showed the amount
+  // control on SUBS. The screenshot is the mild half. `handleSavePromoEdit`
+  // passes `promoAmountMode` straight to `buildPromoEvents`, so pressing Save
+  // Changes without touching the toggle REWROTE the event as ten subscribers
+  // — a silent hundred-fold change of meaning, not a display fault.
+  //
+  // MEASURED BEFORE THE FIX: `setPromoAmountMode` had exactly ONE writer, the
+  // toggle itself. Neither edit path set it and `resetPromoDraft` did not
+  // clear it, so the mode was whatever the session last left it at.
+  //
+  // DRIVEN THROUGH THE CARD, not the builder: the claim is about the restore,
+  // and a builder call cannot see a control that was never seeded.
+  {
+    const mkPromo = (amountType: 'absolute' | 'percentage', vol: number) =>
+      buildPromoEvents({
+        target: 'Retention', amountType,
+        draft: {
+          date: MONTHS[0], segment: EVENT_ABS.segment, product: EVENT_ABS.product,
+          productL2: EVENT_ABS.productL2, channel: EVENT_ABS.channel,
+          channelL2: EVENT_ABS.channelL2, tariffL1: EVENT_ABS.tariffL1,
+          tariffL2: EVENT_ABS.tariffL2,
+          subscriberVolume: vol, campaignName: '', comment: '', contractLength: 12,
+        } as any,
+        mixEnabled: false, mixAxis: 'value', draftMix: {}, mixLocked: [],
+        tierData: [], pricingEnabled: false, pricingMode: 'percentage',
+        pricingAmount: 0, cohortAvgArpu: 20,
+        spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [],
+        startSequence: 1,
+      } as any)[0] as any;
+
+    /** Mount, open the Promotion tab, click the row's pencil, and report what
+     *  the unit control shows and what Save Changes writes. */
+    const editAndSave = async (row: any) => {
+      const written: any[] = [];
+      const host = document.getElementById('root')!;
+      host.replaceChildren();
+      const container = document.createElement('div');
+      host.appendChild(container);
+      const root = createRoot(container);
+      const Harness = () => {
+        const [newEvent, setNewEvent] = (React as any).useState({});
+        return React.createElement(M, {
+          ...propsFor([row], undefined, [], (id: string, patch: any) => written.push({ id, patch })),
+          newEvent, setNewEvent,
+        });
+      };
+      await (act as any)(async () => {
+        root.render(React.createElement(ForecastProvider as any, {
+          baseForecast: resolveForecast(keyA).forecast, setBaseForecast: noop,
+          adjustedForecast: null, setAdjustedForecast: noop,
+          forecastStore: store, setForecastStore: noop,
+          resolveForecast, canResolve: () => true,
+          hasLegacyBaseline: true, updatedAt: new Date().toISOString(),
+          bulkRuns: [], setBulkRuns: noop,
+        }, React.createElement(Harness)));
+      });
+      const q = (id: string) => container.querySelector('[data-testid="' + id + '"]') as any;
+      const click = async (el: any) => { await (act as any)(async () => {
+        el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); }); };
+
+      await click(q('whatif-tab-promotion'));
+      // BY TESTID. The first draft took "the last button in the row", which
+      // clicked DELETE and reported an empty write list that the assertions
+      // then read as a failed restore - a wrong control looks exactly like a
+      // broken one. The pencil now carries `promo-row-edit-<id>`.
+      const pencil = q('promo-row-edit-' + row.id);
+      if (pencil) await click(pencil);
+
+      const pressed = (id: string) => {
+        const el = q(id);
+        return el ? String(el.className).includes('bg-[#e60000]') : null;
+      };
+      const out = {
+        // THE ADD FORM IS ALWAYS MOUNTED, so the presence of the unit control
+        // proves nothing. "Did the pencil open an EDIT" is the editing banner
+        // / Save Changes button, which exist only while editingPromoId is set.
+        opened: !!Array.from(container.querySelectorAll('button'))
+          .find((b2: any) => /save changes/i.test(String(b2.textContent))),
+        pctPressed: pressed('promo-amount-pct'),
+        subsPressed: pressed('promo-amount-subs'),
+        volumeShown: q('promo-volume-amount') ? q('promo-volume-amount').value : null,
+        written,
+      };
+      // Save Changes, without touching anything.
+      const saveBtn = Array.from(container.querySelectorAll('button'))
+        .find((b: any) => /save/i.test(String(b.textContent))) as any;
+      if (saveBtn) await click(saveBtn);
+      await (act as any)(async () => { root.unmount(); });
+      return out;
+    };
+
+    const pctRow = mkPromo('percentage', 10);
+    const pctEdit = await editAndSave(pctRow);
+    console.log('');
+    console.log('  D5-03 pct edit   opened ' + pctEdit.opened
+      + '  %-pressed ' + pctEdit.pctPressed + '  subs-pressed ' + pctEdit.subsPressed
+      + '  volume ' + pctEdit.volumeShown
+      + '  written ' + JSON.stringify(pctEdit.written.map((w: any) =>
+        [w.patch.amountType, w.patch.subscriberVolume])));
+
+    check('D5-03: the edit form opened at all',
+      pctEdit.opened === true,
+      'the unit control is not in the DOM — the pencil did not open the form,'
+      + ' and every assertion below would be vacuous');
+    check('D5-03: the % unit is PRESSED when a percentage promotion is reopened',
+      pctEdit.pctPressed === true && pctEdit.subsPressed === false,
+      'pct ' + pctEdit.pctPressed + ' subs ' + pctEdit.subsPressed
+      + ' — Subs pressed is the screenshot');
+    check('D5-03: SAVE re-emits amountType percentage, magnitude unchanged',
+      pctEdit.written.length === 1
+        && pctEdit.written[0].patch.amountType === 'percentage'
+        && pctEdit.written[0].patch.subscriberVolume === 10,
+      JSON.stringify(pctEdit.written.map((w: any) =>
+        [w.patch.amountType, w.patch.subscriberVolume]))
+      + ' — absolute/10 means a ten-per-cent promotion became ten subscribers');
+
+    // THE ABSOLUTE CASE IS UNCHANGED, measured rather than assumed: the fix
+    // reads the event, so an absolute row must still open on Subs.
+    const absEdit = await editAndSave(mkPromo('absolute', 8000));
+    console.log('  D5-03 abs edit   %-pressed ' + absEdit.pctPressed
+      + '  subs-pressed ' + absEdit.subsPressed
+      + '  written ' + JSON.stringify(absEdit.written.map((w: any) =>
+        [w.patch.amountType, w.patch.subscriberVolume])));
+    check('D5-03: an ABSOLUTE promotion still opens on Subs',
+      absEdit.subsPressed === true && absEdit.pctPressed === false,
+      'pct ' + absEdit.pctPressed + ' subs ' + absEdit.subsPressed);
+    check('D5-03: and saves back as absolute, magnitude unchanged',
+      absEdit.written.length === 1
+        && absEdit.written[0].patch.amountType === 'absolute'
+        && absEdit.written[0].patch.subscriberVolume === 8000,
+      JSON.stringify(absEdit.written.map((w: any) =>
+        [w.patch.amountType, w.patch.subscriberVolume])));
+  }
+
+  // ── 3i. D5-04: A PROMOTION EDITED FROM THE VOLUME TABLE ─────────
+  //
+  // MEASUREMENT ONLY — no fix, by the brief. Jon's screenshot shows a
+  // promotion listed in the Volume card's events table with a pencil that
+  // opens the VOLUME form (churn toggle and all).
+  //
+  // From source: the Volume table maps `marketEvents` with NO isPromotion
+  // filter, while the Promotion table filters `e.isPromotion` - so a
+  // promotion is in BOTH. The Volume CAMPAIGN grouping IS filtered
+  // (`groupByCampaign(marketEvents.filter(e => !e.isPromotion))`), so the
+  // asymmetry is between the campaign path and the row path, not an oversight
+  // about promotions in general.
+  //
+  // What this measures is the one thing source-reading cannot settle: what a
+  // no-change save from that form actually writes.
+  {
+    const PROMO = buildPromoEvents({
+      target: 'Retention', amountType: 'percentage',
+      bandArpuOverride: { High: 50 },
+      draft: {
+        date: MONTHS[0], segment: EVENT_ABS.segment, product: EVENT_ABS.product,
+        productL2: EVENT_ABS.productL2, channel: EVENT_ABS.channel,
+        channelL2: EVENT_ABS.channelL2, tariffL1: EVENT_ABS.tariffL1,
+        tariffL2: EVENT_ABS.tariffL2,
+        subscriberVolume: 10, campaignName: '', comment: '', contractLength: 12,
+      } as any,
+      mixEnabled: true, mixAxis: 'value',
+      draftMix: { High: 60, Low: 40 }, mixLocked: ['High'],
+      tierData: [{ tier: 'High', baseArpu: 30 }, { tier: 'Low', baseArpu: 15 }],
+      pricingEnabled: false, pricingMode: 'percentage', pricingAmount: 0,
+      cohortAvgArpu: 20,
+      spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [],
+      startSequence: 1,
+    } as any)[0] as any;
+
+    /** The 23 fields the engine reads off a promotion row. */
+    const readSet = (e: any) => ({
+      scenario: e.scenario, date: e.date, amountType: e.amountType,
+      percentageBasis: e.percentageBasis, subscriberVolume: e.subscriberVolume,
+      revenue: e.revenue, arpu: e.arpu, arpuOverride: e.arpuOverride,
+      isPromotion: e.isPromotion, promoRebanded: e.promoRebanded,
+      promoMixAxis: e.promoMixAxis, promoMix: e.promoMix,
+      promoBandArpuOverride: e.promoBandArpuOverride, mixLocked: e.mixLocked,
+      promoPricingMode: e.promoPricingMode, promoPricingAmount: e.promoPricingAmount,
+      promoDilutionCurrentPct: e.promoDilutionCurrentPct,
+      promoDilutionTargetPct: e.promoDilutionTargetPct,
+      contractLength: e.contractLength, retentionLinked: e.retentionLinked,
+      segment: e.segment, product: e.product, productL2: e.productL2,
+    });
+
+    let committed: any[] | null = null;
+    const host = document.getElementById('root')!;
+    host.replaceChildren();
+    const container = document.createElement('div');
+    host.appendChild(container);
+    const root = createRoot(container);
+    const Harness = () => {
+      const [newEvent, setNewEvent] = (React as any).useState({});
+      const props = propsFor([PROMO]);
+      props.setMarketEvents = (next: any) => { committed = next; };
+      return React.createElement(M, { ...props, newEvent, setNewEvent });
+    };
+    await (act as any)(async () => {
+      root.render(React.createElement(ForecastProvider as any, {
+        baseForecast: resolveForecast(keyA).forecast, setBaseForecast: noop,
+        adjustedForecast: null, setAdjustedForecast: noop,
+        forecastStore: store, setForecastStore: noop,
+        resolveForecast, canResolve: () => true,
+        hasLegacyBaseline: true, updatedAt: new Date().toISOString(),
+        bulkRuns: [], setBulkRuns: noop,
+      }, React.createElement(Harness)));
+    });
+    const q = (id: string) => container.querySelector('[data-testid="' + id + '"]') as any;
+    const click = async (el: any) => { await (act as any)(async () => {
+      el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); }); };
+
+    // (c) THE TWO TABLES' ROW SETS, counted at the same moment.
+    const volumeRows = container.querySelectorAll('[data-testid="edit-event"]').length;
+    await click(q('whatif-tab-promotion'));
+    const promoRows = container.querySelectorAll('[data-testid^="promo-row-edit-"]').length;
+    console.log('');
+    console.log('  D5-04 row sets   Volume table ' + volumeRows
+      + '  Promotion table ' + promoRows);
+    check('D5-04: the promotion is listed in the PROMOTION table', promoRows === 1,
+      String(promoRows));
+    check('D5-04: and ALSO in the VOLUME table - the row sets overlap',
+      volumeRows === 1, String(volumeRows)
+      + ' — 0 would mean the Volume table filters promotions out');
+
+    // (b) EDIT FROM THE VOLUME FORM, CHANGE NOTHING, SAVE.
+    await click(q('whatif-tab-volume'));
+    const pencil = q('edit-event');
+    if (pencil) await click(pencil);
+    const saveBtn = Array.from(container.querySelectorAll('button'))
+      .find((b: any) => /save changes/i.test(String(b.textContent))) as any;
+    if (saveBtn) await click(saveBtn);
+    // The Volume edit previews through EventChangeConfirmModal before it
+    // commits, and that modal's confirm button reads exactly "Save" - not
+    // "Confirm". Matched on the EXACT trimmed label, because "Save Changes"
+    // contains "Save" and a substring match would re-click the form button.
+    const confirmBtn = Array.from(container.querySelectorAll('button'))
+      .find((b: any) => String(b.textContent).trim() === 'Save') as any;
+    if (confirmBtn) await click(confirmBtn);
+    await (act as any)(async () => { root.unmount(); });
+
+    const saved = committed ? (committed as any[])[0] : null;
+    const before = JSON.stringify(readSet(PROMO));
+    const after = saved ? JSON.stringify(readSet(saved)) : null;
+    console.log('  D5-04 committed  ' + (saved ? 'yes' : 'NO - the save did not reach setMarketEvents'));
+    if (saved) {
+      const keys = Object.keys(readSet(PROMO));
+      const diffs = keys.filter(k =>
+        JSON.stringify((readSet(PROMO) as any)[k]) !== JSON.stringify((readSet(saved) as any)[k]));
+      console.log('  D5-04 changed fields: ' + (diffs.length ? diffs.join(', ') : 'NONE'));
+      for (const k of diffs) {
+        console.log('      ' + k + ': ' + JSON.stringify((readSet(PROMO) as any)[k])
+          + ' -> ' + JSON.stringify((readSet(saved) as any)[k]));
+      }
+    }
+    // MEASUREMENT, NOT A VERDICT. The brief says do not build, so this records
+    // what happened rather than asserting what should. The one thing asserted
+    // is that the drive REACHED the save - a measurement of a click that never
+    // landed would report "nothing changed" and mean nothing.
+    check('D5-04: the Volume-form save actually committed (else this measures nothing)',
+      saved !== null, 'no commit reached setMarketEvents');
+    if (saved) {
+      check('D5-04 MEASURED: the promo arms survive a no-change Volume save',
+        readSet(saved).promoMix !== undefined
+          && readSet(saved).promoBandArpuOverride !== undefined
+          && readSet(saved).mixLocked !== undefined
+          && readSet(saved).promoRebanded === true,
+        'arms: ' + JSON.stringify([saved.promoMix, saved.promoBandArpuOverride,
+          saved.mixLocked, saved.promoRebanded]));
+      // PINNED AS MEASURED, NOT ENDORSED. The brief is measure-only, and a
+      // permanently red check is not a finding, it is a broken gate. So this
+      // records TODAY'S behaviour exactly: two fields move, and one of them
+      // matters.
+      //
+      //   arpu             36 -> 0     the promotion's baked mix blend, GONE
+      //   retentionLinked  absent -> true   harmless normalisation
+      //
+      // The structured arms all survive, because the Volume save is a PATCH
+      // spread over the original row. What it does not spread is the RATE:
+      // `draftEventRate` returns arpu 0 for a percentage event, which is right
+      // for a plain percentage volume event that states no rate and wrong for
+      // a promotion whose rate IS the mix blend. With revenue already 0, the
+      // pool then falls back to the month's baseline and the re-banded rate is
+      // silently lost.
+      //
+      // Awaiting Jon's decision (D5-04). If the pencil is routed to the
+      // Promotion card, or promo rows are made read-only in the Volume table,
+      // or the save is taught to keep a promotion's rate, THIS CHECK MUST
+      // CHANGE - and it failing is the signal that the decision landed.
+      const moved = Object.keys(readSet(PROMO)).filter(k =>
+        JSON.stringify((readSet(PROMO) as any)[k])
+          !== JSON.stringify((readSet(saved) as any)[k]));
+      check('D5-04 MEASURED: exactly two fields move on a no-change Volume save',
+        moved.length === 2 && moved.includes('arpu') && moved.includes('retentionLinked'),
+        moved.join(', '));
+      check('D5-04 MEASURED: and the one that matters is the BAKED RATE, zeroed',
+        (readSet(PROMO) as any).arpu === 36 && (readSet(saved) as any).arpu === 0,
+        (readSet(PROMO) as any).arpu + ' -> ' + (readSet(saved) as any).arpu
+        + ' — the mix blend the promotion was priced at');
+    }
   }
 
   // ── 4. THE GHOST: in scope at the view, landing on none of it ───────────

@@ -1496,6 +1496,21 @@ const TRAPS: Trap[] = [
   // 0.006 renders 0.00, because both sides round to 20.00 on the way in.
   // The fixture is built so the two paths DISAGREE - a baseline of exactly 20
   // would let the old arithmetic land on the right answer by luck.
+  // ---------------------------------------------------------------------
+  // 158 - D5-03. The promotion edit-restore drops amountType.
+  //
+  // NOT a display fault. `handleSavePromoEdit` passes `promoAmountMode` to
+  // buildPromoEvents, so with the control left on Subs a reopened +10%
+  // promotion is REWRITTEN as ten subscribers on Save Changes - measured:
+  // the mounted write list reads [["absolute",10]] under this mutation and
+  // [["percentage",10]] without it. A hundred-fold change of meaning, silent.
+  { id: '158 the promotion edit-restore drops amountType',
+    why: 'a reopened +10% promotion saves back as ten subscribers',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      "    setPromoAmountMode(event.amountType === 'percentage' ? 'percentage' : 'absolute');" + nl,
+      '') },
+
   { id: '157 the per-scenario delta is rounded before it is subtracted',
     why: 'a true movement of 0.006 disappears entirely at a baseline of 19.996',
     file: WHATIF, spec: VIEWAPPLY,

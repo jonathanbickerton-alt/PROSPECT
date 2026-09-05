@@ -98,6 +98,13 @@ const BASELINE: Record<string, number> = {
   'scan-i18n.ts': 1,
   'step1-selection-spec.tsx': 6,
   'unscored-row-spec.tsx': 4,
+  // ADDED 2026-09-05, deliberately and after looking at each one. All four are
+  // `pctEdit.written[0].patch...` / `absEdit.written[0].patch...`, and each
+  // sits in an && chain whose FIRST term is `written.length === 1`. JavaScript
+  // short-circuits, so index zero is reached only when there is a row there.
+  // Guarded, therefore - which is a judgement this spec deliberately does not
+  // try to make for itself, so it is recorded here in prose beside the count.
+  'view-apply-mounted-spec.tsx': 4,
 };
 
 const TOTAL = Object.values(BASELINE).reduce((a, b) => a + b, 0);

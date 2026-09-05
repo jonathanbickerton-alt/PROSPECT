@@ -7100,6 +7100,59 @@ populated leaf is COMMUNICATED and applied nowhere, consistently at every view;
 and the applied-count caption counts events applied AT THE VIEW (built at
 `bd2cf63`).
 
+#### D5-04 MEASURED — a promotion edited from the Volume table (2026-09-05)
+
+**Measurement, not a decision. Jon decides; nothing was built.**
+
+**(a) Which handler the Volume table's pencil calls.** `WhatIfTab.tsx:6118` →
+`handleEditStart` (`:3558`) — the **Volume form's** handler, with no promotion
+branch. The promotion's own pencil is `handleEditPromoStart` and is reached
+only from the Promotion card's table.
+
+**(b) What a no-change save from the Volume form writes.** Driven mounted on a
+percentage Retention promotion carrying a value mix, a stated band rate and a
+lock; edited from the Volume table, nothing changed, saved and confirmed.
+
+| | result |
+|---|---|
+| `promoMix`, `promoBandArpuOverride`, `mixLocked`, `promoRebanded`, `promoPricingMode/Amount`, the dilution pair | **PRESERVED** |
+| `arpu` | **36 → 0** |
+| `retentionLinked` | absent → `true` (harmless) |
+
+The structured arms survive because the Volume save is a **patch spread over
+the original row** (`{ ...e, ...patch }`) and `patch` names 22 fields, none of
+them promo arms. What it does not spread is the **rate**: `draftEventRate`
+returns `arpu: 0` for a percentage event — correct for a plain percentage
+volume event, which states no rate, and wrong for a promotion whose rate **is**
+the mix blend. With `revenue` already 0 for a percentage, the pool then falls
+back to the month's baseline ARPU and the re-banded rate is silently lost.
+
+So the honest answer is **partially kept**: every structured field survives,
+the number they were used to compute does not.
+
+**(c) Both tables list the row.** The Volume table maps `marketEvents` with
+**no `isPromotion` filter** (`:5928`); the Promotion table filters
+`e.isPromotion` (`:7762`). Counted mounted at the same moment: **Volume 1,
+Promotion 1** — the same event. Note the asymmetry: the Volume card's
+**campaign** grouping IS filtered
+(`groupByCampaign(marketEvents.filter(e => !e.isPromotion))`, `:3672`), so the
+campaign path already treats promotions as not its own while the row path does
+not.
+
+**THE OPTIONS, for Jon — not chosen here.**
+
+1. **The Volume table's pencil routes promo-built rows to the Promotion card.**
+   Keeps one editor per event shape; the row stays visible where the user
+   expects to see all events.
+2. **Promo-built rows are read-only in the Volume table** (no pencil), matching
+   what the campaign grouping already does.
+3. **Leave it, with the arms preserved on save** — which is nearly the present
+   state, and would need the rate preserved too, since today it is zeroed.
+
+Pinned in `spec:view-apply-mounted` as **measured, not endorsed**: two fields
+move and one of them is the baked rate. Whichever option lands, that check must
+change, and its failing is the signal that the decision arrived.
+
 #### D5-02 DOES NOT REPRODUCE — the promotion is innocent, and the yield event moved it (measured 2026-09-05)
 
 **Not a decision. A measurement, recorded so the next session does not re-open
