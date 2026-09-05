@@ -7100,6 +7100,41 @@ populated leaf is COMMUNICATED and applied nowhere, consistently at every view;
 and the applied-count caption counts events applied AT THE VIEW (built at
 `bd2cf63`).
 
+#### D5-05 / D5-06 DECIDED (Jon, 2026-09-05) — the bar states its reason; the range reason is distinct
+
+**Recorded before any code. D5-05 is user-raised, from the 2031 finding that a
+percentage promotion campaign is not group-editable anywhere.**
+
+##### D5-05 — the bar STANDS, and says so
+
+**A campaign containing a percentage promotion row is NOT group-editable.** The
+existing bar in `groupByCampaign` stays: the group edit reverse-engineers a ramp
+by **summing volumes**, and a sum of per-cents is meaningless. That reason is
+unchanged and is not reopened.
+
+**What changes is that the bar must SAY so.** The campaign pill on such a
+campaign is **disabled, not hidden**, and **renders its reason** — on the
+Promotion card and on the Volume table alike. A control a user can see and
+cannot press must tell them why; the 1950 session found exactly that shape (a
+disabled span with `group?.reason` undefined) and named it a defect of its own.
+
+**The rows remain editable ONE AT A TIME**, from the Promotion card's row pencil
+and from the Volume table's routed pencil. A row edit **preserves the campaign
+name and leaves the other rows untouched**.
+
+##### D5-06 — the dilution effect line distinguishes its two refusals
+
+`promoDilutionBlockReason` already returns **two different keys** —
+`whatif_pricing_block_dilution_incomplete` and `..._range` — and the effect line
+rendered **one message for both** (measured 2031, and stated there rather than
+papered over). The line now renders the **range** reason when the predicate
+returns it and the incomplete one otherwise. **Add stays disabled for both**:
+this is about what the user is told, not about what they may do.
+
+**Absence and impossibility are different user situations** — "you have not
+finished" versus "that cannot be" — and the predicate has always known the
+difference. Only the screen did not.
+
 #### D5-04 MEASURED — a promotion edited from the Volume table (2026-09-05)
 
 **Measurement, not a decision. Jon decides; nothing was built.**
