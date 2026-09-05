@@ -1120,21 +1120,20 @@ async function main() {
         [w.patch.amountType, w.patch.subscriberVolume])));
   }
 
-  // ── 3i. D5-04: A PROMOTION EDITED FROM THE VOLUME TABLE ─────────
+  // ── 3i. D5-04: THE VOLUME PENCIL ROUTES A PROMOTION HOME ────────
   //
-  // MEASUREMENT ONLY — no fix, by the brief. Jon's screenshot shows a
-  // promotion listed in the Volume card's events table with a pencil that
-  // opens the VOLUME form (churn toggle and all).
+  // DECIDED (Jon, 2026-09-05), option 1: a promotion is edited from its
+  // source. The Volume table still LISTS promotions - a user looking for
+  // every market event finds them there - but its pencil opens the PROMOTION
+  // card's editor, because the Volume form cannot represent a promotion's
+  // arms and a no-change save from it zeroed the baked rate (1903: 36 -> 0).
   //
-  // From source: the Volume table maps `marketEvents` with NO isPromotion
-  // filter, while the Promotion table filters `e.isPromotion` - so a
-  // promotion is in BOTH. The Volume CAMPAIGN grouping IS filtered
-  // (`groupByCampaign(marketEvents.filter(e => !e.isPromotion))`), so the
-  // asymmetry is between the campaign path and the row path, not an oversight
-  // about promotions in general.
-  //
-  // What this measures is the one thing source-reading cannot settle: what a
-  // no-change save from that form actually writes.
+  // THIS BLOCK REPLACES the "measured, not endorsed" pin. That check asserted
+  // "exactly two fields move and one is the baked rate"; it went RED on the
+  // first run of this session, which is the signal the decision landed:
+  //   FAIL  D5-04: the Volume-form save actually committed
+  //         [no commit reached setMarketEvents]
+  // - red because the Volume save path is no longer the one a promotion takes.
   {
     const PROMO = buildPromoEvents({
       target: 'Retention', amountType: 'percentage',
@@ -1170,7 +1169,36 @@ async function main() {
       segment: e.segment, product: e.product, productL2: e.productL2,
     });
 
-    let committed: any[] | null = null;
+    // THE TIER LIST COMES FROM `data`, NOT FROM THE EVENT. `computeTierData`
+    // reads the actuals rows for the promotion's scope, metric and month, and
+    // the shared fixture carries only INFLOW rows at productL2 'All' - so a
+    // Retention promotion found NO tiers, the mix rendered with no members,
+    // and Save Changes was correctly DISABLED. Measured, not guessed: the
+    // first run of this block reported `via Promotion 0` and a missing mix
+    // row, which is the card refusing to save a mix it cannot populate.
+    //
+    // So this mount gets Retention rows carrying real value tiers.
+    // AND AN ARPU COLUMN. `computeTierData` returns [] unless a revenue OR an
+    // arpu column is named (its first line), and the shared props pass '' for
+    // both - so no fixture mounted through them can produce tiers at all.
+    // That is why the first run found none: not the rows, the columns.
+    const ARPU_COL = 'Arpu';
+    const PROMO_DATA = [
+      ...data,
+      ...['High', 'Low'].map(tier => ({
+        [C.date]: MONTHS[0], [C.seg]: 'Corporate', [C.prod]: 'Mobile Voice',
+        [C.prodL2]: tier, [C.chan]: 'All', [C.chanL2]: 'All',
+        [C.metric]: 'Retention', [C.val]: tier === 'High' ? 600 : 400,
+        [ARPU_COL]: tier === 'High' ? 30 : 15,
+      })),
+    ];
+
+    // BOTH WRITERS ARE CAPTURED, and that is the discriminator. The Volume
+    // form commits through setMarketEvents (via its confirm modal); the
+    // Promotion editor commits through updateMarketEvent. Which one fires
+    // says which editor took the row, without needing to spy on a handler.
+    const viaVolume: any[] = [];
+    const viaPromo: any[] = [];
     const host = document.getElementById('root')!;
     host.replaceChildren();
     const container = document.createElement('div');
@@ -1178,8 +1206,10 @@ async function main() {
     const root = createRoot(container);
     const Harness = () => {
       const [newEvent, setNewEvent] = (React as any).useState({});
-      const props = propsFor([PROMO]);
-      props.setMarketEvents = (next: any) => { committed = next; };
+      const props = propsFor([PROMO], PROMO_DATA);
+      props.wiArpuCol = ARPU_COL;
+      props.setMarketEvents = (next: any) => { viaVolume.push(next); };
+      props.updateMarketEvent = (id: string, patch: any) => { viaPromo.push({ id, patch }); };
       return React.createElement(M, { ...props, newEvent, setNewEvent });
     };
     await (act as any)(async () => {
@@ -1195,94 +1225,87 @@ async function main() {
     const q = (id: string) => container.querySelector('[data-testid="' + id + '"]') as any;
     const click = async (el: any) => { await (act as any)(async () => {
       el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); }); };
+    const tabActive = (tab: string) => {
+      const el = q('whatif-tab-' + tab);
+      return el ? String(el.className).includes('bg-white') : null;
+    };
 
-    // (c) THE TWO TABLES' ROW SETS, counted at the same moment.
+    // (c) THE ROW SETS STILL OVERLAP - option 1 changes where the pencil goes,
+    // not what the table lists. A user must still find the promotion here.
     const volumeRows = container.querySelectorAll('[data-testid="edit-event"]').length;
     await click(q('whatif-tab-promotion'));
     const promoRows = container.querySelectorAll('[data-testid^="promo-row-edit-"]').length;
+    await click(q('whatif-tab-volume'));
     console.log('');
     console.log('  D5-04 row sets   Volume table ' + volumeRows
       + '  Promotion table ' + promoRows);
-    check('D5-04: the promotion is listed in the PROMOTION table', promoRows === 1,
-      String(promoRows));
-    check('D5-04: and ALSO in the VOLUME table - the row sets overlap',
+    check('D5-04: the promotion is STILL listed in the Volume table',
       volumeRows === 1, String(volumeRows)
-      + ' — 0 would mean the Volume table filters promotions out');
+      + ' — option 1 routes the pencil, it does not hide the row');
+    check('D5-04: and in the Promotion table', promoRows === 1, String(promoRows));
 
-    // (b) EDIT FROM THE VOLUME FORM, CHANGE NOTHING, SAVE.
-    await click(q('whatif-tab-volume'));
-    const pencil = q('edit-event');
-    if (pencil) await click(pencil);
+    // ── THE ROUTE ────────────────────────────────────────────────────
+    check('D5-04: the Volume tab is active before the click',
+      tabActive('volume') === true, 'the drive must start where the user is');
+    await click(q('edit-event'));
+
+    console.log('  D5-04 after pencil   promo tab active ' + tabActive('promotion')
+      + '  volume tab active ' + tabActive('volume')
+      + '  %-pressed ' + (q('promo-amount-pct')
+        ? String(q('promo-amount-pct').className).includes('bg-[#e60000]') : null));
+
+    check('D5-04: the pencil SWITCHES to the Promotion tab',
+      tabActive('promotion') === true && tabActive('volume') === false,
+      'promo ' + tabActive('promotion') + ' volume ' + tabActive('volume')
+      + ' — seeding the draft behind the Volume card is an invisible edit');
+    check('D5-04: the promotion editor restored the % unit',
+      q('promo-amount-pct')
+        && String(q('promo-amount-pct').className).includes('bg-[#e60000]'),
+      'the D5-03 restore, reached through the Volume pencil');
+    console.log('  D5-04 mix rows restored: ' + Array.from(
+      container.querySelectorAll('[data-testid^="promo-mix-pct-"]'))
+      .map((e2: any) => String(e2.getAttribute('data-testid')).replace('promo-mix-pct-', ''))
+      .join(', '));
+    check('D5-04: and restored the mix and the lock',
+      !!q('promo-mix-pct-High') && !!q('promo-mix-pct-Low'),
+      'the arms the Volume form cannot represent');
+
+    // ── SAVE, CHANGING NOTHING ───────────────────────────────────────
     const saveBtn = Array.from(container.querySelectorAll('button'))
       .find((b: any) => /save changes/i.test(String(b.textContent))) as any;
+    check('D5-04: the promotion editor is open, with Save Changes',
+      !!saveBtn, 'no Save Changes button — the edit never opened and the'
+      + ' deep-equal below would compare nothing');
     if (saveBtn) await click(saveBtn);
-    // The Volume edit previews through EventChangeConfirmModal before it
-    // commits, and that modal's confirm button reads exactly "Save" - not
-    // "Confirm". Matched on the EXACT trimmed label, because "Save Changes"
-    // contains "Save" and a substring match would re-click the form button.
-    const confirmBtn = Array.from(container.querySelectorAll('button'))
-      .find((b: any) => String(b.textContent).trim() === 'Save') as any;
-    if (confirmBtn) await click(confirmBtn);
     await (act as any)(async () => { root.unmount(); });
 
-    const saved = committed ? (committed as any[])[0] : null;
-    const before = JSON.stringify(readSet(PROMO));
-    const after = saved ? JSON.stringify(readSet(saved)) : null;
-    console.log('  D5-04 committed  ' + (saved ? 'yes' : 'NO - the save did not reach setMarketEvents'));
-    if (saved) {
-      const keys = Object.keys(readSet(PROMO));
-      const diffs = keys.filter(k =>
-        JSON.stringify((readSet(PROMO) as any)[k]) !== JSON.stringify((readSet(saved) as any)[k]));
-      console.log('  D5-04 changed fields: ' + (diffs.length ? diffs.join(', ') : 'NONE'));
-      for (const k of diffs) {
-        console.log('      ' + k + ': ' + JSON.stringify((readSet(PROMO) as any)[k])
-          + ' -> ' + JSON.stringify((readSet(saved) as any)[k]));
+    console.log('  D5-04 commits    via Volume ' + viaVolume.length
+      + '  via Promotion ' + viaPromo.length);
+    check('D5-04: the VOLUME form never committed this row',
+      viaVolume.length === 0, viaVolume.length
+      + ' — setMarketEvents firing means handleEditStart took the promotion');
+    check('D5-04: the PROMOTION editor did',
+      viaPromo.length === 1, String(viaPromo.length));
+
+    if (viaPromo.length === 1) {
+      const saved = { ...viaPromo[0].patch };
+      const before = readSet(PROMO);
+      const after = readSet(saved);
+      const moved = Object.keys(before).filter(k =>
+        JSON.stringify((before as any)[k]) !== JSON.stringify((after as any)[k]));
+      console.log('  D5-04 changed fields: ' + (moved.length ? moved.join(', ') : 'NONE'));
+      for (const k of moved) {
+        console.log('      ' + k + ': ' + JSON.stringify((before as any)[k])
+          + ' -> ' + JSON.stringify((after as any)[k]));
       }
-    }
-    // MEASUREMENT, NOT A VERDICT. The brief says do not build, so this records
-    // what happened rather than asserting what should. The one thing asserted
-    // is that the drive REACHED the save - a measurement of a click that never
-    // landed would report "nothing changed" and mean nothing.
-    check('D5-04: the Volume-form save actually committed (else this measures nothing)',
-      saved !== null, 'no commit reached setMarketEvents');
-    if (saved) {
-      check('D5-04 MEASURED: the promo arms survive a no-change Volume save',
-        readSet(saved).promoMix !== undefined
-          && readSet(saved).promoBandArpuOverride !== undefined
-          && readSet(saved).mixLocked !== undefined
-          && readSet(saved).promoRebanded === true,
-        'arms: ' + JSON.stringify([saved.promoMix, saved.promoBandArpuOverride,
-          saved.mixLocked, saved.promoRebanded]));
-      // PINNED AS MEASURED, NOT ENDORSED. The brief is measure-only, and a
-      // permanently red check is not a finding, it is a broken gate. So this
-      // records TODAY'S behaviour exactly: two fields move, and one of them
-      // matters.
-      //
-      //   arpu             36 -> 0     the promotion's baked mix blend, GONE
-      //   retentionLinked  absent -> true   harmless normalisation
-      //
-      // The structured arms all survive, because the Volume save is a PATCH
-      // spread over the original row. What it does not spread is the RATE:
-      // `draftEventRate` returns arpu 0 for a percentage event, which is right
-      // for a plain percentage volume event that states no rate and wrong for
-      // a promotion whose rate IS the mix blend. With revenue already 0, the
-      // pool then falls back to the month's baseline and the re-banded rate is
-      // silently lost.
-      //
-      // Awaiting Jon's decision (D5-04). If the pencil is routed to the
-      // Promotion card, or promo rows are made read-only in the Volume table,
-      // or the save is taught to keep a promotion's rate, THIS CHECK MUST
-      // CHANGE - and it failing is the signal that the decision landed.
-      const moved = Object.keys(readSet(PROMO)).filter(k =>
-        JSON.stringify((readSet(PROMO) as any)[k])
-          !== JSON.stringify((readSet(saved) as any)[k]));
-      check('D5-04 MEASURED: exactly two fields move on a no-change Volume save',
-        moved.length === 2 && moved.includes('arpu') && moved.includes('retentionLinked'),
-        moved.join(', '));
-      check('D5-04 MEASURED: and the one that matters is the BAKED RATE, zeroed',
-        (readSet(PROMO) as any).arpu === 36 && (readSet(saved) as any).arpu === 0,
-        (readSet(PROMO) as any).arpu + ' -> ' + (readSet(saved) as any).arpu
-        + ' — the mix blend the promotion was priced at');
+      // THE CLAIM THE DECISION MAKES. A no-change edit-and-save must leave the
+      // engine's whole read-set untouched - arpu INCLUDED, which is the field
+      // the old route destroyed.
+      check('D5-04: a no-change edit-and-save leaves the 23-field read-set IDENTICAL',
+        moved.length === 0, moved.join(', ') || 'none');
+      check('D5-04: the BAKED RATE survives - the field the old route zeroed',
+        after.arpu === before.arpu && after.arpu === 36,
+        before.arpu + ' -> ' + after.arpu);
     }
   }
 

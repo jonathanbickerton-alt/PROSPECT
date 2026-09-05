@@ -4253,6 +4253,46 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setEditingPromoCampaign(campaign);
   }, [promoCampaignGroups, handleEditPromoStart]);
 
+  /**
+   * D5-04, OPTION 1 (Jon, 2026-09-05): A PROMOTION IS EDITED FROM ITS SOURCE.
+   *
+   * The Volume table lists every market event, promotions included, and its
+   * pencil used to open the VOLUME form for them. That form cannot represent a
+   * promotion's arms - no mix, no per-band rate, no lock set, no pricing arm -
+   * and a no-change save from it ZEROED THE BAKED RATE (measured 1903: arpu
+   * 36 -> 0, because `draftEventRate` returns 0 for a percentage and the promo
+   * row's rate IS its mix blend). An editor that cannot show what it is
+   * editing drops it silently, and it did.
+   *
+   * ONE DECISION POINT, not a branch at each pencil. Both Volume pencils route
+   * through here, so "which editor owns a promotion" is answered in one place
+   * and a third pencil cannot answer it differently.
+   *
+   * THE TAB IS SWITCHED FIRST. Seeding the promotion draft while the Volume
+   * card is on screen would leave the user looking at an unchanged form with
+   * an invisible edit in progress - the modal-lifecycle failure in a new
+   * place. The editor must be visible for the banner to mean anything.
+   */
+  const editEventFromVolumeTable = useCallback((event: MarketEvent) => {
+    if (event.isPromotion) {
+      setActiveTab('promotion');
+      handleEditPromoStart(event);
+      return;
+    }
+    handleEditStart(event);
+  }, [handleEditPromoStart, handleEditStart]);
+
+  /** The campaign pill's route, by the same rule. See the note at its render
+   *  site for why a promotion campaign had no pencil to route until now. */
+  const editCampaignFromVolumeTable = useCallback((campaign: string, isPromo: boolean) => {
+    if (isPromo) {
+      setActiveTab('promotion');
+      handleEditPromoCampaignStart(campaign);
+      return;
+    }
+    handleEditCampaignStart(campaign);
+  }, [handleEditPromoCampaignStart, handleEditCampaignStart]);
+
   const handleSavePromoEdit = useCallback(() => {
     if (!editingPromoId || !newPromo.date || !newPromo.subscriberVolume) return;
     const events = buildPromoEvents({
@@ -6014,7 +6054,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       const isEditing = editingEventId === event.id
                         || (editingCampaign !== null && event.campaignName === editingCampaign);
                       const campaignLabel = event.campaignName || '';
-                      const group = campaignLabel ? campaignGroups.get(campaignLabel) : undefined;
+                      // D5-04. `campaignGroups` is built from NON-promotion rows
+                      // (`groupByCampaign(marketEvents.filter(e => !e.isPromotion))`),
+                      // so a promotion row's lookup returned undefined and its
+                      // campaign pill rendered as a DISABLED span with no stated
+                      // reason - a control the user can see, cannot press, and is
+                      // told nothing about. Under option 1 it is the promotion
+                      // card's group that owns it, so that is what is read.
+                      const isPromoRow = !!event.isPromotion;
+                      const group = campaignLabel
+                        ? (isPromoRow ? promoCampaignGroups.get(campaignLabel)
+                                      : campaignGroups.get(campaignLabel))
+                        : undefined;
 
                       return (
                         <React.Fragment key={event.id}>
@@ -6043,7 +6094,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                   <button
                                     type="button"
                                     data-testid="edit-campaign"
-                                    onClick={(e) => { e.stopPropagation(); handleEditCampaignStart(campaignLabel); }}
+                                    onClick={(e) => { e.stopPropagation(); editCampaignFromVolumeTable(campaignLabel, isPromoRow); }}
                                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full hover:bg-[#e60000]/15 transition-colors cursor-pointer"
                                     title={t('whatif_edit_campaign_event', { p0: campaignLabel, p1: group.rows.length, p2: group.rows.length === 1 ? '' : 's' })}
                                   >
@@ -6115,7 +6166,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               <button
                                 type="button"
                                 data-testid="edit-event"
-                                onClick={(e) => { e.stopPropagation(); handleEditStart(event); }}
+                                onClick={(e) => { e.stopPropagation(); editEventFromVolumeTable(event); }}
                                 className={`p-1 rounded transition-colors ${
                                   isEditing
                                     ? 'text-amber-600 bg-amber-100'

@@ -104,7 +104,9 @@ const BASELINE: Record<string, number> = {
   // short-circuits, so index zero is reached only when there is a row there.
   // Guarded, therefore - which is a judgement this spec deliberately does not
   // try to make for itself, so it is recorded here in prose beside the count.
-  'view-apply-mounted-spec.tsx': 4,
+  // 5 since 2026-09-05 (D5-04): the fifth is `viaPromo[0].patch`, inside an
+  // `if (viaPromo.length === 1)` block. Guarded, like the other four.
+  'view-apply-mounted-spec.tsx': 5,
 };
 
 const TOTAL = Object.values(BASELINE).reduce((a, b) => a + b, 0);

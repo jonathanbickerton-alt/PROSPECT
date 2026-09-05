@@ -1504,6 +1504,35 @@ const TRAPS: Trap[] = [
   // promotion is REWRITTEN as ten subscribers on Save Changes - measured:
   // the mounted write list reads [["absolute",10]] under this mutation and
   // [["percentage",10]] without it. A hundred-fold change of meaning, silent.
+  // ---------------------------------------------------------------------
+  // 159 - D5-04, option 1. The Volume table's pencil goes back to opening the
+  // VOLUME form for a promotion.
+  //
+  // That form cannot represent a promotion's arms, and a no-change save from
+  // it ZEROED the baked rate (1903: arpu 36 -> 0). The trap fails EARLIER than
+  // that arithmetic, and better: the promotion never reaches the promotion
+  // editor at all, so the tab does not switch, the % unit is not restored, the
+  // mix rows are absent, and no write arrives through updateMarketEvent.
+  { id: '159 the Volume pencil opens the Volume form for a promotion',
+    why: 'the editor cannot show a promotion\'s arms and its save zeroes the baked rate',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      'onClick={(e) => { e.stopPropagation(); editEventFromVolumeTable(event); }}',
+      'onClick={(e) => { e.stopPropagation(); handleEditStart(event); }}') },
+
+  // 160 - the same outcome from inside the route: the isPromotion test is the
+  // whole of the decision, so removing it sends every row down the Volume
+  // path while the call site still looks correct. Trapped separately from 159
+  // because a reader fixing one would not necessarily look at the other.
+  { id: '160 the route stops asking whether the row is a promotion',
+    why: 'every row takes the Volume path while the pencil still calls the router',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      `  const editEventFromVolumeTable = useCallback((event: MarketEvent) => {
+    if (event.isPromotion) {`,
+      `  const editEventFromVolumeTable = useCallback((event: MarketEvent) => {
+    if (false) {`) },
+
   { id: '158 the promotion edit-restore drops amountType',
     why: 'a reopened +10% promotion saves back as ten subscribers',
     file: WHATIF, spec: VIEWAPPLY,
