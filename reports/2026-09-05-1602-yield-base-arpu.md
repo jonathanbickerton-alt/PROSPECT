@@ -1,6 +1,30 @@
 # The yield pool's Base ARPU contribution, by hand; KPI precision; a suite runner
 
-__ADVISOR__
+Generated: 2026-09-05 16:39 +0100 (UTC 2026-09-05 15:39)
+Certifies: e5f1e79
+Repo: committed e5f1e79, pushed (origin in sync)
+BASE: 6802cba - diff EMPTY.
+ITEM 1: THE YIELD POOL IS CORRECT. Formula DERIVED from source: delta = SUM
+  delivered x (rate - baseArpu) / stock. Hand vs rendered: T+1 leaf -0.088462
+  / -0.09, T+2 leaf -0.214953 / -0.21, T+2 ALL -0.418182 / -0.42.
+THE FIXTURE NEEDED VARYING INFLOW (200/300/400): the pool is built from the
+  PREVIOUS month, so on constant inflow the trap is unobservable - the vacuous
+  shape that made trap (b) plant green in 1526. The save's -0.27 is that
+  arithmetic on its numbers; THE SAVE WAS NOT RE-RUN - an inference, said so.
+ITEM 2: the KPI now reads the UNROUNDED pair the 2dp columns were rounded
+  from; columns untouched. At a baseline of 19.996 a true 0.006 reads 0.01
+  where the old read 0.00; a true 0.004 reads 0.00 under both. At exactly 20
+  the old path lands right BY LUCK.
+A CHECK WAS EDITED: applied-count pins the memo's dep array as a literal, and
+  the memo now READS baseForecast (D3-04). RE-AIMED, same strength. THE SUITE
+  RUNNER FOUND IT - view-apply-mounted was green.
+ITEM 3: npm run suite COMMITTED - serial, captures to temp, THREE states
+  (CRASHED = no report line = said nothing). 59/59 green, the full-suite
+  figure from now on. spec:survival baselines 91 first-row dereferences over
+  24 files, exact both ways - NOT the 1327 report's hand-counted 87.
+TRAPS 156 red ('BASE ARPU at T+1 [-0.13 vs hand -0.088462]', 3 FAILs), 157 red
+  ('0.006 reads 0.01, NOT 0.00 [0]'). COUNTS: traps 151->153; view-apply
+  100->108; anchors 164/164. GATE: 153/153; 59/59 suite; tsc+build clean.
 
 ## Base check
 
