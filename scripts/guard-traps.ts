@@ -1505,6 +1505,54 @@ const TRAPS: Trap[] = [
   // the mounted write list reads [["absolute",10]] under this mutation and
   // [["percentage",10]] without it. A hundred-fold change of meaning, silent.
   // ---------------------------------------------------------------------
+  // 163 - D5-05. The percentage campaign's bar stops SAYING why.
+  //
+  // The bar itself stands (a sum of per-cents is not a ramp). What this
+  // guards is the sentence beside it: before D5-05 the reason lived in a
+  // `title` attribute ONLY - a hover tooltip, invisible on touch and unread
+  // unless hovered - so a user met a campaign they could see, could not open,
+  // and was told nothing about. The trap restores exactly that state, and it
+  // is deliberately planted on the VOLUME table's copy: the two cards render
+  // this pill identically, so a fix applied to one and not the other is the
+  // shape this catches.
+  { id: '163 the percentage campaign bar stops rendering its reason',
+    why: 'a control the user can see and cannot press, with no sentence beside it',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      `                                    {group?.reason && (
+                                      <span
+                                        data-testid={\`campaign-decline-reason-\${event.id}\`}`,
+      `                                    {false && (
+                                      <span
+                                        data-testid={\`campaign-decline-reason-\${event.id}\`}`) },
+
+  // 164 - D5-05's other half: a single-row edit inside a barred campaign
+  // writes the WRONG row. The rows of a percentage campaign are editable one
+  // at a time, which is the whole of what the bar leaves open; an edit that
+  // lands on a sibling would silently rewrite a month the user did not open,
+  // and the campaign would still look intact.
+  { id: '164 a promotion row edit writes a sibling row',
+    why: 'the edit lands on a month the user never opened, and nothing looks wrong',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      '    updateMarketEvent(editingPromoId, { ...events[0], id: editingPromoId });',
+      '    updateMarketEvent(marketEvents[0].id, { ...events[0], id: marketEvents[0].id });') },
+
+  // 165 - D5-06. The dilution effect line collapses its two refusals back into
+  // one message. Absence and impossibility are different user situations -
+  // "you have not finished" versus "that cannot be" - and the block predicate
+  // has always returned different keys for them. Only the screen did not, so a
+  // user who typed 100 was told to enter figures they had already entered.
+  { id: '165 the dilution effect line stops distinguishing its two refusals',
+    why: 'a user who typed an impossible figure is told to enter the figures again',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      `                                    {promoDilutionBlockReason
+                                      ? t(promoDilutionBlockReason)
+                                      : t('whatif_dilution_awaiting')}`,
+      "                                    {t('whatif_dilution_awaiting')}") },
+
+  // ---------------------------------------------------------------------
   // 161 - the dilution control stops writing the TARGET figure.
   //
   // 2138 pinned the arithmetic through `buildPromoEvents` and said in its own

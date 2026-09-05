@@ -1406,9 +1406,11 @@ async function main() {
       + '"  add disabled ' + addDisabledIncomplete);
     check('dilution gating: an INCOMPLETE pair disables Add',
       addDisabledIncomplete === true, String(addDisabledIncomplete));
-    check('dilution gating: and names the reason on screen',
-      awaitingText === i18n.t('whatif_dilution_awaiting'),
-      '"' + awaitingText + '" vs "' + i18n.t('whatif_dilution_awaiting') + '"');
+    // D5-06: the INCOMPLETE reason, from the same predicate the button reads.
+    check('dilution gating: and names the INCOMPLETE reason on screen',
+      awaitingText === i18n.t('whatif_pricing_block_dilution_incomplete'),
+      '"' + awaitingText + '" vs "'
+      + i18n.t('whatif_pricing_block_dilution_incomplete') + '"');
 
     // ── GATING, BRANCH 2: OUT OF RANGE ──────────────────────────────
     // A current dilution of 100 makes the retained-revenue ratio divide by
@@ -1427,10 +1429,37 @@ async function main() {
     check('dilution gating: an OUT-OF-RANGE pair also disables Add',
       addDisabledRange === true, String(addDisabledRange)
       + ' — dilutionAmountPct returns null, and null is not zero');
-    check('dilution gating: the range branch is reached, not the incomplete one',
+    // D5-06 (Jon, 2026-09-05). Both pairs make `dilutionAmountPct` return null,
+    // so the effect line CANNOT tell them apart from the figure alone - only
+    // the block predicate can, and until now the line did not ask it.
+    check('dilution gating: both pairs are indistinguishable by the figure alone',
       (fc.dilutionAmountPct(100, 20) === null)
         && (fc.dilutionAmountPct(25, undefined) === null),
-      'both return null, so only the block predicate can tell them apart');
+      'both null — only the block predicate separates them');
+    check('D5-06: the OUT-OF-RANGE pair renders its OWN reason, not the incomplete one',
+      rangeText === i18n.t('whatif_pricing_block_dilution_range'),
+      '"' + rangeText + '" vs "'
+      + i18n.t('whatif_pricing_block_dilution_range') + '"');
+    check('D5-06: and the two messages are actually DIFFERENT',
+      i18n.t('whatif_pricing_block_dilution_range')
+        !== i18n.t('whatif_pricing_block_dilution_incomplete'),
+      'one message for both branches is the state this replaced');
+
+    // IN GERMAN TOO. The core users work in German and Italian, so a check
+    // that only ever reads `en` cannot see a key that resolves to its own name
+    // in another locale.
+    const enRange = i18n.t('whatif_pricing_block_dilution_range');
+    await (i18n as any).changeLanguage('de');
+    const deRange = i18n.t('whatif_pricing_block_dilution_range');
+    const deIncomplete = i18n.t('whatif_pricing_block_dilution_incomplete');
+    await (i18n as any).changeLanguage('en');
+    console.log('  D5-06 de range "' + deRange + '"');
+    check('D5-06: the range reason resolves in de, and is not the en string',
+      typeof deRange === 'string' && deRange.length > 0
+        && deRange !== 'whatif_pricing_block_dilution_range' && deRange !== enRange,
+      '"' + deRange + '"');
+    check('D5-06: and de keeps the two branches distinct',
+      deRange !== deIncomplete, '"' + deRange + '" vs "' + deIncomplete + '"');
 
     // ── THE EFFECT LINE, AGAINST THE SHARED FUNCTION ────────────────
     await typeInto(q('promo-dilution-current'), '25');
@@ -1645,6 +1674,185 @@ async function main() {
       console.log('  campaign changed: ' + (moved.length ? moved.join(' | ') : 'NONE'));
       check('campaign: EVERY row\'s 23-field read-set is identical after a no-change save',
         moved.length === 0, moved.join(' | ') || 'none');
+    }
+  }
+
+  // ── 3l. D5-05: A PERCENTAGE CAMPAIGN'S BAR, AND ITS ROWS ────────
+  //
+  // DECIDED (Jon, 2026-09-05). The bar stands - the group edit sums volumes to
+  // reverse-engineer a ramp, and a sum of per-cents is meaningless - but it
+  // must SAY so, and the rows must stay editable one at a time.
+  //
+  // MEASURED FIRST (Item 1): both pills are the same disabled <span> carrying
+  // `whatif_campaign_decline_percentage` in a `title` attribute ONLY. That is
+  // a hover tooltip: invisible on touch, unread by a screen reader that is not
+  // hovering, and absent from the rendered text. The key exists in all six
+  // locales already; what was missing is that anyone can SEE it.
+  {
+    const CAMPAIGN = 'Spring pct';
+    // A RAMP, so the two rows carry DIFFERENT magnitudes. Equal rows would
+    // make "row 1 untouched" and "row 2 rewritten" indistinguishable.
+    const ROWS = buildPromoEvents({
+      target: 'Inflow', amountType: 'percentage',
+      draft: {
+        date: MONTHS[0], segment: EVENT_ABS.segment, product: EVENT_ABS.product,
+        productL2: EVENT_ABS.productL2, channel: EVENT_ABS.channel,
+        channelL2: EVENT_ABS.channelL2, tariffL1: EVENT_ABS.tariffL1,
+        tariffL2: EVENT_ABS.tariffL2,
+        subscriberVolume: 20, campaignName: CAMPAIGN, comment: '', contractLength: 12,
+      } as any,
+      mixEnabled: false, mixAxis: 'value', draftMix: {}, mixLocked: [],
+      tierData: [], pricingEnabled: false, pricingMode: 'percentage',
+      pricingAmount: 0, cohortAvgArpu: 25,
+      spreadEnabled: true, spreadMonths: 2, spreadDistType: 'custom',
+      customDist: [60, 40], startSequence: 1,
+    } as any) as any[];
+
+    const readSet = (e: any) => ({
+      id: e.id, scenario: e.scenario, date: e.date, amountType: e.amountType,
+      percentageBasis: e.percentageBasis, subscriberVolume: e.subscriberVolume,
+      revenue: e.revenue, arpu: e.arpu, arpuOverride: e.arpuOverride,
+      isPromotion: e.isPromotion, promoRebanded: e.promoRebanded,
+      promoMixAxis: e.promoMixAxis, promoMix: e.promoMix,
+      promoBandArpuOverride: e.promoBandArpuOverride, mixLocked: e.mixLocked,
+      promoPricingMode: e.promoPricingMode, promoPricingAmount: e.promoPricingAmount,
+      promoDilutionCurrentPct: e.promoDilutionCurrentPct,
+      promoDilutionTargetPct: e.promoDilutionTargetPct,
+      contractLength: e.contractLength, retentionLinked: e.retentionLinked,
+      campaignName: e.campaignName,
+      segment: e.segment, product: e.product, productL2: e.productL2,
+    });
+
+    check('pct campaign: TWO rows with DIFFERENT magnitudes',
+      ROWS.length === 2 && ROWS[0].subscriberVolume !== ROWS[1].subscriberVolume,
+      JSON.stringify(ROWS.map((r: any) => r.subscriberVolume))
+      + ' — equal rows cannot tell "untouched" from "rewritten"');
+    check('pct campaign: both rows carry the campaign name and are percentage',
+      ROWS.every((r: any) => r.campaignName === CAMPAIGN && r.amountType === 'percentage'),
+      JSON.stringify(ROWS.map((r: any) => [r.campaignName, r.amountType])));
+
+    // A CHECK IS NOT A GUARD. The assertions above REPORT that there are two
+    // rows; they do not stop the code below from reaching ROWS[0] if there are
+    // none. An empty array there would THROW, and a spec that throws prints no
+    // report line - CRASHED, not FAILED, which says nothing about the subject.
+    // Measured: spec:survival counted three unguarded first-row dereferences
+    // here on its first run after this block was written.
+    const [row1, row2] = ROWS.length === 2 ? ROWS : [null, null];
+    if (!row1 || !row2) {
+      console.log('  pct campaign: builder returned ' + ROWS.length
+        + ' rows - the drive below is skipped');
+    } else {
+
+    const written: any[] = [];
+    const host = document.getElementById('root')!;
+    host.replaceChildren();
+    const container = document.createElement('div');
+    host.appendChild(container);
+    const root = createRoot(container);
+    const Harness = () => {
+      const [newEvent, setNewEvent] = (React as any).useState({});
+      const props = propsFor(ROWS, data.map((r: any) => ({ ...r, Arpu: 25 })));
+      props.wiArpuCol = 'Arpu';
+      props.updateMarketEvent = (id: string, patch: any) => { written.push({ id, patch }); };
+      props.setMarketEvents = (next: any) => { written.push({ id: 'ALL', patch: next }); };
+      return React.createElement(M, { ...props, newEvent, setNewEvent });
+    };
+    await (act as any)(async () => {
+      root.render(React.createElement(ForecastProvider as any, {
+        baseForecast: resolveForecast(keyA).forecast, setBaseForecast: noop,
+        adjustedForecast: null, setAdjustedForecast: noop,
+        forecastStore: store, setForecastStore: noop,
+        resolveForecast, canResolve: () => true,
+        hasLegacyBaseline: true, updatedAt: new Date().toISOString(),
+        bulkRuns: [], setBulkRuns: noop,
+      }, React.createElement(Harness)));
+    });
+    const q = (id: string) => container.querySelector('[data-testid="' + id + '"]') as any;
+    const click = async (el: any) => { await (act as any)(async () => {
+      el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); }); };
+    const typeInto = async (el: any, value: string) => {
+      const setter = Object.getOwnPropertyDescriptor(
+        dom.window.HTMLInputElement.prototype, 'value')!.set!;
+      await (act as any)(async () => {
+        setter.call(el, value);
+        el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+      });
+    };
+
+    // ── (a) THE PILL, ON BOTH CARDS ─────────────────────────────────
+    const reasonText = i18n.t('whatif_campaign_decline_percentage');
+    const volPill = container.querySelector('[data-testid="edit-campaign"]');
+    const volReason = q('campaign-decline-reason-' + row1.id);
+    console.log('');
+    console.log('  pct campaign VOLUME  pressable ' + !!volPill
+      + '  reason "' + (volReason ? String(volReason.textContent).trim() : null) + '"');
+    check('pct campaign: the VOLUME pill is NOT pressable — the bar holds',
+      !volPill, 'a pressable pill means the percentage bar stopped firing');
+    check('pct campaign: and the VOLUME table RENDERS the bar reason as text',
+      !!volReason && String(volReason.textContent).trim() === reasonText,
+      '"' + (volReason ? String(volReason.textContent).trim() : null) + '"'
+      + ' — a title attribute alone is a hover tooltip, not a rendered reason');
+    check('pct campaign: the pill is DISABLED, not hidden, and says so to AT',
+      !!container.querySelector('[aria-disabled="true"]')
+        && String(container.textContent).includes(String(row1.campaignName)),
+      'the campaign must stay visible with its reason beside it');
+
+    await click(q('whatif-tab-promotion'));
+    const promoReason = q('campaign-decline-reason-' + row1.id);
+    console.log('  pct campaign PROMO   row pencils '
+      + container.querySelectorAll('[data-testid^="promo-row-edit-"]').length
+      + '  reason "' + (promoReason ? String(promoReason.textContent).trim() : null) + '"');
+    check('pct campaign: the PROMOTION card renders the SAME reason',
+      !!promoReason && String(promoReason.textContent).trim() === reasonText,
+      '"' + (promoReason ? String(promoReason.textContent).trim() : null) + '"');
+    check('pct campaign: and its campaign pill is NOT pressable either',
+      !container.querySelector('[data-testid="edit-campaign"]'),
+      'both cards read the same group, so both must bar it');
+    check('pct campaign: the PROMOTION card still offers a row pencil per row',
+      container.querySelectorAll('[data-testid^="promo-row-edit-"]').length === 2,
+      'the rows must stay editable one at a time');
+
+    // ── (b) EDIT ROW 2's MAGNITUDE ONLY ─────────────────────────────
+    await click(q('promo-row-edit-' + row2.id));
+    await typeInto(q('promo-volume-amount'), '15');
+    const saveBtn = Array.from(container.querySelectorAll('button'))
+      .find((b: any) => /save changes/i.test(String(b.textContent))) as any;
+    check('pct campaign: the row edit opened, with Save Changes', !!saveBtn,
+      'no Save Changes — the assertions below would compare nothing');
+    if (saveBtn) await click(saveBtn);
+    await (act as any)(async () => { root.unmount(); });
+
+    const rowWrites = written.filter(w => w.id !== 'ALL');
+    const bulkWrites = written.filter(w => w.id === 'ALL');
+    console.log('  pct campaign writes  per-row ' + rowWrites.length
+      + '  whole-array ' + bulkWrites.length
+      + (rowWrites.length ? '  id ' + rowWrites[0].id : ''));
+
+    // THE STOP CONDITION. A whole-array write, or a write against row 1's id,
+    // would mean the row edit reached its siblings.
+    check('pct campaign: the row edit wrote exactly ONE row',
+      rowWrites.length === 1 && bulkWrites.length === 0,
+      'per-row ' + rowWrites.length + ' bulk ' + bulkWrites.length);
+    check('pct campaign: and it wrote ROW 2, not row 1',
+      rowWrites.length === 1 && rowWrites[0].id === row2.id,
+      rowWrites.length ? rowWrites[0].id + ' vs ' + row2.id : 'no write');
+
+    if (rowWrites.length === 1) {
+      const saved = rowWrites[0].patch;
+      check('pct campaign: row 2 carries the NEW magnitude',
+        saved.subscriberVolume === 15, String(saved.subscriberVolume));
+      check('pct campaign: row 2 is still a PERCENTAGE — D5-03 restore held',
+        saved.amountType === 'percentage', String(saved.amountType)
+        + ' — absolute means the unit control was not restored');
+      check('pct campaign: row 2 keeps its CAMPAIGN NAME',
+        saved.campaignName === CAMPAIGN, String(saved.campaignName)
+        + ' — a detached row is the STOP condition');
+      check('pct campaign: row 2 keeps its id',
+        saved.id === row2.id, String(saved.id));
+    }
+    // ROW 1 IS UNTOUCHED BY CONSTRUCTION - nothing was written against it -
+    // and that is asserted above rather than by a deep-equal of a value the
+    // harness never received. Stated so a reader does not look for one.
     }
   }
 

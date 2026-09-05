@@ -87,7 +87,13 @@ const BASELINE: Record<string, number> = {
   'event-roundtrip-spec.ts': 3,
   'events-summary-spec.ts': 1,
   'generate-missing-spec.ts': 2,
-  'guard-traps.ts': 2,
+  // 4 since 2026-09-05. ALL FOUR ARE QUOTED SOURCE INSIDE TRAP ANCHORS, not
+  // dereferences this file performs: `churnFold[0].…` twice in trap 116's
+  // anchor and `marketEvents[0].id` twice in trap 164's. The counter reads
+  // text, as its own note above says, and a trap that quotes a first-row
+  // dereference is indistinguishable from one. Recorded rather than excluded:
+  // an exception for "inside a string" would need the parse this file refuses.
+  'guard-traps.ts': 4,
   'i18n-parity-spec.ts': 1,
   'import-seam-spec.ts': 1,
   'mix-card-spec.tsx': 2,
@@ -98,15 +104,18 @@ const BASELINE: Record<string, number> = {
   'scan-i18n.ts': 1,
   'step1-selection-spec.tsx': 6,
   'unscored-row-spec.tsx': 4,
-  // ADDED 2026-09-05, deliberately and after looking at each one. All four are
-  // `pctEdit.written[0].patch...` / `absEdit.written[0].patch...`, and each
-  // sits in an && chain whose FIRST term is `written.length === 1`. JavaScript
-  // short-circuits, so index zero is reached only when there is a row there.
-  // Guarded, therefore - which is a judgement this spec deliberately does not
-  // try to make for itself, so it is recorded here in prose beside the count.
-  // 5 since 2026-09-05 (D5-04): the fifth is `viaPromo[0].patch`, inside an
-  // `if (viaPromo.length === 1)` block. Guarded, like the other four.
-  'view-apply-mounted-spec.tsx': 5,
+  // 10 since 2026-09-05 (D5-05), superseding the 4 and 5 recorded earlier
+  // today. This spec deliberately does not judge guarded from unguarded, so
+  // the judgement is recorded here in prose beside the count. Every one is guarded, checked individually:
+  // four `written[0]` and one `viaPromo[0]` behind a length test; `ROWS[0]`
+  // and `ROWS[1]` behind `ROWS.length === 2 &&`; three `rowWrites[0]` behind
+  // `rowWrites.length` or `=== 1`.
+  //
+  // THIS SPEC CAUGHT THREE UNGUARDED ONES IN THE SAME SESSION THAT WROTE
+  // THEM: `ROWS[0].id` sat behind a `check` that there were two rows, and a
+  // check REPORTS, it does not guard. They are now behind a real destructure
+  // with an early skip.
+  'view-apply-mounted-spec.tsx': 10,
 };
 
 const TOTAL = Object.values(BASELINE).reduce((a, b) => a + b, 0);

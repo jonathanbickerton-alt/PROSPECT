@@ -6102,12 +6102,36 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                     {campaignLabel}
                                   </button>
                                 ) : (
-                                  <span
-                                    className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full opacity-60 cursor-not-allowed"
-                                    title={group?.reason ? t(group.reason) : campaignLabel}
-                                  >
-                                    {campaignLabel}
-                                  </span>
+                                  <>
+                                    {/* D5-05 (Jon, 2026-09-05). The bar STANDS -
+                                        a sum of per-cents is not a ramp - but it
+                                        must SAY so. The reason was carried in a
+                                        `title` ONLY: a hover tooltip, invisible on
+                                        touch and unread unless hovered. It is now
+                                        rendered as text beside the pill.
+
+                                        `aria-disabled` rather than `aria-pressed`:
+                                        this is a span, not a toggle, and it has no
+                                        pressed state to report. Disabled, NOT
+                                        hidden - a user who can see the campaign
+                                        should be told why it cannot be opened,
+                                        not shown nothing. */}
+                                    <span
+                                      className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full opacity-60 cursor-not-allowed"
+                                      aria-disabled="true"
+                                      title={group?.reason ? t(group.reason) : campaignLabel}
+                                    >
+                                      {campaignLabel}
+                                    </span>
+                                    {group?.reason && (
+                                      <span
+                                        data-testid={`campaign-decline-reason-${event.id}`}
+                                        className="block text-[10px] text-slate-400 mt-0.5 whitespace-normal"
+                                      >
+                                        {t(group.reason)}
+                                      </span>
+                                    )}
+                                  </>
                                 )
                               ) : (
                                 <span className="text-slate-300">—</span>
@@ -7713,7 +7737,25 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             {(() => {
                               const pct = dilutionAmountPct(promoDilutionCurrent, promoDilutionTarget);
                               if (pct === null) {
-                                return <span className="text-slate-400">{t('whatif_dilution_awaiting')}</span>;
+                                // D5-06 (Jon, 2026-09-05). ABSENCE AND
+                                // IMPOSSIBILITY ARE DIFFERENT USER SITUATIONS -
+                                // "you have not finished" versus "that cannot
+                                // be" - and `promoDilutionBlockReason` has
+                                // always known which is which. Until now the
+                                // line showed one message for both, so a user
+                                // who typed 100 was told to enter figures they
+                                // had already entered.
+                                //
+                                // The reason comes from the SAME predicate the
+                                // Add button reads, so the sentence and the
+                                // disabled state cannot disagree.
+                                return (
+                                  <span className="text-slate-400">
+                                    {promoDilutionBlockReason
+                                      ? t(promoDilutionBlockReason)
+                                      : t('whatif_dilution_awaiting')}
+                                  </span>
+                                );
                               }
                               const sign = pct > 0 ? '+' : '';
                               return (
@@ -7834,12 +7876,36 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                     {campaignLabel}
                                   </button>
                                 ) : (
-                                  <span
-                                    className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full opacity-60 cursor-not-allowed"
-                                    title={group?.reason ? t(group.reason) : campaignLabel}
-                                  >
-                                    {campaignLabel}
-                                  </span>
+                                  <>
+                                    {/* D5-05 (Jon, 2026-09-05). The bar STANDS -
+                                        a sum of per-cents is not a ramp - but it
+                                        must SAY so. The reason was carried in a
+                                        `title` ONLY: a hover tooltip, invisible on
+                                        touch and unread unless hovered. It is now
+                                        rendered as text beside the pill.
+
+                                        `aria-disabled` rather than `aria-pressed`:
+                                        this is a span, not a toggle, and it has no
+                                        pressed state to report. Disabled, NOT
+                                        hidden - a user who can see the campaign
+                                        should be told why it cannot be opened,
+                                        not shown nothing. */}
+                                    <span
+                                      className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#e60000]/10 text-[#e60000] font-medium text-[10px] truncate max-w-full opacity-60 cursor-not-allowed"
+                                      aria-disabled="true"
+                                      title={group?.reason ? t(group.reason) : campaignLabel}
+                                    >
+                                      {campaignLabel}
+                                    </span>
+                                    {group?.reason && (
+                                      <span
+                                        data-testid={`campaign-decline-reason-${e.id}`}
+                                        className="block text-[10px] text-slate-400 mt-0.5 whitespace-normal"
+                                      >
+                                        {t(group.reason)}
+                                      </span>
+                                    )}
+                                  </>
                                 )
                               ) : (
                                 <span className="text-slate-300">—</span>
