@@ -184,7 +184,8 @@ async function main() {
   const readAt = async (viewKey: string, marketEvents: any[], expandId?: string,
                         dataOverride?: any[],
                         bundle?: { store: Map<string, any>;
-                                   resolveForecast: (k: string) => any }) => {
+                                   resolveForecast: (k: string) => any },
+                        openPromoTab?: boolean) => {
     const useStore = bundle ? bundle.store : store;
     const useResolve = bundle ? bundle.resolveForecast : resolveForecast;
     const resolved = useResolve(viewKey);
@@ -231,7 +232,25 @@ async function main() {
         expanderText = empty ? String(empty.textContent).trim() : null;
       }
     }
+    // ── D5-01: THE PROMOTIONS TABLE IS ON ANOTHER TAB ─────────────────
+    // The card mounts on Volume, so the promotions table is not in the DOM at
+    // all until its tab is clicked. MEASURED: the first draft of the D5-01
+    // check read an EMPTY node list and reported a failure that said nothing
+    // about the cell - an assertion on absent DOM cannot tell a wrong unit
+    // from a missing table.
+    let promoVolumeCells: string[] = [];
+    if (openPromoTab) {
+      const tabBtn = q('whatif-tab-promotion');
+      if (tabBtn) {
+        await (act as any)(async () => { tabBtn.dispatchEvent(
+          new dom.window.MouseEvent('click', { bubbles: true })); });
+      }
+      promoVolumeCells = Array.from(
+        container.querySelectorAll('[data-testid^="promo-row-volume-"]'),
+      ).map((el: any) => String(el.textContent).trim());
+    }
     const out = {
+      promoVolumeCells,
       rendered: !!deltaEl,
       delta: deltaEl ? Number(String(deltaEl.textContent).replace(/[+,\s]/g, '')) : NaN,
       count: countEl ? String(countEl.textContent).trim() : null,
@@ -375,6 +394,38 @@ async function main() {
     check('promo%: and the same at ALL',
       Math.abs(pAll.delta - allPct.delta) < 0.005,
       `promo ${pAll.delta} vs plain ${allPct.delta}`);
+
+    // ── D5-01: THE UNIT IN THE PROMOTIONS TABLE ────────────────────
+    // `subscriberVolume` holds a PERCENT here, so the bare "+10" this cell
+    // used to render read as ten subscribers - beside an ARPU column, on a
+    // row whose whole point is that it is not a quantity.
+    const pctTableRead = await readAt(keyA, [row], undefined, undefined, undefined, true);
+    check('D5-01: the table renders the promotion row at all',
+      pctTableRead.promoVolumeCells.length === 1,
+      JSON.stringify(pctTableRead.promoVolumeCells)
+      + ' - an empty list means the tab never opened, not that the unit is right');
+    check('D5-01: the promo table Volume cell carries the unit',
+      pctTableRead.promoVolumeCells.includes('+10%'),
+      JSON.stringify(pctTableRead.promoVolumeCells) + ' - "+10" reads as ten subscribers');
+    const absPromoRow: any = buildPromoEvents({
+      target: 'Inflow', amountType: 'absolute',
+      draft: {
+        date: MONTHS[0], segment: EVENT_ABS.segment, product: EVENT_ABS.product,
+        productL2: EVENT_ABS.productL2, channel: EVENT_ABS.channel,
+        channelL2: EVENT_ABS.channelL2, tariffL1: EVENT_ABS.tariffL1,
+        tariffL2: EVENT_ABS.tariffL2,
+        subscriberVolume: 8000, campaignName: '', comment: '', contractLength: 12,
+      } as any,
+      mixEnabled: false, mixAxis: 'value', draftMix: {}, mixLocked: [],
+      tierData: [], pricingEnabled: false, pricingMode: 'percentage',
+      pricingAmount: 0, cohortAvgArpu: 20,
+      spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [],
+      startSequence: 2,
+    } as any)[0];
+    const absRead = await readAt(keyA, [absPromoRow], undefined, undefined, undefined, true);
+    check('D5-01: an ABSOLUTE promotion is UNCHANGED - signed, rounded, no unit',
+      absRead.promoVolumeCells.includes('+8,000'),
+      JSON.stringify(absRead.promoVolumeCells));
 
     // THE POOL IS SIZED FROM THE RESOLVED DELTA. If it were sized from the
     // stored scalar the pool would hold TEN SUBSCRIBERS for a ten-per-cent

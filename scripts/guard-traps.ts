@@ -1450,6 +1450,24 @@ const TRAPS: Trap[] = [
     Promo_Dilution_Target_Pct: e.promoDilutionTargetPct ?? '',`,
       `    Promo_Dilution_Current_Pct: '',
     Promo_Dilution_Target_Pct: '',`) },
+
+  // ---------------------------------------------------------------------
+  // 155 - D5-01. `subscriberVolume` holds a PERCENT on a percentage row, so a
+  // bare number reads as a subscriber count. The Volume tab's table already
+  // said this in its own comment - "'+10' for a 10% uplift reads as ten
+  // people" - while the promotion's two surfaces printed exactly that.
+  //
+  // The shared rule owns ONLY the percentage half; absolute formatting stays
+  // with each caller, because the table rounds, the summary uses
+  // toLocaleString and the Volume tab uses the injected formatNumber. So the
+  // mutation drops the percentage branch, which is the whole of what is
+  // shared.
+  { id: '155 the percentage unit is dropped from a stored volume',
+    why: 'a ten-per-cent promotion renders as ten subscribers on every surface',
+    file: ENGINE, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      "  if (e.amountType !== 'percentage') return fmtAbsolute(e.subscriberVolume);",
+      "  if (true) return fmtAbsolute(e.subscriberVolume);") },
   // 103 feeds the LOADED COHORT's forecast back into the churn series, undoing
   // the scope fix. The panel then reads the same base whatever the draft's dims
   // say — the walk's ~293k at every slice — and the breakdown stops moving when

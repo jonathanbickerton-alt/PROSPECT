@@ -24,7 +24,7 @@
  */
 import fs from 'fs';
 import {
-  buildEventsSummaryRows, volumeEventSummary, promoEventSummary,
+  buildEventsSummaryRows, volumeEventSummary, promoEventSummary, eventVolumeLabel,
   yieldEventSummary, pricingEventSummary,
 } from '../src/utils/forecasting';
 import type { MarketEvent, YieldEventLike } from '../src/utils/forecasting';
@@ -304,6 +304,54 @@ check('wiring: the pricing and yield lists still sort by month (+ apply pass + p
     ['en','de','es','fr','it','pt'].every(l =>
       typeof JSON.parse(fs.readFileSync(`src/locales/${l}/translation.json`,'utf8'))['whatif_summary_churn'] === 'string'));
 }
+// ── D5-01: THE UNIT ON A PERCENTAGE PROMOTION ───────────────────────────
+//
+// `subscriberVolume` holds a PERCENT on a percentage row, so a bare number
+// reads as subscribers. This said "Promotion 10" for a ten-per-cent promotion
+// at every surface that renders the string.
+{
+  const T = ((k: string, v?: any) => {
+    if (k === 'whatif_summary_promo_volume') return `Promotion ${v.amount}`;
+    if (k === 'whatif_summary_volume') return `${v.scenario} ${v.amount}`;
+    return k;
+  }) as any;
+  const base: any = {
+    id: 'p1', sequence: 1, scenario: 'Inflow', date: '2026-09',
+    segment: 'All', product: 'All', productL2: 'All', channel: 'All',
+    channelL2: 'All', tariffL1: 'All', tariffL2: 'All',
+    customerVolume: 0, revenue: 0, arpu: 20, isPromotion: true,
+  };
+  check('D5-01: a PERCENTAGE promotion carries its unit and sign',
+    promoEventSummary({ ...base, amountType: 'percentage', subscriberVolume: 10 }, T)
+      === 'Promotion +10%',
+    promoEventSummary({ ...base, amountType: 'percentage', subscriberVolume: 10 }, T));
+  check('D5-01: an ABSOLUTE promotion is UNCHANGED - no unit, no added sign',
+    promoEventSummary({ ...base, amountType: 'absolute', subscriberVolume: 8000 }, T)
+      === 'Promotion 8,000',
+    promoEventSummary({ ...base, amountType: 'absolute', subscriberVolume: 8000 }, T));
+  check('D5-01: a promotion with no amountType reads as absolute',
+    promoEventSummary({ ...base, subscriberVolume: 8000 }, T) === 'Promotion 8,000',
+    promoEventSummary({ ...base, subscriberVolume: 8000 }, T));
+
+  // THE VOLUME CARD'S STRING IS BYTE-IDENTICAL to what it produced before the
+  // shared rule was extracted - measured, not assumed.
+  check('D5-01: volumeEventSummary percentage unchanged',
+    volumeEventSummary({ ...base, isPromotion: false, amountType: 'percentage',
+      subscriberVolume: 10 }, T) === 'Inflow +10%',
+    volumeEventSummary({ ...base, isPromotion: false, amountType: 'percentage',
+      subscriberVolume: 10 }, T));
+  check('D5-01: volumeEventSummary absolute unchanged - it DOES sign',
+    volumeEventSummary({ ...base, isPromotion: false, amountType: 'absolute',
+      subscriberVolume: 8000 }, T) === 'Inflow +8,000',
+    volumeEventSummary({ ...base, isPromotion: false, amountType: 'absolute',
+      subscriberVolume: 8000 }, T));
+
+  // The shared rule itself: the percentage half is the only half it owns.
+  check('D5-01: eventVolumeLabel leaves the ABSOLUTE form to its caller',
+    eventVolumeLabel({ amountType: 'absolute', subscriberVolume: 8000 },
+      n => `<${n}>`) === '<8000>');
+}
+
 console.log(`\nevents-summary spec: ${pass} passed, ${fails.length} failed`);
 fails.forEach(f => console.log('  FAIL  ' + f));
 process.exit(fails.length ? 1 : 0);

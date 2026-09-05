@@ -24,7 +24,7 @@ import { MixTargetPanel } from './MixTargetPanel';
 import type { ScenarioKey, ScenarioPricing } from '../utils/scenarioArpu';
 import { nextAmountControlState, effectiveAmountControl, churnAvailableFor,
          type AmountControl } from '../utils/amountControl';
-import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, forecastCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor, pricingBaselineArpu } from '../utils/forecasting';
+import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, forecastCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor, pricingBaselineArpu, eventVolumeLabel } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope, PricingVolumes, ViewScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
@@ -7719,7 +7719,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             </td>
                             <td className="px-5 py-3 text-xs text-slate-600">{e.scenario}</td>
                             <td className="px-5 py-3 text-xs text-slate-600">{fmtMonth(e.date)}</td>
-                            <td className="px-5 py-3 text-xs text-right font-semibold text-emerald-600">+{Math.round(e.subscriberVolume).toLocaleString()}</td>
+                            {/* D5-01. Was `+{Math.round(...)}`, which printed
+                                "+10" for a ten-per-cent promotion - ten people.
+                                The absolute arm keeps its own `+` and its
+                                rounding; only the percentage form is shared. */}
+                            <td className="px-5 py-3 text-xs text-right font-semibold text-emerald-600"
+                                data-testid={`promo-row-volume-${e.id}`}>
+                              {eventVolumeLabel(e, n => `+${Math.round(n).toLocaleString()}`)}
+                            </td>
                             <td className="px-5 py-3 text-xs text-right text-slate-600">{formatNumber(e.arpu)}</td>
                             <td className="px-5 py-3 text-xs text-slate-500">{arms || '—'}</td>
                             <td className="px-5 py-3 text-center">

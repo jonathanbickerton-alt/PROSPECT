@@ -7100,6 +7100,62 @@ populated leaf is COMMUNICATED and applied nowhere, consistently at every view;
 and the applied-count caption counts events applied AT THE VIEW (built at
 `bd2cf63`).
 
+#### D5-02 DOES NOT REPRODUCE — the promotion is innocent, and the yield event moved it (measured 2026-09-05)
+
+**Not a decision. A measurement, recorded so the next session does not re-open
+a defect that is not there.**
+
+Reproduced MOUNTED on Jon's save (`PROSPECT Forecast Save — 04 Sep 2026
+2137.xlsx`, 72 cohorts, 12,112 actuals rows), through `resolveFromStore` and
+the real card, at view All. Base ARPU delta, end of period:
+
+| events applied | Base ARPU Δ at All |
+|---|---|
+| all four market events + the yield event | **−0.14** |
+| the same four, **no yield event** | **+0.14** |
+| **no promotions**, + yield | **−0.14** |
+| **no promotions**, no yield | **+0.14** |
+| the yield event **alone** | **−0.27** |
+| the absolute event alone | **+0.14** |
+| either promotion alone | **0.00** |
+
+**The sign is the YIELD event's, not the promotion's.** Removing either
+promotion, or both, leaves Base at −0.14 unchanged; removing the yield event
+flips it to +0.14.
+
+**The promotion pools ARE applied at All** — proved by amplification rather
+than inferred from a zero. Scaling the promotion's stored rate and re-reading
+the same KPI:
+
+```
+inflow promo    arpu x1  0.00   x10  0.00   x100  0.08   x1000  0.82
+retention promo arpu x1  0.00   x10  0.01   x100  0.14   x1000  1.45
+```
+
+Linear in the rate, which is exactly what a pool contribution is. At the real
+€20.49 the contribution is ~0.001 — right for 48 subscribers against a ~340K
+base, and below the two-decimal display. **Jon's arithmetic in the brief was
+correct** (a −0.28 swing is two orders of magnitude too large for 48
+subscribers); the conclusion is that the promotion did not cause it.
+
+**A DISCREPANCY IN THE BRIEF, recorded because it changes what the walk shows.**
+The save carries **four** market events, not three plus a promotion: alongside
+the absolute +8,000, the +14.8% and the +10% Inflow promotion there is a
+**+10% RETENTION promotion at `Large Enterprise|All`, `promoRebanded: true`,
+arpu 19.33**. It is measured above and contributes 0.00 at All.
+
+**A REAL BUT SEPARATE LIMIT.** `WhatIfTab.tsx:952` and `:956` round BOTH
+`<scenario> ARPU (Baseline)` and `(Adjusted)` to two decimals, and the KPI
+subtracts the two rounded figures. The displayed delta therefore carries up to
+±0.01 of pure rounding and cannot show a movement smaller than that. It bounds
+what this card can say; it is not the cause of a 0.28 swing, and nothing was
+changed here.
+
+**WHETHER −0.27 IS CORRECT FOR THE YIELD EVENT IS NOT SETTLED HERE.** It is
+plausible on its face — the mix re-prices every acquired subscriber, with Low
+Value at 53.5% share overridden to an ARPU of 10 — but plausible is not
+measured, and it is a different question from the one this session was given.
+
 #### CARD PARITY — SEVEN DECISIONS (Jon, 2026-09-03; recorded here 2026-09-03)
 
 **Recorded because they were not here.** These answer REQ-D2-01 and REQ-D3-01

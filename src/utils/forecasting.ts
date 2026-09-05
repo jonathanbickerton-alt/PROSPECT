@@ -751,6 +751,31 @@ export function pricingEventSummary(e: PricingEvent, t: SummaryT): string {
  * percentage, not a count — reading it as a count is the misreading this says
  * out loud rather than leaving to the column header.
  */
+/**
+ * THE PERCENTAGE FORM OF A STORED VOLUME, defined ONCE.
+ *
+ * D5-01. `subscriberVolume` holds a PERCENT on a percentage row and a quantity
+ * on an absolute one, so the same field means two different things and only
+ * the UNIT tells them apart. The Volume tab's table already said so in its own
+ * words - "'+10' for a 10% uplift reads as ten people" - and the promotion
+ * surfaces did not: `promoEventSummary` rendered a bare `10` and the
+ * promotions table rendered `+10`, both of which read as ten subscribers.
+ *
+ * ABSOLUTE FORMATTING IS THE CALLER'S, and deliberately so: the table rounds,
+ * the summary string uses toLocaleString, and the Volume tab uses the injected
+ * `formatNumber`. Those differences are real and pre-existing. What must NOT
+ * differ between surfaces is the percentage form, so that is the only half
+ * this function owns.
+ */
+export function eventVolumeLabel(
+  e: { amountType?: 'absolute' | 'percentage'; subscriberVolume: number },
+  fmtAbsolute: (n: number) => string,
+): string {
+  if (e.amountType !== 'percentage') return fmtAbsolute(e.subscriberVolume);
+  const sign = e.subscriberVolume > 0 ? '+' : '';
+  return `${sign}${e.subscriberVolume}%`;
+}
+
 export function volumeEventSummary(e: MarketEvent, t: SummaryT): string {
   // R7 — A CHURN ROW DESCRIBES ITSELF FROM WHAT IT STORED.
   //
@@ -766,9 +791,10 @@ export function volumeEventSummary(e: MarketEvent, t: SummaryT): string {
       to: Math.max(0, target).toFixed(1),
     });
   }
-  const pct = e.amountType === 'percentage';
-  const sign = e.subscriberVolume > 0 ? '+' : '';
-  const amount = pct ? `${sign}${e.subscriberVolume}%` : `${sign}${e.subscriberVolume.toLocaleString()}`;
+  // THROUGH THE SHARED RULE. Byte-identical to the three lines this replaced -
+  // the absolute arm keeps its own sign and toLocaleString, which is exactly
+  // the half `eventVolumeLabel` deliberately leaves to its caller.
+  const amount = eventVolumeLabel(e, n => `${n > 0 ? '+' : ''}${n.toLocaleString()}`);
   return t('whatif_summary_volume', { scenario: e.scenario, amount });
 }
 
@@ -780,7 +806,13 @@ export function volumeEventSummary(e: MarketEvent, t: SummaryT): string {
  */
 export function promoEventSummary(e: MarketEvent, t: SummaryT): string {
   const parts: string[] = [
-    t('whatif_summary_promo_volume', { amount: e.subscriberVolume.toLocaleString() }),
+    // D5-01: was `e.subscriberVolume.toLocaleString()`, so a +10% promotion
+    // read "Promotion 10" - ten subscribers, at every surface that shows this
+    // string. The ABSOLUTE arm is unchanged, sign included: it never carried
+    // one here and adding one is not this fix.
+    t('whatif_summary_promo_volume', {
+      amount: eventVolumeLabel(e, n => n.toLocaleString()),
+    }),
   ];
   if (e.promoMix) {
     parts.push(t('whatif_summary_promo_mix', {
