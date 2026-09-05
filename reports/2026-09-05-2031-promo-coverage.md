@@ -1,6 +1,30 @@
 # v3.3.13; promotion-card coverage: the dilution control, the campaign route, KPI precision
 
-__ADVISOR__
+Generated: 2026-09-05 21:00 +0100 (UTC 2026-09-05 20:00)
+Certifies: e177d62
+Repo: committed e177d62, pushed (origin in sync)
+BASE: 2864d60 - diff EMPTY. ITEM 0: v3.3.13 in, v3.3.12 out, one commit; BOTH
+  claims MATCH (5 call sites enumerated; 4 dep names x 3 builders).
+ITEM 1, the dilution CONTROL driven: 25->20 renders '+6.67% retained revenue'
+  = dilutionAmountPct; Add builds arpu 26.6667 = 25 x 0.80/0.75, mode and both
+  figures persisted FROM THE CONTROL. Incomplete and out-of-range each disable
+  Add - though the predicate returns DIFFERENT keys while the effect line
+  shows ONE message.
+A VACUOUS CHECK OF MINE, caught and fixed: the first run passed with arpu 0,
+  and 'arpu = base x ratio' is TRUE FOR EVERY RATIO at zero. A non-zero check
+  now sits in FRONT of it.
+ITEM 2, the campaign route driven: promo tab TRUE, subs-pressed, dilution 25
+  restored, commits 1, rows back 2, CHANGED: NONE.
+THE CAMPAIGN HAD TO BE ABSOLUTE, a RULE: groupByCampaign BARS any campaign
+  with a percentage row from group edit, so my first fixture found NO
+  pressable pill - the bar firing correctly. A PERCENTAGE PROMOTION CAMPAIGN
+  IS NOT GROUP-EDITABLE ANYWHERE - existing and deliberate.
+ITEM 3: 1602 already read the testid but not the STRING; the card renders
+  '+0.01' - a lost sign would still satisfy the number. TRAPS 161 red ('the
+  effect equals dilutionAmountPct [NaN vs 6.67]', 4 FAILs) and 162 red ('the
+  pill SWITCHES to the Promotion tab', 5 FAILs), kept separate from 160.
+COUNTS: traps 156->158; view-apply 124->149; anchors 169/169; survival 96/25;
+  no new key; 3 inert testids. GATE 158/158, 59/59, tsc+build clean.
 
 ## Base check
 
