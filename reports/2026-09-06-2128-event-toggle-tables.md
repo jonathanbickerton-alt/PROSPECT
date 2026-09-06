@@ -3,12 +3,12 @@
 ```
 FOR ADVISOR
 Generated: 2026-09-06 21:28 +0100 (UTC 2026-09-06 20:28)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: bd50f27 (the tree these numbers were measured on)
+Repo: committed bd50f27, pushed (origin in sync)
 
 BASE fc718bf verified: no drift in src/ scripts/ test-data/ package.json.
 ITEM 0: DUPLICATES, not a report typo. 144-147 were already in use; the four
-  new traps are renumbered 166-169 and 2027's table is corrected in this commit.
+  new traps are renumbered 166-169; 2027's table is corrected here.
 ITEM 0 cause: the registry is NOT ordered by id (144-165 sit mid-file), so
   "last entry + 1" is not the next free id. spec:trap-anchors now prints it.
 ITEM 0 fix: the id check was ADDED, PLANTED, AND PASSED - t.id is number AND
@@ -24,8 +24,8 @@ A promotion switched off on the Promotion card reads off on Volume - one field.
 Campaign: 1300 -> off 1000 (both rows) -> one back on 1100, pill "mixed",
   and a click on mixed returns 1300 rather than switching the survivor off.
 Traps 170-171 CAUGHT, plants verified landed and restored.
-guard-traps: __/__ PENDING
-full suite:  __/__ PENDING
+guard-traps: 167/167 caught, 0 missed 0 inconclusive 0 crashed
+full suite:  60/60 green
 ```
 
 ## Item 0 — the trap ids
@@ -164,7 +164,8 @@ happened rather than that nothing did.
 
 - traps 165 → **167**; ids now asserted unique by number, next free printed
 - specs **60** (unchanged — `spec:event-toggle` grew from 31 to 65 checks)
-- survival recounted, not carried: __PENDING__
+- survival recounted, not carried: **104 across 26 files** (was 103/25);
+  the new spec's one guarded first-row read was baselined deliberately
 - TARGETS complete: both new traps mutate `WhatIfTab.tsx`, already present
 
 ## Gate
@@ -174,7 +175,7 @@ tsc            clean
 i18n-scan      PASS
 trap-anchors   179/179 (167 traps, 174 anchors, all unique)
 event-toggle   65/65
-survival       __PENDING__
-guard-traps    __/__ PENDING
-full suite     __/__ PENDING
+survival       27/27 (104 across 26 files)
+guard-traps    167/167 caught (0 MISSED, 0 INCONCLUSIVE, 0 CRASHED)
+full suite     60/60 green
 ```
