@@ -129,6 +129,41 @@ async function main() {
     /\.filter\(\s*isEventOn\s*\)/.test(countLine), countLine.trim()
     + ' - counting every event held would report a number the forecast does not use');
 
+  // FOUR INSERTIONS OF THE ONE COMPONENT, and no fifth renderer.
+  //
+  // Counted by marker rather than by counting <EventOnOffSwitch> tags, because
+  // the campaign control is an EventOnOffSwitch too and a tag count could not
+  // tell a fifth card table from a second campaign pill.
+  const cardMarks = (wi.match(/REQ-D6-01 CARD SWITCH (\d) of 4/g) ?? []);
+  check('pin: the switch is inserted in EXACTLY 4 card tables (header + row each)',
+    cardMarks.length === 8, cardMarks.length + ' markers');
+  check('pin: they are tables 1..4, each appearing twice',
+    JSON.stringify(cardMarks.map(m => m.slice(-6, -5)).sort())
+      === JSON.stringify(['1', '1', '2', '2', '3', '3', '4', '4']),
+    cardMarks.join(' '));
+  check('pin: the campaign switch is the SAME edit twice, not two designs',
+    (wi.match(/REQ-D6-01 CAMPAIGN SWITCH (\d) of 2/g) ?? []).length === 4);
+
+  // EVERY WRITE GOES THROUGH THE ONE HANDLER. Five invocations: the four card
+  // tables, and the campaign handler's per-row loop. A sixth would be a second
+  // way to set the same field - the defect this whole arc is shaped against.
+  const handlerCalls = (wi.match(/handleSetEventEnabled\(\{/g) ?? []).length;
+  check('pin: EXACTLY 5 invocations of handleSetEventEnabled',
+    handlerCalls === 5, String(handlerCalls)
+    + ' - four card tables plus the campaign loop; the summary passes it by'
+    + ' reference, which is why this counts invocations and not mentions');
+  check('pin: the summary table is still handed the SAME handler',
+    /onSetEnabled=\{handleSetEventEnabled\}/.test(wi));
+
+  // ONE GREYING CLASS. Five renderers show an off row; a literal repeated five
+  // times is five chances to drift.
+  const srcFiles = ['src/components/WhatIfTab.tsx', 'src/components/EventsSummaryTable.tsx',
+                    'src/components/EventOnOffSwitch.tsx'];
+  const literal = srcFiles.filter(f => /'opacity-45'/.test(fs.readFileSync(f, 'utf8')));
+  check('pin: `opacity-45` is written ONCE, as OFF_ROW',
+    literal.length === 1 && literal[0].endsWith('EventOnOffSwitch.tsx'),
+    literal.join(' '));
+
   // ══ 3. PERSISTENCE ════════════════════════════════════════════════════
   const mkt = fc.marketEventExportRow({
     id: 'm1', sequence: 1, scenario: 'Inflow', date: MONTHS[0], segment: 'All',
@@ -283,7 +318,7 @@ async function main() {
     name: 'abs', retentionLinked: false,
   } as any;
 
-  const mount = async (marketEvents: any[]) => {
+  const mount = async (marketEvents: any[], opts: any = {}) => {
     const host = document.getElementById('root')!;
     host.replaceChildren();
     const container = document.createElement('div');
@@ -291,6 +326,17 @@ async function main() {
     const root = createRoot(container);
     const Harness = () => {
       const [newEvent, setNewEvent] = (React as any).useState({});
+      // REAL STATE, not noop setters. The earlier block only needed to mount
+      // three fixed arrays; a switch is a WRITE, and a harness whose setters
+      // discard the write can only prove that a click does not crash.
+      // `updateById` here is App's, verbatim in behaviour: a FUNCTIONAL
+      // setState patching by id, which is what makes the campaign's N writes
+      // in one tick land on each other rather than the last one winning.
+      const [me, setMe] = (React as any).useState(marketEvents);
+      const [ye, setYe] = (React as any).useState(opts.yieldEvents ?? []);
+      const [pe, setPe] = (React as any).useState(opts.pricingEvents ?? []);
+      const upd = (setter: any) => (id: string, patch: any) =>
+        setter((prev: any[]) => prev.map(x => (x.id === id ? { ...x, ...patch } : x)));
       return React.createElement(M, {
         data, wiDateCol: C.date, wiSegmentCol: C.seg, wiProductCol: C.prod,
         wiProductL2Col: C.prodL2, wiChannelCol: C.chan, wiChannelL2Col: C.chanL2,
@@ -299,13 +345,13 @@ async function main() {
         productTree: new Map([['Mobile Voice', ['All']], ['Broadband', ['All']]]),
         channelTree: new Map(), tariffTree: new Map(),
         selectedTariffs: [], setSelectedTariffs: noop, cohortAvgArpu: 20,
-        marketEvents, setMarketEvents: noop, addMarketEvent: noop,
-        removeMarketEvent: noop, updateMarketEvent: noop,
-        yieldEvents: [], newYieldEvent: {}, setNewYieldEvent: noop, addYieldEvent: noop,
-        removeYieldEvent: noop, clearAllYieldEvents: noop, updateYieldEvent: noop,
-        pricingEvents: [], newPricingEvent: {}, setNewPricingEvent: noop,
+        marketEvents: me, setMarketEvents: setMe, addMarketEvent: noop,
+        removeMarketEvent: noop, updateMarketEvent: upd(setMe),
+        yieldEvents: ye, newYieldEvent: {}, setNewYieldEvent: noop, addYieldEvent: noop,
+        removeYieldEvent: noop, clearAllYieldEvents: noop, updateYieldEvent: upd(setYe),
+        pricingEvents: pe, newPricingEvent: {}, setNewPricingEvent: noop,
         addPricingEvent: noop, removePricingEvent: noop, clearAllPricingEvents: noop,
-        updatePricingEvent: noop,
+        updatePricingEvent: upd(setPe),
         downloadExcel: noop, formatNumber: (v: any) => Number(v).toFixed(2),
         setActiveView: noop, missingMonths: [], newEvent, setNewEvent,
       });
@@ -322,18 +368,39 @@ async function main() {
     });
     const q = (id: string) => container.querySelector('[data-testid="' + id + '"]') as any;
     const num = (el: any) => el ? Number(String(el.textContent).replace(/[+,\s]/g, '')) : NaN;
-    const out = {
-      baseDelta: num(q('impact-base-delta')),
-      count: q('impact-event-count') ? String(q('impact-event-count').textContent).trim() : null,
+    const handle = {
+      q,
+      baseDelta: () => num(q('impact-base-delta')),
+      count: () => (q('impact-event-count') ? String(q('impact-event-count').textContent).trim() : null),
+      /** The switch for one event, wherever it is currently rendered. */
+      sw: (id: string) => q('event-on-' + id),
+      /** Every switch for that id - the promotion has TWO. */
+      allSw: (id: string) => Array.from(
+        container.querySelectorAll('[data-testid="event-on-' + id + '"]')) as any[],
+      row: (id: string) => q('events-summary-row-' + id),
+      click: async (el: any) => { await (act as any)(async () => {
+        el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+      }); },
+      tab: async (name: string) => { await (act as any)(async () => {
+        q('whatif-tab-' + name).dispatchEvent(
+          new dom.window.MouseEvent('click', { bubbles: true }));
+      }); },
+      close: async () => { await (act as any)(async () => { root.unmount(); }); },
       container,
     };
-    await (act as any)(async () => { root.unmount(); });
+    return handle;
+  };
+  /** The old three-field snapshot, for the blocks written against it. */
+  const snapshot = async (marketEvents: any[]) => {
+    const h = await mount(marketEvents);
+    const out = { baseDelta: h.baseDelta(), count: h.count(), container: h.container };
+    await h.close();
     return out;
   };
 
-  const on = await mount([EVENT]);
-  const off = await mount([{ ...EVENT, enabled: false }]);
-  const backAgain = await mount([{ ...EVENT, enabled: true }]);
+  const on = await snapshot([EVENT]);
+  const off = await snapshot([{ ...EVENT, enabled: false }]);
+  const backAgain = await snapshot([{ ...EVENT, enabled: true }]);
   console.log('');
   console.log('  toggle  ON base delta ' + on.baseDelta + ' count ' + on.count
     + '   |  OFF ' + off.baseDelta + ' count ' + off.count
@@ -350,6 +417,137 @@ async function main() {
     backAgain.baseDelta === on.baseDelta,
     backAgain.baseDelta + ' vs ' + on.baseDelta
     + ' — a toggle that changes a number is not evidence; one that restores it is');
+
+  // ══ 5. THE CARD TABLES, DRIVEN FROM EACH TAB ══════════════════════════
+  //
+  // The block above proved the ENGINE honours `enabled`. This one proves the
+  // CONTROL reaches it: the switch is clicked in the DOM, on the card whose
+  // tab is open, and the arithmetic is read afterwards. A switch that renders
+  // correctly and writes nowhere would pass every check written so far.
+  const YEV = {
+    id: 'y-1', ibro: 'Inflow', segment: 'Corporate', product: 'Mobile Voice',
+    productL2: 'All', channelL1: 'All', channelL2: 'All', month: MONTHS[0],
+    rollForward: false, name: 'yv',
+    tariffMix: { A: 100 }, tariffBaseArpu: { A: 30 },
+  } as any;
+  const PEV = {
+    id: 'p-1', segment: 'Corporate', product: 'Mobile Voice', productL2: 'All',
+    channelL1: 'All', channelL2: 'All', month: MONTHS[0], name: 'pv',
+    inputMode: 'absolute', amount: 5, target: 'cohorts', cohortScope: 'both',
+    duration: 'ongoing', originalBaseArpu: 20,
+  } as any;
+  const PROMO = (n: number) => ({
+    ...EVENT, id: 'pr-' + n, sequence: 10 + n, name: 'promo' + n,
+    isPromotion: true, campaignName: 'Spring', subscriberVolume: 100 * n,
+  });
+
+  const h = await mount([EVENT, PROMO(1), PROMO(2)],
+    { yieldEvents: [YEV], pricingEvents: [PEV] });
+  // THE SUMMARY IS COLLAPSED BY DEFAULT, so its rows are not in the DOM at all.
+  // Opening it is part of the fixture, not part of what is being proved - a
+  // "the summary row greys" check run against a closed panel reads false for
+  // the wrong reason and would have been a green-looking bug either way.
+  await h.click(h.q('events-summary-toggle'));
+
+  /** The switch on the CARD, not the one on the summary table above it. */
+  const cardSwitch = (id: string) => {
+    const all = h.allSw(id);
+    return all.length > 1 ? all[all.length - 1] : all[0];
+  };
+  const rowOf = (el: any) => el && el.closest('tr');
+  /**
+   * THE INSTRUMENT HAS TO MATCH THE EVENT.
+   *
+   * `impact-base-delta` is a SUBSCRIBER VOLUME figure. A yield or pricing
+   * event moves ARPU and no volume at all, so measuring one with the other
+   * reads "nothing happened" for a switch that worked perfectly - which is
+   * exactly what the first run of this block reported. Reading both means
+   * every kind of event is measured by something it can actually move.
+   */
+  const measure = () => h.baseDelta() + ' | '
+    + String(h.q('impact-arpu-scenarios')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+  const greyed = (el: any) => !!el && /opacity-45/.test(el.className || '');
+
+  const tabs: [string, string][] = [
+    ['volume', EVENT.id], ['value', YEV.id],
+    ['pricing', PEV.id], ['promotion', 'pr-1'],
+  ];
+  console.log('');
+  for (const [tab, id] of tabs) {
+    await h.tab(tab);
+    const sw = cardSwitch(id);
+    check(`mounted ${tab}: the card table renders a switch for its row`,
+      !!sw, 'no [data-testid="event-on-' + id + '"] on the ' + tab + ' card');
+    if (!sw) continue;
+    const before = measure();
+    await h.click(sw);
+    const after = measure();
+    const cardGrey = greyed(rowOf(cardSwitch(id)));
+    const sumGrey = greyed(h.row(id));
+    console.log('  ' + tab.padEnd(10) + ' ' + before + '  ->  ' + after
+      + '   card/summary greyed ' + cardGrey + '/' + sumGrey);
+    check(`mounted ${tab}: switching the row off changes the forecast`,
+      after !== before, before + ' -> ' + after
+      + ' - a switch that renders and writes nowhere passes every static check');
+    check(`mounted ${tab}: the card row greys`, cardGrey);
+    check(`mounted ${tab}: and so does the summary row - ONE state, two views`,
+      sumGrey);
+    // BACK ON, to the penny, before the next tab is measured.
+    await h.click(cardSwitch(id));
+    check(`mounted ${tab}: switching it back on restores the figure exactly`,
+      measure() === before, measure() + ' vs ' + before);
+  }
+
+  // A PROMOTION IS IN TWO TABLES. Switched off from the Promotion card, the
+  // Volume card's copy of the same row must show off too - they are two views
+  // of one `enabled`, and the failure this guards against is two states.
+  await h.tab('promotion');
+  await h.click(cardSwitch('pr-1'));
+  await h.tab('volume');
+  const volCopy = cardSwitch('pr-1');
+  check('mounted: a promotion switched off on the Promotion card reads off on Volume',
+    !!volCopy && volCopy.getAttribute('aria-checked') === 'false',
+    String(volCopy && volCopy.getAttribute('aria-checked'))
+    + ' - two switches over one field, not two fields');
+  check('mounted: and the Volume row is greyed there too', greyed(rowOf(volCopy)));
+  await h.click(cardSwitch('pr-1'));
+
+  // THE CAMPAIGN SWITCH. One control, one write per row, and MIXED is real.
+  await h.tab('promotion');
+  const camp = () => h.sw('campaign-Spring');
+  check('mounted: ONE campaign switch for the two-row campaign, not one per row',
+    h.allSw('campaign-Spring').length === 1,
+    h.allSw('campaign-Spring').length + ' controls');
+  const deltaAllOn = h.baseDelta();
+  check('mounted: the campaign reads ON while both its rows are on',
+    camp() && camp().getAttribute('aria-checked') === 'true',
+    String(camp() && camp().getAttribute('aria-checked')));
+  await h.click(camp());
+  const deltaAllOff = h.baseDelta();
+  const promoRowsOff = ['pr-1', 'pr-2'].every(
+    id => cardSwitch(id) && cardSwitch(id).getAttribute('aria-checked') === 'false');
+  check('mounted: switching the campaign off switches EVERY row off',
+    promoRowsOff, 'one write per row through the same handler; a non-functional'
+    + ' setState would have let all but the last write vanish');
+  check('mounted: and the forecast drops both rows\' contribution',
+    deltaAllOff === deltaAllOn - 300, deltaAllOn + ' -> ' + deltaAllOff
+    + ' (expected -300: promo1 100 + promo2 200)');
+  // ONE ROW BACK ON -> MIXED. Not "off", and not "on": a campaign with one row
+  // each way is neither, and drawing it as off invites a click that silently
+  // turns the survivor off too.
+  await h.click(cardSwitch('pr-1'));
+  console.log('  campaign   ' + deltaAllOn + ' -> off ' + deltaAllOff
+    + ' -> one back on ' + h.baseDelta()
+    + '   pill aria-checked ' + (camp() && camp().getAttribute('aria-checked')));
+  check('mounted: one row back on makes the campaign INDETERMINATE',
+    camp() && camp().getAttribute('aria-checked') === 'mixed',
+    String(camp() && camp().getAttribute('aria-checked')));
+  // AND A CLICK ON MIXED TURNS IT ON, never off - off is the destructive
+  // reading of an ambiguous state.
+  await h.click(camp());
+  check('mounted: clicking a MIXED campaign turns it fully on, not fully off',
+    h.baseDelta() === deltaAllOn, h.baseDelta() + ' vs ' + deltaAllOn);
+  await h.close();
 
   console.log('');
   console.log(`event-toggle spec: ${pass} passed, ${fails.length} failed`);

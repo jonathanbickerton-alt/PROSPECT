@@ -2292,19 +2292,26 @@ const TRAPS: Trap[] = [
 
   // ── REQ-D6-01, per-event on/off (Jon, 2026-09-06) ───────────────────────
   //
+  // NUMBERED 166-169, NOT 144-147. These were first written as 144-147 by
+  // reading the LAST entry's id (143) and adding one - and this registry is
+  // NOT ORDERED BY ID: 144-165 sit in the middle of the file, appended by an
+  // earlier session before a later one inserted ahead of them. So "the last
+  // entry plus one" is not the next free id and never was. The next free id
+  // is max(all ids) + 1, which `spec:trap-anchors` now computes and asserts.
+  //
   // FOUR, aimed at the four distinct ways the capability can be lost: the
   // predicate dropped on one engine, dropped on the OTHER engine, inverted at
   // the reader so old workbooks load disabled, and bypassed at the badge.
   // They are separate traps rather than one because a single trap on a
   // twelve-site predicate would report the same red for four different bugs.
-  { id: '144 an event that is off still applies on the What-If side',
+  { id: '166 an event that is off still applies on the What-If side',
     why: 'the switch must change the arithmetic, not just the row it sits on',
     file: WHATIF, spec: EVTOGGLE,
     mutate: s => s.replace(
       '        isEventOn(e)\n        && e.date === month.month',
       '        e.date === month.month') },
 
-  { id: '145 an event that is off still applies on the Compare side',
+  { id: '167 an event that is off still applies on the Compare side',
     why: "Compare holds RAW SHEET ROWS and never calls marketEventFromRow, so"
        + ' it is the half a typed-only check would silently leave uncovered',
     file: SCENHELPER, spec: EVTOGGLE,
@@ -2312,7 +2319,7 @@ const TRAPS: Trap[] = [
       '      if (!isEventOn(e)) return false;\n      const eventDate = e.Start_Month || e.Date || e.Month;\n      if (eventDate !== month.month) return false;',
       '      const eventDate = e.Start_Month || e.Date || e.Month;\n      if (eventDate !== month.month) return false;') },
 
-  { id: '146 a workbook saved before this column reloads with every event OFF',
+  { id: '168 a workbook saved before this column reloads with every event OFF',
     why: 'absent means ON - every existing save means "all of these apply", and'
        + ' a reader that reads absence as off destroys those files on open',
     file: ENGINE, spec: EVTOGGLE,
@@ -2320,11 +2327,34 @@ const TRAPS: Trap[] = [
       "    enabled: row.Enabled === 'No' ? false : true,",
       "    enabled: row.Enabled === 'Yes' ? true : false,") },
 
-  { id: '147 the summary badge counts events that are switched off',
+  { id: '169 the summary badge counts events that are switched off',
     why: 'the badge reports what the forecast used, not what the user has kept',
     file: SUMMARYBAR, spec: EVTOGGLE,
     mutate: s => s.replace(
       '.filter(isEventOn).length', '.length') },
+
+  // ── REQ-D6-01 second half: the card tables (Jon, 2026-09-06) ────────────
+  //
+  // TWO, and both are about a control that LOOKS right. Every check written
+  // before these would pass a switch that renders in the correct column, with
+  // the correct label and the correct initial state, and writes to the wrong
+  // place - which is the only interesting way this feature can break now that
+  // the engine is pinned.
+  { id: '170 a card table\'s switch writes its own state, not the shared one',
+    why: 'a promotion is in TWO tables; two writers over one field is two'
+       + ' states that agree until the first time they do not',
+    file: WHATIF, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      'onChange={(next) => handleSetEventEnabled({ id: e.id, pass: 0 }, next)}',
+      'onChange={(next) => updatePricingEvent(e.id, { enabled: next } as any)}') },
+
+  { id: '171 the campaign switch sets only its first row',
+    why: 'a campaign that half-applies is worse than one that does not apply:'
+       + ' the pill then reads mixed and the user is told nothing changed',
+    file: WHATIF, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      'rows.forEach(r => handleSetEventEnabled({ id: r.id, pass: 0 }, next));',
+      'rows.slice(0, 1).forEach(r => handleSetEventEnabled({ id: r.id, pass: 0 }, next));') },
 ];
 
 /**

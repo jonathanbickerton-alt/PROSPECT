@@ -85,6 +85,13 @@ const BASELINE: Record<string, number> = {
   'compare-events-panel-spec.ts': 5,
   'derived-interaction-spec.ts': 7,
   'event-roundtrip-spec.ts': 3,
+  // ADDED 2026-09-06 with REQ-D6-01's card-table work. ONE deref, in the
+  // Compare block's `firstInflow`, and it is GUARDED: it throws on a
+  // non-finite reading rather than returning NaN, because the first draft of
+  // that block read a field that did not exist, got NaN on every run, and made
+  // a "the number moved" check pass on NaN !== NaN. Baselined deliberately -
+  // which is what this spec asks for, not a total adjusted to fit.
+  'event-toggle-spec.tsx': 1,
   'events-summary-spec.ts': 1,
   'generate-missing-spec.ts': 2,
   // 4 since 2026-09-05. ALL FOUR ARE QUOTED SOURCE INSIDE TRAP ANCHORS, not

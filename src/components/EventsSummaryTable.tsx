@@ -1,6 +1,6 @@
 import { ChevronDown } from 'lucide-react';
 import type { EventSummaryRow, SummaryT } from '../utils/forecasting';
-import { EventOnOffSwitch } from './EventOnOffSwitch';
+import { EventOnOffSwitch, OFF_ROW } from './EventOnOffSwitch';
 
 /**
  * THE R4 EVENTS SUMMARY, as one component with two callers.
@@ -106,7 +106,7 @@ export function EventsSummaryTable({
                       // applied to the row, so a reader can see at a glance which
                       // events are in play without losing the ones that are not.
                       <tr key={`${r.pass}-${r.id}`} data-testid={`${testIdPrefix}-row-${r.id}`}
-                          className={r.enabled ? '' : 'opacity-45'}>
+                          className={r.enabled ? '' : OFF_ROW}>
                         <td className="px-3 py-2">
                           {onSetEnabled ? (
                             <EventOnOffSwitch

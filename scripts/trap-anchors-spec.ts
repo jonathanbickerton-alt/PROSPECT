@@ -130,6 +130,50 @@ for (const t of traps) {
   });
 }
 
+// ── TRAP IDS ARE UNIQUE ───────────────────────────────────────────────────
+//
+// ADDED 2026-09-06, because four duplicates shipped. This spec has always
+// checked that ANCHORS are unique and never that IDS are, and the two failures
+// look nothing alike: a duplicated anchor plants at the wrong line, while a
+// duplicated id plants perfectly and then LIES ABOUT WHICH TRAP IT IS. Both
+// duplicates ran, both were caught, and the gate reported a truthful 165/165 —
+// which is exactly why nothing went red and why the defect was invisible until
+// a human read the report and recognised the numbers.
+//
+// IT IS WORSE THAN A LABELLING BUG. `KNOWN_NON_UNIQUE` is keyed BY ID, so a
+// new trap that happens to reuse an exempted id would inherit an exemption it
+// was never granted, and its non-unique anchor would pass silently.
+//
+// The count is also asserted, because "how many traps are there" is a figure
+// every gate block quotes and a duplicate id makes two entries indistinguishable
+// in the output.
+// THE NUMBER, NOT THE WHOLE ID. `t.id` is the number AND the description
+// ('143 Apply moves a tier the user is holding'), so two traps can share a
+// NUMBER while their id strings differ - which is exactly the shape that
+// shipped. The first version of this check compared whole id strings, was
+// planted with a duplicated number, and PASSED. That is the only reason it is
+// written this way: it was made to go red before it was believed.
+const numberOf = (id: string) => id.trim().split(/\s/)[0];
+const idCounts = new Map<string, number>();
+for (const t of traps) {
+  const n = numberOf(t.id);
+  idCounts.set(n, (idCounts.get(n) ?? 0) + 1);
+}
+const duplicated = [...idCounts].filter(([, n]) => n > 1).map(([id]) => id);
+check('every trap NUMBER is unique', duplicated.length === 0,
+  duplicated.join(', ') + ' — a duplicated number plants correctly and then'
+  + " reports under another trap's number, and inherits its KNOWN_NON_UNIQUE"
+  + ' exemption');
+
+// THE NEXT FREE ID IS max + 1, NOT last + 1. The registry is not ordered by id
+// — ids 144-165 sit mid-file — so a session that reads the bottom entry and
+// increments collides. Printing it removes the guesswork that caused this.
+const numeric = [...idCounts.keys()]
+  .map(id => parseInt(id, 10)).filter(n => Number.isFinite(n));
+console.log(String.fromCharCode(10)
+  + '  next free trap id: ' + (Math.max(...numeric) + 1)
+  + '  (max of ' + numeric.length + ' ids; the registry is NOT id-ordered)');
+
 // THE BASELINE IS EXACT IN BOTH DIRECTIONS — see KNOWN_NON_UNIQUE.
 check('the recorded non-unique anchors are still exactly those recorded',
   seenNonUnique.size === KNOWN_NON_UNIQUE.size,

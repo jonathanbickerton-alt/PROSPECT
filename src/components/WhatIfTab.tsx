@@ -16,6 +16,7 @@ import { rebalance, achievableTargetRange, solveForTarget, blendedArpu, conforms
          rebalanceToTarget, exactlyDeterminedUnderTarget } from '../utils/mixConstraint';
 import type { DragWall } from '../utils/mixConstraint';
 import { EventsSummaryTable } from './EventsSummaryTable';
+import { EventOnOffSwitch, OFF_ROW } from './EventOnOffSwitch';
 import { foldChurnRamp, linearChurnRamp, type ChurnFoldMonth } from '../utils/churnFold';
 import { canShowBaseForecast, resolveEventScopeForecast } from '../utils/forecasting';
 import { scenarioAdjustedArpu } from '../utils/scenarioArpu';
@@ -2496,6 +2497,35 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     if (row.pass === 1) { updateYieldEvent(row.id, { enabled: next } as any); return; }
     updatePricingEvent(row.id, { enabled: next } as any);
   }, [updateMarketEvent, updateYieldEvent, updatePricingEvent]);
+
+  /**
+   * A CAMPAIGN'S STATE IS ITS ROWS', AND MIXED IS A REAL ANSWER.
+   *
+   * Not "off unless all on": a campaign with one row on and one off is
+   * NEITHER, and drawing it as off would invite a click that silently turned
+   * the surviving row off too. `null` is the switch's indeterminate input and
+   * renders aria-checked="mixed" - the same three-state contract the summary
+   * row already uses, not a fourth opinion about what a half-applied campaign
+   * means.
+   */
+  const campaignToggleState = useCallback((rows: { enabled?: boolean }[]): boolean | null => {
+    if (rows.length === 0) return true;
+    const on = rows.filter(r => isEventOn(r)).length;
+    return on === 0 ? false : on === rows.length ? true : null;
+  }, []);
+
+  /**
+   * ONE WRITE PER ROW, THROUGH THE SAME HANDLER the individual switches call.
+   *
+   * Not a whole-array write. `updateById` patches by id through a FUNCTIONAL
+   * setState, so N calls in one tick each land on the previous result - which
+   * is what lets a campaign be set row by row without a second code path that
+   * could disagree with the single-row one. A whole-array write would also
+   * clobber any concurrent edit to a sibling this campaign does not own.
+   */
+  const handleSetCampaignEnabled = useCallback((rows: { id: string }[], next: boolean) => {
+    rows.forEach(r => handleSetEventEnabled({ id: r.id, pass: 0 }, next));
+  }, [handleSetEventEnabled]);
 
   const summaryRows = useMemo(
     () => buildEventsSummaryRows({ marketEvents, yieldEvents, pricingEvents }, t),
@@ -5988,6 +6018,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             <table className="w-full text-sm text-left">
               <thead className="text-xs text-slate-500 bg-slate-50 border-b border-slate-200">
                 <tr>
+                  {/* REQ-D6-01 CARD SWITCH 1 of 4 - the column is FIRST, as on the
+                      summary table, because it decides whether the rest of
+                      the row applies at all. */}
+                  <th className="px-5 py-3 font-semibold w-8" />
                   <th className="px-5 py-3 font-semibold">{t('whatif_campaign')}</th>
                   <th className="px-5 py-3 font-semibold">{t('common_month')}</th>
                   <th className="px-5 py-3 font-semibold">{t('common_segment')}</th>
@@ -6007,7 +6041,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               <tbody className="divide-y divide-slate-100">
                 {marketEvents.length === 0 ? (
                   <tr>
-                    <td colSpan={wiTariffL1Col ? 14 : 13} className="px-5 py-8 text-center text-slate-400 italic text-sm">{t('whatif_no_market_events_yet_use_the_form_above_to_ad')}</td>
+                    <td colSpan={wiTariffL1Col ? 15 : 14} className="px-5 py-8 text-center text-slate-400 italic text-sm">{t('whatif_no_market_events_yet_use_the_form_above_to_ad')}</td>
                   </tr>
                 ) : (
                   marketEvents
@@ -6111,13 +6145,36 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         ? (isPromoRow ? promoCampaignGroups.get(campaignLabel)
                                       : campaignGroups.get(campaignLabel))
                         : undefined;
+                      // REQ-D6-01 CAMPAIGN SWITCH 1 of 2 (Volume). ONE control per
+                      // campaign: the pill renders per ROW, so a switch beside
+                      // it unconditionally would put N identical controls and
+                      // N identical testids in the DOM for an N-row campaign.
+                      const isCampaignLead = !!group && group.rows[0]?.id === event.id;
 
                       return (
                         <React.Fragment key={event.id}>
                           <tr className={`hover:bg-slate-50 transition-colors ${
                             isEditing ? 'bg-amber-50/60 ring-1 ring-inset ring-amber-300' :
                             hasWarning ? 'bg-amber-50/40' : ''
-                          }`}>
+                          } ${isEventOn(event) ? '' : OFF_ROW}`}>
+                            {/* REQ-D6-01 CARD SWITCH 1 of 4. A PROMOTION APPEARS IN
+                                TWO TABLES - here and on the Promotion card -
+                                and both switches read the one predicate and
+                                write through the SAME handler, so they are
+                                two views of one state and not two states.
+
+                                (Worded WITHOUT the field name on purpose: the
+                                zero-occurrence pin reads source text, and it
+                                is worth more strict than comment-aware.) */}
+                            <td className="px-5 py-3">
+                              <EventOnOffSwitch
+                                id={event.id}
+                                checked={isEventOn(event)}
+                                onChange={(next) => handleSetEventEnabled({ id: event.id, pass: 0 }, next)}
+                                t={t as any}
+                                dense
+                              />
+                            </td>
                             {/* Campaign column — badge doubles as the group-edit control.
                                 A percentage row also carries the chevron that opens its
                                 derivation, since that is the row whose number needs explaining. */}
@@ -6133,6 +6190,22 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 >
                                   {expandedEventId === event.id ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                                 </button>
+                              )}
+                              {/* REQ-D6-01 CAMPAIGN SWITCH 1 of 2. RENDERED WHETHER OR NOT
+                                  THE CAMPAIGN IS EDITABLE. A percentage
+                                  campaign's group-edit bar (D5-05) stands, and
+                                  is untouched here: switching a campaign off is
+                                  not editing it, and a barred campaign the user
+                                  can see but cannot apply-or-not would be the
+                                  disabled-control-with-no-reason defect again. */}
+                              {isCampaignLead && group && (
+                                <EventOnOffSwitch
+                                  id={`campaign-${campaignLabel}`}
+                                  checked={campaignToggleState(group.rows)}
+                                  onChange={(next) => handleSetCampaignEnabled(group.rows, next)}
+                                  t={t as any}
+                                  dense
+                                />
                               )}
                               {campaignLabel ? (
                                 group?.editable ? (
@@ -6935,6 +7008,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 <table className="w-full text-xs text-left">
                   <thead className="text-[10px] text-slate-500 bg-slate-50 border-b border-slate-200 uppercase tracking-wider">
                     <tr>
+                      {/* REQ-D6-01 CARD SWITCH 2 of 4. */}
+                      <th className="px-4 py-3 font-semibold w-8" />
                       <th className="px-4 py-3 font-semibold">{t('common_month')}</th>
                       <th className="px-4 py-3 font-semibold">{t('whatif_summary_col_name')}</th>
                       <th className="px-4 py-3 font-semibold">{t('common_segment')}</th>
@@ -6955,7 +7030,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   <tbody className="divide-y divide-slate-100">
                     {pricingEvents.length === 0 ? (
                       <tr>
-                        <td colSpan={wiTariffL1Col ? 15 : 14} className="px-5 py-8 text-center text-slate-400 italic">{t('whatif_no_pricing_events_yet_use_the_form_above_to_a')}</td>
+                        <td colSpan={wiTariffL1Col ? 16 : 15} className="px-5 py-8 text-center text-slate-400 italic">{t('whatif_no_pricing_events_yet_use_the_form_above_to_a')}</td>
                       </tr>
                     ) : (
                       pricingEvents
@@ -7000,7 +7075,17 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               editingPricingId === pe.id
                                 ? 'bg-amber-50/60 ring-1 ring-inset ring-amber-300'
                                 : 'hover:bg-slate-50'
-                            }`}>
+                            } ${isEventOn(pe) ? '' : OFF_ROW}`}>
+                              {/* REQ-D6-01 CARD SWITCH 2 of 4. */}
+                              <td className="px-4 py-2.5">
+                                <EventOnOffSwitch
+                                  id={pe.id}
+                                  checked={isEventOn(pe)}
+                                  onChange={(next) => handleSetEventEnabled({ id: pe.id, pass: 2 }, next)}
+                                  t={t as any}
+                                  dense
+                                />
+                              </td>
                               <td className="px-4 py-2.5 font-medium text-slate-700">{fmtMonth(pe.month)}</td>
                               {/* NAME. The card's own list had none while the R4
                                   summary table did, so an event was identifiable in
@@ -7886,6 +7971,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100">
+                      {/* REQ-D6-01 CARD SWITCH 3 of 4. */}
+                      <th className="px-5 py-2.5 w-8" />
                       <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('whatif_campaign')}</th>
                       <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('whatif_target')}</th>
                       <th className="px-5 py-2.5 text-left text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_month')}</th>
@@ -7898,17 +7985,45 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   </thead>
                   <tbody>
                     {marketEvents.filter(e => e.isPromotion).length === 0 ? (
-                      <tr><td colSpan={8} className="px-5 py-6 text-center text-sm text-slate-400">{t('whatif_no_promotions_added_yet')}</td></tr>
+                      <tr><td colSpan={9} className="px-5 py-6 text-center text-sm text-slate-400">{t('whatif_no_promotions_added_yet')}</td></tr>
                     ) : (
                       marketEvents.filter(e => e.isPromotion).map(e => {
                         const isEditingRow = editingPromoId === e.id
                           || (editingPromoCampaign !== null && e.campaignName === editingPromoCampaign);
                         const campaignLabel = e.campaignName || '';
                         const group = campaignLabel ? promoCampaignGroups.get(campaignLabel) : undefined;
+                        // REQ-D6-01 CAMPAIGN SWITCH 2 of 2 (Promotion) - the SAME edit as
+                        // the Volume card's, in the duplicated pill JSX.
+                        const isCampaignLead = !!group && group.rows[0]?.id === e.id;
                         const arms = [e.promoMix ? t('whatif_mix') : null, e.promoPricingAmount !== undefined ? t('whatif_pricing') : null].filter(Boolean).join(' + ');
                         return (
-                          <tr key={e.id} className={`border-b border-slate-50 hover:bg-slate-50 transition-colors ${isEditingRow ? 'bg-amber-50/60 ring-1 ring-inset ring-amber-300' : ''}`}>
+                          <tr key={e.id} className={`border-b border-slate-50 hover:bg-slate-50 transition-colors ${isEditingRow ? 'bg-amber-50/60 ring-1 ring-inset ring-amber-300' : ''} ${isEventOn(e) ? '' : OFF_ROW}`}>
+                            {/* REQ-D6-01 CARD SWITCH 3 of 4 - THE PROMOTION'S SECOND
+                                VIEW. The same promotion is row 1-of-4 above;
+                                one `enabled`, one handler, two switches. */}
+                            <td className="px-5 py-3">
+                              <EventOnOffSwitch
+                                id={e.id}
+                                checked={isEventOn(e)}
+                                onChange={(next) => handleSetEventEnabled({ id: e.id, pass: 0 }, next)}
+                                t={t as any}
+                                dense
+                              />
+                            </td>
                             <td className="px-5 py-3 text-xs max-w-[160px]">
+                              {/* REQ-D6-01 CAMPAIGN SWITCH 2 of 2 - same control, same
+                                  handler, same state; only the markup is
+                                  duplicated, and that duplication is the
+                                  tables', not this session's. */}
+                              {isCampaignLead && group && (
+                                <EventOnOffSwitch
+                                  id={`campaign-${campaignLabel}`}
+                                  checked={campaignToggleState(group.rows)}
+                                  onChange={(next) => handleSetCampaignEnabled(group.rows, next)}
+                                  t={t as any}
+                                  dense
+                                />
+                              )}
                               {campaignLabel ? (
                                 group?.editable ? (
                                   <button
@@ -8349,6 +8464,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 <table className="w-full text-xs text-left">
                   <thead className="text-[10px] text-slate-500 bg-slate-50 border-b border-slate-200 uppercase tracking-wider">
                     <tr>
+                      {/* REQ-D6-01 CARD SWITCH 4 of 4. */}
+                      <th className="px-4 py-3 font-semibold w-8" />
                       <th className="px-4 py-3 font-semibold">{t('common_month')}</th>
                       <th className="px-4 py-3 font-semibold">{t('whatif_summary_col_name')}</th>
                       <th className="px-4 py-3 font-semibold">IBRO</th>
@@ -8374,7 +8491,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   <tbody className="divide-y divide-slate-100">
                     {yieldEvents.length === 0 ? (
                       <tr>
-                        <td colSpan={8 + allYieldTiers.length * 2} className="px-5 py-8 text-center text-slate-400 italic">{t('whatif_no_yield_events_yet_use_the_form_above_to_ove')}</td>
+                        <td colSpan={9 + allYieldTiers.length * 2} className="px-5 py-8 text-center text-slate-400 italic">{t('whatif_no_yield_events_yet_use_the_form_above_to_ove')}</td>
                       </tr>
                     ) : (
                       yieldEvents
@@ -8398,7 +8515,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 editingYieldId === evt.id
                                   ? 'bg-amber-50/60 ring-1 ring-inset ring-amber-300'
                                   : 'hover:bg-slate-50'
-                              }`}>
+                              } ${isEventOn(evt) ? '' : OFF_ROW}`}>
+                                {/* REQ-D6-01 CARD SWITCH 4 of 4. A yield event is TWO
+                                    <tr>s joined by rowSpan, so the switch
+                                    spans both and BOTH carry the greying -
+                                    half a greyed event reads as a rendering
+                                    fault rather than as a state. */}
+                                <td className="px-4 py-2.5" rowSpan={2}>
+                                  <EventOnOffSwitch
+                                    id={evt.id}
+                                    checked={isEventOn(evt)}
+                                    onChange={(next) => handleSetEventEnabled({ id: evt.id, pass: 1 }, next)}
+                                    t={t as any}
+                                    dense
+                                  />
+                                </td>
                                 <td className="px-4 py-2.5 font-medium text-slate-700" rowSpan={2}>{fmtMonth(evt.month)}</td>
                                 <td className={`px-4 py-2.5 max-w-[140px] truncate ${(evt.name || '').trim() ? 'text-slate-700' : 'italic text-slate-400'}`}
                                     rowSpan={2} title={(evt.name || '').trim() || t('whatif_summary_unnamed_yield')}>
@@ -8467,7 +8598,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                 editingYieldId === evt.id
                                   ? 'bg-amber-50/60'
                                   : 'hover:bg-slate-50'
-                              }`}>
+                              } ${isEventOn(evt) ? '' : OFF_ROW}`}>
                                 {allYieldTiers.map(tier => {
                                   const mixPct = evt.tariffMix[tier] ?? null;
                                   const baseArpu = evt.tariffBaseArpu[tier] ?? null;

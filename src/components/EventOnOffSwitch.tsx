@@ -28,6 +28,14 @@
  */
 import React from 'react';
 
+/**
+ * THE GREYING, ONCE. Five row renderers show an off event - the summary table
+ * and the four inline card tables - and the brief asks for "the same class".
+ * A literal repeated five times is five chances to drift, and a half-greyed
+ * set of tables reads as a rendering fault rather than as a state.
+ */
+export const OFF_ROW = 'opacity-45';
+
 export interface EventOnOffSwitchProps {
   /** true = on, false = off, null = indeterminate (a mixed campaign). */
   checked: boolean | null;
