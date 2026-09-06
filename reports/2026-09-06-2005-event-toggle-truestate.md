@@ -1,6 +1,30 @@
 # REQ-D6-01 true-state: every consumer of the three event arrays
 
-__ADVISOR__
+Generated: 2026-09-06 20:08 +0100 (UTC 2026-09-06 19:08)
+Certifies: cb09643 (the state inventoried; NOTHING BUILT)
+Repo: committed 48c168a, pushed (origin in sync) - report only
+BASE: cb09643 - diff EMPTY. READ-ONLY: no source changed, no gate run.
+  REFERENCES in src/: market 93, yield 39, pricing 38, mostly types and dep
+  arrays. BEHAVIOURAL: 12 APPLY, ~14 DISPLAY/COUNT, 2 GROUPING, 9 PERSISTENCE,
+  ~20 MUTATION.
+THE PREDICATE IS MANDATORY AT 12 SITES: EIGHT in What-If (WhatIfTab 1132,
+  1317, 1389, 1458, 1525, 1598, 1682, 1711), FOUR in Compare (scenarioHelper
+  213, 342, 389, 453). appliedEventIds and zeroCoverageEventIds need NO
+  separate treatment - both come from applyEventsToMonth, so 1132 reaches the
+  KPI caption alone.
+COLUMNS: Enabled APPENDS LAST on all three sheets (trap 119); absent =
+  ENABLED, by the Retention_Linked precedent. NO shared base interface exists
+  - one field declared three times, or a new base.
+SURFACES: FIVE row renderers, only ONE shared - EventsSummaryTable, used by
+  What-If AND Compare off one buildEventsSummaryRows. The four card tables are
+  FOUR INLINE copies: a row toggle is four insertions.
+COMPARE: the list reaches computeScenarioForFilter WHOLE and as RAW SHEET
+  ROWS; nothing calls marketEventFromRow. There IS one site, named in the code
+  - the worker's parseSheet, 'THE SHARED PARSE BOUNDARY' - but dropping there
+  hides it from Compare's own panel; the engine is 4 edits. Step 3 and Overall
+  Forecast read NONE.
+TEN QUESTIONS FOR JON, unanswered - chiefly: does a disabled event still
+  EXPORT? If not, disable+save is SILENT DELETION.
 
 ## Base check
 
@@ -32,7 +56,7 @@ References per array, per file, in `src/`:
 Most are type declarations, props, destructures and dependency arrays. What
 matters is the **behavioural** sites, classified below.
 
-### (A) APPLY — the predicate is mandatory. **11 sites**
+### (A) APPLY — the predicate is mandatory. **12 sites**
 
 These decide whether an event moves a number. A disabled event that reaches any
 of them still changes the forecast.
@@ -52,16 +76,19 @@ of them still changes the forecast.
 | 11 | `scenarioHelper.ts:389` | market | Compare's inflow pools |
 | 12 | `scenarioHelper.ts:453` | pricing | Compare's pricing |
 
-That is **8 in the What-If engine and 4 in Compare's second engine** — twelve
-apply sites, not eleven; the count is given as the table rather than as a
-number I might mistype.
+That is **8 in the What-If engine and 4 in Compare's second engine**. The
+table is the count; the heading follows it, not the other way round — my first
+draft of this heading said eleven while the table listed twelve.
 
 **`appliedEventIds` and `zeroCoverageEventIds` need no separate treatment.**
 Both are produced by `applyEventsToMonth` from the array site 1 hands it, so a
 predicate at site 1 propagates to the KPI caption automatically
 (`WhatIfTab.tsx:4481`-region memo reads `m.appliedEventIds`).
 
-### (B) DISPLAY / COUNT — a decision is needed, the predicate may not be. **12 sites**
+### (B) DISPLAY / COUNT — a decision is needed, the predicate may not be. **14 rows**
+
+Rows, not sites: several cover two or three adjacent line numbers (a table's
+empty state, its rows and its footer are one decision, not three).
 
 | site | array | what it does |
 |---|---|---|
