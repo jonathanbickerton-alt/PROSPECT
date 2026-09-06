@@ -7100,6 +7100,48 @@ populated leaf is COMMUNICATED and applied nowhere, consistently at every view;
 and the applied-count caption counts events applied AT THE VIEW (built at
 `bd2cf63`).
 
+#### REQ-D6-01 — PER-EVENT ON/OFF (Jon, 2026-09-06)
+
+**Raised by Alessandro in UAT, 2026-09-06: keep many events and apply subsets
+without deleting and re-adding.** Eight decisions, recorded before any code,
+against the inventory in `reports/2026-09-06-2005-event-toggle-truestate.md`.
+
+1. **Every event carries `enabled?: boolean` on a SHARED BASE INTERFACE;
+   absent = true.** An event that is off applies **NOWHERE**: the twelve apply
+   sites the inventory found, through ONE predicate `isEventOn(e)` in
+   `forecasting.ts`, with an **exactly-twelve** caller pin and a structural
+   check that no site outside it tests `.enabled` directly.
+2. **The switch is INDEPENDENT per event, not a radio.** It renders on the
+   events summary row AND on each card table's row, through **ONE** switch
+   component. The UI term is **"on" / "off"** — never "scenario".
+3. **A campaign has its own switch**: on sets every row on, off sets every row
+   off; a campaign with mixed rows renders **indeterminate**.
+4. **A disabled event stays LISTED everywhere it is listed today, greyed** —
+   including a promotion in both tables, and Compare's per-file panel.
+5. **Export**: an `Enabled` column **appended LAST** on `Market_Events`,
+   `Yield_Events` and `Pricing_Events` (`'Yes'`/`'No'`); the reader is
+   `row.Enabled === 'No' ? false : true`, so **old workbooks load everything
+   on**.
+6. **Counts**: the summary bar's "N events" badge counts events that are **ON**;
+   the KPI caption counts **applied** (unchanged — the predicate at apply site 1
+   propagates through `appliedEventIds`); the **Metadata sheet counts all rows**.
+7. **Tooltip lists, chart month markers and `retentionWarnings` EXCLUDE
+   disabled events**; the pricing self-exclusion and the churn exclusion set
+   **ignore** disabled events; `nextSequence` is unaffected.
+8. **Compare respects the flag at its ENGINE** (`scenarioHelper` 213 / 342 /
+   389 / 453), **not** the parser — so its per-file panel can still list an
+   off event, greyed.
+
+**Why the predicate rather than a filter at the source.** Filtering the array
+once, high up, would be fewer edits and would also remove the event from every
+list that must still show it (decision 4). The twelve apply sites are the only
+places the answer differs from "show it".
+
+**This session does NOT add a sixth row renderer.** The four card tables are
+four existing inline implementations (2005 Item 3); the switch is one component
+inserted four times, and that is recorded as the tables' existing duplication
+rather than created by this work.
+
 #### D5-05 / D5-06 DECIDED (Jon, 2026-09-05) — the bar states its reason; the range reason is distinct
 
 **Recorded before any code. D5-05 is user-raised, from the 2031 finding that a
