@@ -1,5 +1,6 @@
 import { ChevronDown } from 'lucide-react';
 import type { EventSummaryRow, SummaryT } from '../utils/forecasting';
+import { EventOnOffSwitch } from './EventOnOffSwitch';
 
 /**
  * THE R4 EVENTS SUMMARY, as one component with two callers.
@@ -39,10 +40,18 @@ export interface EventsSummaryTableProps {
   testIdPrefix?: string;
   /** Compare stacks one per file and needs them visually subordinate. */
   dense?: boolean;
+  /**
+   * REQ-D6-01. Absent = READ-ONLY, which is exactly Compare's case: it lists a
+   * disabled event greyed (decision 4) but owns no state to change. WhatIfTab
+   * passes a handler; Compare passes none, and the column renders a static
+   * indicator rather than a control nobody can honour.
+   */
+  onSetEnabled?: (row: EventSummaryRow, next: boolean) => void;
 }
 
 export function EventsSummaryTable({
   rows, t, open, onToggle, title, testIdPrefix = 'events-summary', dense = false,
+  onSetEnabled,
 }: EventsSummaryTableProps) {
   return (
     <div className={`bg-white rounded-2xl shadow-sm border border-slate-200 ${dense ? 'rounded-xl' : ''}`}>
@@ -81,6 +90,9 @@ export function EventsSummaryTable({
                 <table className="w-full text-xs text-left">
                   <thead className="text-[10px] text-slate-500 bg-slate-50 uppercase tracking-wider sticky top-0">
                     <tr>
+                      {/* REQ-D6-01: the switch column comes FIRST, because it
+                          decides whether the rest of the row applies at all. */}
+                      <th className="px-3 py-2 font-semibold w-8" />
                       <th className="px-3 py-2 font-semibold">{t('whatif_summary_col_card')}</th>
                       <th className="px-3 py-2 font-semibold">{t('whatif_summary_col_name')}</th>
                       <th className="px-3 py-2 font-semibold">{t('whatif_summary_col_adjusts')}</th>
@@ -90,7 +102,29 @@ export function EventsSummaryTable({
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {rows.map(r => (
-                      <tr key={`${r.pass}-${r.id}`} data-testid={`${testIdPrefix}-row-${r.id}`}>
+                      // OFF ROWS ARE GREYED, NOT HIDDEN (decision 4). One class,
+                      // applied to the row, so a reader can see at a glance which
+                      // events are in play without losing the ones that are not.
+                      <tr key={`${r.pass}-${r.id}`} data-testid={`${testIdPrefix}-row-${r.id}`}
+                          className={r.enabled ? '' : 'opacity-45'}>
+                        <td className="px-3 py-2">
+                          {onSetEnabled ? (
+                            <EventOnOffSwitch
+                              id={r.id}
+                              checked={r.enabled}
+                              onChange={(next) => onSetEnabled(r, next)}
+                              t={t as any}
+                              dense
+                            />
+                          ) : (
+                            <span
+                              data-testid={`event-state-${r.id}`}
+                              className={`inline-block w-2 h-2 rounded-full ${
+                                r.enabled ? 'bg-[#e60000]' : 'bg-slate-300'}`}
+                              title={r.enabled ? t('whatif_event_on') : t('whatif_event_off')}
+                            />
+                          )}
+                        </td>
                         <td className="px-3 py-2 whitespace-nowrap">
                           <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600">
                             {r.card}

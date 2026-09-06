@@ -90,6 +90,8 @@ const VIEWAPPLY = 'scripts/view-apply-mounted-spec.tsx';
 const LOCKRT = 'scripts/lock-roundtrip-spec.ts';
 const TRAPANCHORS = 'scripts/trap-anchors-spec.ts';
 const VALUEPAD = 'scripts/value-padlock-mounted-spec.tsx';
+const EVTOGGLE = 'scripts/event-toggle-spec.tsx';
+const SUMMARYBAR = 'src/components/ForecastSummaryBar.tsx';
 const SLIDERROW = 'src/components/MixSliderRow.tsx';
 const TARGETPANEL = 'src/components/MixTargetPanel.tsx';
 const DEBUNDLE = 'src/locales/de/translation.json';
@@ -97,7 +99,7 @@ const DEBUNDLE = 'src/locales/de/translation.json';
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const APP_COMPARE = 'src/components/ScenarioCompareTab.tsx';
 const SCENARPUENGINE = 'src/utils/scenarioArpu.ts';
-const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE, SLIDERROW, TARGETPANEL];
+const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE, SLIDERROW, TARGETPANEL, SUMMARYBAR];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -2287,6 +2289,42 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '      : solveForTarget(yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap, yieldTargetParsed),',
       '      : solveForTarget(yieldMembers, draftMix, [], effectiveTierArpuMap, yieldTargetParsed),') },
+
+  // ── REQ-D6-01, per-event on/off (Jon, 2026-09-06) ───────────────────────
+  //
+  // FOUR, aimed at the four distinct ways the capability can be lost: the
+  // predicate dropped on one engine, dropped on the OTHER engine, inverted at
+  // the reader so old workbooks load disabled, and bypassed at the badge.
+  // They are separate traps rather than one because a single trap on a
+  // twelve-site predicate would report the same red for four different bugs.
+  { id: '144 an event that is off still applies on the What-If side',
+    why: 'the switch must change the arithmetic, not just the row it sits on',
+    file: WHATIF, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      '        isEventOn(e)\n        && e.date === month.month',
+      '        e.date === month.month') },
+
+  { id: '145 an event that is off still applies on the Compare side',
+    why: "Compare holds RAW SHEET ROWS and never calls marketEventFromRow, so"
+       + ' it is the half a typed-only check would silently leave uncovered',
+    file: SCENHELPER, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      '      if (!isEventOn(e)) return false;\n      const eventDate = e.Start_Month || e.Date || e.Month;\n      if (eventDate !== month.month) return false;',
+      '      const eventDate = e.Start_Month || e.Date || e.Month;\n      if (eventDate !== month.month) return false;') },
+
+  { id: '146 a workbook saved before this column reloads with every event OFF',
+    why: 'absent means ON - every existing save means "all of these apply", and'
+       + ' a reader that reads absence as off destroys those files on open',
+    file: ENGINE, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      "    enabled: row.Enabled === 'No' ? false : true,",
+      "    enabled: row.Enabled === 'Yes' ? true : false,") },
+
+  { id: '147 the summary badge counts events that are switched off',
+    why: 'the badge reports what the forecast used, not what the user has kept',
+    file: SUMMARYBAR, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      '.filter(isEventOn).length', '.length') },
 ];
 
 /**
@@ -2418,7 +2456,7 @@ try {
 
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT) || specFails(AGGRECON) || specFails(VIEWAPPLY) || specFails(LOCKRT) || specFails(TRAPANCHORS) || specFails(VALUEPAD)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT) || specFails(AGGRECON) || specFails(VIEWAPPLY) || specFails(LOCKRT) || specFails(TRAPANCHORS) || specFails(VALUEPAD) || specFails(EVTOGGLE)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

@@ -1,9 +1,9 @@
 import { addMonths, format, isValid } from 'date-fns';
-import type { BaseForecast, BaseForecastMonth, CohortKey, ForecastBand, ForecastModel, FittedParams, SkipReason, ArpuBand, PricingEvent, YieldEvent } from '../types/forecast';
+import type { BaseForecast, BaseForecastMonth, CohortKey, ForecastBand, ForecastModel, FittedParams, SkipReason, ArpuBand, PricingEvent, YieldEvent, EventToggle } from '../types/forecast';
 // One direction only: mixConstraint imports nothing, so this cannot cycle.
 import { blendedArpu } from './mixConstraint';
 
-export interface MarketEvent {
+export interface MarketEvent extends EventToggle {
   id: string;
   scenario: 'Inflow' | 'Retention' | 'Outflow' | 'ARPU';
   segment: string;
@@ -229,7 +229,7 @@ export interface MarketEvent {
  * out of scope here — but it is a third reader of those three, and it is
  * recorded in EXPECTED.md rather than left for someone to find.
  */
-export interface StoredEventModifiers {
+export interface StoredEventModifiers extends EventToggle {
   amountType: 'absolute' | 'percentage';
   percentageBasis: 'baseline' | 'adjusted';
   retentionLinked: boolean;
@@ -391,6 +391,14 @@ export function marketEventExportRow(e: MarketEvent): Record<string, unknown> {
     Churn_Target_Pct:  e.churnTargetPct  ?? '',
     Churn_Current_Pct: e.churnCurrentPct ?? '',
     Churn_Prev_Base:   e.churnPrevBase   ?? '',
+    // REQ-D6-01 (Jon, 2026-09-06), decision 5. APPENDED LAST, never inserted -
+    // the rule trap 119 protects: a reader keys by NAME, but a human diffing
+    // two exports reads column ORDER, and inserting shifts everything after it.
+    //
+    // 'Yes'/'No' rather than a boolean, matching Retention_Linked and
+    // Is_Promotion: a sheet cell is text, and the reader's absence rule is
+    // easier to state over two literals than over a truthiness.
+    Enabled: e.enabled === false ? 'No' : 'Yes',
   };
 }
 
@@ -851,7 +859,7 @@ export function yieldEventSummary(e: YieldEventLike, t: SummaryT): string {
 
 /** The yield fields a summary needs. Declared structurally so `forecasting.ts`
  *  does not take a value import on the types module for one signature. */
-export interface YieldEventLike {
+export interface YieldEventLike extends EventToggle {
   id: string;
   ibro: 'Inflow' | 'Retention';
   segment: string; product: string; channelL1: string; channelL2: string;
@@ -889,6 +897,9 @@ export interface EventSummaryRow {
   scope: string;
   when: string;
   month: string;
+  /** REQ-D6-01. The row's own on/off state, so the summary's switch does not
+   *  have to look the event up again in an array it was built from. */
+  enabled: boolean;
 }
 
 /** Dimensions, wildcards omitted. 'All' and absent both mean "no filter", and
@@ -937,6 +948,7 @@ export function buildEventsSummaryRows(
       // month. Rendering an empty cell would read as "unknown"; the dash is a
       // statement that the carrier has no such field.
       when: e.date, month: e.date,
+      enabled: isEventOn(e),
     });
   }
 
@@ -951,6 +963,7 @@ export function buildEventsSummaryRows(
       scope: scopeOf([e.segment, e.product, e.channelL1, e.channelL2], t),
       when: e.rollForward ? `${e.month} · ${t('whatif_all_fwd')}` : e.month,
       month: e.month,
+      enabled: isEventOn(e),
     });
   }
 
@@ -965,6 +978,7 @@ export function buildEventsSummaryRows(
       scope: scopeOf([e.segment, e.product, e.productL2, e.channelL1, e.channelL2, e.tariffL1, e.tariffL2], t),
       when: e.duration === 'recurring' ? `${e.month} · ${t('whatif_summary_recurring')}` : e.month,
       month: e.month,
+      enabled: isEventOn(e),
     });
   }
 
@@ -1057,6 +1071,14 @@ export function pricingEventExportRow(e: PricingEvent): Record<string, unknown> 
     Priced_Vol: e.pricedVol ?? '',
     Total_Vol: e.totalVol ?? '',
     Comment: e.comment ?? '',
+    // REQ-D6-01 (Jon, 2026-09-06), decision 5. APPENDED LAST, never inserted -
+    // the rule trap 119 protects: a reader keys by NAME, but a human diffing
+    // two exports reads column ORDER, and inserting shifts everything after it.
+    //
+    // 'Yes'/'No' rather than a boolean, matching Retention_Linked and
+    // Is_Promotion: a sheet cell is text, and the reader's absence rule is
+    // easier to state over two literals than over a truthiness.
+    Enabled: e.enabled === false ? 'No' : 'Yes',
   };
 }
 
@@ -1094,6 +1116,8 @@ export function pricingEventFromRow(r: Record<string, unknown>): PricingEvent {
     pricedVol:          readOptionalNumber(r.Priced_Vol),
     totalVol:           readOptionalNumber(r.Total_Vol),
     comment:          String(r.Comment ?? ''),
+    // REQ-D6-01 decision 5. Absent means ON.
+    enabled: r.Enabled === 'No' ? false : true,
   };
 }
 
@@ -1124,6 +1148,11 @@ export function readStoredEventModifiers(row: Record<string, unknown>): StoredEv
     amountType:      row.Amount_Type === 'percentage' ? 'percentage' : 'absolute',
     percentageBasis: row.Percentage_Basis === 'adjusted' ? 'adjusted' : 'baseline',
     retentionLinked: row.Retention_Linked === 'No' ? false : true,
+    // REQ-D6-01 decision 5. ABSENT MEANS ON: only the literal 'No' turns an
+    // event off, so every workbook written before this column existed loads
+    // with everything applying - which is what it meant. Exactly the shape
+    // Retention_Linked already uses two lines away.
+    enabled: row.Enabled === 'No' ? false : true,
     isPromotion:     row.Is_Promotion === 'Yes',
     promoRebanded:   row.Promo_Rebanded === 'Yes',
     promoMixAxis:    axis === 'tariff' ? 'tariff' : axis === 'value' ? 'value' : undefined,
@@ -1311,6 +1340,14 @@ export function yieldEventExportRow(e: YieldEvent): Record<string, unknown> {
     Tariff_Base_ARPU_Override_JSON: e.tariffBaseArpuOverride
       ? JSON.stringify(e.tariffBaseArpuOverride) : '',
     Comment: e.comment ?? '',
+    // REQ-D6-01 (Jon, 2026-09-06), decision 5. APPENDED LAST, never inserted -
+    // the rule trap 119 protects: a reader keys by NAME, but a human diffing
+    // two exports reads column ORDER, and inserting shifts everything after it.
+    //
+    // 'Yes'/'No' rather than a boolean, matching Retention_Linked and
+    // Is_Promotion: a sheet cell is text, and the reader's absence rule is
+    // easier to state over two literals than over a truthiness.
+    Enabled: e.enabled === false ? 'No' : 'Yes',
   };
 }
 
@@ -1357,6 +1394,8 @@ export function yieldEventFromRow(r: Record<string, any>): YieldEvent {
     tariffBaseArpu,
     tariffBaseArpuOverride,
     comment:       String(r.Comment ?? ''),
+    // REQ-D6-01 decision 5. Absent means ON.
+    enabled:       r.Enabled === 'No' ? false : true,
   };
 }
 
@@ -4140,6 +4179,32 @@ export function pricingBaselineArpu(
   // returning 0 would state that the subscribers the event applies to are worth
   // nothing — which is a claim, not an absence.
   return vol > 0 ? rev / vol : null;
+}
+
+/**
+ * IS THIS EVENT ON? REQ-D6-01's ONE predicate.
+ *
+ * THE ONLY PLACE `.enabled` IS READ for an apply decision. Twelve sites ask
+ * this question — eight in the What-If engine, four in Compare's — and a
+ * thirteenth reading the field directly would be a second definition of "off"
+ * that could drift from this one. `spec:event-toggle` pins the caller count
+ * exactly and asserts the zero-occurrence of `.enabled` elsewhere.
+ *
+ * IT ACCEPTS BOTH SHAPES, and that is the point rather than a convenience.
+ * The What-If engine holds TYPED events with an `enabled` boolean; Compare's
+ * engine reads RAW SHEET ROWS and never calls `marketEventFromRow`, so its
+ * events carry the sheet's `Enabled` column as a string. Two engines, one
+ * fact, one reading of it. Decision 8 puts Compare's check at its engine
+ * rather than its parser precisely so a disabled event can still be listed.
+ *
+ * ABSENCE IS ON in both shapes: only an explicit `false`, or the literal
+ * 'No', turns an event off. A workbook written before the column existed has
+ * neither, and loads with every event applying — which is what it meant.
+ */
+export function isEventOn(e: (EventToggle & { Enabled?: unknown }) | null | undefined): boolean {
+  if (!e) return true;
+  if (e.enabled === false) return false;
+  return e.Enabled === undefined || e.Enabled === null || String(e.Enabled) !== 'No';
 }
 
 export function resolvedEventVolume(

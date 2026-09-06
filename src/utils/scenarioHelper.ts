@@ -1,6 +1,7 @@
 import { format, addMonths, parse } from 'date-fns';
 import { eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume,
-         eventScopeMatchesView, pricedVolumesFor, applyPricingToBlend } from './forecasting';
+         eventScopeMatchesView, pricedVolumesFor, applyPricingToBlend,
+         isEventOn } from './forecasting';
 import type { ProRataLeaf, ProRataScope } from './forecasting';
 
 export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod: any, vchan: any, vtariff?: any) {
@@ -211,6 +212,12 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
   
   aggregatedMonths.forEach(month => {
     const applicable = marketEvents.filter((e: any) => {
+      // REQ-D6-01, apply site 9 of 12 - and the FIRST of Compare's four.
+      // These rows are RAW SHEET ROWS, so the flag arrives as the `Enabled`
+      // column rather than as a boolean; isEventOn reads both shapes, which
+      // is why the check lives at the ENGINE and not at the parser
+      // (decision 8: an off event must still be listable in the panel).
+      if (!isEventOn(e)) return false;
       const eventDate = e.Start_Month || e.Date || e.Month;
       if (eventDate !== month.month) return false;
       return eventScopeMatchesView(
@@ -341,6 +348,7 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       
       const applicableInflowYield = yieldEvents
         .filter((ye: any) => {
+          if (!isEventOn(ye)) return false;     // REQ-D6-01, apply site 10
           if (ye.IBRO !== 'Inflow') return false;
           if (!eventScopeMatchesView(
             { segment: ye.Segment, product: ye.Product,
@@ -387,6 +395,7 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       }
 
       const applicableEvents = marketEvents.filter((e: any) => {
+        if (!isEventOn(e)) return false;        // REQ-D6-01, apply site 11
         const eventDate = e.Start_Month || e.Date || e.Month;
         if (eventDate !== prevMonthKey || e.Scenario !== 'Inflow') return false;
         // WIDENED DELIBERATELY. This copy compared FIVE dimensions and omitted
@@ -451,6 +460,7 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
     // (aggregateArpu + delta). Scaling by a leaf's volume share would
     // under-apply the price change. Do not route this through eventShare().
     const applicablePricing = pricingEvents.filter((e: any) => {
+      if (!isEventOn(e)) return false;          // REQ-D6-01, apply site 12
       // THE SHARED PREDICATE, not a seventh private answer. These six inline
       // comparisons were this file's own copy of a rule the What-If side also
       // held — and they OMITTED Product_L2 entirely, so an event scoped to one

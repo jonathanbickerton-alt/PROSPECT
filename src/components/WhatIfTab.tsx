@@ -24,7 +24,7 @@ import { MixTargetPanel } from './MixTargetPanel';
 import type { ScenarioKey, ScenarioPricing } from '../utils/scenarioArpu';
 import { nextAmountControlState, effectiveAmountControl, churnAvailableFor,
          type AmountControl } from '../utils/amountControl';
-import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, forecastCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor, pricingBaselineArpu, eventVolumeLabel } from '../utils/forecasting';
+import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, forecastCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor, pricingBaselineArpu, eventVolumeLabel, isEventOn } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope, PricingVolumes, ViewScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
@@ -1130,7 +1130,11 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
       // shared predicate — which is exactly why the tooltip listed the event
       // the KPI beside it said did not apply.
       const applicable = marketEvents.filter(e =>
-        e.date === month.month
+        // REQ-D6-01, APPLY SITE 1 of 12. This one feeds applyEventsToMonth,
+        // so the KPI caption's appliedEventIds and zeroCoverageEventIds
+        // follow from here without a second check.
+        isEventOn(e)
+        && e.date === month.month
         && eventScopeMatchesView(
           { segment: e.segment, product: e.product, productL2: e.productL2,
             channelL1: e.channel, channelL2: e.channelL2,
@@ -1316,6 +1320,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
         // (either a direct hit or a roll-forward event whose month ≤ prevMonthKey)
         const applicableInflowYield = yieldEvents
           .filter(ye => {
+            if (!isEventOn(ye)) return false;   // REQ-D6-01, apply site 2
             if (ye.ibro !== 'Inflow') return false;
             // THE SHARED PREDICATE (D3-02 sweep). YieldEventLike carries only
             // segment/product/channelL1/channelL2 — no productL2, no tariff — and
@@ -1388,6 +1393,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
         const prevMonthBaselineArpu = computed[idx - 1]?.baseline.arpu ?? m.baseline.arpu;
         marketEvents
           .filter(e =>
+            isEventOn(e) &&                     // REQ-D6-01, apply site 3
             e.date === prevMonthKey &&
             e.scenario === 'Inflow' &&
             !p_eventPools.find(p => p.eventId === e.id) &&
@@ -1457,6 +1463,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
       // ARPU from the standing base, exactly as Inflow event pools already do.
       marketEvents
         .filter(e =>
+          isEventOn(e) &&                       // REQ-D6-01, apply site 4
           e.date === m.month &&
           e.scenario === 'Retention' &&
           e.promoRebanded &&
@@ -1524,6 +1531,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
       // under-apply the rate change. Do not route this through eventShare().
       const applicableRetentionYield = yieldEvents
         .filter(ye => {
+          if (!isEventOn(ye)) return false;     // REQ-D6-01, apply site 5
           if (ye.ibro !== 'Retention') return false;
           // THE SHARED PREDICATE (D3-02 sweep). YieldEventLike carries only
           // segment/product/channelL1/channelL2 — no productL2, no tariff — and
@@ -1597,6 +1605,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
       let pricingARPU = blendedARPU;
       pricingEvents
         .filter(pe => {
+          if (!isEventOn(pe)) return false;     // REQ-D6-01, apply site 6
           // THE SHARED SCOPE PREDICATE. These seven comparisons used to be
           // written out here, and the chart tooltip had no equivalent at all —
           // which is why it listed events that could not move the lines beside
@@ -1680,7 +1689,8 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
        */
       const scenarioPools = (scen: 'Inflow' | 'Retention'): { volume: number; arpu: number }[] =>
         marketEvents
-          .filter(e => e.scenario === scen && e.date === m.month && eventScopeMatchesView(e as any, viewScopeForMatch))
+          // REQ-D6-01, apply site 7.
+          .filter(e => isEventOn(e) && e.scenario === scen && e.date === m.month && eventScopeMatchesView(e as any, viewScopeForMatch))
           .map(e => ({
             // The pool's own rate, by the same precedence the base pool uses:
             // a stated override, else revenue over volume, else a stated rate.
@@ -1710,6 +1720,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
       const pricingFor = (scen: ScenarioKey): ScenarioPricing[] =>
         pricingEvents
           .filter(pe => {
+            if (!isEventOn(pe)) return false;   // REQ-D6-01, apply site 8
             if (!eventScopeMatchesView(pe, viewScopeForMatch)) return false;
             if (pe.duration === 'one-off' ? pe.month !== m.month : pe.month > m.month) return false;
             const touchesBase = pe.target === 'base-only' || pe.target === 'cohorts+base';
@@ -2472,6 +2483,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
    * inside one component is one the other surfaces cannot reach.
    */
   const [summaryOpen, setSummaryOpen] = useState(false);
+  /**
+   * REQ-D6-01: THE ONE PLACE AN EVENT'S ON/OFF STATE IS WRITTEN.
+   *
+   * Routed by `pass` - 0 market, 1 yield, 2 pricing - the same discriminant
+   * the summary row already carries for its sort. Each carrier has a per-event
+   * updater already; nothing here rebuilds an array, so a toggle cannot
+   * disturb a sibling the way a whole-array write could.
+   */
+  const handleSetEventEnabled = useCallback((row: { id: string; pass: 0 | 1 | 2 }, next: boolean) => {
+    if (row.pass === 0) { updateMarketEvent(row.id, { enabled: next } as any); return; }
+    if (row.pass === 1) { updateYieldEvent(row.id, { enabled: next } as any); return; }
+    updatePricingEvent(row.id, { enabled: next } as any);
+  }, [updateMarketEvent, updateYieldEvent, updatePricingEvent]);
+
   const summaryRows = useMemo(
     () => buildEventsSummaryRows({ marketEvents, yieldEvents, pricingEvents }, t),
     [marketEvents, yieldEvents, pricingEvents, t]);
@@ -2881,16 +2906,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       channelL1: cohortScope.chan.l1, channelL2: cohortScope.chan.l2,
       tariffL1: cohortScope.tar.l1, tariffL2: cohortScope.tar.l2,
     };
-    const meForMonth = marketEvents.filter(e => e.date === label && eventScopeMatchesView({
+    // REQ-D6-01 DISPLAY 1 of 6, decision 7: a disabled event is not in the tooltip.
+    // NOT one of the twelve apply sites - this list only describes.
+    const meForMonth = marketEvents.filter(e => isEventOn(e) && e.date === label && eventScopeMatchesView({
       segment: e.segment, product: e.product, productL2: e.productL2,
       channelL1: e.channel, channelL2: e.channelL2,
       tariffL1: e.tariffL1, tariffL2: e.tariffL2,
     }, tipView));
-    const yeForMonth = yieldEvents.filter(e => e.month === label && eventScopeMatchesView({
+    // REQ-D6-01 DISPLAY 2 of 6.
+    const yeForMonth = yieldEvents.filter(e => isEventOn(e) && e.month === label && eventScopeMatchesView({
       segment: e.segment, product: e.product,
       channelL1: e.channelL1, channelL2: e.channelL2,
     }, tipView));
-    const peForMonth = pricingEvents.filter(e => e.month === label && eventScopeMatchesView(e, tipView));
+    // REQ-D6-01 DISPLAY 3 of 6.
+    const peForMonth = pricingEvents.filter(e => isEventOn(e) && e.month === label && eventScopeMatchesView(e, tipView));
     const hasEvents = meForMonth.length + yeForMonth.length + peForMonth.length > 0;
     return (
       <div style={{ background: '#fff', borderRadius: 8, boxShadow: '0 4px 6px -1px rgb(0 0 0/0.1)', padding: '10px 14px', minWidth: 180 }}>
@@ -2949,6 +2978,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
    * excluding, because an unsaved draft is not in `pricingEvents` yet; on EDIT
    * both callers must drop it or the event is measured against a blend that
    * already contains it.
+   *
+   * REQ-D6-01, decision 7 — WHY THERE IS NO `isEventOn` FILTER HERE. The
+   * baseline this returns is computed by `computeAdjustedForecast`, which HOLDS
+   * apply sites 1-8; a disabled pricing event is therefore already absent from
+   * the blend the draft is measured against. Filtering here as well would be a
+   * THIRTEENTH place that decides what "off" means, and the structural pin
+   * exists precisely to keep that number at twelve. The self-exclusion below
+   * still drops the edited event by id, which is a different question -
+   * "is this event me", not "is this event on".
    *
    * MEASURED BEFORE IT WAS PUT IN A RENDER PATH: 6.90 ms for a full slice on
    * the 12,112-row edge fixture, 6.41 ms narrowed to one product — well inside
@@ -3161,6 +3199,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const churnExcludedIds = useMemo(() => {
     if (editingCampaign) {
       return new Set(marketEvents
+        // REQ-D6-01 DISPLAY 6 of 6: an event that is off is not competing
+        // for the churn draft's slot, so it is not excluded from it either.
+        .filter(e => isEventOn(e))
         .filter(e => e.campaignName === editingCampaign && !e.isPromotion)
         .map(e => e.id));
     }
@@ -4479,7 +4520,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     if (!baseForecast) return new Set<string>();
     const warned = new Set<string>();
     marketEvents
-      .filter(e => e.scenario === 'Retention')
+      // REQ-D6-01 DISPLAY 5 of 6: an event that is off cannot exceed anything.
+      .filter(e => isEventOn(e) && e.scenario === 'Retention')
       .forEach(e => {
         const bm = baseForecast.months.find(m => m.month === e.date);
         // View-scoped: compare the volume this view ACTUALLY receives against
@@ -4903,6 +4945,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   {(() => {
                     const seen = new Map<string, string[]>();
                     marketEvents.forEach(e => {
+                      // REQ-D6-01 DISPLAY 4 of 6: no marker for an event that is off.
+                      if (!isEventOn(e)) return;
                       if (!isValid(parse(e.date, 'yyyy-MM', new Date()))) return;
                       const label = e.campaignName || e.name || e.scenario;
                       if (!seen.has(e.date)) seen.set(e.date, []);
@@ -5016,6 +5060,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           open={summaryOpen}
           onToggle={() => setSummaryOpen(o => !o)}
           title={t('whatif_summary_title')}
+          onSetEnabled={handleSetEventEnabled}
         />
 
         {/* ── Volume / Value / Pricing / Promotion tab switcher — below the chart ── */}

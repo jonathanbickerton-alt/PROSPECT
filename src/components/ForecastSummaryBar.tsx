@@ -2,6 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Calendar, Users, Clock, Tag } from 'lucide-react';
 import { useForecast } from '../context/ForecastContext';
+import { isEventOn } from '../utils/forecasting';
 
 /**
  * Persistent summary bar shown at the top of Steps 2 and 3.
@@ -23,7 +24,13 @@ export function ForecastSummaryBar() {
   const firstMonth = months[0]?.month ?? '—';
   const lastMonth = months[months.length - 1]?.month ?? '—';
   const forecastPeriod = `${firstMonth} – ${lastMonth}`;
-  const eventCount = adjustedForecast?.marketEvents.length ?? 0;
+  // REQ-D6-01 decision 6: this badge counts events that are ON.
+  //
+  // Three counters, three questions, and they are MEANT to differ: this one
+  // says how many events are in play, the KPI caption says how many the engine
+  // actually APPLIED at this view, and the Metadata sheet counts every row the
+  // file holds. Collapsing them would make one of the three lie.
+  const eventCount = (adjustedForecast?.marketEvents ?? []).filter(isEventOn).length;
 
   // Format seed base volume compactly
   const fmt = (n: number) => {

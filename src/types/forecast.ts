@@ -345,7 +345,28 @@ export interface BaseForecast {
  * For one-off events, originalBaseArpu stores the pre-event blended ARPU
  * captured at creation time — used for display in the results table.
  */
-export interface PricingEvent {
+/**
+ * REQ-D6-01 (Jon, 2026-09-06): EVERY EVENT CAN BE TURNED OFF.
+ *
+ * ONE field on ONE base, extended by all four event shapes — `MarketEvent`
+ * and `YieldEventLike` in forecasting.ts, `PricingEvent` and `YieldEvent`
+ * here. Four, not three: the yield carrier has a structural twin, and a flag
+ * added to one of a pair is the shape this codebase has paid for repeatedly.
+ *
+ * ABSENT MEANS ON, and that is not a default chosen for convenience: it is
+ * what every event saved before this field existed means. The same carrier
+ * rule `retentionLinked` and `amountType` already follow.
+ *
+ * `enabled`, not `disabled`. Every other behaviour flag here is named for its
+ * positive state (`rollForward`, `retentionLinked`, `isPromotion`), and a
+ * double negative in a predicate is how a reader mis-reads it.
+ */
+export interface EventToggle {
+  /** Absent means ON. Only an explicit `false` turns an event off. */
+  enabled?: boolean;
+}
+
+export interface PricingEvent extends EventToggle {
   id: string;
   segment: string;
   /** Product L1 */
@@ -449,7 +470,7 @@ export interface PricingEvent {
  *
  * blendedArpu = Σ (tariffMix[t] / 100 × tariffBaseArpu[t])
  */
-export interface YieldEvent {
+export interface YieldEvent extends EventToggle {
   id: string;
   /**
    * The tariffs or bands the USER has padlocked on this event's mix
