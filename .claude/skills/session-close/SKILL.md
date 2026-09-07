@@ -130,8 +130,13 @@ Record the actual scores. **A MISSED or INCONCLUSIVE trap is a finding**: it
 means the guard does not protect what it claims to, and the cause is as often
 the trap's anchor as the guard.
 
-Re-measure the pinned figures rather than quoting them: `spec:derive`'s ARPU
-MAPEs, `spec:leafgrain`'s 72-of-74, `spec:generate-missing`'s 74/72/2.
+Re-measure the pinned figures rather than quoting them:
+- `spec:derive`'s four ARPU MAPEs stay distinct (last verified 2026-09-07:
+  13.8845 / 13.4315 / 14.3888 / 13.0192, spread 1.3696pp)
+- `spec:leafgrain`'s 72-of-74 (last verified 2026-09-07: 72/74, both the
+  5-part and 7-part store)
+- `spec:generate-missing`'s 74/72/2 (last verified 2026-09-07: 74 leaves, 72
+  fitted, 2 skipped — asserted, not printed; confirmed by 0 FAILs)
 
 ## 3. EXPECTED.md
 
