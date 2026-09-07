@@ -788,6 +788,8 @@
   "whatif_summary_unnamed_pricing": "Evento de preço sem nome",
   "whatif_summary_title": "Resumo de eventos",
   "whatif_summary_count": "{{count}} eventos",
+  "whatif_summary_show_all": "Mostrar todos",
+  "whatif_summary_show_fewer": "Mostrar menos",
   "whatif_summary_order_note": "Aplicados por esta ordem: eventos de volume e promoção, depois combinação de valor, depois preço.",
   "whatif_summary_empty": "Ainda não há eventos. Os que adicionar nos cartões abaixo aparecem aqui pela ordem em que são aplicados.",
   "whatif_summary_col_card": "Cartão",

@@ -788,6 +788,8 @@
   "whatif_summary_unnamed_pricing": "Evento di prezzo senza nome",
   "whatif_summary_title": "Riepilogo eventi",
   "whatif_summary_count": "{{count}} eventi",
+  "whatif_summary_show_all": "Mostra tutti",
+  "whatif_summary_show_fewer": "Mostra meno",
   "whatif_summary_order_note": "Applicati in quest’ordine: eventi di volume e promozione, poi mix di valore, poi prezzo.",
   "whatif_summary_empty": "Nessun evento. Quelli che aggiungi nelle schede sotto compariranno qui nell’ordine in cui vengono applicati.",
   "whatif_summary_col_card": "Scheda",

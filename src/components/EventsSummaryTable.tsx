@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { EventSummaryRow, SummaryT } from '../utils/forecasting';
 import { EventOnOffSwitch, OFF_ROW } from './EventOnOffSwitch';
@@ -47,33 +48,87 @@ export interface EventsSummaryTableProps {
    * indicator rather than a control nobody can honour.
    */
   onSetEnabled?: (row: EventSummaryRow, next: boolean) => void;
+  /**
+   * D5-08 (Jon, UAT 2026-09-07). OPT-IN, and opt-in on purpose: the decision
+   * is summary-panel-only, and this component is also mounted by Scenario
+   * Compare, once per loaded file. Rendering the toggle unconditionally would
+   * have put it on Compare's panels too — a wider change than was decided,
+   * arriving silently through a shared component.
+   */
+  showAllToggle?: boolean;
 }
+
+/**
+ * D5-08: above how many rows the "Show all" control appears.
+ *
+ * A ROW COUNT STANDING IN FOR A PIXEL CAP, and the approximation is
+ * deliberate. The cap below is `max-h-[320px]` — height, not rows. A row is
+ * ~32px (`px-3 py-2`, `text-xs`) under a ~30px sticky header, so about nine
+ * fit; Jon reported the scrollbar at ten, which agrees.
+ *
+ * The exact test is `scrollHeight > clientHeight`, and it was rejected: jsdom
+ * reports every element as 0×0, so an overflow-measured control could not be
+ * asserted by the mounted spec at all — it would be a control whose appearing
+ * and disappearing nothing could check. A deterministic threshold that a spec
+ * can drive beats an exact one it cannot. The cost is that a very narrow
+ * viewport could wrap cells and overflow below nine rows without the control
+ * offering itself.
+ */
+export const SHOW_ALL_THRESHOLD = 9;
 
 export function EventsSummaryTable({
   rows, t, open, onToggle, title, testIdPrefix = 'events-summary', dense = false,
-  onSetEnabled,
+  onSetEnabled, showAllToggle = false,
 }: EventsSummaryTableProps) {
+  // D5-08. VIEW STATE, local to the panel: not exported, not persisted, and
+  // reset on reload — a height preference is not a property of the forecast.
+  const [showAll, setShowAll] = useState(false);
+  const canShowAll = showAllToggle && rows.length > SHOW_ALL_THRESHOLD;
+  const bodyId = `${testIdPrefix}-scroll`;
   return (
     <div className={`bg-white rounded-2xl shadow-sm border border-slate-200 ${dense ? 'rounded-xl' : ''}`}>
-      <button
-        type="button"
-        data-testid={`${testIdPrefix}-toggle`}
-        aria-expanded={open}
-        onClick={onToggle}
-        className={`w-full flex items-center justify-between gap-3 text-left ${dense ? 'px-4 py-2.5' : 'px-5 py-3'}`}
-      >
-        <span className="flex items-center gap-2 min-w-0">
-          <span className={`font-semibold text-slate-700 truncate ${dense ? 'text-xs' : 'text-sm'}`} title={title}>{title}</span>
-          <span
-            data-testid={`${testIdPrefix}-count`}
-            className="text-[11px] font-semibold text-slate-500 bg-slate-100 rounded-full px-2 py-0.5 shrink-0"
-          >{t('whatif_summary_count', { count: rows.length })}</span>
-        </span>
-        <ChevronDown
-          size={16}
-          className={`shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`}
-        />
-      </button>
+      {/* D5-08: the header is now a ROW holding two independent controls.
+          The collapse button below is UNCHANGED apart from `w-full` becoming
+          `flex-1` so it shares the row — same testid, same aria-expanded, same
+          chevron, same handler. The decision says the chevron is unchanged and
+          separate, and a nested <button> would have been invalid markup and
+          would have collapsed the panel on every "Show all" click. */}
+      <div className="w-full flex items-center gap-2">
+        <button
+          type="button"
+          data-testid={`${testIdPrefix}-toggle`}
+          aria-expanded={open}
+          onClick={onToggle}
+          className={`flex-1 min-w-0 flex items-center justify-between gap-3 text-left ${dense ? 'px-4 py-2.5' : 'px-5 py-3'}`}
+        >
+          <span className="flex items-center gap-2 min-w-0">
+            <span className={`font-semibold text-slate-700 truncate ${dense ? 'text-xs' : 'text-sm'}`} title={title}>{title}</span>
+            <span
+              data-testid={`${testIdPrefix}-count`}
+              className="text-[11px] font-semibold text-slate-500 bg-slate-100 rounded-full px-2 py-0.5 shrink-0"
+            >{t('whatif_summary_count', { count: rows.length })}</span>
+          </span>
+          <ChevronDown
+            size={16}
+            className={`shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`}
+          />
+        </button>
+        {/* Only while the panel is OPEN: a height control on a collapsed panel
+            governs nothing the user can see, and would read as a second way to
+            expand it. */}
+        {open && canShowAll && (
+          <button
+            type="button"
+            data-testid={`${testIdPrefix}-show-all`}
+            aria-expanded={showAll}
+            aria-controls={bodyId}
+            onClick={() => setShowAll(v => !v)}
+            className={`shrink-0 text-[11px] font-semibold text-[#e60000] hover:underline ${dense ? 'pr-4' : 'pr-5'}`}
+          >
+            {showAll ? t('whatif_summary_show_fewer') : t('whatif_summary_show_all')}
+          </button>
+        )}
+      </div>
 
       {open && (
         <div className={dense ? 'px-4 pb-3' : 'px-5 pb-4'} data-testid={`${testIdPrefix}-body`}>
@@ -86,7 +141,15 @@ export function EventsSummaryTable({
                   and the table cannot show chronology because no
                   cross-carrier creation order exists to show. */}
               <p className="text-[10px] text-slate-400 mb-2">{t('whatif_summary_order_note')}</p>
-              <div className="overflow-y-auto max-h-[320px] overflow-x-auto">
+              {/* D5-08: the cap comes OFF when "Show all" is on, so every row
+                  is visible and the PAGE scrolls instead of the panel. The
+                  horizontal scroll stays either way — it is what keeps a wide
+                  table from forcing the whole page sideways. */}
+              <div
+                id={bodyId}
+                data-testid={bodyId}
+                className={showAll ? 'overflow-x-auto' : 'overflow-y-auto max-h-[320px] overflow-x-auto'}
+              >
                 <table className="w-full text-xs text-left">
                   <thead className="text-[10px] text-slate-500 bg-slate-50 uppercase tracking-wider sticky top-0">
                     <tr>

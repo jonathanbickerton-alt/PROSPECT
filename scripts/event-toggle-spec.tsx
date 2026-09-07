@@ -617,6 +617,87 @@ async function main() {
   }
   await mk.close();
 
+  // ══ 7. D5-08 — "SHOW ALL" ON THE EVENTS SUMMARY PANEL ═════════════════
+  //
+  // Jon, UAT 2026-09-07: ten events, capped panel, internal scrollbar, no way
+  // to see every row at once.
+  //
+  // THE INSTRUMENT IS THE CAP AND THE CONTROL'S STATE, NOT THE ROW COUNT.
+  // Every row is in the DOM either way — the cap hides them by height, so
+  // counting <tr> would report success under any cap at all, including the
+  // broken one. What changes is the container's class and aria-expanded.
+  // IMPORTED FROM THE COMPONENT, never restated here. A spec that hard-codes
+  // 9 would keep passing after the product moved its threshold, which is the
+  // parallel-constant failure this codebase names as its recurring one.
+  const { SHOW_ALL_THRESHOLD } = await import('../src/components/EventsSummaryTable');
+  const CAP = 'max-h-[320px]';
+  const capped = (c: any) =>
+    ((c.querySelector('[data-testid="events-summary-scroll"]') as any)
+      ?.className ?? '').includes(CAP);
+
+  // ── Above the threshold: the control appears and removes the cap ────────
+  const many = Array.from({ length: SHOW_ALL_THRESHOLD + 1 }, (_, i) => ({
+    ...EVENT, id: 'sa-' + i, sequence: 100 + i, name: 'sa' + i,
+    date: MONTHS[i % MONTHS.length],
+  }));
+  const big = await mount(many);
+  await big.click(big.q('events-summary-toggle'));   // the panel starts collapsed
+  const btn = () => big.q('events-summary-show-all');
+
+  console.log('');
+  console.log('  show-all  rows ' + many.length
+    + '  control ' + !!btn()
+    + '  capped ' + capped(big.container));
+
+  check('D5-08: above the threshold the control renders',
+    !!btn(), String(many.length) + ' rows > threshold '
+    + SHOW_ALL_THRESHOLD + ' — absent means the panel offers no way out');
+  check('D5-08: it names the scroll container it governs',
+    btn() && btn().getAttribute('aria-controls') === 'events-summary-scroll',
+    String(btn() && btn().getAttribute('aria-controls')));
+  check('D5-08: default is the CAPPED view',
+    capped(big.container) && btn().getAttribute('aria-expanded') === 'false',
+    'capped=' + capped(big.container)
+    + ' aria-expanded=' + (btn() && btn().getAttribute('aria-expanded')));
+
+  await big.click(btn());
+  const afterShowAll = capped(big.container);
+  check('D5-08: clicking it REMOVES the cap',
+    !afterShowAll, 'still capped — the control renders but governs nothing,'
+    + ' which is the shape a trap must be able to catch');
+  check('D5-08: and reports itself expanded',
+    btn().getAttribute('aria-expanded') === 'true',
+    String(btn().getAttribute('aria-expanded')));
+
+  await big.click(btn());
+  check('D5-08: clicking again puts the cap BACK',
+    capped(big.container), 'the round trip, not a one-way switch');
+  check('D5-08: and reports itself collapsed again',
+    btn().getAttribute('aria-expanded') === 'false',
+    String(btn().getAttribute('aria-expanded')));
+
+  // THE COLLAPSE CHEVRON IS SEPARATE AND UNCHANGED (the decision says so).
+  // Toggling height must not collapse the panel, and the two controls must
+  // not share aria-expanded.
+  check('D5-08: the collapse control is still its own, still open',
+    big.q('events-summary-toggle')
+      && big.q('events-summary-toggle').getAttribute('aria-expanded') === 'true');
+  await big.close();
+
+  // ── Below the threshold: no control at all ──────────────────────────────
+  const few = many.slice(0, SHOW_ALL_THRESHOLD - 1);
+  const small = await mount(few);
+  await small.click(small.q('events-summary-toggle'));
+  console.log('  show-all  rows ' + few.length
+    + '   control ' + !!small.q('events-summary-show-all')
+    + '   capped ' + capped(small.container));
+  check('D5-08: below the threshold the control is ABSENT',
+    !small.q('events-summary-show-all'), String(few.length)
+    + ' rows — a panel that already fits gets no control it does not need');
+  check('D5-08: and the table still renders (the check is not vacuous)',
+    !!small.q('events-summary-scroll'));
+  await small.close();
+
   // THE MARKER'S MONTH IS T, UNLAGGED — pinned structurally, and the report
   // says so rather than implying it was read from the DOM. The rendered line
   // carries no month in jsdom (see above), so what is asserted is that the

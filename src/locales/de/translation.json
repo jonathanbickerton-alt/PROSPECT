@@ -788,6 +788,8 @@
   "whatif_summary_unnamed_pricing": "Unbenanntes Preisereignis",
   "whatif_summary_title": "Ereignisübersicht",
   "whatif_summary_count": "{{count}} Ereignisse",
+  "whatif_summary_show_all": "Alle anzeigen",
+  "whatif_summary_show_fewer": "Weniger anzeigen",
   "whatif_summary_order_note": "Anwendungsreihenfolge: Mengen- und Promotionsereignisse, dann Wert-Mix, dann Preis.",
   "whatif_summary_empty": "Noch keine Ereignisse. Was Sie unten auf den Karten anlegen, erscheint hier in der Reihenfolge der Anwendung.",
   "whatif_summary_col_card": "Karte",

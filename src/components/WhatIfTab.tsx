@@ -5110,6 +5110,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           onToggle={() => setSummaryOpen(o => !o)}
           title={t('whatif_summary_title')}
           onSetEnabled={handleSetEventEnabled}
+          // D5-08 (Jon, UAT 2026-09-07). THE ONLY caller that opts in. Compare
+          // mounts the same component once per loaded file and is deliberately
+          // left alone — the decision is summary-panel-only.
+          showAllToggle
         />
 
         {/* ── Volume / Value / Pricing / Promotion tab switcher — below the chart ── */}

@@ -93,6 +93,7 @@ const VALUEPAD = 'scripts/value-padlock-mounted-spec.tsx';
 const EVTOGGLE = 'scripts/event-toggle-spec.tsx';
 const SUMMARYBAR = 'src/components/ForecastSummaryBar.tsx';
 const AIHOLD = 'scripts/ai-hold-spec.ts';
+const SUMMARYTABLE = 'src/components/EventsSummaryTable.tsx';
 const PKGJSON = 'package.json';
 const ENVEXAMPLE = '.env.example';
 const SLIDERROW = 'src/components/MixSliderRow.tsx';
@@ -102,7 +103,7 @@ const DEBUNDLE = 'src/locales/de/translation.json';
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const APP_COMPARE = 'src/components/ScenarioCompareTab.tsx';
 const SCENARPUENGINE = 'src/utils/scenarioArpu.ts';
-const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE, SLIDERROW, TARGETPANEL, SUMMARYBAR, PKGJSON, ENVEXAMPLE];
+const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE, SLIDERROW, TARGETPANEL, SUMMARYBAR, PKGJSON, ENVEXAMPLE, SUMMARYTABLE];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -2407,6 +2408,21 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "yAxisId={MEASURE_AXIS[activeMeasure]}\n                        stroke=\"#f43f5e\"",
       "yAxisId={activeMeasure === 'arpu' ? 'left' : MEASURE_AXIS[activeMeasure]}\n                        stroke=\"#f43f5e\"") },
+
+  // ── D5-08: "Show all" on the Events summary panel (Jon, UAT) ────────────
+  //
+  // THE CONTROL SURVIVES THE MUTATION AND ONLY THE EFFECT DIES. That is the
+  // shape worth trapping: a button that renders, flips aria-expanded, and
+  // governs nothing. It looks correct in a screenshot and in any check that
+  // counts rows — every row is in the DOM under the cap too, hidden by
+  // height — so only a check reading the CONTAINER'S CAP can see it.
+  { id: '176 Show all leaves the height cap in place',
+    why: 'the panel would offer a way to see every row and not deliver it,'
+       + ' which is worse than the capped panel Jon reported',
+    file: SUMMARYTABLE, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      "className={showAll ? 'overflow-x-auto' : 'overflow-y-auto max-h-[320px] overflow-x-auto'}",
+      "className={'overflow-y-auto max-h-[320px] overflow-x-auto'}") },
 ];
 
 /**

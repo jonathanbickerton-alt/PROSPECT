@@ -788,6 +788,8 @@
   "whatif_summary_unnamed_pricing": "Événement tarifaire sans nom",
   "whatif_summary_title": "Résumé des événements",
   "whatif_summary_count": "{{count}} événements",
+  "whatif_summary_show_all": "Tout afficher",
+  "whatif_summary_show_fewer": "Afficher moins",
   "whatif_summary_order_note": "Appliqués dans cet ordre : événements de volume et de promotion, puis combinaison de valeur, puis tarification.",
   "whatif_summary_empty": "Aucun événement pour l’instant. Ceux que vous ajoutez sur les cartes ci-dessous apparaîtront ici dans l’ordre d’application.",
   "whatif_summary_col_card": "Carte",

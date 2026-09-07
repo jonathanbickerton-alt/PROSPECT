@@ -788,6 +788,8 @@
   "whatif_summary_unnamed_pricing": "Unnamed pricing event",
   "whatif_summary_title": "Events summary",
   "whatif_summary_count": "{{count}} events",
+  "whatif_summary_show_all": "Show all",
+  "whatif_summary_show_fewer": "Show fewer",
   "whatif_summary_order_note": "Applied in this order: volume and promotion events, then value mix, then pricing.",
   "whatif_summary_empty": "No events yet. Events you add on the cards below appear here in the order they are applied.",
   "whatif_summary_col_card": "Card",
