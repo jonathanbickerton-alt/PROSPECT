@@ -173,28 +173,7 @@ Then record the outcome on the FOR ADVISOR `Repo:` line.
 Use the **report-writing** skill. It covers the filename, the timestamp command,
 and the FOR ADVISOR block — including the mandatory `Repo:` line.
 
-## 6. Merge
-
-```bash
-git checkout main
-git merge --no-ff <branch> -F <message-file>
-```
-
-Use a message file (`-F`), not `-m`: merge messages contain quotes and
-apostrophes that break shell quoting, and a failed merge mid-session is noise.
-
-Verify the tree first — clean, single worktree, identical to the branch HEAD —
-especially if any gate agent disclosed mutating files.
-
-## 7. Record-the-merge commit
-
-A separate commit after the merge carrying the session report:
-
-```
-Record the Session <X> merge<, and where the walk resumes>
-```
-
-## 8. FINAL STEP — the working-agreement document
+## 6. FINAL STEP — the working-agreement document
 
 Update **"PROSPECT — Development History & Working Agreement"**:
 
@@ -208,6 +187,36 @@ document's own opening line is the reason: a stale copy silently applied is wors
 than no copy. The advisor chat reads it before its first turn, so an un-replaced
 copy will have the advisor drafting work already merged.
 
+## Appendix: Branch sessions only (not the working mode since 2026-08-08)
+
+**Jon, 2026-09-07: direct-to-main is the settled working mode.** Every session
+since 2026-08-08 has committed and pushed straight to `main` — 275 commits, no
+merge — so the steps below apply only on the (currently unused) occasion a
+session actually works on a branch. A direct-to-main session skips this
+appendix entirely; it does not leave its boxes unticked, because they are not
+its boxes to tick.
+
+### Merge
+
+```bash
+git checkout main
+git merge --no-ff <branch> -F <message-file>
+```
+
+Use a message file (`-F`), not `-m`: merge messages contain quotes and
+apostrophes that break shell quoting, and a failed merge mid-session is noise.
+
+Verify the tree first — clean, single worktree, identical to the branch HEAD —
+especially if any gate agent disclosed mutating files.
+
+### Record-the-merge commit
+
+A separate commit after the merge carrying the session report:
+
+```
+Record the Session <X> merge<, and where the walk resumes>
+```
+
 ## Checklist
 
 - [ ] ui-consistency green (or findings fixed and re-run)
@@ -220,7 +229,7 @@ copy will have the advisor drafting work already merged.
 - [ ] pinned figures re-measured, not quoted
 - [ ] EXPECTED.md leads corrected in place
 - [ ] report written via report-writing
-- [ ] tree verified before merge
-- [ ] merged with `-F`
-- [ ] record-the-merge commit
+- [ ] committed to main and pushed
 - [ ] working-agreement document updated **and Jon told to replace the context copy**
+- [ ] **branch sessions only** — tree verified before merge, merged with `-F`,
+      record-the-merge commit (see appendix)
