@@ -49,7 +49,10 @@
 3. **After UAT:** as at v3.3.13 §6 item 3, plus: the two byte-identical campaign pills → one component; the three inline amount-mode controls; `EventOnOffSwitch.tsx` into TARGETS with a trap of its own; the campaign switch driven on the Volume card's pill as well as the Promotion card's; the de/it native read of the D5-05 reason; the `Enabled` column's effect on an OLD app version opening a new file (it will apply off events — a compatibility note in the guide); the guide's Step-2 addendum gains on/off, D5-05's reason, and percentage promotions.
 4. **DQ** — true-state (first act records the UAT re-scope and DQ-after-UAT in EXPECTED.md), then build. **After UAT.**
 
-**Product decisions surfaced, awaiting Jon:** as at v3.3.13.
+**Product decisions surfaced, awaiting Jon:** as at v3.3.13, plus: **main is
+under the AI-approval hold; the `ai-capability` branch is preserved and must
+not reach main; enforcement moves to `spec:ai-hold` (queued)** (Jon,
+2026-09-07 — the hold stands; EXPECTED.md §33 "AI capability — hard gate").
 
 **Standing UAT watches:** as at v3.3.13, plus: `EventOnOffSwitch` has no trap of its own; the campaign switch is driven on one card's pill; the summary panel is collapsed by default (a user must open it to see the switches — Alessandro's first reaction will say whether that is a finding).
 
