@@ -9,7 +9,9 @@ description: Use when touching anything in test-data/ — identifying which fixt
 
 **Row counts are the primary tell.** Measured on the local working copy (the
 `.xlsx` files are untracked, so these are working-copy measurements, not repo
-facts):
+facts). **Measured 2026-08-08** — no measurement date was recorded when this
+table was written; dated here from `git log` on this file, which shows one
+commit, the one that created it, and no edit since:
 
 | fixture | data rows |
 |---|---|
