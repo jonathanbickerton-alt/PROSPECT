@@ -51,8 +51,11 @@
 
 **Product decisions surfaced, awaiting Jon:** as at v3.3.13, plus: **main is
 under the AI-approval hold; the `ai-capability` branch is preserved and must
-not reach main; enforcement moves to `spec:ai-hold` (queued)** (Jon,
+not reach main; enforcement is `spec:ai-hold` (`4926717`)** (Jon,
 2026-09-07 — the hold stands; EXPECTED.md §33 "AI capability — hard gate").
+The branch is a frozen ANCESTOR of main (tip `b2d5a5e`, 0 ahead / 626 behind),
+so `git diff main...ai-capability` is empty and must not be used to re-derive
+the identifier list. `APP_URL` is out of scope, kept deliberately in `432837d`.
 
 **Standing UAT watches:** as at v3.3.13, plus: `EventOnOffSwitch` has no trap of its own; the campaign switch is driven on one card's pill; the summary panel is collapsed by default (a user must open it to see the switches — Alessandro's first reaction will say whether that is a finding).
 
