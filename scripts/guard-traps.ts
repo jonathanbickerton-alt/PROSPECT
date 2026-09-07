@@ -2381,6 +2381,32 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '# APP_URL: The URL where this applet is hosted.',
       'GEMINI_API_KEY="MY_GEMINI_API_KEY"\n\n# APP_URL: The URL where this applet is hosted.') },
+
+  // ── D5-07: the event marker on all three measures (Alessandro, UAT) ─────
+  //
+  // ONE TRAP PER NEWLY-COVERED MEASURE. Volume already worked and is already
+  // guarded by the round trip; these two guard the halves that were BROKEN,
+  // and separately, because the defect was per-measure: binding the marker to
+  // a fixed axis killed it on revenue and arpu while leaving volume perfect.
+  // A single trap over both could be satisfied by either one surviving.
+  //
+  // Each re-creates the original defect for exactly one measure — the marker
+  // bound back to 'left', the axis that carries no series there.
+  { id: '174 the event marker is dropped from the Revenue measure',
+    why: 'the marker vanished on revenue while the adjusted series visibly'
+       + ' moved — the user is told the event exists only on Volume',
+    file: WHATIF, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      "yAxisId={MEASURE_AXIS[activeMeasure]}\n                        stroke=\"#f43f5e\"",
+      "yAxisId={activeMeasure === 'revenue' ? 'left' : MEASURE_AXIS[activeMeasure]}\n                        stroke=\"#f43f5e\"") },
+
+  { id: '175 the event marker is dropped from the ARPU measure',
+    why: 'the same defect on the other half; guarded separately because one'
+       + ' measure surviving must not satisfy a trap that names both',
+    file: WHATIF, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      "yAxisId={MEASURE_AXIS[activeMeasure]}\n                        stroke=\"#f43f5e\"",
+      "yAxisId={activeMeasure === 'arpu' ? 'left' : MEASURE_AXIS[activeMeasure]}\n                        stroke=\"#f43f5e\"") },
 ];
 
 /**

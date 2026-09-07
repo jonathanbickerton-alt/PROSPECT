@@ -4983,11 +4983,30 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       const labels = seen.get(e.date)!;
                       if (!labels.includes(label)) labels.push(label);
                     });
+                    // D5-07 (Alessandro, UAT 2026-09-07). THE MARKER FOLLOWS
+                    // THE MEASURE'S AXIS, exactly as the series below does.
+                    //
+                    // This was `yAxisId="left"`, hard-coded, while
+                    // MEASURE_AXIS puts revenue and arpu on 'right'. Both
+                    // <YAxis> elements are always mounted, so the marker was
+                    // binding to a real axis that carried no series and had no
+                    // domain to draw against — it vanished on two measures out
+                    // of three while the lines beside it visibly moved.
+                    //
+                    // NOT a second read of the event state: the list above is
+                    // computed once, already excludes off events through the
+                    // one isEventOn call (DISPLAY 4 of 6), and already keys on
+                    // the event's own month. Only where it was drawn was wrong.
+                    //
+                    // `x={date}` is the event's month T, UNLAGGED, on every
+                    // measure. The T+1 lag belongs to Base values, not to where
+                    // the event sits — a marker says when the event was
+                    // entered, not when its effect lands.
                     return Array.from(seen.entries()).map(([date, labels]) => (
                       <ReferenceLine
-                        key={`ref-${date}`}
+                        key={`ref-${date}-${activeMeasure}`}
                         x={date}
-                        yAxisId="left"
+                        yAxisId={MEASURE_AXIS[activeMeasure]}
                         stroke="#f43f5e"
                         strokeDasharray="3 3"
                         label={{ position: 'top', value: labels.join(' / '), fill: '#f43f5e', fontSize: 9 }}

@@ -549,6 +549,85 @@ async function main() {
     h.baseDelta() === deltaAllOn, h.baseDelta() + ' vs ' + deltaAllOn);
   await h.close();
 
+  // ══ 6. D5-07 — THE EVENT MARKER, ON ALL THREE MEASURES ════════════════
+  //
+  // Alessandro, UAT 2026-09-07: the vertical dotted marker appeared on the
+  // Volume measure only. The list was always right — it already excluded off
+  // events and already keyed on the event's own month — but it rendered into
+  // a <ReferenceLine> hard-coded to yAxisId="left", while MEASURE_AXIS puts
+  // revenue and arpu on 'right'. Both axes are always mounted, so the marker
+  // bound to a real axis carrying no series and had nothing to draw against.
+  //
+  // MEASURED ON THE MARKER ITSELF, not on the series. A series moving is what
+  // the user could already see on Revenue and ARPU while the marker was
+  // missing — reading the line would have reported success for the exact
+  // defect being fixed. `.recharts-reference-line` is the element that was
+  // absent, so it is the element the check reads.
+  const mk = await mount([
+    { ...EVENT, id: 'mk-on', date: MONTHS[1], name: 'markOn' },
+    { ...EVENT, id: 'mk-off', date: MONTHS[2], name: 'markOff', enabled: false },
+  ]);
+  // The measure row sits in the chart panel; nothing here is collapsed, but
+  // the assertion is worthless if the control is absent, so prove it first.
+  check('D5-07: the measure row is mounted', !!mk.q('grid-measure-row'));
+
+  const markers = () => (mk.container
+    .querySelectorAll('.recharts-reference-line') as any).length as number;
+
+  // THE LABEL TEXT IS NOT READABLE IN JSDOM and is deliberately not the
+  // instrument. Recharts nests the label in a CartesianLabel inside the same
+  // Layer, but it needs a laid-out viewBox to paint; jsdom gives it none, so
+  // `textContent` is '' even when the line itself renders. Measured, not
+  // assumed — the first draft of this block read labels and got [] on all
+  // three measures while the count was already correct.
+  //
+  // The COUNT ROUND TRIP is the stronger instrument anyway: it is read off
+  // the marker element, and it MOVES with event state, so it cannot pass on a
+  // chart that never painted.
+  console.log('');
+  for (const measure of ['volume', 'revenue', 'arpu'] as const) {
+    const btn = mk.q('measure-' + measure);
+    check(`D5-07 ${measure}: the measure control exists`, !!btn);
+    if (!btn) continue;
+    await mk.click(btn);
+
+    const withOneOff = markers();
+    // Turn the OFF event ON: the marker count must RISE. This is the
+    // presence half — a count that never moves is the same observation as a
+    // chart that never rendered, and only the round trip separates them.
+    await mk.click(mk.sw('mk-off'));
+    const bothOn = markers();
+    // And back, to the same number it started at.
+    await mk.click(mk.sw('mk-off'));
+    const backToOne = markers();
+
+    console.log('  marker  ' + measure.padEnd(8)
+      + ' one-off ' + withOneOff + '  both-on ' + bothOn
+      + '  back ' + backToOne);
+
+    check(`D5-07 ${measure}: exactly ONE marker while one event is OFF`,
+      withOneOff === 1, String(withOneOff)
+      + ' — 0 on revenue/arpu was the defect; 0 on volume would mean the'
+      + ' chart did not paint and the whole block is vacuous');
+    check(`D5-07 ${measure}: switching the OFF event ON adds its marker`,
+      bothOn === 2, String(bothOn)
+      + ' — the count must MOVE, or it is not measuring the marker');
+    check(`D5-07 ${measure}: switching it back OFF removes it again`,
+      backToOne === 1, String(backToOne));
+  }
+  await mk.close();
+
+  // THE MARKER'S MONTH IS T, UNLAGGED — pinned structurally, and the report
+  // says so rather than implying it was read from the DOM. The rendered line
+  // carries no month in jsdom (see above), so what is asserted is that the
+  // ReferenceLine's x is bound to the event's own date key and to nothing
+  // derived from it. A lag introduced here would be a change to this line.
+  check('D5-07: the marker x is the event month T, unlagged and per-measure',
+    /<ReferenceLine[\s\S]{0,400}?x=\{date\}[\s\S]{0,200}?yAxisId=\{MEASURE_AXIS\[activeMeasure\]\}/
+      .test(wi),
+    'x must be the `seen` key (the event\'s own e.date) and the axis must'
+    + ' follow the measure — a hard-coded axis is the D5-07 defect');
+
   console.log('');
   console.log(`event-toggle spec: ${pass} passed, ${fails.length} failed`);
   fails.forEach(f => console.log('  FAIL  ' + f));
