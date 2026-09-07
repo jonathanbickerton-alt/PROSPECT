@@ -63,6 +63,9 @@ This is where the Opus budget belongs.
 - Agents write scratch scripts to the scratchpad directory, never into the
   repo. A harness left in the repo root becomes untracked clutter that hides
   genuinely unexpected entries in `git status`.
+- Never invoke `python` in a session; hash and verify with bash/md5sum.
+  (python hung at startup on this machine, 2026-09-07 — Store alias; see
+  reports 0918 and 1241.)
 
 ## Folding gate checks back into definitions
 
