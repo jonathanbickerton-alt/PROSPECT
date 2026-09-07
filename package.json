@@ -56,6 +56,7 @@
     "spec:survival": "tsx scripts/survival-spec.ts",
     "spec:event-roundtrip": "tsx scripts/event-roundtrip-spec.ts",
     "spec:event-toggle": "tsx scripts/event-toggle-spec.tsx",
+    "spec:ai-hold": "tsx scripts/ai-hold-spec.ts",
     "spec:mix-constraint": "tsx scripts/mix-constraint-spec.ts",
     "spec:mix-card": "tsx scripts/mix-card-spec.tsx",
     "spec:override-arpu": "tsx scripts/override-arpu-spec.tsx",

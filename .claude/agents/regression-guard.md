@@ -52,27 +52,36 @@ Run every one of these after any change and report PASS or FAIL for each:
 - Import restores the full session to the same state
 
 ### AI capability (hard gate — main is under an AI-approval hold)
-- No AI/LLM SDK dependencies in `package.json`
-- No AI/LLM imports, model API calls, or API-key patterns in `src/`
-- `.env` is not tracked by git (`git ls-files | grep -i env` — only
-  `.env.example` may appear)
 
-**State the scope of this check when you report it.** It verifies the
-*working tree* of the branch and therefore what actually gets built and
-deployed. That is the correct scope for the hold, and it should stay that
-way. But it does **not** cover repository history or remote branches, and
-it must not be reported as though it did.
+**ENFORCED BY `npm run spec:ai-hold` since 2026-09-07. Run it; do not walk
+this by hand.** The spec asserts all three criteria that used to be listed
+here — no AI/LLM SDK dependency in `package.json` or `package-lock.json`;
+zero AI import / model-call / API-key patterns in tracked `src/`; `.env`
+untracked with only `.env.example` present — plus the three AI identifiers
+at zero across tracked files. Report its score.
 
-In particular, the `ai-capability` branch on origin and the AI capability
-reachable in main's history are a **deliberate preservation pending
-approval, not a leak**. Removing them would require rewriting history,
-which is out of bounds. Finding them is not a regression and must not be
-reported as one.
+Two of this project's own findings are why it is a spec rather than a
+paragraph: a hand-walk of it would have to re-derive the identifier list
+every time, and `git diff main...ai-capability` — the obvious way to derive
+it — returns EMPTY, because `ai-capability` is an **ancestor** of main
+rather than a divergent branch. A reader doing the obvious thing gets a
+false all-clear.
 
-Report this item as: "main's working tree and build output are AI-free
-(package.json, src/, .env). Scope: working tree only — history and remote
-branches are out of scope and the preserved ai-capability branch is
-expected." Do not shorten it to "no AI capability present" — that claim is
+The `ai-capability` branch on origin and the AI capability reachable in
+main's history are a **deliberate preservation pending approval, not a
+leak**. Removing them would require rewriting history, which is out of
+bounds. Finding them is not a regression and must not be reported as one.
+
+**The working-tree-scope sentence is retained, and here is why it is still
+needed.** The spec asserts over TRACKED files only (Jon's decision 2,
+2026-09-07) and prints gitignored hits as an ADVISORY — so its own output
+covers the tracked/ignored boundary, but says nothing about the
+history-and-remote-branches boundary, which is the one a reader is most
+likely to overclaim. So still report it as: "main's tracked tree and build
+output are AI-free (`spec:ai-hold` N/N). Scope: tracked files only — history
+and remote branches are out of scope, the preserved `ai-capability` branch
+is expected, and any gitignored copies are listed in the spec's advisory
+line." Do not shorten it to "no AI capability present" — that claim is
 broader than the evidence.
 
 ## Aggregate cohorts must have a typed forecast

@@ -92,6 +92,9 @@ const TRAPANCHORS = 'scripts/trap-anchors-spec.ts';
 const VALUEPAD = 'scripts/value-padlock-mounted-spec.tsx';
 const EVTOGGLE = 'scripts/event-toggle-spec.tsx';
 const SUMMARYBAR = 'src/components/ForecastSummaryBar.tsx';
+const AIHOLD = 'scripts/ai-hold-spec.ts';
+const PKGJSON = 'package.json';
+const ENVEXAMPLE = '.env.example';
 const SLIDERROW = 'src/components/MixSliderRow.tsx';
 const TARGETPANEL = 'src/components/MixTargetPanel.tsx';
 const DEBUNDLE = 'src/locales/de/translation.json';
@@ -99,7 +102,7 @@ const DEBUNDLE = 'src/locales/de/translation.json';
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const APP_COMPARE = 'src/components/ScenarioCompareTab.tsx';
 const SCENARPUENGINE = 'src/utils/scenarioArpu.ts';
-const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE, SLIDERROW, TARGETPANEL, SUMMARYBAR];
+const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE, SLIDERROW, TARGETPANEL, SUMMARYBAR, PKGJSON, ENVEXAMPLE];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -2355,6 +2358,29 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       'rows.forEach(r => handleSetEventEnabled({ id: r.id, pass: 0 }, next));',
       'rows.slice(0, 1).forEach(r => handleSetEventEnabled({ id: r.id, pass: 0 }, next));') },
+
+  // ── The AI-approval hold (EXPECTED.md §33; Jon, 2026-09-07) ─────────────
+  //
+  // TWO, because the hold has two independent surfaces and one trap could not
+  // say which failed: the DEPENDENCY (what npm installs and the bundler can
+  // reach) and the KEY (what a tracked file hands an operator). The
+  // ai-capability branch declared both and wired neither — there is no call
+  // site on it — so these two are the whole of what ever existed to guard.
+  { id: '172 an AI SDK dependency is declared in package.json',
+    why: "the first of EXPECTED.md 33's three criteria; a dependency is"
+       + ' reachable by the bundler whether or not a source file imports it',
+    file: PKGJSON, spec: AIHOLD,
+    mutate: s => s.replace(
+      '  "devDependencies": {',
+      '  "devDependencies": {\n    "@google/genai": "^1.29.0",') },
+
+  { id: '173 a tracked file re-introduces GEMINI_API_KEY',
+    why: 'this is the exact line 432837d removed from .env.example when the'
+       + ' hold was imposed; putting it back must not be quiet',
+    file: ENVEXAMPLE, spec: AIHOLD,
+    mutate: s => s.replace(
+      '# APP_URL: The URL where this applet is hosted.',
+      'GEMINI_API_KEY="MY_GEMINI_API_KEY"\n\n# APP_URL: The URL where this applet is hosted.') },
 ];
 
 /**
@@ -2486,7 +2512,7 @@ try {
 
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT) || specFails(AGGRECON) || specFails(VIEWAPPLY) || specFails(LOCKRT) || specFails(TRAPANCHORS) || specFails(VALUEPAD) || specFails(EVTOGGLE)) {
+  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT) || specFails(AGGRECON) || specFails(VIEWAPPLY) || specFails(LOCKRT) || specFails(TRAPANCHORS) || specFails(VALUEPAD) || specFails(EVTOGGLE) || specFails(AIHOLD)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');
