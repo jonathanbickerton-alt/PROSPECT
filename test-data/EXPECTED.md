@@ -7176,6 +7176,10 @@ the only measure whose axis the marker was ever wired to.
 So this is a one-axis binding, not a data, filter, scope or lag defect — the
 markers were never wrong about *which* events or *which* month.
 
+**CLOSED `45a437a`; walked by Jon 2026-09-07 on the 07 Sep 09:13 save: markers
+at the event month T on Volume, Revenue and ARPU; off event and off campaign
+produce none; switching on/off moves them on all three.**
+
 #### D5-05 / D5-06 DECIDED (Jon, 2026-09-05) — the bar states its reason; the range reason is distinct
 
 **Recorded before any code. D5-05 is user-raised, from the 2031 finding that a
