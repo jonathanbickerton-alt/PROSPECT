@@ -23,7 +23,7 @@ You never change code. You detect inconsistencies and report them.
   consistent positioning logic
 - Filters: global filter bar and in-page chips stay in sync; filters never
   trigger a re-forecast; default to All on entry where established
-  Tables: sticky headers with internal scroll, consistent row striping,
+- Tables: sticky headers with internal scroll, consistent row striping,
   consistent score colour bands (80+ green, 65-79 amber, 40-64 orange,
   0-39 red)
 - Buttons: consistent placement, the Import/Remove/Export grouping pattern
