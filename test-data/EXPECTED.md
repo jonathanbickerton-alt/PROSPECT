@@ -7142,6 +7142,18 @@ four existing inline implementations (2005 Item 3); the switch is one component
 inserted four times, and that is recorded as the tables' existing duplication
 rather than created by this work.
 
+**CLARIFIED (Jon, 2026-09-07): the Events summary chip counts all rows, on and
+off (total); the KPI caption counts applied via site 1 (volume path); Metadata
+counts all rows. Walked on the 07 Sep 09:13 save: chip 10, caption 4, five on.**
+
+*Note on decision 6 above, which this does not contradict.* Decision 6 is about
+the **summary bar's** badge (`ForecastSummaryBar.tsx:33`,
+`.filter(isEventOn).length`, guarded by trap 169) — a different control from
+the **Events summary panel's** chip (`EventsSummaryTable.tsx:109`,
+`{ count: rows.length }`). The two carry similar labels and count different
+things by design; the chip has always counted all rows, and no spec asserts its
+semantics either way.
+
 #### D5-08 DECIDED (Jon, 2026-09-07) — the Events summary panel can show every row
 
 **User-raised: Jon, UAT, 2026-09-07.** With ten events loaded the Events
