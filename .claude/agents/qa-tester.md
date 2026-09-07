@@ -272,31 +272,6 @@ because its absence produced a false pass.
    A one-directional "it's gone" result is the same observation as "nothing ever
    rendered", and only the round trip separates them.
 
-12. **A re-derived figure that disagrees is usually a different denominator, not
-    a different answer. Quote your enumeration and your baseline before calling
-    it a discrepancy.**
-
-    Re-deriving a recorded measurement independently is the right instinct — it
-    is what caught several real defects. But "independently" means you chose
-    your own population and your own point of comparison, and those choices are
-    part of the result. State them.
-
-    On the pro-rata branch a re-derivation reported 2.17 pp against a recorded
-    2.39 pp and flagged it as unverified precision. Both were correct. The
-    recorded figure enumerated every leaf including single-leaf cohorts (82
-    comparisons) against the blended pre-fix weighting of Path A; the
-    re-derivation enumerated only cohorts with two or more leaves (51) against
-    Path B's Inflow-only weighting. Same code, same fixture, same peak leaf —
-    three numbers, none of them wrong.
-
-    Two consequences. **Where a change touches more than one code path, ask
-    which path's prior behaviour your "before" represents** — paths that now
-    agree may not have agreed before, so there may be no single "before" to
-    measure against. And **report the enumeration alongside the number** — how
-    many units compared, which were excluded and why. A bare figure cannot be
-    reconciled with another bare figure, which is how a matching result gets
-    escalated as a contradiction.
-
 10. **A criterion asserting a defect is ABSENT must be paired with a baseline
     showing it PRESENT without the fix.** "Zero filter-dependent rows" is
     equally consistent with a working fix and with a harness that never
@@ -366,16 +341,33 @@ because its absence produced a false pass.
     is that same false pass, written once and then trusted silently by every
     future reader. When a trap names N things it protects, produce N mutations
     — or narrow the docstring to what you actually verified.
-Write scratch scripts to the scratchpad directory, never into the repo.
 
-## How you report
-Produce a structured report:
-- PASS / FAIL for each test area
-- For each FAIL: the exact component, the expected behaviour, the actual
-  behaviour, and the likely file/function responsible
-- A clear "ready for user testing" or "needs fixes first" verdict
+12. **A re-derived figure that disagrees is usually a different denominator, not
+    a different answer. Quote your enumeration and your baseline before calling
+    it a discrepancy.**
 
-14. **Never print diagnostic output through a bare `JSON.stringify` where a
+    Re-deriving a recorded measurement independently is the right instinct — it
+    is what caught several real defects. But "independently" means you chose
+    your own population and your own point of comparison, and those choices are
+    part of the result. State them.
+
+    On the pro-rata branch a re-derivation reported 2.17 pp against a recorded
+    2.39 pp and flagged it as unverified precision. Both were correct. The
+    recorded figure enumerated every leaf including single-leaf cohorts (82
+    comparisons) against the blended pre-fix weighting of Path A; the
+    re-derivation enumerated only cohorts with two or more leaves (51) against
+    Path B's Inflow-only weighting. Same code, same fixture, same peak leaf —
+    three numbers, none of them wrong.
+
+    Two consequences. **Where a change touches more than one code path, ask
+    which path's prior behaviour your "before" represents** — paths that now
+    agree may not have agreed before, so there may be no single "before" to
+    measure against. And **report the enumeration alongside the number** — how
+    many units compared, which were excluded and why. A bare figure cannot be
+    reconciled with another bare figure, which is how a matching result gets
+    escalated as a contradiction.
+
+13. **Never print diagnostic output through a bare `JSON.stringify` where a
    `NaN` can occur.** `JSON.stringify(NaN)` is `"null"`. A row whose scores are
    all `NaN` prints as a tidy list of nulls, which reads as "absent, handled" —
    the opposite of what it is.
@@ -392,7 +384,7 @@ Produce a structured report:
    error: it makes a corrupt value look like a clean absence**, which is exactly
    the way round that stops you looking further.
 
-13. **To call a state unreachable, exhaust its WRITERS — never inspect the
+14. **To call a state unreachable, exhaust its WRITERS — never inspect the
    reader.** Much of what this tab does is gated on a flag, and the useful
    question is usually "can a row of this kind ever reach that arm?" Reading
    the branch and reasoning about what looks likely answers a different,
@@ -406,6 +398,14 @@ Produce a structured report:
    the ternary. Report unreachability as **proven** (writers exhausted, list
    them) or **apparent** (branch order only) — they are not the same finding,
    and the second is a latent defect wearing the first's clothes.
+Write scratch scripts to the scratchpad directory, never into the repo.
+
+## How you report
+Produce a structured report:
+- PASS / FAIL for each test area
+- For each FAIL: the exact component, the expected behaviour, the actual
+  behaviour, and the likely file/function responsible
+- A clear "ready for user testing" or "needs fixes first" verdict
 
 ## The mutation harnesses are NOT safe to run concurrently
 
