@@ -7142,6 +7142,57 @@ four existing inline implementations (2005 Item 3); the switch is one component
 inserted four times, and that is recorded as the tables' existing duplication
 rather than created by this work.
 
+#### D5-08 DECIDED (Jon, 2026-09-07) — the Events summary panel can show every row
+
+**User-raised: Jon, UAT, 2026-09-07.** With ten events loaded the Events
+summary panel shows a capped-height table with an internal scrollbar, and there
+is no way to see every row at once without scrolling. Screenshot evidence: the
+24M ARPU view, panel open, ten rows, scrollbar visible. **Recorded before any
+code.**
+
+**The decision:**
+
+- The panel's header gains a **"Show all" / "Show fewer"** toggle, beside the
+  count badge.
+- It renders **only when the row count exceeds what the capped height shows** —
+  a panel that already fits gets no control it does not need.
+- **"Show all" removes the height cap** so every row is visible and the *page*
+  scrolls instead of the panel.
+- **Default is the capped view.**
+- This is **view state**: not exported, not persisted, reset on reload.
+- The panel's **collapse chevron is unchanged and separate** — one control
+  decides whether the panel is open, the other how tall it is, and neither
+  should move the other.
+- **Summary panel only. The four card tables are untouched.**
+
+**CAUSE / SURFACE, measured read-only before the build (2026-09-07).** The cap
+is a single Tailwind literal on one div in `EventsSummaryTable.tsx`:
+`overflow-y-auto max-h-[320px] overflow-x-auto`. It is the only `max-h` in that
+file.
+
+**It is NOT shared with the four card tables** — the stop condition did not
+fire. Those four are inline in `WhatIfTab.tsx` and carry `overflow-x-auto`
+only: they scroll horizontally and have no height cap at all. The two `max-h`
+literals elsewhere in `WhatIfTab.tsx` (`:7639`, `:8330`) are the Promotion and
+Value cards' *tier lists*, each with its own literal and its own `> 8`
+threshold, unrelated to this table.
+
+**But the COMPONENT is shared**, with Compare (`ScenarioCompareTab.tsx:678`)
+as well as the What-If summary panel (`WhatIfTab.tsx:5106`). Since the decision
+is summary-only, the toggle is opt-in through a prop rather than rendered
+unconditionally, so Compare's panels are unchanged.
+
+**The threshold is a row count standing in for a pixel cap, and that is an
+approximation.** `max-h-[320px]` caps by height, not by rows; a row is ~32px
+(`px-3 py-2`, `text-xs`) under a ~30px sticky header, so about nine rows fit —
+consistent with Jon seeing a scrollbar at ten. The control therefore appears
+above a named row threshold rather than on a measured overflow. Measuring true
+overflow (`scrollHeight > clientHeight`) would be exact but is unreadable in
+jsdom, which reports every element as 0×0, so it could not be asserted by the
+mounted spec at all. A deterministic, testable threshold was preferred to an
+exact but untestable one; the imprecision is that a very narrow viewport could
+wrap cells and overflow below the threshold.
+
 #### D5-07 DECIDED (Jon, 2026-09-07) — event month markers render on all three measures
 
 **User-raised: Alessandro, UAT, 2026-09-07.** On the Baseline vs Adjusted
