@@ -7193,6 +7193,11 @@ mounted spec at all. A deterministic, testable threshold was preferred to an
 exact but untestable one; the imprecision is that a very narrow viewport could
 wrap cells and overflow below the threshold.
 
+**CLOSED `8c0cb71`; walked by Jon 2026-09-07 on the 07 Sep 09:13 save (ten
+rows): Show all removes the cap and the page scrolls, Show fewer restores it,
+the collapse chevron is unaffected, de/it labels render, Compare shows no
+control.**
+
 #### D5-07 DECIDED (Jon, 2026-09-07) — event month markers render on all three measures
 
 **User-raised: Alessandro, UAT, 2026-09-07.** On the Baseline vs Adjusted
