@@ -100,15 +100,19 @@ A stage that returns a finding is fixed and **the affected stages re-run** — a
 previous verdict does not carry forward to a changed tree. Stage 3 mounts the
 affected walk steps before any walk-ready claim.
 
-Never run `guard-traps` concurrently or in the background: it mutates tracked
-source, and overlapping runs have left a mutated file in the tree.
+Never run a SECOND `guard-traps` instance while one is in flight, and let
+nothing else read the tree while it runs — it mutates tracked source, and
+overlapping runs have left a mutated file in the tree. Backgrounding a single
+instance is fine and is usually necessary: the run exceeds the 120s foreground
+timeout. Start one, wait for it, then run everything else. (Amended 2026-08-09
+in regression-guard.md and qa-tester.md; this file was missed.)
 
 ## 2. Instruments — run and record the scores
 
 ```bash
 npx tsc --noEmit          # expect 0
 npm run build             # expect clean
-npm run guard-traps       # once, foreground — expect N/N caught
+npm run guard-traps       # ONE instance; background it and wait — expect N/N
 npm run traps             # expect 3/3, 0 inconclusive
 npx tsx scripts/scan-i18n.ts --check
 ```
