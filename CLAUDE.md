@@ -344,5 +344,7 @@ block — never a second line inside it.
 ## Compact instructions
 
 When compacting, preserve: test output, agent findings, code changes, and the
-current phase from SCENARIO_PLANNING_BACKLOG.md. Discard: file contents already
-read, verbose tool output, superseded reasoning.
+session's own brief verbatim (the SESSION/BASE/ITEM block) — a compacted brief
+is the thing most often lost and least recoverable. Also preserve the skeleton
+report's path and the BASE hash. Discard: file contents already read, verbose
+tool output, superseded reasoning.
