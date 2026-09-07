@@ -5,7 +5,7 @@
 ```
 Generated: 2026-09-07 13:41 +0100 (UTC 2026-09-07 12:41)
 Certifies: e1c4db0 — numbers measured against this tree, clean
-Repo: committed __PENDING__, pushed (origin in sync)
+Repo: committed f01ceac, pushed (origin in sync) — this line filled by 2nd commit
 Files touched: NONE. The python rule is absent from the tracked prompt surface.
 Old -> new wording: none — nothing to rewrite; see "What was searched".
 full suite:  61/61 green
