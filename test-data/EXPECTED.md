@@ -9240,6 +9240,42 @@ after any change:
     is broader than the evidence supports, and the gap is exactly where a
     false assurance would hide.
 
+    **ENFORCED BY `spec:ai-hold` since 2026-09-07.** The three criteria above
+    are now asserted mechanically rather than walked by hand. Three decisions
+    (Jon, 2026-09-07) fix its scope, recorded before the spec was written:
+
+    1. **`APP_URL` is OUT of scope.** It is a deployment URL, retained
+       deliberately in `432837d` ("Remove AI capability from main ahead of
+       prod deployment pending approval") — the same commit that removed the
+       `GEMINI_API_KEY` block from `.env.example` five lines above it. The
+       spec states the exclusion at the check and cites that hash, so a later
+       reader does not re-open it as a suspected leak.
+    2. **The gate asserts over TRACKED files only.** Gitignored hits
+       (`_archive/`, `.claude/worktrees/`) are printed as an ADVISORY line and
+       never fail the run. Those paths are neither built nor pushable, and a
+       stale local archive must not be able to fail a gate that guards what
+       ships. §33's scope sentence says "working tree, and therefore what is
+       actually built and deployed"; where those two come apart — as they do
+       for an ignored archive — what ships is the half that governs.
+    3. **The spec asserts the three criteria and the three AI identifiers**
+       (`@google/genai` as a dependency; `GEMINI_API_KEY` anywhere tracked;
+       the `process.env.GEMINI_API_KEY` vite define) — **not** the seven paths
+       the branch tree carries. Four of those seven (`app.py`, `run_app.py`,
+       `requirements.txt`, `metadata.json`) are a Streamlit/statsmodels
+       prototype with no LLM content; pinning them under an AI-hold spec would
+       assert something untrue about why they must stay absent.
+
+    **The branch is a frozen ancestor snapshot.** `ai-capability` (tip
+    `b2d5a5e`) is an ANCESTOR of main — 0 commits ahead, 626 behind — so
+    `git diff main...ai-capability` is empty and reads as a false all-clear.
+    It is preserved and never merged forward. Measured 2026-09-07; see
+    `reports/2026-09-07-1230-ai-hold-spec.md`.
+
+    **There is no AI call site, on the branch either.** No `src/` file on
+    `ai-capability` imports `@google/genai`, constructs `GoogleGenAI`, or
+    calls `generateContent`. The capability was declared — dependency, key,
+    build-time define, README instructions — and never wired to anything.
+
 **Verdict rule:** "SAFE FOR USER TESTING" only if all pass. Otherwise list
 the failures and the cohort/filter combination that exposed each.
 
