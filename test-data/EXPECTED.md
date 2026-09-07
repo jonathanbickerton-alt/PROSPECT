@@ -7142,6 +7142,40 @@ four existing inline implementations (2005 Item 3); the switch is one component
 inserted four times, and that is recorded as the tables' existing duplication
 rather than created by this work.
 
+#### D5-07 DECIDED (Jon, 2026-09-07) — event month markers render on all three measures
+
+**User-raised: Alessandro, UAT, 2026-09-07.** On the Baseline vs Adjusted
+Forecast chart the vertical dotted event marker appears on the **Volume**
+measure only. Revenue and ARPU show no marker for the same event, same save,
+filters All/All/All/All, 12M — while the adjusted series on both visibly moves
+at that month. Three screenshots are the evidence. **Recorded before any code.**
+
+**The decision, three parts:**
+
+1. **Markers render on ALL THREE measures** — Volume, Revenue, ARPU. A marker
+   that appears on one measure and not another tells the user the event exists
+   only where they happened to be looking.
+2. **The marker month is the event's month T on every measure, UNLAGGED.** The
+   T+1 lag applies to *Base values* — the stock moves the month after the
+   subscribers reach it — not to where the event sits. A marker is a statement
+   about when the event was entered, not about when its effect lands.
+3. **Off events produce no marker on any measure**, extending REQ-D6-01's
+   existing rule (DISPLAY 4 of 6) rather than adding a second one. The `off`
+   test is `isEventOn`, in the one place that already performs it.
+
+**CAUSE, measured read-only before the fix (2026-09-07).** The marker list is
+computed once and correctly — it already excludes off events and already keys
+on the event's own `e.date`. What it renders into is a `<ReferenceLine>` with a
+**hard-coded `yAxisId="left"`**, while the series render on
+`MEASURE_AXIS[activeMeasure]` — and `MEASURE_AXIS` is
+`{ volume: 'left', revenue: 'right', arpu: 'right' }`. Both `<YAxis>` elements
+are always mounted, so on Revenue and ARPU the marker is bound to a real axis
+that carries no series and therefore has no domain to draw against. Volume is
+the only measure whose axis the marker was ever wired to.
+
+So this is a one-axis binding, not a data, filter, scope or lag defect — the
+markers were never wrong about *which* events or *which* month.
+
 #### D5-05 / D5-06 DECIDED (Jon, 2026-09-05) — the bar states its reason; the range reason is distinct
 
 **Recorded before any code. D5-05 is user-raised, from the 2031 finding that a
