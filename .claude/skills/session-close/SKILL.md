@@ -117,9 +117,14 @@ npm run traps             # expect 3/3, 0 inconclusive
 npx tsx scripts/scan-i18n.ts --check
 ```
 
-Plus every `spec:*` script. Enumerate them with a character class that includes
-digits — `grep -oE '"spec:[a-z0-9-]+":' package.json` — a class of `[a-z-]` alone
-silently omits `spec:step1-panel`.
+```bash
+npm run suite             # every spec:*, serially — expect N/N green
+```
+
+`suite.ts` discovers the scripts from package.json, so nothing has to be
+enumerated by hand — the class that once omitted `spec:step1-panel` is gone
+along with the enumeration. It also distinguishes CRASHED from FAILED: a spec
+that dies before printing its report line has not failed, it has said nothing.
 
 Record the actual scores. **A MISSED or INCONCLUSIVE trap is a finding**: it
 means the guard does not protect what it claims to, and the cause is as often
