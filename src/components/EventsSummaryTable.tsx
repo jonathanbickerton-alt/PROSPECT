@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import type { EventSummaryRow, SummaryT } from '../utils/forecasting';
+import type { EventSummaryRow, SummaryT, EffectStatus } from '../utils/forecasting';
+import { EFFECT_LABEL_KEY } from '../utils/forecasting';
 import { EventOnOffSwitch, OFF_ROW } from './EventOnOffSwitch';
 
 /**
@@ -56,6 +57,14 @@ export interface EventsSummaryTableProps {
    * arriving silently through a shared component.
    */
   showAllToggle?: boolean;
+  /**
+   * D5-09. OPT-IN, for the same reason `showAllToggle` is: this component is
+   * also Compare's, and Compare cannot answer the question yet (its engine
+   * computes the two id sets and its flat row shape drops them). Absent = no
+   * column, which is honest, rather than a column that would read "No
+   * coverage" for every row because the join found nothing.
+   */
+  effectOf?: (row: EventSummaryRow) => EffectStatus;
 }
 
 /**
@@ -78,7 +87,7 @@ export const SHOW_ALL_THRESHOLD = 9;
 
 export function EventsSummaryTable({
   rows, t, open, onToggle, title, testIdPrefix = 'events-summary', dense = false,
-  onSetEnabled, showAllToggle = false,
+  onSetEnabled, showAllToggle = false, effectOf,
 }: EventsSummaryTableProps) {
   // D5-08. VIEW STATE, local to the panel: not exported, not persisted, and
   // reset on reload — a height preference is not a property of the forecast.
@@ -156,6 +165,13 @@ export function EventsSummaryTable({
                       {/* REQ-D6-01: the switch column comes FIRST, because it
                           decides whether the rest of the row applies at all. */}
                       <th className="px-3 py-2 font-semibold w-8" />
+                      {/* D5-09: EFFECT sits after the switch and before CARD —
+                          what the row is DOING reads before what kind of thing
+                          it is. Rendered only when the caller supplies the
+                          predicate; see `effectOf`. */}
+                      {effectOf && (
+                        <th className="px-3 py-2 font-semibold">{t('whatif_summary_col_effect')}</th>
+                      )}
                       <th className="px-3 py-2 font-semibold">{t('whatif_summary_col_card')}</th>
                       <th className="px-3 py-2 font-semibold">{t('whatif_summary_col_name')}</th>
                       <th className="px-3 py-2 font-semibold">{t('whatif_summary_col_adjusts')}</th>
@@ -188,6 +204,26 @@ export function EventsSummaryTable({
                             />
                           )}
                         </td>
+                        {/* D5-09. ONE label component, one keyed string per
+                            status, both from EFFECT_LABEL_KEY — so the four
+                            labels cannot drift between this panel and any
+                            other caller that opts in. */}
+                        {effectOf && (() => {
+                          const st: EffectStatus = effectOf(r);
+                          return (
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              <span
+                                data-testid={`event-effect-${r.id}`}
+                                data-effect={st}
+                                className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                  st === 'volume' ? 'bg-emerald-50 text-emerald-700'
+                                  : st === 'arpu' ? 'bg-cyan-50 text-cyan-700'
+                                  : st === 'no-coverage' ? 'bg-amber-50 text-amber-700'
+                                  : 'bg-slate-100 text-slate-500'}`}
+                              >{t(EFFECT_LABEL_KEY[st])}</span>
+                            </td>
+                          );
+                        })()}
                         <td className="px-3 py-2 whitespace-nowrap">
                           <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600">
                             {r.card}

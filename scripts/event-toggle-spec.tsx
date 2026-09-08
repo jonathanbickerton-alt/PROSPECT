@@ -106,12 +106,29 @@ async function main() {
   const engReaders = readers(eng, 'forecasting.ts');
   const wiReaders = readers(wi, 'WhatIfTab.tsx');
   const shReaders = readers(sh, 'scenarioHelper.ts');
-  // forecasting.ts holds the predicate (one read) and the three export writers
-  // (three more) — the writers must read the field, they are its serialiser.
-  check('pin: `.enabled` is read in forecasting.ts ONLY by the predicate and the three writers',
-    engReaders.length === 4, engReaders.join(' '));
-  check('pin: NO site in the What-If engine reads `.enabled` directly',
-    wiReaders.length === 0, wiReaders.join(' ')
+  // THE PIN GUARDS ONE DEFINITION OF "OFF", NOT THE WORD `.enabled`.
+  //
+  // Two classes of read exist and only one is dangerous:
+  //
+  //   AN EVENT CARRIER's `.enabled` — a second answer to "is this event on",
+  //   which is what drifted for three sessions when the re-banded pool kept
+  //   its own copy of a scope rule. Still pinned at the sites below.
+  //
+  //   A DERIVED ROW's `.enabled` — EventSummaryRow's field, which the builder
+  //   already set FROM isEventOn. Reading it is reading a decision that has
+  //   been made once, not making a second one. EventsSummaryTable.tsx has
+  //   done this four times since REQ-D6-01 and was never in this pin's scope.
+  //
+  // RAISED 2026-09-08 for D5-09, deliberately, both sites named:
+  //   forecasting.ts 4 -> 5: the predicate, the three export writers, and
+  //     `effectStatusOf`'s `row.enabled` (a derived row).
+  //   WhatIfTab.tsx  0 -> 1: the card caption's `summaryRows.filter(r =>
+  //     r.enabled)` (a derived row).
+  // Exact both ways, as before — a sixth or a second is a failure.
+  check('pin: `.enabled` in forecasting.ts = predicate + 3 writers + effectStatusOf',
+    engReaders.length === 5, engReaders.join(' '));
+  check('pin: WhatIfTab reads `.enabled` ONCE, on a derived summary row',
+    wiReaders.length === 1, wiReaders.join(' ')
     + ' — a second definition of "off" is how the pool predicate drifted for three sessions');
   check('pin: nor in Compare\'s', shReaders.length === 0, shReaders.join(' '));
 
@@ -616,6 +633,86 @@ async function main() {
       backToOne === 1, String(backToOne));
   }
   await mk.close();
+
+  // ══ 6b. D5-09 — THE EFFECT COLUMN, AND THE CARD'S TWO NUMBERS ═════════
+  //
+  // Four statuses, driven mounted. THE INSTRUMENT IS THE LABEL ELEMENT —
+  // `event-effect-<id>` and its `data-effect` — not the row count: every row
+  // is present under every status, so counting rows would pass on a column
+  // that labelled all four identically.
+  //
+  // The fixture supplies one of each: an event that applies on the volume
+  // path, one that matches the cohort and lands on nothing, one switched off,
+  // and a yield event that moves ARPU and is in neither id set.
+  const OUT_OF_COHORT = { segment: 'Corporate', product: 'Broadband' };
+  const eff = await mount([
+    { ...EVENT, id: 'e-vol', name: 'vol' },
+    // Targets a product the loaded cohort does not hold, so it matches the
+    // cohort's segment and covers none of it -> zeroCoverageEventIds.
+    { ...EVENT, id: 'e-zero', name: 'zero', ...OUT_OF_COHORT, subscriberVolume: 500 },
+    { ...EVENT, id: 'e-off', name: 'off', enabled: false },
+  ], { yieldEvents: [{ ...YEV, id: 'e-arpu', name: 'arpu' }] });
+  await eff.click(eff.q('events-summary-toggle'));
+
+  const effectOf = (id: string) => {
+    const el = eff.q('event-effect-' + id);
+    return el ? el.getAttribute('data-effect') : null;
+  };
+  const effectText = (id: string) => {
+    const el = eff.q('event-effect-' + id);
+    return el ? String(el.textContent).trim() : null;
+  };
+
+  console.log('');
+  console.log('  effect  vol=' + effectOf('e-vol') + ' zero=' + effectOf('e-zero')
+    + ' off=' + effectOf('e-off') + ' arpu=' + effectOf('e-arpu'));
+  console.log('  labels  ' + JSON.stringify(
+    ['e-vol', 'e-zero', 'e-off', 'e-arpu'].map(effectText)));
+
+  check('D5-09: the EFFECT column renders at all',
+    !!eff.q('event-effect-e-vol'),
+    'no [data-testid="event-effect-*"] — the column is absent and every check'
+    + ' below would be vacuous');
+  check('D5-09: an applied volume event reads Volume',
+    effectOf('e-vol') === 'volume', String(effectOf('e-vol')));
+  check('D5-09: a cohort-matched, zero-coverage event reads No coverage',
+    effectOf('e-zero') === 'no-coverage', String(effectOf('e-zero')));
+  check('D5-09: a switched-off event reads Off, whatever the unions say',
+    effectOf('e-off') === 'off', String(effectOf('e-off')));
+  check('D5-09: an on yield event reads ARPU',
+    effectOf('e-arpu') === 'arpu', String(effectOf('e-arpu')));
+
+  // THE LABELS ARE KEYED, not literals. Asserting the rendered text catches a
+  // hard-coded English string that data-effect alone would not.
+  check('D5-09: the four labels are the keyed strings',
+    effectText('e-vol') === 'Volume' && effectText('e-zero') === 'No coverage'
+      && effectText('e-off') === 'Off' && effectText('e-arpu') === 'ARPU',
+    JSON.stringify(['e-vol', 'e-zero', 'e-off', 'e-arpu'].map(effectText)));
+
+  // THE CARD'S TWO NUMBERS. The number counts the volume path; the caption's
+  // on-count spans all three carriers. They are MEANT to differ, and the
+  // fixture makes them differ: 1 applied, 3 on (vol + zero + arpu).
+  const cardNum = eff.q('impact-event-count');
+  const cardCap = eff.q('impact-event-caption');
+  console.log('  card    number ' + (cardNum && cardNum.textContent)
+    + '  caption ' + JSON.stringify(cardCap && String(cardCap.textContent).trim()));
+  check('D5-09: the card number is the volume-path applied count',
+    cardNum && String(cardNum.textContent).trim() === '1',
+    String(cardNum && cardNum.textContent));
+  check('D5-09: the caption carries the on-count across all carriers',
+    cardCap && String(cardCap.textContent).includes('3'),
+    String(cardCap && cardCap.textContent)
+    + ' — 3 on (volume, zero-coverage, yield); the OFF one must not count');
+
+  // FLIP THE OFF EVENT ON: its label must MOVE. A status that never changes is
+  // indistinguishable from a hard-coded cell.
+  await eff.click(eff.sw('e-off'));
+  console.log('  flipped off -> ' + effectOf('e-off'));
+  check('D5-09: switching the off event on moves its label off "off"',
+    effectOf('e-off') !== 'off' && effectOf('e-off') !== null,
+    String(effectOf('e-off'))
+    + ' — the column must react to the switch, or it is a static cell');
+  await eff.close();
 
   // ══ 7. D5-08 — "SHOW ALL" ON THE EVENTS SUMMARY PANEL ═════════════════
   //

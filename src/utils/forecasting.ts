@@ -902,6 +902,67 @@ export interface EventSummaryRow {
   enabled: boolean;
 }
 
+/**
+ * D5-09. What a summary row is doing to the chart the user is looking at.
+ *
+ * NOT "active" — that is the switch's word. A user who has switched an event
+ * on has made it active; whether it is IN EFFECT here is a different question,
+ * and conflating them is what let a five-on / four-applied pair read as a
+ * defect rather than as two honest counts.
+ */
+export type EffectStatus = 'off' | 'volume' | 'no-coverage' | 'arpu';
+
+/**
+ * THE ONE PLACE A ROW'S EFFECT IS DECIDED — D5-09 (Jon, 2026-09-08).
+ *
+ * Order matters and is the rule, not an implementation detail:
+ *
+ *  1. OFF wins over everything. A switched-off event is not in either union
+ *     (apply site 1 drops it before `applyEventsToMonth` ever sees it), so
+ *     asking the unions first would report it as "no coverage" — technically
+ *     derivable from the sets and completely wrong about why.
+ *  2. VOLUME next: the id is in the applied union, so it moved the volume
+ *     path. This is the only status the engine states rather than infers.
+ *  3. NO COVERAGE: the id is in the zero-coverage union — it matched the
+ *     cohort and landed on none of it. **Cohort-scoped, never view-scoped**:
+ *     `computeAdjustedForecast` is handed `cohortScope`, so this set does not
+ *     move when the viewing bar moves, and the label must not say "view".
+ *  4. ARPU: on, and neither union claims it, so it is a yield or pricing
+ *     carrier acting on the ARPU path.
+ *
+ * **STEP 4 IS AN INFERENCE FROM THE CARRIER, AND SESSION A OWNS THAT
+ * HONESTLY.** There is no applied-id set for the yield or pricing paths —
+ * apply site 2 sorts its candidates and takes `[0]`, recording nothing — so
+ * "on, market carrier, in neither union" cannot currently be distinguished
+ * from "on, yield carrier, superseded by a later roll-forward". Session B
+ * replaces this branch with measured ids and adds `Superseded`. Until then a
+ * market-carrier row that reaches step 4 would be mislabelled `arpu`, which
+ * is why the branch tests `pass` rather than falling through.
+ */
+export function effectStatusOf(
+  row: EventSummaryRow,
+  appliedIds: ReadonlySet<string>,
+  zeroCoverageIds: ReadonlySet<string>,
+): EffectStatus {
+  if (!row.enabled) return 'off';
+  if (appliedIds.has(row.id)) return 'volume';
+  if (zeroCoverageIds.has(row.id)) return 'no-coverage';
+  // pass 1 = yield, 2 = pricing. A pass-0 row that gets here is on, in neither
+  // union, and on the volume carrier — session B's `Superseded`. Reported as
+  // no-coverage rather than arpu, because saying "ARPU" of a volume event
+  // would be inventing a mechanism.
+  return row.pass === 0 ? 'no-coverage' : 'arpu';
+}
+
+/** D5-09. The keyed label for each status — one map, so the four labels
+ *  cannot drift between the summary panel and Compare's panels. */
+export const EFFECT_LABEL_KEY: Record<EffectStatus, string> = {
+  off:           'whatif_effect_off',
+  volume:        'whatif_effect_volume',
+  'no-coverage': 'whatif_effect_no_coverage',
+  arpu:          'whatif_effect_arpu',
+};
+
 /** Dimensions, wildcards omitted. 'All' and absent both mean "no filter", and
  *  printing them would fill the column with noise that says nothing. */
 function scopeOf(dims: (string | undefined)[], t: SummaryT): string {

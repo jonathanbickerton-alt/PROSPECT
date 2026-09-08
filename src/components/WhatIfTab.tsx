@@ -25,7 +25,8 @@ import { MixTargetPanel } from './MixTargetPanel';
 import type { ScenarioKey, ScenarioPricing } from '../utils/scenarioArpu';
 import { nextAmountControlState, effectiveAmountControl, churnAvailableFor,
          type AmountControl } from '../utils/amountControl';
-import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, forecastCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor, pricingBaselineArpu, eventVolumeLabel, isEventOn } from '../utils/forecasting';
+import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, forecastCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor, pricingBaselineArpu, eventVolumeLabel, isEventOn, effectStatusOf } from '../utils/forecasting';
+import type { EventSummaryRow } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope, PricingVolumes, ViewScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
@@ -187,6 +188,10 @@ function measureDisplay(
 }
 
 /** Which axis a measure belongs on, and how its ticks read. */
+/** D5-09. One frozen empty set, so `effectOf`'s fallback does not allocate a
+ *  new Set on every render and re-key the memo that depends on it. */
+const EMPTY_ID_SET: ReadonlySet<string> = new Set<string>();
+
 const MEASURE_AXIS: Record<MeasureName, 'left' | 'right'> = {
   volume: 'left', revenue: 'right', arpu: 'right',
 };
@@ -4537,10 +4542,35 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // than being re-derived beside them.
     const appliedHere = new Set<string>();
     for (const m of adjustedMonths) for (const id of m.appliedEventIds ?? []) appliedHere.add(id);
-    return { baseDelta, arpuByScenario, eventCount: appliedHere.size };
+    // D5-09: the zero-coverage union, derived HERE beside the applied one and
+    // from the same pass, rather than in a second memo that could disagree
+    // with it about which months it walked.
+    const zeroCoverageHere = new Set<string>();
+    for (const m of adjustedMonths) for (const id of m.zeroCoverageEventIds ?? []) zeroCoverageHere.add(id);
+    // D5-09: the SETS travel, not only their size. `eventCount` is unchanged
+    // and is still what the card's number reads — the sets are additional.
+    return { baseDelta, arpuByScenario, eventCount: appliedHere.size,
+             appliedIds: appliedHere, zeroCoverageIds: zeroCoverageHere };
     // baseForecast is READ above - the dependency array is the read-set, and
     // a narrower one is how a stale closure ships (D3-04).
   }, [chartData, adjustedMonths, baseForecast]);
+
+  /**
+   * D5-09. The row's effect, decided by the ONE shared function.
+   *
+   * This closure supplies the two unions and nothing else — the rule lives in
+   * `effectStatusOf` (forecasting.ts) so that Compare, once its id join is
+   * settled, calls the same rule rather than a second copy of it.
+   *
+   * Declared HERE, below `impactSummary`, and not beside `summaryRows` where
+   * it reads more naturally: `impactSummary` is a `const` declared later, so a
+   * closure over it further up would sit in its temporal dead zone.
+   */
+  const effectOf = useCallback((row: EventSummaryRow) => effectStatusOf(
+    row,
+    impactSummary?.appliedIds ?? EMPTY_ID_SET,
+    impactSummary?.zeroCoverageIds ?? EMPTY_ID_SET,
+  ), [impactSummary]);
 
   // -------------------------------------------------------------------------
   // Retention event validation — warn when event volume exceeds forecast Outflow
@@ -4798,11 +4828,22 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               <p className="text-[10px] text-slate-400 mt-1">{t('whatif_adjusted_vs_baseline')}</p>
             </div>
             <div className="p-4 rounded-2xl border bg-slate-50 border-slate-100">
-              <p className="text-xs font-semibold text-slate-500 mb-1">{t('whatif_active_market_events')}</p>
+              {/* D5-09. "Events in effect", NOT "Active" — active is the
+                  switch's word, and a five-on / four-in-effect pair is two
+                  honest counts rather than a discrepancy. The NUMBER is
+                  unchanged: events applied on the volume path. */}
+              <p className="text-xs font-semibold text-slate-500 mb-1">{t('whatif_events_in_effect')}</p>
               <p data-testid="impact-event-count"
                  className="text-2xl font-bold text-slate-700">{impactSummary.eventCount}</p>
-              <p className="text-[10px] text-slate-400 mt-1">
-                {impactSummary.eventCount === 0 ? t('whatif_add_events_below_to_adjust_the_forecast') : t('whatif_events_applied_to_adjusted_path')}
+              <p data-testid="impact-event-caption" className="text-[10px] text-slate-400 mt-1">
+                {impactSummary.eventCount === 0
+                  ? t('whatif_add_events_below_to_adjust_the_forecast')
+                  /* The on-count reads summaryRows' own `enabled`, set by the
+                     builder's isEventOn — no thirteenth call to the predicate,
+                     so the REQ-D6-01 pins do not move. It counts ALL THREE
+                     carriers, deliberately a different population from the
+                     number above, which is volume-path only. */
+                  : t('whatif_effect_caption', { count: summaryRows.filter(r => r.enabled).length })}
               </p>
             </div>
           </div>
@@ -5114,6 +5155,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           // mounts the same component once per loaded file and is deliberately
           // left alone — the decision is summary-panel-only.
           showAllToggle
+          // D5-09. Also opt-in, and Compare also does not get it yet: its id
+          // join is unsettled (see the report's step 1c), so a column there
+          // could state "No coverage" about events that plainly applied.
+          effectOf={effectOf}
         />
 
         {/* ── Volume / Value / Pricing / Promotion tab switcher — below the chart ── */}

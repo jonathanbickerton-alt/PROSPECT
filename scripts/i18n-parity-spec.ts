@@ -75,6 +75,12 @@ const ALLOW: Record<string, Entry> = {
   // only from it. Each of these is entirely §1 words.
   actuals_unit_arpu:      { locales: 'ALL', why: '§1 ARPU' },
   whatif_measure_arpu:    { locales: 'ALL', why: '§1 ARPU' },
+  // D5-09, 2026-09-08. The EFFECT column's four labels; two of them are
+  // legitimately identical to English in some locales, and mistranslating
+  // them to satisfy the pin would be the cheapest wrong answer.
+  whatif_effect_arpu:     { locales: 'ALL', why: '§1 ARPU' },
+  whatif_effect_volume:   { locales: ['fr', 'it', 'pt'],
+                            why: '"Volume" is the correct word in fr/it/pt; de "Menge", es "Volumen" differ' },
   actuals_inf_arpu:       { locales: 'ALL', why: '§1 — Inf(low) + ARPU, both never-translate' },
   actuals_inflow_arpu:    { locales: 'ALL', why: '§1 Inflow + ARPU' },
   actuals_out_arpu:       { locales: 'ALL', why: '§1 — Out(flow) + ARPU' },
@@ -136,8 +142,12 @@ const ALLOW: Record<string, Entry> = {
 };
 
 /** The pin. Changing either number must be a deliberate, reviewed edit. */
-const ALLOW_ENTRIES = 52;
-const ALLOW_PAIRS   = 184;
+// D5-09, 2026-09-08: 52 -> 54 entries, 184 -> 192 pairs. The eight new pairs
+// are whatif_effect_arpu in all five locales and whatif_effect_volume in
+// fr/it/pt. Both edits are deliberate and reviewed, which is what the exact
+// count exists to force.
+const ALLOW_ENTRIES = 54;
+const ALLOW_PAIRS   = 192;
 
 const applies = (e: Entry, l: Loc) => e.locales === 'ALL' || e.locales.includes(l);
 

@@ -2423,6 +2423,22 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "className={showAll ? 'overflow-x-auto' : 'overflow-y-auto max-h-[320px] overflow-x-auto'}",
       "className={'overflow-y-auto max-h-[320px] overflow-x-auto'}") },
+
+  // ── D5-09: the EFFECT column (Jon, 2026-09-08) ──────────────────────────
+  //
+  // THE APPLIED UNION GOES EMPTY AND NOTHING CRASHES. Every on row then falls
+  // through effectStatusOf's step 2 and reads "No coverage" or "ARPU" — a
+  // column full of confident, wrong answers about the user's own data, with
+  // no error anywhere. That is the failure worth a trap: the count on the
+  // card still renders (it reads .size of the same empty set, so it shows 0
+  // and looks merely quiet), and only a check reading the LABELS sees it.
+  { id: '177 the applied union is empty, so nothing reads as Volume',
+    why: 'every event in effect would be relabelled No coverage or ARPU —'
+       + ' an affirmative false statement, not a blank',
+    file: WHATIF, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      'for (const m of adjustedMonths) for (const id of m.appliedEventIds ?? []) appliedHere.add(id);',
+      'for (const m of adjustedMonths) for (const id of [] as string[]) appliedHere.add(id);') },
 ];
 
 /**
