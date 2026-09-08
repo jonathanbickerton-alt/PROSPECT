@@ -7308,6 +7308,12 @@ and therefore to one EFFECT status. The join is then coarser than the data.
 Every workbook PROSPECT exports carries `ID` (`forecasting.ts:330`, `:1120`,
 `:1397`), so this reaches only hand-made or foreign files.
 
+**CLOSED `d63e67a` (sessions A `3d3ef3d`, B `ae58aca`, C `d63e67a`); walked by
+Jon 2026-09-08 on the 07 Sep 09:13 save: card 4 · moving volume · 5 switched
+on; EFFECT reads Volume ×4, Off ×5, ARPU ×1; switching moves label, number and
+caption; de/it render; Compare shows the same column on the 09:13 and 04 Sep
+21:37 files.**
+
 #### D5-08 DECIDED (Jon, 2026-09-07) — the Events summary panel can show every row
 
 **User-raised: Jon, UAT, 2026-09-07.** With ten events loaded the Events
