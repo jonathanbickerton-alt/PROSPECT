@@ -295,6 +295,7 @@
   "whatif_effect_no_coverage": "Keine Abdeckung",
   "whatif_effect_off": "Aus",
   "whatif_effect_arpu": "ARPU",
+  "whatif_effect_superseded": "Überschrieben",
   "whatif_summary_col_effect": "Wirkung",
   "whatif_baseline_vs_adjusted_forecast": "Basisprognose vs. angepasste Prognose",
   "whatif_export": "Exportieren",

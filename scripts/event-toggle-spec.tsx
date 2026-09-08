@@ -714,6 +714,124 @@ async function main() {
     + ' — the column must react to the switch, or it is a static cell');
   await eff.close();
 
+  // ══ 6c. D5-09B — ARPU MEASURED, AND SUPERSEDED ════════════════════════
+  //
+  // Session A inferred ARPU from the carrier: a row that was on and in neither
+  // union was called ARPU if its `pass` was yield or pricing — a statement
+  // about what KIND of thing it is, dressed as a statement about what it did.
+  // The engine now records the winners and the candidates, so these are
+  // observations. Same instrument as 6b: the label element, never a row count.
+  const arpuCase = async (
+    label: string,
+    market: any[],
+    opts: any,
+  ) => {
+    const h2 = await mount(market, opts);
+    await h2.click(h2.q('events-summary-toggle'));
+    const read = (id: string) => {
+      const el = h2.q('event-effect-' + id);
+      return el ? el.getAttribute('data-effect') : null;
+    };
+    return { h2, read, label };
+  };
+
+  console.log('');
+
+  // (a) one yield event, on and matched -> ARPU (measured, not inferred)
+  {
+    const { h2, read } = await arpuCase('a', [EVENT],
+      { yieldEvents: [{ ...YEV, id: 'y-a' }] });
+    console.log('  (a) single yield          -> ' + read('y-a'));
+    check('D5-09B(a): a matched yield event reads ARPU',
+      read('y-a') === 'arpu', String(read('y-a')));
+    await h2.close();
+  }
+
+  // (b) SUPERSEDED IS "CANDIDATE SOMEWHERE, WINNER NOWHERE" — and getting
+  //     this fixture right is the finding.
+  //
+  //     The obvious construction — an early roll-forward event and a later one
+  //     — does NOT supersede. Measured: the early event WINS the first month
+  //     it qualifies in (the later one's month has not arrived yet) and only
+  //     loses afterwards, so it moved ARPU and correctly reads `arpu`. Rule 3
+  //     sits above rule 4 precisely so a winner-anywhere is never called
+  //     superseded.
+  //
+  //     A genuine supersede needs two candidates in the SAME month, where one
+  //     can never win: equal months sort equal, the sort is stable (ES2019),
+  //     so the first in the array wins every time and the second never does.
+  {
+    const { h2, read } = await arpuCase('b', [EVENT], { yieldEvents: [
+      { ...YEV, id: 'y-wins',  month: MONTHS[0], rollForward: false },
+      { ...YEV, id: 'y-loses', month: MONTHS[0], rollForward: false },
+    ] });
+    console.log('  (b) two yield, same month -> wins=' + read('y-wins')
+      + ' loses=' + read('y-loses'));
+    check('D5-09B(b): the winning yield event reads ARPU',
+      read('y-wins') === 'arpu', String(read('y-wins')));
+    check('D5-09B(b): the one that never wins reads Superseded',
+      read('y-loses') === 'superseded', String(read('y-loses'))
+      + ' — it matched and reached the sort, so "no coverage" would name the'
+      + ' wrong reason and "arpu" would claim an effect it never had');
+    await h2.close();
+  }
+
+  // (c) a pricing event on -> ARPU. Pricing applies EVERY match, so it can
+  //     never be superseded; this also pins that asymmetry.
+  {
+    const { h2, read } = await arpuCase('c', [EVENT],
+      { pricingEvents: [{ ...PEV, id: 'p-c' }] });
+    console.log('  (c) pricing               -> ' + read('p-c'));
+    check('D5-09B(c): an applied pricing event reads ARPU',
+      read('p-c') === 'arpu', String(read('p-c')));
+    await h2.close();
+  }
+
+  // (d) a yield event whose scope matches nothing -> No coverage, NOT ARPU.
+  //     Under session A's carrier inference this read ARPU purely because it
+  //     was a yield row. That is the regression this case pins.
+  {
+    const { h2, read } = await arpuCase('d', [EVENT], { yieldEvents: [
+      { ...YEV, id: 'y-nomatch', segment: 'SOHO', product: 'Fixed Connectivity' },
+    ] });
+    console.log('  (d) yield, scope matches 0-> ' + read('y-nomatch'));
+    check('D5-09B(d): an unmatched yield event reads No coverage, not ARPU',
+      read('y-nomatch') === 'no-coverage', String(read('y-nomatch'))
+      + ' — "arpu" here would be the carrier inference session B removed');
+    await h2.close();
+  }
+
+  // (e) a pass-0 (market) event in no union -> No coverage. Rule 4 is gone, so
+  //     nothing consults `pass` any more.
+  {
+    const { h2, read } = await arpuCase('e', [
+      EVENT,
+      { ...EVENT, id: 'm-nomatch', name: 'nomatch',
+        segment: 'SOHO', product: 'Fixed Connectivity' },
+    ], {});
+    console.log('  (e) market, no union      -> ' + read('m-nomatch'));
+    check('D5-09B(e): a market event in no union reads No coverage',
+      read('m-nomatch') === 'no-coverage', String(read('m-nomatch')));
+    await h2.close();
+  }
+
+  // (f) THE CARD IS UNTOUCHED BY ALL OF THIS. Its number is the volume-path
+  //     applied count and none of the ARPU work may move it.
+  {
+    const { h2 } = await arpuCase('f', [EVENT],
+      { yieldEvents: [{ ...YEV, id: 'y-f' }], pricingEvents: [{ ...PEV, id: 'p-f' }] });
+    const n = h2.q('impact-event-count');
+    const cap = h2.q('impact-event-caption');
+    console.log('  (f) card number/caption   -> ' + (n && n.textContent)
+      + ' / ' + JSON.stringify(cap && String(cap.textContent).trim()));
+    check('D5-09B(f): the card number is still the volume-path count',
+      n && String(n.textContent).trim() === '1', String(n && n.textContent));
+    check('D5-09B(f): the caption still counts every switched-on carrier',
+      cap && String(cap.textContent).includes('3'),
+      String(cap && cap.textContent) + ' — 1 market + 1 yield + 1 pricing');
+    await h2.close();
+  }
+
   // ══ 7. D5-08 — "SHOW ALL" ON THE EVENTS SUMMARY PANEL ═════════════════
   //
   // Jon, UAT 2026-09-07: ten events, capped panel, internal scrollbar, no way

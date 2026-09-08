@@ -582,6 +582,22 @@ export interface AdjustedForecastMonth {
    * Optional so a workbook written before 2026-09-03 still restores.
    */
   zeroCoverageEventIds?: string[];
+  /**
+   * D5-09B. The ARPU carriers this month, measured rather than inferred.
+   *
+   * `appliedArpuIds` — every yield WINNER actually chosen (What-If sites 2 and
+   * 5, Compare site 10) and every pricing event actually applied (What-If
+   * sites 6 and 8, Compare site 12).
+   * `arpuCandidateIds` — every yield event that reached the winner sort. One
+   * of them wins; the rest are SUPERSEDED, which is yield-only because
+   * pricing applies every match and so displaces nothing.
+   *
+   * VIEW-TIME FACTS, NOT PROPERTIES OF AN EVENT — they describe one cohort's
+   * chart, and they are deliberately not exported. Optional for the same
+   * reason as the two above: an older workbook restores without them.
+   */
+  appliedArpuIds?: string[];
+  arpuCandidateIds?: string[];
   /** The uplifted values BEFORE the zero floor. Equal to `uplifted` unless an
    *  event drove a metric negative — which is what makes a floor breach
    *  reportable rather than silently clipped. */

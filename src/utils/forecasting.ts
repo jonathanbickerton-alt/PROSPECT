@@ -910,7 +910,7 @@ export interface EventSummaryRow {
  * and conflating them is what let a five-on / four-applied pair read as a
  * defect rather than as two honest counts.
  */
-export type EffectStatus = 'off' | 'volume' | 'no-coverage' | 'arpu';
+export type EffectStatus = 'off' | 'volume' | 'no-coverage' | 'arpu' | 'superseded';
 
 /**
  * THE ONE PLACE A ROW'S EFFECT IS DECIDED — D5-09 (Jon, 2026-09-08).
@@ -930,29 +930,42 @@ export type EffectStatus = 'off' | 'volume' | 'no-coverage' | 'arpu';
  *  4. ARPU: on, and neither union claims it, so it is a yield or pricing
  *     carrier acting on the ARPU path.
  *
- * **STEP 4 IS AN INFERENCE FROM THE CARRIER, AND SESSION A OWNS THAT
- * HONESTLY.** There is no applied-id set for the yield or pricing paths —
- * apply site 2 sorts its candidates and takes `[0]`, recording nothing — so
- * "on, market carrier, in neither union" cannot currently be distinguished
- * from "on, yield carrier, superseded by a later roll-forward". Session B
- * replaces this branch with measured ids and adds `Superseded`. Until then a
- * market-carrier row that reaches step 4 would be mislabelled `arpu`, which
- * is why the branch tests `pass` rather than falling through.
+ * **SESSION B, 2026-09-08: THE ARPU LABEL IS MEASURED AND THE CARRIER
+ * INFERENCE IS GONE.** Session A had no applied-id set for the yield or
+ * pricing paths, so it read `pass` and called a yield or pricing row `arpu` —
+ * a statement about what KIND of thing the event is, dressed as a statement
+ * about what it DID. The engine now records `appliedArpuIds` (every yield
+ * winner chosen at sites 2 and 5, every pricing event applied at 6 and 8) and
+ * `arpuCandidateIds` (every yield event that reached the sort), so rules 3
+ * and 4 below are observations rather than guesses, and rule 6 no longer
+ * consults the carrier at all.
+ *
+ * **RULE 5 AND RULE 6 RETURN THE SAME VALUE, DELIBERATELY.** Keeping them
+ * apart is what makes the fall-through visible: 5 is "the engine said this
+ * covered nothing", 6 is "no set claims it". They read alike to the user and
+ * differently to anyone changing this function, and collapsing them would
+ * hide the second case the moment a sixth status is added.
  */
 export function effectStatusOf(
   row: EventSummaryRow,
   appliedIds: ReadonlySet<string>,
   zeroCoverageIds: ReadonlySet<string>,
+  appliedArpuIds: ReadonlySet<string> = EMPTY_IDS,
+  arpuCandidateIds: ReadonlySet<string> = EMPTY_IDS,
 ): EffectStatus {
-  if (!row.enabled) return 'off';
-  if (appliedIds.has(row.id)) return 'volume';
-  if (zeroCoverageIds.has(row.id)) return 'no-coverage';
-  // pass 1 = yield, 2 = pricing. A pass-0 row that gets here is on, in neither
-  // union, and on the volume carrier — session B's `Superseded`. Reported as
-  // no-coverage rather than arpu, because saying "ARPU" of a volume event
-  // would be inventing a mechanism.
-  return row.pass === 0 ? 'no-coverage' : 'arpu';
+  if (!row.enabled) return 'off';                              // 1
+  if (appliedIds.has(row.id)) return 'volume';                 // 2
+  if (appliedArpuIds.has(row.id)) return 'arpu';               // 3
+  // 4. A yield event that reached the sort in some month and never won it.
+  //    Yield-only by construction: a yield month has exactly one winner, and
+  //    pricing applies EVERY match, so a pricing event cannot get here.
+  if (arpuCandidateIds.has(row.id)) return 'superseded';       // 4
+  if (zeroCoverageIds.has(row.id)) return 'no-coverage';       // 5
+  return 'no-coverage';                                        // 6
 }
+
+/** Shared empty set, so the optional parameters above do not allocate. */
+const EMPTY_IDS: ReadonlySet<string> = new Set<string>();
 
 /** D5-09. The keyed label for each status — one map, so the four labels
  *  cannot drift between the summary panel and Compare's panels. */
@@ -961,6 +974,7 @@ export const EFFECT_LABEL_KEY: Record<EffectStatus, string> = {
   volume:        'whatif_effect_volume',
   'no-coverage': 'whatif_effect_no_coverage',
   arpu:          'whatif_effect_arpu',
+  superseded:    'whatif_effect_superseded',
 };
 
 /** Dimensions, wildcards omitted. 'All' and absent both mean "no filter", and

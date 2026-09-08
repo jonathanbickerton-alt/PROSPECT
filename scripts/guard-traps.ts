@@ -2439,6 +2439,30 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       'for (const m of adjustedMonths) for (const id of m.appliedEventIds ?? []) appliedHere.add(id);',
       'for (const m of adjustedMonths) for (const id of [] as string[]) appliedHere.add(id);') },
+
+  // ── D5-09B: ARPU measured, and Superseded (Jon, 2026-09-08) ─────────────
+  //
+  // TWO, because the two arrays fail in opposite directions and a single trap
+  // could not say which. Losing the WINNER makes every yield row read
+  // Superseded or No coverage — the label claims an event was displaced when
+  // it actually applied. Losing the CANDIDATES makes Superseded unreachable —
+  // the label silently never appears, which no green check would notice
+  // because nothing else changes.
+  { id: '178 the yield winner is never recorded',
+    why: 'every yield row would read Superseded or No coverage — the column'
+       + ' would say an event was displaced when it in fact set the ARPU',
+    file: WHATIF, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      'if (applicableInflowYield) m.appliedArpuIds.push(applicableInflowYield.id);',
+      'if (applicableInflowYield) { /* winner not recorded */ }') },
+
+  { id: '179 yield candidates are never recorded, so Superseded cannot appear',
+    why: 'a status that can never render is indistinguishable from one that is'
+       + ' correct on every tree — the failure a green suite cannot see',
+    file: WHATIF, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      'for (const ye of inflowYieldCandidates) m.arpuCandidateIds.push(ye.id);',
+      'for (const ye of inflowYieldCandidates) { void ye; }') },
 ];
 
 /**

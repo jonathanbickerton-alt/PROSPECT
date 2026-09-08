@@ -282,6 +282,17 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       // comment claimed they did.
       appliedEventIds: applied.appliedIds,
       zeroCoverageEventIds: applied.zeroCoverageIds,
+      // D5-09B. Recorded here so session C can consume them; still dropped at
+      // the flat row shape below, because (iii) is held on the id-join
+      // decision (session A, step 1c).
+      //
+      // NECESSARILY A SUBSET OF WHAT-IF'S. Compare has an equivalent for only
+      // two of What-If's four ARPU sites: site 10 (Inflow yield winner) and
+      // site 12 (pricing). There is no retention-yield path here — one IBRO
+      // test, `!== 'Inflow'` — and no per-scenario pricing. A reader must not
+      // treat this array as answering the same question What-If's does.
+      appliedArpuIds: [] as string[],
+      arpuCandidateIds: [] as string[],
     });
   });
 
@@ -346,7 +357,9 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
     if (idx > 0) {
       const prevMonthKey = computed[idx - 1].month;
       
-      const applicableInflowYield = yieldEvents
+      // D5-09B: named so the candidates can be recorded from it, exactly as
+      // What-If's site 2 does. The filter itself is unchanged.
+      const inflowYieldCandidates = yieldEvents
         .filter((ye: any) => {
           if (!isEventOn(ye)) return false;     // REQ-D6-01, apply site 10
           if (ye.IBRO !== 'Inflow') return false;
@@ -356,8 +369,18 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
             viewScopeForMatch)) return false;
           if (ye.Roll_Forward === 'Yes') return ye.Month <= prevMonthKey;
           return ye.Month === prevMonthKey;
-        })
+        });
+      // D5-09B. Compare's ids are the ENGINE's (`ID ?? Name`), which is the
+      // very join session A found unsettled — recorded anyway so session C has
+      // them, and dropped at the flat shape until that decision lands.
+      for (const ye of inflowYieldCandidates) {
+        m.arpuCandidateIds.push(String(ye.ID ?? ye.Name ?? ''));
+      }
+      const applicableInflowYield = inflowYieldCandidates
         .sort((a: any, b: any) => b.Month.localeCompare(a.Month))[0];
+      if (applicableInflowYield) {
+        m.appliedArpuIds.push(String(applicableInflowYield.ID ?? applicableInflowYield.Name ?? ''));
+      }
 
       let naturalInflowArpu = computed[idx - 1].baseline.arpu;
 
@@ -498,6 +521,9 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
     // pool, the same three quantities WhatIfTab weights over. Only the SHAPE is
     // adapted at the call; the arithmetic is not forked.
     applicablePricing.forEach((pe: any) => {
+      // D5-09B, Compare's site 12 — the equivalent of What-If's site 6. Every
+      // match applies, so there is no winner and no candidate list here.
+      m.appliedArpuIds.push(String(pe.ID ?? pe.Name ?? ''));
       const amount = Number(pe.Amount || 0);
       const priced = pe.Input_Mode === 'percentage'
         ? finalArpu * (1 + amount / 100)

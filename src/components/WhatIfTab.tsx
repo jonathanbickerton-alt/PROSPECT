@@ -1204,6 +1204,12 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
         flooredMetrics: applied.flooredMetrics,
         appliedEventIds: applied.appliedIds,
         zeroCoverageEventIds: applied.zeroCoverageIds,
+        // D5-09B. Filled in PASS 2, which maps over these same objects — the
+        // ARPU carriers are applied there, after Base volumes are known, so
+        // they cannot be recorded here. Initialised empty rather than left
+        // undefined so every consumer sees an array on every month.
+        appliedArpuIds: [] as string[],
+        arpuCandidateIds: [] as string[],
       });
     });
 
@@ -1324,7 +1330,10 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
         // (same reasoning as Pricing/ARPU events above).
         // Find the most recent applicable Inflow yield event for prevMonthKey
         // (either a direct hit or a roll-forward event whose month ≤ prevMonthKey)
-        const applicableInflowYield = yieldEvents
+        // D5-09B. The FILTERED list is named so the candidates can be recorded
+        // from it. Nothing about the filter changes — no new isEventOn call and
+        // no new scope call; this is the same array the sort always consumed.
+        const inflowYieldCandidates = yieldEvents
           .filter(ye => {
             if (!isEventOn(ye)) return false;   // REQ-D6-01, apply site 2
             if (ye.ibro !== 'Inflow') return false;
@@ -1339,9 +1348,17 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
               viewScopeForMatch)) return false;
             if (ye.rollForward) return ye.month <= prevMonthKey;
             return ye.month === prevMonthKey;
-          })
+          });
+        // D5-09B, CANDIDATES: everything that reached the sort. One of these
+        // becomes the winner and the rest are SUPERSEDED — which is a fact the
+        // engine has always known and never said.
+        for (const ye of inflowYieldCandidates) m.arpuCandidateIds.push(ye.id);
+        const applicableInflowYield = inflowYieldCandidates
           // If multiple roll-forward events overlap, use the most recent
           .sort((a, b) => b.month.localeCompare(a.month))[0];
+        // D5-09B, WINNER: recorded where it is CHOSEN, not where it is used —
+        // one push per month, and the `if` below is the same guard as before.
+        if (applicableInflowYield) m.appliedArpuIds.push(applicableInflowYield.id);
 
         if (applicableInflowYield) {
           // Natural inflow enters a yield pool at the blended yield ARPU.
@@ -1535,7 +1552,8 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
       // quantity: a volume-weighted average of (leafArpu + delta) already
       // equals (aggregateArpu + delta). Scaling by a leaf's volume share would
       // under-apply the rate change. Do not route this through eventShare().
-      const applicableRetentionYield = yieldEvents
+      // D5-09B: named for the same reason as the Inflow list above.
+      const retentionYieldCandidates = yieldEvents
         .filter(ye => {
           if (!isEventOn(ye)) return false;     // REQ-D6-01, apply site 5
           if (ye.ibro !== 'Retention') return false;
@@ -1550,8 +1568,15 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
             viewScopeForMatch)) return false;
           if (ye.rollForward) return ye.month <= m.month;
           return ye.month === m.month;
-        })
+        });
+      for (const ye of retentionYieldCandidates) m.arpuCandidateIds.push(ye.id);
+      const applicableRetentionYield = retentionYieldCandidates
         .sort((a, b) => b.month.localeCompare(a.month))[0];
+      // D5-09B. Recorded on selection. NOTE the `&& p_basePool > 0` guard below
+      // is about whether there is a base to move, not about which event won —
+      // a winner with no base still WON, and calling it superseded would name
+      // the wrong reason.
+      if (applicableRetentionYield) m.appliedArpuIds.push(applicableRetentionYield.id);
 
       if (applicableRetentionYield && p_basePool > 0) {
         const retentionVol = Math.min(m.uplifted.retention, p_basePool);
@@ -1623,6 +1648,9 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
         })
         .sort((a, b) => a.month.localeCompare(b.month))
         .forEach(pe => {
+          // D5-09B. Site 6 applies EVERY match — no winner, so no candidate
+          // list and no superseded state. Recorded where it is applied.
+          m.appliedArpuIds.push(pe.id);
           const applyDelta = (arpu: number) =>
             pe.inputMode === 'percentage' ? arpu * (1 + pe.amount / 100) : arpu + pe.amount;
 
@@ -1738,14 +1766,22 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
             return sc !== 'inflow';                 // retention
           })
           .sort((a, b) => a.month.localeCompare(b.month))
-          .map(pe => ({
+          .map(pe => {
+            // D5-09B. `pricingFor` is called once per scenario, so an event
+            // can be recorded several times in a month. Harmless and
+            // deliberate: the consumer unions into a Set, and de-duplicating
+            // here would mean this site holding an opinion about how it is
+            // read. The returned SHAPE is unchanged.
+            m.appliedArpuIds.push(pe.id);
+            return {
             inputMode: (pe.inputMode ?? 'percentage') as 'percentage' | 'absolute',
             amount: Number(pe.amount) || 0,
             // A base-only event prices the standing base and leaves event pools
             // at their own fixed rates — the engine's own distinction, carried
             // as a flag so the two cannot drift.
             pricesPools: pe.target !== 'base-only',
-          }));
+            };
+          });
 
       const inflowPools = scenarioPools('Inflow');
       const retentionPools = scenarioPools('Retention');
@@ -4547,10 +4583,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // with it about which months it walked.
     const zeroCoverageHere = new Set<string>();
     for (const m of adjustedMonths) for (const id of m.zeroCoverageEventIds ?? []) zeroCoverageHere.add(id);
+    // D5-09B: the two ARPU unions, derived in the SAME walk as the other two
+    // so all four describe the same set of months. `appliedArpuIds` carries
+    // duplicates (pricingFor runs once per scenario); the Set is where they go.
+    const arpuAppliedHere = new Set<string>();
+    const arpuCandidatesHere = new Set<string>();
+    for (const m of adjustedMonths) {
+      for (const id of m.appliedArpuIds ?? []) arpuAppliedHere.add(id);
+      for (const id of m.arpuCandidateIds ?? []) arpuCandidatesHere.add(id);
+    }
     // D5-09: the SETS travel, not only their size. `eventCount` is unchanged
     // and is still what the card's number reads — the sets are additional.
     return { baseDelta, arpuByScenario, eventCount: appliedHere.size,
-             appliedIds: appliedHere, zeroCoverageIds: zeroCoverageHere };
+             appliedIds: appliedHere, zeroCoverageIds: zeroCoverageHere,
+             appliedArpuIds: arpuAppliedHere, arpuCandidateIds: arpuCandidatesHere };
     // baseForecast is READ above - the dependency array is the read-set, and
     // a narrower one is how a stale closure ships (D3-04).
   }, [chartData, adjustedMonths, baseForecast]);
@@ -4570,6 +4616,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     row,
     impactSummary?.appliedIds ?? EMPTY_ID_SET,
     impactSummary?.zeroCoverageIds ?? EMPTY_ID_SET,
+    impactSummary?.appliedArpuIds ?? EMPTY_ID_SET,
+    impactSummary?.arpuCandidateIds ?? EMPTY_ID_SET,
   ), [impactSummary]);
 
   // -------------------------------------------------------------------------

@@ -219,6 +219,10 @@ export function EventsSummaryTable({
                                   st === 'volume' ? 'bg-emerald-50 text-emerald-700'
                                   : st === 'arpu' ? 'bg-cyan-50 text-cyan-700'
                                   : st === 'no-coverage' ? 'bg-amber-50 text-amber-700'
+                                  // D5-09B. Superseded reads like off, not
+                                  // like a warning: the event is fine, another
+                                  // one simply won its month.
+                                  : st === 'superseded' ? 'bg-slate-100 text-slate-500'
                                   : 'bg-slate-100 text-slate-500'}`}
                               >{t(EFFECT_LABEL_KEY[st])}</span>
                             </td>
