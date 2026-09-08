@@ -232,7 +232,7 @@ for (const f of tracked) {
   if (f === 'scripts/guard-traps.ts') continue;
   if (f === 'test-data/EXPECTED.md') continue;
   if (f.startsWith('reports/')) continue;
-  if (f === 'docs/PROSPECT-development-history-and-working-agreement-v3-3-14.md') continue;
+  if (f === 'docs/PROSPECT-development-history-and-working-agreement-v3-3-15.md') continue;
   if (f === '.claude/agents/regression-guard.md') continue;
   const body = read(f);
   for (const id of AI_IDENTIFIERS) {
