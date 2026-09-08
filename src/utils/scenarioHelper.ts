@@ -1,7 +1,7 @@
 import { format, addMonths, parse } from 'date-fns';
 import { eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume,
          eventScopeMatchesView, pricedVolumesFor, applyPricingToBlend,
-         isEventOn } from './forecasting';
+         isEventOn, eventRowId } from './forecasting';
 import type { ProRataLeaf, ProRataScope } from './forecasting';
 
 export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod: any, vchan: any, vtariff?: any) {
@@ -235,7 +235,7 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
         arpu: month.arpu.mean,
       },
       applicable.map((e: any) => ({
-        id: String(e.ID ?? e.Name ?? ''),
+        id: eventRowId(e),
         scenario: String(e.Scenario) as 'Inflow' | 'Retention' | 'Outflow' | 'ARPU',
         // VOLUME events take only this view's pro-rata share (share is 1 for an
         // aggregate view, so the already-correct aggregate case is unchanged).
@@ -273,13 +273,16 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       // derivations IS consumed, below, to size the ARPU pools from the
       // resolved delta rather than the raw percent.
       //
-      // preFloor, flooredMetrics and appliedEventIds are NOT read by anything
-      // in this path. computeScenarioForFilter returns a flat row shape that
-      // drops them, and its only caller (ScenarioCompareTab) has no breach UI.
+      // preFloor and flooredMetrics are NOT read by anything in this path:
+      // the flat row shape drops them and ScenarioCompareTab has no breach UI.
       // They are kept so the two paths produce the same month record, which is
       // what lets applyEventsToMonth stay shared — but do not read this as
       // floor warnings existing here. They do not. An earlier version of this
       // comment claimed they did.
+      //
+      // AMENDED D5-09C: the four ID ARRAYS are now carried through the flat
+      // shape and read by Compare's EFFECT column. Only preFloor and
+      // flooredMetrics remain unread here.
       appliedEventIds: applied.appliedIds,
       zeroCoverageEventIds: applied.zeroCoverageIds,
       // D5-09B. Recorded here so session C can consume them; still dropped at
@@ -370,16 +373,15 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
           if (ye.Roll_Forward === 'Yes') return ye.Month <= prevMonthKey;
           return ye.Month === prevMonthKey;
         });
-      // D5-09B. Compare's ids are the ENGINE's (`ID ?? Name`), which is the
-      // very join session A found unsettled — recorded anyway so session C has
-      // them, and dropped at the flat shape until that decision lands.
+      // D5-09C. Ids come from the ONE shared `eventRowId`, which the three
+      // readers now use too — the join session A found unsettled is settled.
       for (const ye of inflowYieldCandidates) {
-        m.arpuCandidateIds.push(String(ye.ID ?? ye.Name ?? ''));
+        m.arpuCandidateIds.push(eventRowId(ye));
       }
       const applicableInflowYield = inflowYieldCandidates
         .sort((a: any, b: any) => b.Month.localeCompare(a.Month))[0];
       if (applicableInflowYield) {
-        m.appliedArpuIds.push(String(applicableInflowYield.ID ?? applicableInflowYield.Name ?? ''));
+        m.appliedArpuIds.push(eventRowId(applicableInflowYield));
       }
 
       let naturalInflowArpu = computed[idx - 1].baseline.arpu;
@@ -449,7 +451,7 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
             // the WhatIfTab pool, via the same shared helper — these two have
             // drifted twice and this is exactly the shape that does it.
             size: resolvedEventVolume(
-              { id: String(ev.ID ?? ev.Name ?? ''), amountType: ev.Amount_Type === 'percentage' ? 'percentage' : 'absolute' },
+              { id: eventRowId(ev), amountType: ev.Amount_Type === 'percentage' ? 'percentage' : 'absolute' },
               Number(ev.Subscriber_Volume) * poolShare,
               computed[idx - 1]?.derivations,
               'inflow',
@@ -461,7 +463,7 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
           // Adding Subscriber_Volume raw would put the percent (10) into the
           // base pool instead of the subscribers the event actually added.
           p_basePool += resolvedEventVolume(
-            { id: String(ev.ID ?? ev.Name ?? ''), amountType: ev.Amount_Type === 'percentage' ? 'percentage' : 'absolute' },
+            { id: eventRowId(ev), amountType: ev.Amount_Type === 'percentage' ? 'percentage' : 'absolute' },
             Number(ev.Subscriber_Volume || 0),
             computed[idx - 1]?.derivations,
             'inflow',
@@ -523,7 +525,7 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
     applicablePricing.forEach((pe: any) => {
       // D5-09B, Compare's site 12 — the equivalent of What-If's site 6. Every
       // match applies, so there is no winner and no candidate list here.
-      m.appliedArpuIds.push(String(pe.ID ?? pe.Name ?? ''));
+      m.appliedArpuIds.push(eventRowId(pe));
       const amount = Number(pe.Amount || 0);
       const priced = pe.Input_Mode === 'percentage'
         ? finalArpu * (1 + amount / 100)
@@ -566,6 +568,15 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       adjustedRetention: m.uplifted.retention,
       adjustedBase: newBAdj,
       adjustedArpu: finalArpu,
+
+      // D5-09C. THE FOUR ID ARRAYS NOW SURVIVE THE FLAT SHAPE. They were
+      // computed here from the start and dropped at this boundary, which is
+      // why Compare could not answer the question its own engine had already
+      // answered. Carried per month; ScenarioCompareTab unions them per file.
+      appliedEventIds: m.appliedEventIds,
+      zeroCoverageEventIds: m.zeroCoverageEventIds,
+      appliedArpuIds: m.appliedArpuIds,
+      arpuCandidateIds: m.arpuCandidateIds,
     };
   });
 

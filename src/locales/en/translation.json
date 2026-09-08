@@ -296,6 +296,7 @@
   "whatif_effect_off": "Off",
   "whatif_effect_arpu": "ARPU",
   "whatif_effect_superseded": "Superseded",
+  "whatif_effect_not_applied_here": "Not applied here",
   "whatif_summary_col_effect": "Effect",
   "whatif_baseline_vs_adjusted_forecast": "Baseline vs Adjusted Forecast",
   "whatif_export": "Export",

@@ -37,6 +37,23 @@ g.ResizeObserver = class { cb: any; constructor(cb: any) { this.cb = cb; }
   observe(el: any) { this.cb([{ target: el, contentRect: { width: 900, height: 400, top: 0, left: 0, bottom: 400, right: 900, x: 0, y: 0 } }], this); }
   unobserve() {} disconnect() {} };
 g.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
+/**
+ * D5-09C. A Worker stub, so ScenarioCompareTab can be MOUNTED.
+ *
+ * The tab constructs `new Worker(new URL(...), {type:'module'})` in an effect
+ * and receives its parsed sessions only through that worker's `onmessage`.
+ * jsdom has no Worker, so the component could not be mounted at all and no
+ * spec ever had. This stub records the instance; the test then delivers a
+ * session by calling `onmessage` exactly as the real worker would — the
+ * component's own code path, not a hand-set state.
+ */
+const workers: any[] = [];
+g.Worker = class {
+  onmessage: ((e: any) => void) | null = null;
+  constructor() { workers.push(this); }
+  postMessage() {}
+  terminate() {}
+};
 g.IS_REACT_ACT_ENVIRONMENT = true;
 for (const p of ['offsetWidth', 'clientWidth'] as const) Object.defineProperty(dom.window.HTMLElement.prototype, p, { configurable: true, value: 900 });
 for (const p of ['offsetHeight', 'clientHeight'] as const) Object.defineProperty(dom.window.HTMLElement.prototype, p, { configurable: true, value: 400 });
@@ -830,6 +847,136 @@ async function main() {
       cap && String(cap.textContent).includes('3'),
       String(cap && cap.textContent) + ' — 1 market + 1 yield + 1 pricing');
     await h2.close();
+  }
+
+  // ══ 6d. D5-09C — THE EFFECT COLUMN IN SCENARIO COMPARE ════════════════
+  //
+  // Session A held this because the two id derivations disagreed: the engine
+  // built `ID ?? Name`, the readers `ID ?? random`. Option 1 replaced both
+  // with `eventRowId`, so the join is now total for any row carrying either
+  // token — and case (b) below is the whole point: the SAME rows with the ID
+  // column removed must label identically, because Name now carries the join.
+  const CompareTab = (await import('../src/components/ScenarioCompareTab')).ScenarioCompareTab;
+
+  /** One raw file, in the sheet shapes Compare's worker delivers. */
+  const compareFile = (withId: boolean) => {
+    const id = (v: string) => (withId ? { ID: v } : {});
+    return {
+      fileName: 'f1.xlsx',
+      baselineRows: MONTHS.map(mo => ({
+        Cohort_Key: 'c1', Segment: 'Corporate', Product: 'Mobile Voice',
+        Product_L2: 'All', Channel: 'All', Channel_L2: 'All', Month: mo,
+        Inflow_Mean: 300, Outflow_Mean: 0, Retention_Mean: 100, ARPU_Mean: 20,
+        Seed_Base_Volume: 10000, Last_Historical_Inflow: 200,
+        Last_Historical_Outflow: 0,
+      })),
+      marketEvents: [
+        { ...id('c-vol'), Name: 'c-vol', Scenario: 'Inflow', Start_Month: MONTHS[0],
+          Segment: 'Corporate', Product: 'Mobile Voice', Product_L2: 'All',
+          Channel: 'All', Channel_L2: 'All', Subscriber_Volume: 1000,
+          ARPU: 0, Amount_Type: 'absolute' },
+        // Targets a product this file's baseline does not hold -> zero coverage.
+        { ...id('c-zero'), Name: 'c-zero', Scenario: 'Inflow', Start_Month: MONTHS[0],
+          Segment: 'Corporate', Product: 'Broadband', Product_L2: 'All',
+          Channel: 'All', Channel_L2: 'All', Subscriber_Volume: 500,
+          ARPU: 0, Amount_Type: 'absolute' },
+        { ...id('c-off'), Name: 'c-off', Scenario: 'Inflow', Start_Month: MONTHS[0],
+          Segment: 'Corporate', Product: 'Mobile Voice', Product_L2: 'All',
+          Channel: 'All', Channel_L2: 'All', Subscriber_Volume: 100,
+          ARPU: 0, Amount_Type: 'absolute', Enabled: 'No' },
+      ],
+      yieldEvents: [
+        { ...id('c-yin'), Name: 'c-yin', IBRO: 'Inflow', Month: MONTHS[0],
+          Segment: 'Corporate', Product: 'Mobile Voice', Channel_L1: 'All',
+          Channel_L2: 'All', Roll_Forward: 'Yes',
+          Tariff_Mix_JSON: '{"A":100}', Tariff_Base_Arpu_JSON: '{"A":30}' },
+        // RETENTION yield — a kind this engine never applies.
+        { ...id('c-yret'), Name: 'c-yret', IBRO: 'Retention', Month: MONTHS[0],
+          Segment: 'Corporate', Product: 'Mobile Voice', Channel_L1: 'All',
+          Channel_L2: 'All', Roll_Forward: 'Yes',
+          Tariff_Mix_JSON: '{"A":100}', Tariff_Base_Arpu_JSON: '{"A":30}' },
+      ],
+      pricingEvents: [],
+    };
+  };
+
+  const mountCompare = async (file: any) => {
+    const host = document.getElementById('root')!;
+    host.replaceChildren();
+    const container = document.createElement('div');
+    host.appendChild(container);
+    const root = createRoot(container);
+    workers.length = 0;
+    await (act as any)(async () => {
+      root.render(React.createElement(CompareTab as any, {}));
+    });
+    // Deliver the file the way the real worker does.
+    await (act as any)(async () => { workers[0]?.onmessage?.({ data: [file] }); });
+    const q = (id: string) => container.querySelector('[data-testid="' + id + '"]') as any;
+    // The per-file panel is collapsed by default.
+    const toggle = q('compare-events-f1.xlsx-toggle');
+    if (toggle) await (act as any)(async () => {
+      toggle.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+    const eff = (rid: string) => {
+      const el = container.querySelector('[data-testid="event-effect-' + rid + '"]') as any;
+      return el ? el.getAttribute('data-effect') : null;
+    };
+    const close = async () => { await (act as any)(async () => { root.unmount(); }); };
+    return { eff, q, close, container };
+  };
+
+  console.log('');
+  // (a) WITH an ID column
+  {
+    const c = await mountCompare(compareFile(true));
+    const got = ['c-vol', 'c-zero', 'c-off', 'c-yin'].map(c.eff);
+    console.log('  compare(ID)     ' + JSON.stringify(got)
+      + '  retention=' + c.eff('c-yret'));
+    check('D5-09C(a): Compare renders the EFFECT column at all',
+      !!c.q('compare-events-f1.xlsx-toggle') && got.some(v => v !== null),
+      JSON.stringify(got) + ' — all null means no column and every check below'
+      + ' would be vacuous');
+    check('D5-09C(a): applied volume / zero coverage / off / inflow yield',
+      JSON.stringify(got) === JSON.stringify(['volume', 'no-coverage', 'off', 'arpu']),
+      JSON.stringify(got));
+    check('D5-09C(a): a RETENTION yield reads Not applied here, not No coverage',
+      c.eff('c-yret') === 'not-applied-here', String(c.eff('c-yret'))
+      + ' — Compare has one IBRO test; blaming the user\'s scoping would be wrong');
+    await c.close();
+  }
+
+  // (b) THE SAME ROWS WITH NO ID COLUMN. Identical labels, because the join
+  //     now keys on Name. This is the case that held session A.
+  {
+    const c = await mountCompare(compareFile(false));
+    const got = ['c-vol', 'c-zero', 'c-off', 'c-yin'].map(c.eff);
+    console.log('  compare(no ID)  ' + JSON.stringify(got)
+      + '  retention=' + c.eff('c-yret'));
+    check('D5-09C(b): with NO ID column the labels are IDENTICAL',
+      JSON.stringify(got) === JSON.stringify(['volume', 'no-coverage', 'off', 'arpu']),
+      JSON.stringify(got) + ' — before eventRowId the readers minted random ids'
+      + ' and every row here read "no coverage"');
+    check('D5-09C(b): and the retention yield still reads Not applied here',
+      c.eff('c-yret') === 'not-applied-here', String(c.eff('c-yret')));
+    await c.close();
+  }
+
+  // (c) The SAME retention-yield event in WHAT-IF reads ARPU, because What-If
+  //     does apply it. The label is a fact about the engine, not the event.
+  {
+    const w = await mount([EVENT], { yieldEvents: [
+      { ...YEV, id: 'y-ret', ibro: 'Retention', month: MONTHS[0], rollForward: true },
+    ] });
+    await w.click(w.q('events-summary-toggle'));
+    const el = w.q('event-effect-y-ret');
+    const got = el ? el.getAttribute('data-effect') : null;
+    console.log('  what-if retention -> ' + got);
+    check('D5-09C(c): the same retention yield reads ARPU in What-If',
+      got === 'arpu', String(got)
+      + ' — What-If applies retention yield at site 5, so "not applied here"'
+      + ' would be false there');
+    await w.close();
   }
 
   // ══ 7. D5-08 — "SHOW ALL" ON THE EVENTS SUMMARY PANEL ═════════════════

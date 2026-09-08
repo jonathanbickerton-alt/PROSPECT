@@ -2463,6 +2463,30 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       'for (const ye of inflowYieldCandidates) m.arpuCandidateIds.push(ye.id);',
       'for (const ye of inflowYieldCandidates) { void ye; }') },
+
+  // ── D5-09C: Compare joins (Jon, 2026-09-08) ────────────────────────────
+  //
+  // The two halves that had to be true together before Compare's column could
+  // ship, and each fails silently on its own.
+  { id: '180 the four id arrays are dropped at Compare\'s flat row shape',
+    why: 'the boundary that hid them from session A — the engine computes all'
+       + ' four and the component never sees them, so every row goes unlabelled',
+    file: SCENHELPER, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      '      appliedEventIds: m.appliedEventIds,\n      zeroCoverageEventIds: m.zeroCoverageEventIds,\n      appliedArpuIds: m.appliedArpuIds,\n      arpuCandidateIds: m.arpuCandidateIds,\n',
+      '') },
+
+  { id: '181 a reader mints a random id again, so the ID-less join fails',
+    why: 'the exact divergence session A held the column for: with no ID'
+       + ' column the reader and the engine name the same row differently,'
+       + ' and every row reads "no coverage" for events that plainly applied',
+    file: ENGINE, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      // Anchored on marketEventFromRow specifically — the `campaignName`
+      // line below it is unique to that reader; the pricing reader's
+      // id/name pair is otherwise identical.
+      '    id:               eventRowId(r),\n    name:             String(r.Name ?? \'\'),\n    // Legacy fallback: pre-campaign saves used Name as the grouping label',
+      '    id:               String(r.ID ?? Math.random().toString(36).substr(2, 9)),\n    name:             String(r.Name ?? \'\'),\n    // Legacy fallback: pre-campaign saves used Name as the grouping label') },
 ];
 
 /**

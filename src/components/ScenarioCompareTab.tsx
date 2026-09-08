@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { collectEventScopeDims, hasAnyCarrierEvents, windowBounds, selectionUncoveredByBaseline, chartDrawability, MIN_DRAWABLE_CHART_PX } from '../utils/viewFilter';
-import { buildPerFileEventPanels } from '../utils/forecasting';
+import { buildPerFileEventPanels, effectStatusOf, eventRowId } from '../utils/forecasting';
+import type { EventSummaryRow, EffectStatus } from '../utils/forecasting';
 import { EventsSummaryTable } from './EventsSummaryTable';
 import { useTranslation } from 'react-i18next';
 import { UploadCloud, X, AlertTriangle, FileSpreadsheet, ChevronDown } from 'lucide-react'; // ChevronDown used in Segment select
@@ -131,6 +132,52 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
    */
   const perFileSummaries = useMemo(
     () => buildPerFileEventPanels(parsedSessions, t), [parsedSessions, t]);
+
+  /**
+   * D5-09C. The four id unions per file, plus this engine's own blind spot.
+   *
+   * Compare's engine has always computed `appliedEventIds` and
+   * `zeroCoverageEventIds`, and session B added the two ARPU arrays — all four
+   * were dropped at the flat row shape until session C widened it. This memo
+   * is the first consumer.
+   *
+   * NOT-APPLIED-HERE is a fact about the ENGINE, not the event.
+   * `computeScenarioForFilter` has exactly one IBRO test (`!== 'Inflow'`), so a
+   * RETENTION yield event is never applied here however well it is scoped.
+   * Calling that "No coverage" would blame the user's scoping for the engine's
+   * gap. The kind is read from the raw row's `IBRO`, so the rule keys on what
+   * the event IS rather than on its absence from a set — absence is exactly
+   * what "no coverage" already means, and the two must not be conflated.
+   *
+   * Per-scenario pricing is NOT a second case: Compare's site 12 applies every
+   * on, in-scope, in-window pricing event, and What-If's site 8 is a second
+   * consumer of the same events rather than a separate population.
+   */
+  const effectByFile = useMemo(() => {
+    const out = new Map<string, (row: EventSummaryRow) => EffectStatus>();
+    for (const session of parsedSessions) {
+      const rows: any[] = activeScenarios[session.fileName]
+        ? computeScenarioForFilter(session, viewSegment, viewProduct, viewChannel, viewTariff)
+        : [];
+      const applied = new Set<string>();
+      const zero = new Set<string>();
+      const arpu = new Set<string>();
+      const cand = new Set<string>();
+      for (const r of rows) {
+        for (const id of r.appliedEventIds ?? []) applied.add(id);
+        for (const id of r.zeroCoverageEventIds ?? []) zero.add(id);
+        for (const id of r.appliedArpuIds ?? []) arpu.add(id);
+        for (const id of r.arpuCandidateIds ?? []) cand.add(id);
+      }
+      const notHere = new Set<string>();
+      for (const ye of (session.yieldEvents ?? []) as any[]) {
+        if (String(ye.IBRO ?? 'Inflow') === 'Retention') notHere.add(eventRowId(ye));
+      }
+      out.set(session.fileName,
+        (row: EventSummaryRow) => effectStatusOf(row, applied, zero, arpu, cand, notHere));
+    }
+    return out;
+  }, [parsedSessions, activeScenarios, viewSegment, viewProduct, viewChannel, viewTariff]);
 
   const removeSession = (name: string) => {
     setParsedSessions(prev => prev.filter(s => s.fileName !== name));
@@ -683,6 +730,7 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
                     onToggle={() => setOpenPanels(o => ({ ...o, [f.fileName]: !o[f.fileName] }))}
                     title={scenarioNames[f.fileName] || f.fileName}
                     testIdPrefix={`compare-events-${f.fileName}`}
+                    effectOf={effectByFile.get(f.fileName)}
                     dense
                   />
                 ))}

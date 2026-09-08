@@ -910,7 +910,8 @@ export interface EventSummaryRow {
  * and conflating them is what let a five-on / four-applied pair read as a
  * defect rather than as two honest counts.
  */
-export type EffectStatus = 'off' | 'volume' | 'no-coverage' | 'arpu' | 'superseded';
+export type EffectStatus =
+  'off' | 'volume' | 'no-coverage' | 'arpu' | 'superseded' | 'not-applied-here';
 
 /**
  * THE ONE PLACE A ROW'S EFFECT IS DECIDED — D5-09 (Jon, 2026-09-08).
@@ -952,6 +953,17 @@ export function effectStatusOf(
   zeroCoverageIds: ReadonlySet<string>,
   appliedArpuIds: ReadonlySet<string> = EMPTY_IDS,
   arpuCandidateIds: ReadonlySet<string> = EMPTY_IDS,
+  /**
+   * D5-09C. Ids of events this ENGINE never applies at all, whatever their
+   * scope — Compare passes its retention-yield ids here; What-If passes
+   * nothing, because it applies every kind.
+   *
+   * A PARAMETER, NOT A WRAPPER. A wrapper in ScenarioCompareTab would have
+   * been a second place deciding a row's status, and the whole point of this
+   * function is that there is one. The caller supplies a fact about its own
+   * engine; the rule order stays here.
+   */
+  notAppliedHereIds: ReadonlySet<string> = EMPTY_IDS,
 ): EffectStatus {
   if (!row.enabled) return 'off';                              // 1
   if (appliedIds.has(row.id)) return 'volume';                 // 2
@@ -960,12 +972,50 @@ export function effectStatusOf(
   //    Yield-only by construction: a yield month has exactly one winner, and
   //    pricing applies EVERY match, so a pricing event cannot get here.
   if (arpuCandidateIds.has(row.id)) return 'superseded';       // 4
+  // 4b. BEFORE the coverage rules, deliberately. "No coverage" blames the
+  //     user's scoping; this engine simply does not implement the event's
+  //     kind, which is not the user's doing and must not read as if it were.
+  if (notAppliedHereIds.has(row.id)) return 'not-applied-here';
   if (zeroCoverageIds.has(row.id)) return 'no-coverage';       // 5
   return 'no-coverage';                                        // 6
 }
 
 /** Shared empty set, so the optional parameters above do not allocate. */
 const EMPTY_IDS: ReadonlySet<string> = new Set<string>();
+
+/**
+ * THE ONE ID DERIVATION FOR AN EVENT READ FROM A SHEET — D5-09C (Jon,
+ * 2026-09-08), option 1.
+ *
+ * Until now there were two, and they disagreed. Compare's ENGINE built
+ * `String(ID ?? Name ?? '')`; the three READERS built
+ * `String(ID ?? <random>)`. Both read the same raw row, so they agreed
+ * whenever the sheet carried an `ID` column — which every workbook this app
+ * exports does (`marketEventExportRow` and its two siblings all write
+ * `ID: e.id`) — and diverged SILENTLY when it did not: the reader invented an
+ * id the engine had never heard of, the join matched nothing, and the EFFECT
+ * column would have reported "No coverage" for events that plainly applied.
+ * Session A found that and held the Compare column rather than ship it.
+ *
+ * `Name` is the fallback because it is what the engine already used, so
+ * adopting it changes no existing behaviour on the engine side — only the
+ * readers move, and they move TOWARDS the engine.
+ *
+ * A RANDOM ID SURVIVES ONLY WHEN BOTH ARE ABSENT, which is the one case where
+ * there is nothing to join on: no stable token exists in the row at all, and a
+ * random one at least keeps React keys unique.
+ *
+ * KNOWN AND RECORDED: in a file with no `ID` column, rows sharing a `Name` —
+ * every row of a campaign carries the campaign's name — collapse to one id and
+ * therefore to one status. The join is then coarser than the data. Not fixed
+ * here; see EXPECTED.md §D5-09, "recorded watch".
+ */
+export function eventRowId(raw: Record<string, unknown>): string {
+  const stable = raw?.ID ?? raw?.Name;
+  return stable === undefined || stable === null || String(stable) === ''
+    ? Math.random().toString(36).substr(2, 9)
+    : String(stable);
+}
 
 /** D5-09. The keyed label for each status — one map, so the four labels
  *  cannot drift between the summary panel and Compare's panels. */
@@ -975,6 +1025,7 @@ export const EFFECT_LABEL_KEY: Record<EffectStatus, string> = {
   'no-coverage': 'whatif_effect_no_coverage',
   arpu:          'whatif_effect_arpu',
   superseded:    'whatif_effect_superseded',
+  'not-applied-here': 'whatif_effect_not_applied_here',
 };
 
 /** Dimensions, wildcards omitted. 'All' and absent both mean "no filter", and
@@ -1167,7 +1218,7 @@ export function pricingEventExportRow(e: PricingEvent): Record<string, unknown> 
 export function pricingEventFromRow(r: Record<string, unknown>): PricingEvent {
   const mode = String(r.Pricing_Mode ?? '');
   return {
-    id:               String(r.ID ?? Math.random().toString(36).substr(2, 9)),
+    id:               eventRowId(r),
     name:             String(r.Name ?? ''),
     segment:          String(r.Segment ?? 'All'),
     product:          String(r.Product ?? 'All'),
@@ -1320,7 +1371,7 @@ export function marketEventFromRow(
 /** A PROSPECT save's Market_Events row. Mirrors marketEventExportRow. */
 function marketFieldsFromSessionRow(r: Record<string, any>) {
   return {
-    id:               String(r.ID ?? Math.random().toString(36).substr(2, 9)),
+    id:               eventRowId(r),
     name:             String(r.Name ?? ''),
     // Legacy fallback: pre-campaign saves used Name as the grouping label
     campaignName:     String(r.Campaign_Name || r.Name || ''),
@@ -1454,7 +1505,7 @@ export function yieldEventFromRow(r: Record<string, any>): YieldEvent {
   // verbatim, and a corrupted entry is dropped rather than defaulted.
   const tariffBaseArpuOverride = readStoredRateMap(r.Tariff_Base_ARPU_Override_JSON);
   return {
-    id:            String(r.ID ?? Math.random().toString(36).substr(2, 9)),
+    id:            eventRowId(r),
     name:          String(r.Name ?? ''),
     ibro:          (r.IBRO ?? 'Inflow') as 'Inflow' | 'Retention',
     segment:       String(r.Segment ?? 'All'),
