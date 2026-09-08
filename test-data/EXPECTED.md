@@ -7154,6 +7154,62 @@ the **Events summary panel's** chip (`EventsSummaryTable.tsx:109`,
 things by design; the chip has always counted all rows, and no spec asserts its
 semantics either way.
 
+#### D5-09 DECIDED (Jon, 2026-09-08) — the app says which events are in effect, and why
+
+**Recorded before any code.** The app tells the user which events are affecting
+the chart they are looking at, and why. **"Active" is the switch's word and is
+not used for this** — a user who has switched an event on has made it active;
+whether it is *in effect* on this chart is a different question.
+
+**(i) The KPI card.** Title becomes **"Events in effect"**. The number is
+unchanged — events applied on the volume path, `impactSummary.eventCount`.
+The caption becomes **"moving volume · N switched on"**, with N from
+`summaryRows`' own `enabled` field; **no new `isEventOn` call**, because the
+builder already set it (`forecasting.ts:951/966/981`).
+
+**(ii) The Events summary table gains an EFFECT column**, after the switch and
+before CARD:
+
+| value | rule |
+|---|---|
+| **Volume** | id is in the union of `appliedEventIds` across `adjustedMonths` |
+| **No coverage** | id is in the union of `zeroCoverageEventIds`. Cohort-scoped — **the label never says "view"**, because the set reacts to the loaded cohort, not the viewing bar |
+| **Off** | `row.enabled` is false |
+| **ARPU** | on, and the row's carrier is yield or pricing — **a carrier inference in this session**; session B replaces it with measured ids and adds **Superseded** |
+
+**(iii) Compare's per-file panels show the same column** — the flat row shape
+in `scenarioHelper` widened to carry the two sets its engine already computes.
+**(iv) Card tables unchanged.** Locale keys in all six locales.
+
+**STEP 1, MEASURED READ-ONLY BEFORE CODE (2026-09-08).**
+
+- **(a) confirmed.** `impactSummary`'s applied union is a local
+  `const appliedHere` (`WhatIfTab.tsx:4538-4539`); the memo returns only
+  `eventCount: appliedHere.size` (`:4540`). The set does not escape.
+- **(b) confirmed.** `scenarioHelper.ts:283-284` attaches `appliedEventIds`
+  and `zeroCoverageEventIds` to each month record, and the flat row shape
+  returned at `:530-543` omits both. `finalRows` (`:545`) is what the
+  component receives.
+- **(c) THE STOP CONDITION FIRED — the ids match only conditionally.**
+  Compare's engine builds its id as `String(e.ID ?? e.Name ?? '')`
+  (`scenarioHelper.ts:238`). The summary row's id comes from
+  `marketEventFromRow` as `String(r.ID ?? Math.random()…)`
+  (`forecasting.ts:1248`; `pricingEventFromRow:1095` and
+  `yieldEventFromRow:1382` are identical in form). Both read the **same raw
+  sheet row**, so when the row carries an `ID` column the two agree exactly —
+  and every workbook this app exports does carry one
+  (`marketEventExportRow:330` writes `ID: e.id`). When a row has **no** `ID`,
+  the engine falls back to `Name` and the summary row invents a random id, so
+  the join fails **silently**: every row's id would be absent from both unions
+  and the column would read "No coverage" for events that plainly applied.
+  **That is an affirmative false statement about the user's data, not a
+  blank**, which is why (iii) is held rather than shipped defensively.
+
+**(iii) IS THEREFORE NOT BUILT IN SESSION A.** (i) and (ii) are. The decision
+Jon owns: widen the readers to share the engine's `ID ?? Name` fallback (one
+definition, changes three readers), suppress the column per file when the join
+finds nothing, or accept the risk for files without an `ID` column.
+
 #### D5-08 DECIDED (Jon, 2026-09-07) — the Events summary panel can show every row
 
 **User-raised: Jon, UAT, 2026-09-07.** With ten events loaded the Events
