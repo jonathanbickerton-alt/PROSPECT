@@ -7262,6 +7262,52 @@ per-scenario pricing to record. That is recorded here rather than papered
 over, because a later session reading Compare's array must not assume it
 answers the same question What-If's does.
 
+**SESSION C (Jon, 2026-09-08) — (iii) IS BUILT, ON OPTION 1.**
+
+**One exported id derivation.** `eventRowId(raw)` = `String(ID ?? Name ?? '')`
+replaces the engine's inline fallback (`scenarioHelper`) *and* the three
+readers' `ID ?? random` (`pricingEventFromRow`, `marketEventFromRow`,
+`yieldEventFromRow`). A random id remains **only** when both `ID` and `Name`
+are absent, which is the one case where nothing can be joined on anyway.
+
+**Compare's flat row shape is widened** to carry `appliedEventIds`,
+`zeroCoverageEventIds`, `appliedArpuIds` and `arpuCandidateIds` per month.
+`ScenarioCompareTab` derives the four unions per file and passes `effectOf` to
+the shared table, so its panels render the EFFECT column with the same labels
+from the same `effectStatusOf`.
+
+**A Compare-only rule, inserted before rule 5:** an ON event of a kind
+Compare's engine never applies reads **"Not applied here"**
+(`whatif_effect_not_applied_here`), never "No coverage" — because "no
+coverage" would blame the user's scoping for an absence that is the engine's.
+
+**STEP 1 CORRECTION, measured 2026-09-08: that rule has ONE limb, not two.**
+The decision names retention yield *and* per-scenario pricing. Only the first
+is a kind of event.
+
+- **Retention yield is real and readable.** The raw yield row carries `IBRO`
+  (written at `forecasting.ts:1399`, read at `:1459`), and `scenarioHelper`
+  tests `ye.IBRO !== 'Inflow'` — its only IBRO test. A retention yield event
+  is therefore identifiable from the raw row, which is what lets the rule key
+  on **kind** rather than on absence from a set.
+- **"Per-scenario pricing" is not a kind of event.** Compare's site 12 applies
+  **every** on, in-scope, in-window pricing event — its filter has no `Target`
+  condition. What-If's site 8 (`pricingFor`) is a second *consumer* of the same
+  pricing events for the scenario-ARPU breakdown, not a separate population.
+  So no pricing event goes unapplied in Compare, and there is nothing for the
+  second limb to match. It is not built, because building it would mean
+  inventing a class of event that does not exist.
+
+**Also noted, out of scope:** `scenarioHelper.ts:122` composes
+`ID ?? Name` into a **memo cache key** for `eventShare` (`id|month|scenario`).
+That is not an event-row id and is deliberately left alone.
+
+**RECORDED WATCH, NOT FIXED.** In a file with **no `ID` column**, rows sharing
+a `Name` — a campaign's rows all carry the campaign name — collapse to one id
+and therefore to one EFFECT status. The join is then coarser than the data.
+Every workbook PROSPECT exports carries `ID` (`forecasting.ts:330`, `:1120`,
+`:1397`), so this reaches only hand-made or foreign files.
+
 #### D5-08 DECIDED (Jon, 2026-09-07) — the Events summary panel can show every row
 
 **User-raised: Jon, UAT, 2026-09-07.** With ten events loaded the Events
