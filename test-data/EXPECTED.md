@@ -7210,6 +7210,58 @@ Jon owns: widen the readers to share the engine's `ID ?? Name` fallback (one
 definition, changes three readers), suppress the column per file when the join
 finds nothing, or accept the risk for files without an `ID` column.
 
+**SESSION B (Jon, 2026-09-08) — THE ARPU LABEL IS MEASURED, NOT INFERRED.**
+
+Session A's rule 4 read the carrier: a row that was on and in neither union
+was called ARPU if its `pass` was yield or pricing. That is a statement about
+what kind of thing the event is, dressed as a statement about what it did.
+It is replaced.
+
+Per month the What-If engine now records two more arrays beside
+`appliedEventIds` and `zeroCoverageEventIds`:
+
+- **`appliedArpuIds`** — every yield **winner** actually chosen (sites 2 and
+  5) and every pricing event actually applied (sites 6 and 8).
+- **`arpuCandidateIds`** — every yield event that **passed the scope match**
+  at sites 2 and 5, winner or not.
+
+`effectStatusOf` gains two rules and loses one:
+
+| | rule |
+|---|---|
+| 1 | `!enabled` → **off** |
+| 2 | in `appliedIds` → **volume** |
+| 3 | in `appliedArpuIds` → **arpu** (measured) |
+| 4 | on, in `arpuCandidateIds`, never in `appliedArpuIds` → **superseded** |
+| 5 | in `zeroCoverageIds` → **no-coverage** |
+| 6 | otherwise → **no-coverage** — rule 4's carrier inference is REMOVED |
+
+**`superseded` is yield-only, by construction.** A yield month has exactly one
+winner (`.sort(...)[0]`); pricing applies *every* match, so a pricing event is
+never displaced and can never reach rule 4.
+
+**Not exported.** These are view-time facts about one cohort's chart, not
+properties of an event; putting them in a sheet would make them look durable.
+
+**Compare records the same two arrays at its equivalent sites** so session C
+can consume them, and they are still dropped at the flat row shape for now —
+(iii) remains held on the id-join decision above.
+
+**COMPARE HAS EQUIVALENTS FOR TWO OF THE FOUR SITES, measured 2026-09-08:**
+
+| What-If | Compare |
+|---|---|
+| site 2, yield Inflow winner | **site 10**, `scenarioHelper.ts:351`, winner at `:360` |
+| site 6, pricing applies all matches | **site 12**, `scenarioHelper.ts:463` |
+| site 5, yield **Retention** winner | **none** — `scenarioHelper` has one IBRO test only, `!== 'Inflow'` (`:352`) |
+| site 8, per-scenario pricing | **none** — no `scenarioArpu` / `pricingFor` equivalent exists |
+
+So Compare's `appliedArpuIds` is necessarily a subset of What-If's: it can
+carry an Inflow yield winner and pricing events, and has no retention-yield or
+per-scenario pricing to record. That is recorded here rather than papered
+over, because a later session reading Compare's array must not assume it
+answers the same question What-If's does.
+
 #### D5-08 DECIDED (Jon, 2026-09-07) — the Events summary panel can show every row
 
 **User-raised: Jon, UAT, 2026-09-07.** With ten events loaded the Events
