@@ -3,8 +3,8 @@
 ```
 FOR ADVISOR
 Generated: 2026-09-09 17:59 +0100 (UTC 2026-09-09 16:59)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: 9118678
+Repo: committed 9118678, pushed (origin in sync)
 
 BASE 6538350 + 7d36e70 (reports/ ONLY fill; stated). HARD RULE in force:
   restored ONLY from a scratchpad backup, never git. No loss this session.
