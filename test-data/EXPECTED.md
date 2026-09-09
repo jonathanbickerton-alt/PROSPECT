@@ -7154,6 +7154,58 @@ the **Events summary panel's** chip (`EventsSummaryTable.tsx:109`,
 things by design; the chip has always counted all rows, and no spec asserts its
 semantics either way.
 
+#### D5-13 DECIDED (Jon, 2026-09-09) — the Value card's preview names the winner
+
+**Recorded before any code.**
+
+**User-raised: Jon, UAT, 2026-09-09.** The Value card's Preview Impact
+attributed to an Inflow draft a figure belonging to a **different event**. On
+`PROSPECT Forecast Save — 09 Sep 2026 1930.xlsx` at SOHO / Mobile Voice the box
+read **−5.26 %**, which is the effect of `test save W3` — a first-saved,
+All / All, non-roll-forward Inflow yield event at 2026-09. The draft's own
+effect is **+93 %**, from November onwards.
+
+**Cause, measured in `reports/2026-09-09-1936-yield-tie-inventory.md`.** A month
+has exactly **one** yield winner, chosen by month descending and then, on a tie,
+by **insertion order**; scope is a boolean filter and is never ranked. A
+non-roll-forward event is a candidate in exactly one month, so `test save W3`
+competes only at October — and wins it, because it was saved first. The preview
+reads the month **after** the draft's own month, which for a September Inflow
+draft is October: **the single month the draft does not win**. Both engines
+agree on the winner in every month; the figure was right about the chart and
+wrong about the draft.
+
+**1. THE TIE RULE IS UNCHANGED.** Options **(a) most-specific-scope-wins** and
+**(b) latest-saved-wins** are recorded as an **OPEN DESIGN QUESTION for after
+UAT**, with the costings in the 1936 inventory: each touches the three winner
+sites (`WhatIfTab.tsx:1461`, `:1679`, `scenarioHelper.ts:393`), (a) additionally
+needs a new specificity rank over the five dimensions a yield event carries, (b)
+additionally needs a new sheet column because `yieldEventExportRow` has no
+ordinal — and **both change the forecast every existing save produces**.
+
+**Option (c), blocking a second yield event on a cohort-month, is DECLINED.** It
+would have refused the 1930 file, in which the two events coexist without
+conflict in eleven of the twelve months they span. A rule that refuses working
+work is worse than the ambiguity it removes.
+
+**2. THE PREVIEW NAMES THE WINNER.** When the month the box reads is won by
+another event, a line renders:
+
+> `{{month}}: '{{name}}' applies instead · this event applies from {{first}}`
+
+where `first` is the **first month the draft is the winner**. If the draft wins
+in no month at all, the line reads instead:
+
+> `this event is superseded in every month`
+
+**No engine change, and no forecast moves.** The winner is already computed —
+`appliedArpuIds` per month — and discarded one line later, where
+`eventScopeSeriesFor` returns `.chartData` alone. The seam carries it back
+instead; the card stops attributing another event's figure to the draft.
+
+**What is NOT changed:** the tie rule, the candidate filter, the month the box
+reads, the two figures it shows, and every saved forecast.
+
 #### D5-12 DECIDED (Jon, 2026-09-09) — "Events in effect" counts the union, and the caption always renders
 
 **Recorded before any code. This SUPERSEDES D5-09 (i)**, which is quoted below
