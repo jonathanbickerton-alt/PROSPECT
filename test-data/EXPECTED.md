@@ -7355,6 +7355,14 @@ reading the selected month and the Revenue Delta card are built against the
 six decisions and the two authorisations above; nothing in them changed. Part
 1 — the engine fields and the actuals predicate — landed at `9c93807`.
 
+**CLARIFIED (Jon, 2026-09-09): the selector lists months in CHRONOLOGICAL
+order, earliest at the top.** Decision 1 was recorded as "most-recent first"
+and built latest-first; Jon meant nearest-first. **The default is unchanged —
+still the last forecast month**, which after the reversal is the LAST option
+rather than the first, so the default is expressed as a month key and not as a
+position. Nothing else about the selector moves: the actuals exclusion, the
+view-state rule and the three cards are as decided.
+
 #### D5-09 DECIDED (Jon, 2026-09-08) — the app says which events are in effect, and why
 
 **Recorded before any code.** The app tells the user which events are affecting
