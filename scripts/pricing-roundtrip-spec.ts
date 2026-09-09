@@ -444,9 +444,18 @@ check('baseline: the slice invocation is ONE extracted function',
 // TWO, not three: the definition reads `= useCallback(`, so it does not match
 // `eventScopeSeriesFor(` — only the two CALL sites do, which is exactly what
 // this wants to count. The first expectation here was 3 and the run corrected it.
-check('baseline: EXACTLY TWO callers share it — the save path and Preview',
-  (tab.split('eventScopeSeriesFor(').length - 1) === 2,
-  `${tab.split('eventScopeSeriesFor(').length - 1} call sites, expected 2`);
+// RE-AIMED at D5-11, 2026-09-09: THREE, because the Value card's yield
+// preview became the third caller of the SAME seam — which is the outcome
+// this pin wants, not a violation of it. The count is raised, never removed,
+// and the invariant it was a proxy for is now pinned directly below:
+// the number of ENGINE calls in the file did not move.
+check('baseline: EXACTLY THREE callers share it — save, Preview, yield preview',
+  (tab.split('eventScopeSeriesFor(').length - 1) === 3,
+  `${tab.split('eventScopeSeriesFor(').length - 1} call sites, expected 3`);
+check('baseline: and the third caller added NO new engine call',
+  (tab.split('computeAdjustedForecast(').length - 1) === 6,
+  `${tab.split('computeAdjustedForecast(').length - 1} computeAdjustedForecast sites,`
+  + ' expected 6 (1 definition + 5 calls) — a 7th is a second engine');
 check('baseline: Preview reads that memo, not the cohort-scoped series',
   tab.includes('previewScopeSeries?.find((r: any) => r.month === newPricingEvent.month)'));
 check('baseline: and its WEIGHTING volumes come from the same event-scoped series',
@@ -567,9 +576,10 @@ check('volumes: and NOT the unweighted 110',
 check('save: the volumes come from the SAME series as the baseline',
   tab.includes('volumesFromSeries(eventScopeSeries, newPricingEvent.month)'),
   'a second slice run at save would reopen the two-moments problem inside one save');
-check('save: still EXACTLY TWO callers of the slice invocation',
-  (tab.split('eventScopeSeriesFor(').length - 1) === 2,
-  `${tab.split('eventScopeSeriesFor(').length - 1} call sites, expected 2 (save + Preview)`);
+check('save: still EXACTLY THREE callers of the slice invocation',
+  (tab.split('eventScopeSeriesFor(').length - 1) === 3,
+  `${tab.split('eventScopeSeriesFor(').length - 1} call sites,`
+  + ' expected 3 (save + Preview + D5-11 yield preview)');
 check('save: baseline and volumes are written TOGETHER on the event',
   tab.includes('pricedVol: savedVolumes.pricedVol, totalVol: savedVolumes.totalVol'),
   'an edit refreshing one and not the other recreates the mixed-axes defect');

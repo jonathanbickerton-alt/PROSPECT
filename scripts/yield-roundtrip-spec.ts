@@ -307,6 +307,67 @@ const BASE: any = {
     mean(effective({ 'High Value': 0 })) < mean(derived));
 }
 
+
+// ══ D5-11 — the Value card reconciles to the chart ═════════════════════════
+//
+// STRUCTURAL, not mounted, and the report says so: this spec has no jsdom, and
+// the mounted assertions the brief asked for are named in its Limits. What
+// these three DO catch is each of the session's three traps, which is the bar
+// a trap must clear to be in the registry at all.
+{
+  const tab = fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8');
+
+  // (1) THE DEFAULT BASIS. On Forecast the tiers are rescaled so their
+  // equal-weight blend equals the fitted mean — the chart's own number — so
+  // reverting the initialiser silently un-reconciles the card.
+  check('D5-11: the Value card\'s ARPU basis DEFAULTS to forecast',
+    /const \[yieldArpuMode, setYieldArpuMode\] = useState<'historical' \| 'forecast'>\('forecast'\)/
+      .test(tab),
+    'Historical as the default is what made the card show a level the chart never shows');
+  check('D5-11: and Historical is still selectable (the toggle survives)',
+    /setYieldArpuMode\('historical'\)/.test(tab),
+    'the decision keeps Historical, it only moves the default');
+
+  // (2) THE PREVIEW READS THE CHART'S COLUMNS, not the equal-weight blend.
+  // A preview fed baselineBlendedArpu would agree with the card and disagree
+  // with the chart, which is the defect it exists to end.
+  check('D5-11: the preview reads the CHART columns, not the blend',
+    /const key = draft\.ibro === 'Inflow' \? 'Inflow ARPU' : 'Retention ARPU'/.test(tab)
+      && /const baseline = row\[`\$\{key\} \(Baseline\)`\]/.test(tab)
+      && /const adjusted = row\[`\$\{key\} \(Adjusted\)`\]/.test(tab),
+    'the two figures must be the same columns the chart plots');
+  check('D5-11: and the preview does NOT read baselineBlendedArpu',
+    !/yieldPreview[\s\S]{0,1200}baselineBlendedArpu/.test(tab),
+    'the comparator is not a forecast figure and must not be shown as one');
+
+  // (3) THE DRAFT IS ACTUALLY APPLIED. Without the splice the preview would
+  // report Adjusted === Baseline for every draft — a box that always says
+  // "no change", which is worse than no box.
+  check('D5-11: the yield draft is spliced into the list the engine is given',
+    /const yieldsForRun = \(yieldDraft \|\| excludeYieldId\)/.test(tab)
+      && /\.\.\.\(yieldDraft \? \[yieldDraft\] : \[\]\)\]/.test(tab)
+      && /yieldEvents: yieldsForRun/.test(tab),
+    'apply sites 2 and 5 read yieldEvents; a draft outside that list does nothing');
+  check('D5-11: ONE engine — the preview reuses eventScopeSeriesFor',
+    (tab.match(/const eventScopeSeriesFor = useCallback\(/g) ?? []).length === 1
+      && /eventScopeSeriesFor\(\s*\{ segment: draft\.segment/.test(tab),
+    'a second computeAdjustedForecast call for the preview would be a second engine');
+
+  // THE CAPTION EXISTS AND IS KEYED, in all six locales.
+  check('D5-11: the ratio caption renders under the tier table',
+    /data-testid="yield-ratio-caption"/.test(tab)
+      && /t\('whatif_yield_ratio_caption'\)/.test(tab),
+    'the two blended figures must say what they are');
+  for (const loc of ['en', 'de', 'es', 'fr', 'it', 'pt']) {
+    const j = fs.readFileSync(`src/locales/${loc}/translation.json`, 'utf8');
+    check(`D5-11: ${loc} carries all four D5-11 keys`,
+      ['whatif_yield_ratio_caption', 'whatif_yield_preview_impact',
+       'whatif_yield_preview_caption', 'whatif_yield_preview_unavailable']
+        .every(k => j.includes(`"${k}"`)),
+      loc);
+  }
+}
+
 console.log(`\nyield-roundtrip spec: ${pass} passed, ${fails.length} failed`);
 fails.forEach(f => console.log('  FAIL ' + f));
 process.exit(fails.length ? 1 : 0);

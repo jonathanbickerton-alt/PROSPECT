@@ -2215,7 +2215,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const [draftTierArpuOverride, setDraftTierArpuOverride] = useState<Record<string, number>>({});
   // 'historical' = raw data average per tier; 'forecast' = scaled to match the
   // forecast's per-scenario ARPU for the selected yield event month.
-  const [yieldArpuMode, setYieldArpuMode] = useState<'historical' | 'forecast'>('historical');
+  const [yieldArpuMode, setYieldArpuMode] = useState<'historical' | 'forecast'>('forecast');
 
   // Mix dimension selector (Phase 2b P6): the yield mix is distributed across
   // either the Value axis (Product L2 tiers) or the Tariff axis (selected tariffs).
@@ -3222,6 +3222,22 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const eventScopeSeriesFor = useCallback((
     draft: Partial<PricingEvent>,
     excludeId: string | null,
+    /**
+     * D5-11(2). THE YIELD DRAFT, when the Value card is previewing.
+     *
+     * `yieldDraft` is a provisional YieldEvent spliced into the list this
+     * function ALREADY passes to `computeAdjustedForecast`, so apply sites 2
+     * and 5 pick it up exactly as they would after a save. `excludeYieldId`
+     * drops the event being edited, the same question `excludeId` answers for
+     * pricing — "is this event me", not "is this event on".
+     *
+     * THERE IS NO SECOND ENGINE. This is the same invocation the Pricing
+     * card's Preview and save path share; a yield preview is a third caller
+     * of one definition, which is the whole reason this function was
+     * extracted in the first place.
+     */
+    yieldDraft?: YieldEvent | null,
+    excludeYieldId?: string | null,
   ): { series: any[] | null; reason: string | null } => {
     // CALLER 2 OF TWO — and the fix this returns is the whole point.
     //
@@ -3248,8 +3264,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // travels back to the card verbatim; substituting a generic sentence here
     // would be the two-meanings-of-null defect at another site.
     if (!resolution.forecast) return { series: null, reason: resolution.reason ?? null };
+    // D5-11(2). The yield list the preview measures against: the edited event
+    // dropped, the draft spliced in. Untouched when no yield draft is given,
+    // so the Pricing card's two callers behave byte-identically.
+    const yieldsForRun = (yieldDraft || excludeYieldId)
+      ? [...(excludeYieldId ? yieldEvents.filter(y => y.id !== excludeYieldId) : yieldEvents),
+         ...(yieldDraft ? [yieldDraft] : [])]
+      : yieldEvents;
     return { series: computeAdjustedForecast({
-    baseForecast: resolution.forecast, marketEvents, yieldEvents,
+    baseForecast: resolution.forecast, marketEvents, yieldEvents: yieldsForRun,
     pricingEvents: excludeId ? pricingEvents.filter(p => p.id !== excludeId) : pricingEvents,
     viewSegment: draft.segment ?? 'All',
     viewProduct: { l1: dimOrNull(draft.product), l2: dimOrNull(draft.productL2) },
@@ -3291,6 +3314,67 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
      newPricingEvent.tariffL1, newPricingEvent.tariffL2,
      editingPricingId, eventScopeSeriesFor]);
   const previewScopeSeries = previewScopeResolution?.series ?? null;
+
+  /**
+   * D5-11(2). THE VALUE CARD'S PREVIEW IMPACT — the third caller of
+   * `eventScopeSeriesFor`, and the answer to "your numbers are not on the
+   * chart".
+   *
+   * It reports the two figures the CHART shows, not the card's comparator:
+   * `<IBRO> ARPU (Baseline)` is the fitted band mean and `<IBRO> ARPU
+   * (Adjusted)` is what the engine delivers with the draft applied. They are
+   * the same columns the chart plots, read at the draft's own month, so the
+   * preview and the chart cannot disagree — which the equal-weight blend above
+   * was never able to promise.
+   *
+   * The draft is spliced into the yield list the shared path already passes,
+   * so apply sites 2 and 5 apply it exactly as they would after a save. On
+   * EDIT the event being edited is dropped by id, or the draft would be
+   * measured against a blend that already contains it.
+   */
+  const yieldPreview = useMemo(() => {
+    if (!newYieldEvent.month || yieldTierData.length === 0) return null;
+    const draft: any = {
+      id: 'yield-preview-draft',
+      ibro: newYieldEvent.ibro ?? 'Inflow',
+      segment: newYieldEvent.segment ?? 'All',
+      product: newYieldEvent.product ?? 'All',
+      channelL1: newYieldEvent.channelL1 ?? 'All',
+      channelL2: newYieldEvent.channelL2 ?? 'All',
+      month: newYieldEvent.month,
+      mixAxis,
+      tariffMix: { ...draftMix },
+      tariffBaseArpu: { ...effectiveTierArpuMap },
+      rollForward: newYieldEvent.rollForward ?? false,
+      name: '', comment: '',
+    };
+    const { series, reason } = eventScopeSeriesFor(
+      { segment: draft.segment, product: draft.product,
+        channelL1: draft.channelL1, channelL2: draft.channelL2 } as any,
+      null, draft, editingYieldId ?? null);
+    if (!series) return { baseline: null, adjusted: null, reason };
+    // The month the yield event's effect is READ at. Inflow yield reaches the
+    // NEXT month's pool (site 2 uses the previous month's flow), so the draft
+    // month itself is where a Retention yield shows and the month after is
+    // where an Inflow one does. Both are looked up by key, never by offset.
+    const wanted = draft.ibro === 'Inflow'
+      ? (series.find((r: any) => r.month > draft.month)?.month ?? draft.month)
+      : draft.month;
+    const row: any = series.find((r: any) => r.month === wanted);
+    if (!row) return { baseline: null, adjusted: null, reason: null };
+    const key = draft.ibro === 'Inflow' ? 'Inflow ARPU' : 'Retention ARPU';
+    const baseline = row[`${key} (Baseline)`];
+    const adjusted = row[`${key} (Adjusted)`];
+    return {
+      baseline: typeof baseline === 'number' ? baseline : null,
+      adjusted: typeof adjusted === 'number' ? adjusted : null,
+      month: wanted, reason: null,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newYieldEvent.month, newYieldEvent.ibro, newYieldEvent.segment,
+      newYieldEvent.product, newYieldEvent.channelL1, newYieldEvent.channelL2,
+      newYieldEvent.rollForward, mixAxis, draftMix, effectiveTierArpuMap,
+      yieldTierData, editingYieldId, eventScopeSeriesFor]);
 
   /**
    * THE SLICE THE DRAFT ASKS FOR HAS NO FORECAST — the seam's own words.
@@ -8786,6 +8870,49 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         </p>
                       </div>
                     </div>
+
+                    {/* D5-11(3). THE CAPTION. The two boxes above are a
+                        COMPARATOR whose ratio is what reaches the forecast;
+                        saying so is the difference between a figure a reader
+                        can place and one that looks like a broken forecast. */}
+                    <p data-testid="yield-ratio-caption"
+                       className="mt-3 text-[10px] leading-snug text-slate-400">
+                      {t('whatif_yield_ratio_caption')}
+                    </p>
+
+                    {/* D5-11(2). PREVIEW IMPACT — the CHART's two figures at
+                        the draft's own month, through the same draft-preview
+                        path the Pricing card uses. */}
+                    {yieldPreview && (
+                      <div data-testid="yield-preview" className="mt-3 pt-3 border-t border-slate-100">
+                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                          {t('whatif_yield_preview_impact')}
+                        </p>
+                        {yieldPreview.baseline === null || yieldPreview.adjusted === null ? (
+                          <p data-testid="yield-preview-absent" className="text-xs text-slate-400">
+                            {yieldPreview.reason ?? t('whatif_yield_preview_unavailable')}
+                          </p>
+                        ) : (
+                          <p className="text-sm font-bold text-slate-700">
+                            <span data-testid="yield-preview-baseline">
+                              {formatNumber(yieldPreview.baseline)}</span>
+                            {' → '}
+                            <span data-testid="yield-preview-adjusted">
+                              {formatNumber(yieldPreview.adjusted)}</span>
+                            <span data-testid="yield-preview-pct"
+                                  className="ml-2 text-xs font-semibold text-slate-500">
+                              {yieldPreview.baseline > 0
+                                ? `${yieldPreview.adjusted >= yieldPreview.baseline ? '+' : ''}${
+                                    formatNumber((yieldPreview.adjusted / yieldPreview.baseline - 1) * 100)}%`
+                                : '—'}
+                            </span>
+                          </p>
+                        )}
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          {t('whatif_yield_preview_caption')}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
 

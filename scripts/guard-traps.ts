@@ -1698,13 +1698,15 @@ const TRAPS: Trap[] = [
   { id: '108 the pricing series is fed the loaded cohort, not the draft slice',
     why: 'baseline ARPU and both weighting volumes revert to whatever Step 1 loaded',
     file: WHATIF, spec: MIXCARD,
+    // RE-ANCHORED at D5-11, 2026-09-09. The three-line anchor was split when
+    // the Value card's preview inserted `yieldsForRun` between the guard and
+    // the call, and spec:trap-anchors caught it the same session. Anchored on
+    // the single line that names the resolved slice, which is unique and is
+    // the defect this id is about — swapping the DRAFT'S forecast for the
+    // loaded cohort's.
     mutate: s => s.replace(
-      '    if (!resolution.forecast) return { series: null, reason: resolution.reason ?? null };' + nl +
-      '    return { series: computeAdjustedForecast({' + nl +
-      '    baseForecast: resolution.forecast, marketEvents, yieldEvents,',
-      '    if (!resolution.forecast) return { series: null, reason: resolution.reason ?? null };' + nl +
-      '    return { series: computeAdjustedForecast({' + nl +
-      '    baseForecast, marketEvents, yieldEvents,') },
+      '    baseForecast: resolution.forecast, marketEvents, yieldEvents: yieldsForRun,',
+      '    baseForecast, marketEvents, yieldEvents: yieldsForRun,') },
   // 109 forks the shared helper into a card-local copy. The count is what
   // catches it: the behaviour is IDENTICAL the moment it is planted, so no
   // figure moves and only the exactly-two-callers pin can see it. That is the
@@ -2624,6 +2626,47 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "              tariffScope: tariffScopeFromRow(ye.Tariff_Scope) },",
       "              },") },
+  // 192 THE DEFAULT BASIS GOES BACK TO HISTORICAL. This is the whole of
+  // Alessandro's UAT finding restored by one word: on Forecast basis the tier
+  // rates are rescaled so their equal-weight blend IS the fitted mean — the
+  // chart's own number — and on Historical they are raw rates whose mean the
+  // chart never shows and never will. The card still renders, still solves,
+  // still saves; it simply headlines a level nothing else in the app agrees
+  // with. Nothing crashes, which is exactly why it survived to UAT.
+  { id: '192 the Value card\'s ARPU basis defaults to Historical again',
+    why: 'the reconciliation is the default, not the toggle: a card that'
+       + ' opens on a basis the chart never plots is the reported defect',
+    file: WHATIF, spec: YIELDROUND,
+    mutate: s => s.replace(
+      "useState<'historical' | 'forecast'>('forecast');",
+      "useState<'historical' | 'forecast'>('historical');") },
+  // 193 THE PREVIEW READS THE COMPARATOR instead of the chart. The seductive
+  // version of the bug: baselineBlendedArpu is right there in the card, it is
+  // a number, it is labelled "Baseline", and a preview built from it would
+  // agree with the box above it perfectly. It is the ratio's DENOMINATOR
+  // (1652 inventory, item 2) — deliberately cancelled before anything reaches
+  // the forecast — so the box would be internally consistent and disagree
+  // with the only figure the user can check it against.
+  { id: '193 the preview shows the equal-weight blend, not the fitted mean',
+    why: 'the denominator is not a forecast level; showing it as one is the'
+       + ' defect the preview exists to end, dressed as agreement',
+    file: WHATIF, spec: YIELDROUND,
+    mutate: s => s.replace(
+      "    const baseline = row[`${key} (Baseline)`];",
+      "    const baseline = baselineBlendedArpu;") },
+  // 194 THE DRAFT NEVER REACHES THE ENGINE. Drop the splice and yieldsForRun
+  // is the saved list, so the preview runs the forecast the user already has:
+  // Adjusted === Baseline for every draft, every time, +0.0%. A box that
+  // always says "no change" is worse than no box, because it reads as a
+  // measurement — and it is the one failure a structural check must catch,
+  // since a mounted assertion on a fixture with no yield effect would pass.
+  { id: '194 the preview ignores the draft (Adjusted always equals Baseline)',
+    why: 'apply sites 2 and 5 read yieldEvents; a draft outside that list'
+       + ' does nothing, and the box reports its own inertness as a result',
+    file: WHATIF, spec: YIELDROUND,
+    mutate: s => s.replace(
+      "         ...(yieldDraft ? [yieldDraft] : [])]",
+      "         ]") },
 ];
 
 /**
