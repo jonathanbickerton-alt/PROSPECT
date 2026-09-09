@@ -2369,10 +2369,17 @@ async function main() {
     opts.length > 0, opts.join(','));
   check('REQ-D6-02: the month carrying an actual is ABSENT from the options',
     !opts.includes(MONTHS[0]), 'MONTHS[0]=' + MONTHS[0] + ' options ' + opts.join(','));
-  check('REQ-D6-02: options are MOST RECENT FIRST',
-    opts.every((m: string, i: number) => i === 0 || opts[i - 1] >= m), opts.join(','));
-  check('REQ-D6-02: the default is the LAST offered month',
-    String(selA.sel().value) === opts[0], 'value ' + selA.sel().value + ' vs ' + opts[0]);
+  check('REQ-D6-02: options are CHRONOLOGICAL, earliest first',
+    opts.every((m: string, i: number) => i === 0 || opts[i - 1] <= m), opts.join(','));
+  // BY MONTH KEY, NOT BY POSITION (Jon, 2026-09-09). `opts[0]` passed both
+  // before and after the reversal, so it could not have seen the default
+  // silently becoming the EARLIEST month — which is the one way this change
+  // could have gone wrong invisibly.
+  const latestOffered = opts.reduce((a: string, b: string) => (a > b ? a : b));
+  const earliestOffered = opts.reduce((a: string, b: string) => (a < b ? a : b));
+  check('REQ-D6-02: the default is the LAST forecast month, by key',
+    String(selA.sel().value) === latestOffered,
+    'value ' + selA.sel().value + ' vs latest ' + latestOffered);
 
   // (d) THE CHART WINDOW MOVES NOTHING HERE. windowSize is a <Brush> over the
   // same array; the option list is derived from adjustedMonths, not from it.
@@ -2407,7 +2414,7 @@ async function main() {
     const m = em.find((x: any) => x.month === mo);
     return m ? m.adjustedBaseVolume - m.baselineBaseVolume : NaN;
   };
-  const last = opts[0], earlier = opts[opts.length - 1];
+  const last = latestOffered, earlier = earliestOffered;
   // THE FIXTURE DISCRIMINATES, asserted before either card is read.
   check('REQ-D6-02: the two months\' base deltas DIFFER on this fixture',
     Math.abs(baseDeltaAt(last) - baseDeltaAt(earlier)) > 0.01,
@@ -2426,7 +2433,7 @@ async function main() {
   await selA.unmount();
   const selB = await mountSel([EVENT_M1], actualsForFirstMonthOnly);
   check('REQ-D6-02: a remount resets the selector to the default',
-    String(selB.sel().value) === selB.options()[0],
+    String(selB.sel().value) === latestOffered,
     'value ' + selB.sel().value);
 
   // THE REVENUE CARD EXISTS, reads four scenarios, and its Base row is a
@@ -2438,7 +2445,7 @@ async function main() {
     !!selB.q('impact-revenue-scenarios') && !!revBase
       && !!selB.q('impact-revenue-delta-inflow'),
     'the card and its Base row must both be in the DOM');
-  const revMonth = em.find((x: any) => x.month === selB.options()[0]);
+  const revMonth = em.find((x: any) => x.month === latestOffered);
   const rawRev = revMonth?.scenarioArpu?.base?.revenue - revMonth?.baselineRevenue?.base;
   const expected = Number.isFinite(rawRev)
     ? `${rawRev >= 0 ? '+' : ''}${rawRev.toFixed(2)}` : '—';

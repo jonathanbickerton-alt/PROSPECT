@@ -4659,7 +4659,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   /**
    * REQ-D6-02(1). THE SELECTABLE MONTHS: every forecast month that carries no
-   * actual, MOST RECENT FIRST.
+   * actual, in CHRONOLOGICAL order — earliest first.
    *
    * The exclusion goes through `monthsCarryingActuals` — the ONE predicate
    * extracted in part 1 — and not through a second copy of its rule. It is
@@ -4672,18 +4672,29 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
    */
   const deltaMonthOptions = useMemo(() => {
     const withActuals = monthsCarryingActuals(data, [wiDateCol], wiValueCol);
+    // CHRONOLOGICAL, earliest first (Jon, 2026-09-09). The list was built
+    // latest-first because decision 1 was recorded as "most-recent first";
+    // Jon meant nearest-first. `adjustedMonths` is already in month order, so
+    // the fix is the absence of a `.reverse()` rather than a sort.
     return adjustedMonths
       .map(m => m.month)
-      .filter(mo => !withActuals.has(mo))
-      .reverse();
+      .filter(mo => !withActuals.has(mo));
   }, [adjustedMonths, data, wiDateCol, wiValueCol]);
 
-  /** The month actually read: the user's choice while it is still offered,
-   *  else the default — the LAST forecast month without an actual, which is
-   *  today's "end of period" whenever no actuals have arrived. */
+  /**
+   * The month actually read: the user's choice while it is still offered,
+   * else the default — the LAST forecast month without an actual, which is
+   * today's "end of period" whenever no actuals have arrived.
+   *
+   * THE DEFAULT IS THE LAST OPTION, and it moved from `[0]` to `[length - 1]`
+   * with the order. That is the whole reason the clarification touches code
+   * at all: reversing the list without moving the default would have silently
+   * defaulted to the EARLIEST month, which is a different figure on every
+   * screen and would have looked like a data change rather than a sort.
+   */
   const deltaMonth = deltaMonthOptions.includes(selectedDeltaMonth)
     ? selectedDeltaMonth
-    : (deltaMonthOptions[0] ?? '');
+    : (deltaMonthOptions[deltaMonthOptions.length - 1] ?? '');
 
   const impactSummary = useMemo(() => {
     if (!chartData.length) return null;
