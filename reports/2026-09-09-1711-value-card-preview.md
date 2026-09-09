@@ -3,31 +3,29 @@
 ```
 FOR ADVISOR
 Generated: 2026-09-09 17:11 +0100 (UTC 2026-09-09 16:11)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: 6538350
+Repo: committed 6538350, pushed (origin in sync)
 
 BASE 41c8be7 + e32acc9 (reports/ ONLY; ZERO drift in gated paths).
 RECORDED FIRST 3ac8a1c — D5-11, citing "SETTLED 2026-08-12 — option (c)"
   as UNCHANGED. NEITHER STOP FIRED, both checked and reported below.
-1 DEFAULT BASIS was an INITIALISER (WIT:2218), not a decision — the
-  2026-08-12 entry is SILENT on it, so NO STOP. Now 'forecast'. PREVIEW
-  PATH: eventScopeSeriesFor already hands yieldEvents to the engine, so a
-  yield draft is a SPLICE, not a second engine. NO STOP either.
-2 BUILD all three. Default :2218; yieldsForRun splice :3270; yieldPreview on
-  the CHART's OWN columns :3335; caption :8878 + box :8887; 877 -> 881 x6.
-  PINS UNMOVED: apply 12 (8+4), display 6, .enabled 5+1+0, TARIFF_SCOPE
-  10 (9+1), eventScopeMatchesView 16 (11+4+1). RE-AIMED not loosened:
-  eventScopeSeriesFor callers 2 -> 3, plus a NEW pin that engine calls
-  stayed at 6 — the proxy the old count stood for, made literal.
+1 DEFAULT BASIS was an INITIALISER (WIT:2218), not a decision — 2026-08-12
+  is SILENT on it, so NO STOP; now 'forecast'. PREVIEW PATH already hands
+  yieldEvents to the engine, so the draft is a SPLICE. NO STOP either.
+2 BUILD all three: default :2218, yieldsForRun splice :3270, preview on the
+  CHART's OWN columns :3335, caption :8878 + box :8887, 877 -> 881 x6.
+  PINS UNMOVED: apply 12 (8+4), display 6, .enabled 5+1+0, TARIFF_SCOPE 10
+  (9+1), eventScopeMatchesView 16 (11+4+1). RE-AIMED not loosened:
+  eventScopeSeriesFor callers 2 -> 3, plus a NEW pin: engine calls still 6.
 3 SPEC yield-roundtrip 56 -> 69, STRUCTURAL — that spec has no jsdom, so
   NO mounted assertions. A real gap, stated in full in Limits.
-4 TRAPS 192/193/194, each seen RED BY HAND, 1 site, restored to
-  md5 7d941e1c. 194 was GREEN until the spec was strengthened.
+4 TRAPS 192/193/194 seen RED BY HAND, 1 site, restored to md5 7d941e1c;
+  194 was GREEN until the spec was strengthened. Trap 108 re-anchored.
 5 GATE serial: suite 61/61, guard-traps 190/190 CAUGHT (0 MISSED /
   INCONCLUSIVE / CRASHED), evt-toggle 153, mounted 189, yield 69, anchors
   202, survival 27, i18n 200, ai-hold 13, tsc + lint + build clean.
 LOSS: git checkout -- DESTROYED the uncommitted build; recovered VERBATIM
-  from the transcript, tsc + 69/69 green. Limits carries it in full.
+  from the transcript, tsc + 69/69 green. Limits carries it whole.
 ```
 
 ## 1. Diagnose
