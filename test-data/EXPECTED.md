@@ -7207,6 +7207,9 @@ by side would be honest and would also be a new question to answer every time
 the card is read; the union answers the question actually being asked, and the
 caption decomposes it for anyone who wants the split.
 
+**CLOSED 9118678; walked by Jon 2026-09-09: 4 · 3 moving volume · 1 moving
+ARPU · 8 switched on; 2 · 0 · 2 · 6 on a yield-only cohort.**
+
 #### D5-11 DECIDED (Jon, 2026-09-09) — the Value card reconciles to the chart
 
 **User-raised: Alessandro and Jon, UAT, 2026-09-09.** The Value card's Baseline
@@ -7250,6 +7253,11 @@ not about what the engine *computes*.
 **What is NOT changed:** the ratio, the equal-weight comparator, the tier
 arithmetic, and Historical basis itself. A user who selects Historical sees
 exactly what they saw before.
+
+**CLOSED 6538350; walked by Jon 2026-09-09: Forecast basis default, caption
+present, Preview Impact reads the chart's Oct figure for Inflow and moves with
+a Retention draft (8.80 → 16.08); the comparator pair with a stated rate
+(12.94) is by construction, recorded.**
 
 #### D5-10 DECIDED (Jon, 2026-09-09) — an event's tariff scope is on the event
 
