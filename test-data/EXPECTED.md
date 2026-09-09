@@ -7154,6 +7154,50 @@ the **Events summary panel's** chip (`EventsSummaryTable.tsx:109`,
 things by design; the chip has always counted all rows, and no spec asserts its
 semantics either way.
 
+#### D5-11 DECIDED (Jon, 2026-09-09) — the Value card reconciles to the chart
+
+**User-raised: Alessandro and Jon, UAT, 2026-09-09.** The Value card's Baseline
+and New Blended ARPU (walked at **13.32 → 24.17**) are the yield ratio's
+**denominator and numerator**, and the ratio cancels them before anything
+reaches the forecast. The chart shows the cohort's **fitted** scenario ARPU with
+the yield pool blended in (**10.65 → 17.33**). Both are correct; the card never
+says which it is showing, so its figures read as forecast figures and do not
+reconcile.
+
+**Measured in `reports/2026-09-09-1652-value-card-blend-inventory.md`:** on
+**Historical** basis an **absolute** target gives different ratios by axis —
+**1.10** on the value axis against **1.816** on the tariff axis, from the same
+typed number — because the equal-weight denominators differ. On **Forecast**
+basis the tiers are rescaled so their equal-weight blend **equals the fitted
+mean** on either axis, and the discrepancy disappears.
+
+**"SETTLED 2026-08-12 — the comparator is option (c)" is UNCHANGED.** The
+equal-weight comparator stands, share-weighting stays queued as option (b), and
+the ratio itself is not touched. This decision is about what the card *shows*,
+not about what the engine *computes*.
+
+1. **The basis toggle defaults to Forecast ARPU.** Historical remains
+   selectable and unchanged. Checked before deciding: the 2026-08-12 entry is
+   silent on the default, and no other entry fixes Historical — the default was
+   an initialiser, not a decision.
+
+2. **The Value card gains a Preview Impact box in the Pricing card's shape** —
+   the draft cohort's **fitted** scenario ARPU at the draft month, and the
+   **delivered** ARPU after the draft event, with the percentage between them.
+   It is computed through the **same draft-preview path the Pricing card uses**
+   (`eventScopeSeriesFor`), which already hands `yieldEvents` to
+   `computeAdjustedForecast`; the yield draft is injected there and apply sites
+   2 and 5 pick it up. **No second engine**, and no thirteenth place deciding
+   what an event does.
+
+3. **A caption under the tier table stating the ratio mechanism**, in all six
+   locales: the two blended figures are a comparator, and what reaches the
+   forecast is their ratio applied to the fitted ARPU.
+
+**What is NOT changed:** the ratio, the equal-weight comparator, the tier
+arithmetic, and Historical basis itself. A user who selects Historical sees
+exactly what they saw before.
+
 #### D5-10 DECIDED (Jon, 2026-09-09) — an event's tariff scope is on the event
 
 **User-raised: Jon, UAT, 2026-09-09.** A Promotion saved with Tariffs in scope
