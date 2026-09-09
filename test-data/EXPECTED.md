@@ -7154,6 +7154,85 @@ the **Events summary panel's** chip (`EventsSummaryTable.tsx:109`,
 things by design; the chip has always counted all rows, and no spec asserts its
 semantics either way.
 
+#### D5-10 DECIDED (Jon, 2026-09-09) — an event's tariff scope is on the event
+
+**User-raised: Jon, UAT, 2026-09-09.** A Promotion saved with Tariffs in scope
+= RED M + RED L, and its own Tariff control left at **All**, applies its full
+uplift at the viewing bar's **RED S**. It should apply at RED M, RED L or All
+and nowhere else.
+
+**The cause, from `reports/2026-09-09-1202-promo-tariff-scope-inventory.md`.**
+The event carries the literal `'All'`. `eventScopeMatchesView` short-circuits
+`dim === 'All'` to true for every view, and `leafWithinScope` skips the
+dimension on the same test, so `forecastCoverage` returns `inBoth / inView = 1`
+at a single-tariff view. Neither function receives `selectedTariffs`, and
+neither should: they are pure functions of the event and the view, shared by
+three carriers, two engines and sixteen call sites precisely because they are.
+
+**The control already says one thing while the engine reads another.**
+`targetTariffTree` filters the Tariff dropdown to the selection, so "All" in
+that control lists RED M and RED L and nothing else — while the same token
+reaches the engine meaning "unnarrowed". The two readings differ exactly when
+the selection is a strict subset, which is this finding.
+
+**DESIGN (b) — the scope is materialised onto the event.** The alternative,
+splitting a promotion into per-tariff rows at build time, was measured and
+rejected: it freezes the split at save time where coverage is recomputed per
+month and per view today, and it multiplies a campaign's row count, which the
+campaign pill and D5-05's group-edit bar reason over.
+
+1. **The shared event base gains `tariffScope?: string[]`** — L1 names.
+   **ABSENT MEANS ALL TARIFFS**, so every existing save reloads unchanged.
+   This is the same rule `enabled` follows, and for the same reason.
+
+2. **Materialised AT SAVE by ONE function**,
+   `tariffScopeFor(draftTariffL1, selectedTariffs, fullL1s)`: when the draft's
+   `tariffL1` is `'All'` **and** `selectedTariffs` is a non-empty **strict**
+   subset of the full L1 set, `tariffScope` is the sorted selection; otherwise
+   there is none. Applied at **every site where a draft becomes an event**,
+   pinned by marker text with an exact count. Where a carrier's emitters all
+   funnel through one construction function, that function is the site and the
+   pin counts it. One-helper-per-card is deferred to after UAT.
+
+3. **Both predicates gain ONE branch each, no second copy.**
+   `eventScopeMatchesView`: with the event's `tariffL1` `'All'` and a non-empty
+   `tariffScope`, a view tariff of All matches; a specific view tariff matches
+   **iff it is in `tariffScope`**. `leafWithinScope`: the same membership test,
+   so `eventProRataShare` and `forecastCoverage` weight over the in-scope
+   leaves only.
+
+4. **The ARPU/mix effect rides the same rows**, so an out-of-scope tariff shows
+   nothing at all — no volume and no ARPU.
+
+5. **Export: `Tariff_Scope`**, a JSON column on the `Promo_Mix_Locked`
+   precedent, **appended LAST** on all three sheets. Readers parse it; a row
+   without the column loads with no scope. Compare's four raw readers parse the
+   same column and its match and coverage sites honour it.
+
+6. **Display:** the Tariff control reads *"All in scope (RED M, RED L)"* when
+   the selection is a strict subset and plain *"All"* otherwise — one key, six
+   locales. The Events summary SCOPE column appends the list.
+
+7. **The Promotion draft gains the auto-clear effect** the Volume and Pricing
+   drafts already have, so a tariff leaving the selection cannot be saved from
+   a hidden dropdown.
+
+8. **The two `EventScopeDims` declarations are merged into one.** They are
+   identical and silently merged by TypeScript today, which means a reader who
+   finds one may not know of the other.
+
+9. **Re-saving an event recomputes `tariffScope` from the CURRENT selection.**
+   By design, and stated: an event says what it targets as at its last save.
+
+**MEASURED BEFORE CODE (report 1217, re-measured 1232): NO CARRIER FUNNELS
+THROUGH ONE STATE WRITER.** `setMarketEvents` has eleven callers of four
+different kinds — draft emitters, an edit-by-patch path, two **restore** paths
+and two that are not emitters at all — so the raw setter cannot be the site: a
+restore must NOT recompute scope, because the sheet already carries the answer.
+**Promotion does funnel, at `buildPromoEvents`** — three callers, one
+construction function. Pricing reaches state through two App writers. Volume
+has no funnel and its emitters each build their own literal.
+
 #### REQ-D6-02 — THE DELTA MONTH SELECTOR AND THE REVENUE CARD (Jon, 2026-09-09)
 
 **Raised by Alessandro in UAT, 2026-09-09: the Market Events KPI cards fix
