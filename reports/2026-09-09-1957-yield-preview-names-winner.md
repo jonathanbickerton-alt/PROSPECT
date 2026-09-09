@@ -3,8 +3,8 @@
 ```
 FOR ADVISOR
 Generated: 2026-09-09 19:57 +0100 (UTC 2026-09-09 18:57)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: f252700
+Repo: committed f252700, pushed (origin in sync)
 
 BASE e5e1656 + 3 commits, reports/ ONLY, ZERO drift in gated paths.
   PREMISE 1936 re-checked: every line EXACT except sh:384 not sh:383.
