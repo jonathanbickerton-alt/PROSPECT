@@ -2556,6 +2556,139 @@ async function main() {
       JSON.stringify(d12Off.addEvents));
   }
 
+
+  // ══ D5-13 — the preview names the winner ════════════════════════════════
+  //
+  // MOUNTED, because the whole defect was an attribution: every figure the box
+  // showed was real and none of them was the draft's. Shaped like Jon's 1930
+  // file — a first-saved All/All Inflow yield that does NOT roll forward, and
+  // a later, cohort-scoped, rolling draft in the SAME month.
+  //
+  //   MONTHS[1]  both are candidates, months tie, insertion order -> RIVAL
+  //   MONTHS[2]  the rival is no longer a candidate  -> the DRAFT
+  //
+  // and an Inflow draft's box reads MONTHS[1] — the one month it loses.
+  {
+    const YARPU = 'Arpu';
+    const YIELD_DATA = [
+      ...data,
+      ...['High', 'Low'].map(tier => ({
+        [C.date]: MONTHS[0], [C.seg]: 'Corporate', [C.prod]: 'Mobile Voice',
+        [C.prodL2]: tier, [C.chan]: 'All', [C.chanL2]: 'All',
+        [C.metric]: 'Inflow', [C.val]: tier === 'High' ? 600 : 400,
+        [YARPU]: tier === 'High' ? 40 : 10,
+      })),
+    ];
+    // THE RIVAL. Saved FIRST, All/All, and NOT rolling — so it competes in
+    // exactly one month and, on this fixture, wins it.
+    const RIVAL = {
+      id: 'y-rival', name: 'first saved', ibro: 'Inflow',
+      segment: 'All', product: 'All', channelL1: 'All', channelL2: 'All',
+      month: MONTHS[0], rollForward: false, mixAxis: 'value',
+      tariffMix: { High: 25, Low: 75 },
+      tariffBaseArpu: { High: 40, Low: 10 },
+    } as any;
+
+    // THE FIXTURE DISCRIMINATES, asserted BEFORE any line is read. The rival's
+    // ratio and the draft's must DIFFER, or the box would print the same two
+    // figures whichever event won, and the assertions below would pass without
+    // the winner ever being consulted.
+    const ratioOf = (mix: any, base: any) => {
+      const raw = Object.keys(mix).reduce((s, t) => s + (mix[t] / 100) * base[t], 0);
+      const ks = Object.keys(base);
+      return raw / (ks.reduce((s, t) => s + base[t], 0) / ks.length);
+    };
+    const rivalRatio = ratioOf(RIVAL.tariffMix, RIVAL.tariffBaseArpu);
+    const draftRatio = ratioOf({ High: 50, Low: 50 }, { High: 40, Low: 10 });
+    check('D5-13 fixture: the two ratios DIFFER',
+      Math.abs(rivalRatio - draftRatio) > 0.01,
+      'rival ' + rivalRatio + ' vs draft ' + draftRatio
+      + ' — equal ratios would make the winner unobservable in the figures,'
+      + ' which is the vacuous-result trap');
+
+    /** Mount the Value tab with a yield DRAFT in newYieldEvent, and read the
+     *  preview lines back. */
+    const readYield = async (yEvents: any[], rollForward: boolean) => {
+      const host = document.getElementById('root')!;
+      host.replaceChildren();
+      const container = document.createElement('div');
+      host.appendChild(container);
+      const root = createRoot(container);
+      const draft = {
+        ibro: 'Inflow', segment: 'Corporate', product: 'Mobile Voice',
+        channelL1: 'All', channelL2: 'All', month: MONTHS[0], rollForward,
+      };
+      const Harness = () => {
+        const [newEvent, setNewEvent] = (React as any).useState({});
+        const [ny, setNy] = (React as any).useState(draft);
+        const props = propsFor([], YIELD_DATA, yEvents);
+        props.wiArpuCol = YARPU;
+        props.newYieldEvent = ny;
+        props.setNewYieldEvent = setNy;
+        return React.createElement(M, { ...props, newEvent, setNewEvent });
+      };
+      await (act as any)(async () => {
+        root.render(React.createElement(ForecastProvider as any, {
+          baseForecast: BUNDLE_Y3.resolveForecast(keyA).forecast, setBaseForecast: noop,
+          adjustedForecast: null, setAdjustedForecast: noop,
+          forecastStore: BUNDLE_Y3.store, setForecastStore: noop,
+          resolveForecast: BUNDLE_Y3.resolveForecast, canResolve: () => true,
+          hasLegacyBaseline: true, updatedAt: new Date().toISOString(),
+          bulkRuns: [], setBulkRuns: noop,
+        }, React.createElement(Harness)));
+      });
+      const q = (id: string) => container.querySelector('[data-testid="' + id + '"]') as any;
+      await (act as any)(async () => { q('whatif-tab-value')?.dispatchEvent(
+        new dom.window.MouseEvent('click', { bubbles: true })); });
+      const txt = (id: string) => { const el = q(id); return el ? String(el.textContent).trim() : null; };
+      const out = {
+        present: !!q('yield-preview'),
+        rival: txt('yield-preview-rival'),
+        superseded: txt('yield-preview-superseded'),
+        baseline: txt('yield-preview-baseline'),
+        adjusted: txt('yield-preview-adjusted'),
+      };
+      await (act as any)(async () => { root.unmount(); });
+      return out;
+    };
+
+    // ── THE RIVAL WINS THE MONTH THE BOX READS ────────────────────────────
+    const withRival = await readYield([RIVAL], true);
+    console.log('  D5-13 rival line -> ' + JSON.stringify(withRival.rival));
+    check('D5-13: the box renders at all', withRival.present,
+      'every assertion below would be vacuous on an absent box');
+    check('D5-13: the rival line NAMES the first-saved event and its month',
+      !!withRival.rival && withRival.rival.includes('first saved')
+        && withRival.rival.includes(MONTHS[1]),
+      JSON.stringify(withRival.rival));
+    check('D5-13: and names the FOLLOWING month as the draft first win',
+      !!withRival.rival && withRival.rival.includes(MONTHS[2]),
+      JSON.stringify(withRival.rival)
+      + ' — the draft rolls forward, so it wins from the month after the tie');
+    check('D5-13: the superseded line does NOT render when the draft wins later',
+      withRival.superseded === null, JSON.stringify(withRival.superseded));
+
+    // ── NO RIVAL: nothing to say ──────────────────────────────────────────
+    const alone = await readYield([], true);
+    check('D5-13: with no rival the box still renders', alone.present);
+    check('D5-13: and NEITHER line appears',
+      alone.rival === null && alone.superseded === null,
+      JSON.stringify([alone.rival, alone.superseded])
+      + ' — a line on an uncontested draft would be noise on every save');
+
+    // ── THE DRAFT WINS NOWHERE ────────────────────────────────────────────
+    // Not rolling either, so it is a candidate in exactly the one month the
+    // rival takes. There is no "applies from" to offer, and offering the
+    // draft month would be a lie.
+    const never = await readYield([RIVAL], false);
+    console.log('  D5-13 superseded -> ' + JSON.stringify(never.superseded));
+    check('D5-13: a draft that wins NOWHERE gets the superseded line',
+      never.superseded !== null && never.rival === null,
+      JSON.stringify([never.rival, never.superseded]));
+    check('D5-13: and that line does not name a month it never wins',
+      !!never.superseded && !never.superseded.includes(MONTHS[2]),
+      JSON.stringify(never.superseded));
+  }
   report();
 }
 

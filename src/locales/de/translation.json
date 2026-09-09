@@ -292,6 +292,8 @@
   "whatif_yield_ratio_caption": "In die Prognose fließt das VERHÄLTNIS dieser beiden Werte ein, angewendet auf den gefitteten ARPU der Kohorte — nicht die Werte selbst.",
   "whatif_yield_preview_impact": "Vorschau der Wirkung",
   "whatif_yield_preview_caption": "Gefitteter ARPU in diesem Monat, dann der Prognosewert mit diesem Ereignis — dieselben Werte wie im Diagramm.",
+  "whatif_yield_preview_rival": "{{month}}: Stattdessen gilt „{{name}}“ · dieses Ereignis gilt ab {{first}}",
+  "whatif_yield_preview_superseded": "Dieses Ereignis wird in jedem Monat verdrängt",
   "whatif_yield_preview_unavailable": "Für diesen Ausschnitt liegt keine Prognose vor.",
   "whatif_delta_month": "Delta-Monat",
   "whatif_adjusted_vs_baseline": "Angepasst vs. Basis",

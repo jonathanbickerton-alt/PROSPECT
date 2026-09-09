@@ -3256,7 +3256,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
      */
     yieldDraft?: YieldEvent | null,
     excludeYieldId?: string | null,
-  ): { series: any[] | null; reason: string | null } => {
+  ): { series: any[] | null; reason: string | null;
+       /**
+        * D5-13. THE WINNER, PER MONTH — `appliedArpuIds` verbatim, keyed by
+        * month. The engine already computes it at sites 2 and 5 and this seam
+        * threw it away one line later, which is why the card could show
+        * another event's figure and not know.
+        *
+        * VERBATIM, and deliberately not filtered to yield here: pricing ids
+        * share this array, and deciding which id is "the yield winner" needs
+        * the yield list, which the CALLER built. A seam that guessed would be
+        * a second place deciding what won.
+        */
+       arpuIdsByMonth: Record<string, string[]>;
+     } => {
     // CALLER 2 OF TWO — and the fix this returns is the whole point.
     //
     // This used to pass `baseForecast`, the LOADED COHORT's forecast, and hand
@@ -3281,7 +3294,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // A SLICE NO FORECAST COVERS IS A STATE, NOT A ZERO. The seam's own reason
     // travels back to the card verbatim; substituting a generic sentence here
     // would be the two-meanings-of-null defect at another site.
-    if (!resolution.forecast) return { series: null, reason: resolution.reason ?? null };
+    if (!resolution.forecast) {
+      return { series: null, reason: resolution.reason ?? null, arpuIdsByMonth: {} };
+    }
     // D5-11(2). The yield list the preview measures against: the edited event
     // dropped, the draft spliced in. Untouched when no yield draft is given,
     // so the Pricing card's two callers behave byte-identically.
@@ -3289,7 +3304,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       ? [...(excludeYieldId ? yieldEvents.filter(y => y.id !== excludeYieldId) : yieldEvents),
          ...(yieldDraft ? [yieldDraft] : [])]
       : yieldEvents;
-    return { series: computeAdjustedForecast({
+    const run = computeAdjustedForecast({
     baseForecast: resolution.forecast, marketEvents, yieldEvents: yieldsForRun,
     pricingEvents: excludeId ? pricingEvents.filter(p => p.id !== excludeId) : pricingEvents,
     viewSegment: draft.segment ?? 'All',
@@ -3299,7 +3314,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
     wiTariffL1Col, wiTariffL2Col, wiValueCol,
     wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
-    }).chartData, reason: null };
+    });
+    // ONE PASS over the months the run already produced. The Pricing card's
+    // two callers read `.series` and nothing else, so this field is inert for
+    // them — asserted byte-identical by the spec rather than assumed.
+    const arpuIdsByMonth: Record<string, string[]> = {};
+    for (const m of run.adjustedMonths) arpuIdsByMonth[m.month] = m.appliedArpuIds ?? [];
+    return { series: run.chartData, reason: null, arpuIdsByMonth };
     // `baseForecast` is NO LONGER READ HERE and is therefore not a dependency —
     // the read-set rule, applied in the direction that usually gets missed.
     // `resolveForecast` replaces it, and is what must retrigger this.
@@ -3366,11 +3387,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       rollForward: newYieldEvent.rollForward ?? false,
       name: '', comment: '',
     };
-    const { series, reason } = eventScopeSeriesFor(
+    const { series, reason, arpuIdsByMonth } = eventScopeSeriesFor(
       { segment: draft.segment, product: draft.product,
         channelL1: draft.channelL1, channelL2: draft.channelL2 } as any,
       null, draft, editingYieldId ?? null);
-    if (!series) return { baseline: null, adjusted: null, reason };
+    if (!series) return { baseline: null, adjusted: null, reason, rival: null };
     // The month the yield event's effect is READ at. Inflow yield reaches the
     // NEXT month's pool (site 2 uses the previous month's flow), so the draft
     // month itself is where a Retention yield shows and the month after is
@@ -3383,16 +3404,50 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const key = draft.ibro === 'Inflow' ? 'Inflow ARPU' : 'Retention ARPU';
     const baseline = row[`${key} (Baseline)`];
     const adjusted = row[`${key} (Adjusted)`];
+    /**
+     * D5-13. WHO ACTUALLY WON THE MONTH THIS BOX IS READING.
+     *
+     * A month has exactly ONE yield winner (sites 2 and 5 take `[0]` of a
+     * sort), chosen by month descending and then, on a tie, by INSERTION
+     * ORDER — scope is a filter, never a rank. So a first-saved rival can own
+     * the very month an Inflow draft reads, which is the month AFTER its own.
+     * Measured on Jon's 1930 file: the box said -5.26%, which was another
+     * event's figure, while the draft's own effect (+93%) began a month later.
+     *
+     * The ids are filtered to THIS RUN'S YIELD LIST. `appliedArpuIds` also
+     * carries pricing ids (sites 6 and 8), and a pricing event applying in the
+     * same month is not a rival for the one yield slot.
+     */
+    const yieldIdsInRun = new Set<string>([
+      ...(editingYieldId ? yieldEvents.filter(y => y.id !== editingYieldId) : yieldEvents)
+        .map(y => y.id),
+      draft.id,
+    ]);
+    const yieldWinnerAt = (mo: string): string | null =>
+      (arpuIdsByMonth[mo] ?? []).find(id => yieldIdsInRun.has(id)) ?? null;
+    const winnerHere = yieldWinnerAt(wanted);
+    // THE DRAFT'S OWN FIRST MONTH, in the series' own order — never computed
+    // from the draft's month by arithmetic, because a roll-forward draft wins
+    // from its month onward and a plain one wins exactly one month, and the
+    // engine has already decided both.
+    const firstWin = series
+      .map((r: any) => r.month as string)
+      .find((mo: string) => yieldWinnerAt(mo) === draft.id) ?? null;
+    const rival = (winnerHere && winnerHere !== draft.id)
+      ? { name: (yieldEvents.find(y => y.id === winnerHere)?.name || '').trim()
+                 || t('whatif_summary_unnamed_yield'),
+          month: wanted, firstWin }
+      : null;
     return {
       baseline: typeof baseline === 'number' ? baseline : null,
       adjusted: typeof adjusted === 'number' ? adjusted : null,
-      month: wanted, reason: null,
+      month: wanted, reason: null, rival,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newYieldEvent.month, newYieldEvent.ibro, newYieldEvent.segment,
       newYieldEvent.product, newYieldEvent.channelL1, newYieldEvent.channelL2,
       newYieldEvent.rollForward, mixAxis, draftMix, effectiveTierArpuMap,
-      yieldTierData, editingYieldId, eventScopeSeriesFor]);
+      yieldTierData, editingYieldId, eventScopeSeriesFor, yieldEvents, t]);
 
   /**
    * THE SLICE THE DRAFT ASKS FOR HAS NO FORECAST — the seam's own words.
@@ -8956,6 +9011,30 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         <p className="text-[10px] text-slate-400 mt-0.5">
                           {t('whatif_yield_preview_caption')}
                         </p>
+                        {/* D5-13. THE FIGURES ABOVE BELONG TO ANOTHER EVENT.
+                            A month has one yield winner and a first-saved
+                            rival can own the very month an Inflow draft
+                            reads. The box was right about the CHART and
+                            wrong about the DRAFT, which is why this names
+                            the rival rather than hiding the figures: they
+                            are what the chart will show, just not because
+                            of this event. */}
+                        {yieldPreview.rival && (
+                          yieldPreview.rival.firstWin ? (
+                            <p data-testid="yield-preview-rival"
+                               className="text-[10px] text-amber-700 mt-1">
+                              {t('whatif_yield_preview_rival', {
+                                month: yieldPreview.rival.month,
+                                name: yieldPreview.rival.name,
+                                first: yieldPreview.rival.firstWin })}
+                            </p>
+                          ) : (
+                            <p data-testid="yield-preview-superseded"
+                               className="text-[10px] text-amber-700 mt-1">
+                              {t('whatif_yield_preview_superseded')}
+                            </p>
+                          )
+                        )}
                       </div>
                     )}
                   </div>

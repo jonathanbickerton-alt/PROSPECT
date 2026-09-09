@@ -2698,7 +2698,34 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "                {t('whatif_effect_caption_full', {",
       "                {switchedOnCount === 0 ? '' : t('whatif_effect_caption_full', {") },
+
+  // 197 THE SEAM THROWS THE IDS AWAY AGAIN — the state the card was in when
+  // Jon reported it. The engine still chooses a winner at sites 2 and 5; the
+  // seam simply does not carry it back, so `arpuIdsByMonth` is empty, no month
+  // has a winner, the rival is null and the line never renders. Every figure
+  // in the box stays correct and correctly attributed to nobody. Nothing
+  // throws; only a MOUNTED read of the rendered line can see it.
+  { id: '197 the seam drops the per-month winner and the line never renders',
+    why: 'the box was right about the CHART and wrong about the DRAFT, and a'
+       + ' silent box is exactly how that shipped',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      "    for (const m of run.adjustedMonths) arpuIdsByMonth[m.month] = m.appliedArpuIds ?? [];",
+      "") },
+  // 198 THE WINNER IS READ AT THE WRONG MONTH. `wanted` is the month the box
+  // reads — the month AFTER an Inflow draft's own. Comparing at `draft.month`
+  // instead asks who won a month the box is not showing, and on this fixture
+  // nobody won it, so the rival reads null and the line vanishes on precisely
+  // the case it exists for. The subtler of the two: the plumbing all works.
+  { id: '198 the winner is looked up at the draft month, not the month read',
+    why: 'the box reads the month AFTER an Inflow draft, and a winner from'
+       + ' another month is a statement about a figure nobody is looking at',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      "    const winnerHere = yieldWinnerAt(wanted);",
+      "    const winnerHere = yieldWinnerAt(draft.month);") },
 ];
+
 
 /**
  * ANCHOR DUMP — the registry, made inspectable for `spec:trap-anchors`.

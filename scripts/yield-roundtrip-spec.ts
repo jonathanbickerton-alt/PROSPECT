@@ -353,6 +353,44 @@ const BASE: any = {
       && /eventScopeSeriesFor\(\s*\{ segment: draft\.segment/.test(tab),
     'a second computeAdjustedForecast call for the preview would be a second engine');
 
+  // ── D5-13: the seam carries the winner, and carries it ADDITIVELY ───────
+  //
+  // The Pricing card's two callers read `.series` and nothing else. The risk
+  // in widening a shared seam is not that they read the new field — it is that
+  // the widening changes how `series` is produced. So what is pinned is that
+  // the engine is called ONCE into a local and `series` is that call's own
+  // `chartData`, unchanged.
+  check('D5-13: the seam runs the engine ONCE, into a local',
+    tab.includes('const run = computeAdjustedForecast({')
+      && (tab.split('computeAdjustedForecast(').length - 1) === 6,
+    'a second run for the ids would be a second engine, and could disagree');
+  check('D5-13: and series is that same run chartData, untouched',
+    tab.includes('return { series: run.chartData, reason: null, arpuIdsByMonth };'),
+    'the Pricing callers must get byte-identical series');
+  check('D5-13: the ids are the engine appliedArpuIds, per month',
+    tab.includes('for (const m of run.adjustedMonths) arpuIdsByMonth[m.month] = m.appliedArpuIds ?? [];'),
+    're-deriving the winner beside the engine is how two answers appear');
+  check('D5-13: the null-forecast return carries the field too',
+    tab.includes('return { series: null, reason: resolution.reason ?? null, arpuIdsByMonth: {} };'),
+    'an absent field would make the caller read undefined at the one moment'
+    + ' it is already handling a failure');
+  // THE WINNER IS FILTERED TO THE YIELD LIST. appliedArpuIds also carries
+  // pricing ids, and a pricing event in the same month is not a rival for the
+  // single yield slot.
+  check('D5-13: the rival is filtered to the yield ids of THIS run',
+    tab.includes('const yieldIdsInRun = new Set<string>([')
+      && tab.includes('(arpuIdsByMonth[mo] ?? []).find(id => yieldIdsInRun.has(id))'),
+    'a pricing id would otherwise read as the yield winner');
+  // THE DRAFT FIRST MONTH COMES FROM THE ENGINE, NOT FROM ARITHMETIC.
+  check('D5-13: first-win is FOUND in the series, never computed from the month',
+    tab.includes('.find((mo: string) => yieldWinnerAt(mo) === draft.id) ?? null;'),
+    'a roll-forward draft wins from its month on and a plain one wins once —'
+    + ' the engine has already decided which');
+  check('D5-13: both lines render, with testids',
+    tab.includes('data-testid="yield-preview-rival"')
+      && tab.includes('data-testid="yield-preview-superseded"'),
+    'the superseded case is a different sentence, not an empty rival line');
+
   // THE CAPTION EXISTS AND IS KEYED, in all six locales.
   check('D5-11: the ratio caption renders under the tier table',
     /data-testid="yield-ratio-caption"/.test(tab)
@@ -360,9 +398,10 @@ const BASE: any = {
     'the two blended figures must say what they are');
   for (const loc of ['en', 'de', 'es', 'fr', 'it', 'pt']) {
     const j = fs.readFileSync(`src/locales/${loc}/translation.json`, 'utf8');
-    check(`D5-11: ${loc} carries all four D5-11 keys`,
+    check(`D5-11/13: ${loc} carries all six keys`,
       ['whatif_yield_ratio_caption', 'whatif_yield_preview_impact',
-       'whatif_yield_preview_caption', 'whatif_yield_preview_unavailable']
+       'whatif_yield_preview_caption', 'whatif_yield_preview_unavailable',
+       'whatif_yield_preview_rival', 'whatif_yield_preview_superseded']
         .every(k => j.includes(`"${k}"`)),
       loc);
   }

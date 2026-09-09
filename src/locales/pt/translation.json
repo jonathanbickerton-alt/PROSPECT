@@ -292,6 +292,8 @@
   "whatif_yield_ratio_caption": "O que chega à previsão é o RÁCIO entre estes dois valores, aplicado ao ARPU ajustado da coorte, e não os valores em si.",
   "whatif_yield_preview_impact": "Impacto previsto",
   "whatif_yield_preview_caption": "ARPU ajustado deste mês e o que a previsão entrega com este evento: os mesmos valores do gráfico.",
+  "whatif_yield_preview_rival": "{{month}}: aplica-se «{{name}}» · este evento aplica-se a partir de {{first}}",
+  "whatif_yield_preview_superseded": "Este evento é substituído em todos os meses",
   "whatif_yield_preview_unavailable": "Nenhuma previsão cobre esta fatia.",
   "whatif_delta_month": "Mês do delta",
   "whatif_adjusted_vs_baseline": "Ajustada face à base",

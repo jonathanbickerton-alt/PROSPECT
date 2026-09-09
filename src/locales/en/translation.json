@@ -292,6 +292,8 @@
   "whatif_yield_ratio_caption": "What reaches the forecast is the RATIO of these two figures, applied to the cohort's fitted ARPU — not the figures themselves.",
   "whatif_yield_preview_impact": "Preview impact",
   "whatif_yield_preview_caption": "Fitted ARPU at this month, then what the forecast delivers with this event — the same figures the chart plots.",
+  "whatif_yield_preview_rival": "{{month}}: '{{name}}' applies instead · this event applies from {{first}}",
+  "whatif_yield_preview_superseded": "this event is superseded in every month",
   "whatif_yield_preview_unavailable": "No forecast covers this slice.",
   "whatif_delta_month": "Delta month",
   "whatif_adjusted_vs_baseline": "Adjusted vs Baseline",
