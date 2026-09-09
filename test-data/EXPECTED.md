@@ -7154,6 +7154,59 @@ the **Events summary panel's** chip (`EventsSummaryTable.tsx:109`,
 things by design; the chip has always counted all rows, and no spec asserts its
 semantics either way.
 
+#### D5-12 DECIDED (Jon, 2026-09-09) — "Events in effect" counts the union, and the caption always renders
+
+**Recorded before any code. This SUPERSEDES D5-09 (i)**, which is quoted below
+so the change is legible rather than implied.
+
+**User-raised: Jon, UAT, 2026-09-09.** The KPI card read **"Events in effect:
+0"** with the caption **"Add events below to adjust the forecast"**, while a
+yield event on the same cohort was moving **Inflow ARPU +6.70** and **Revenue
++33.99K** on the chart directly beneath it. Nothing was wrong with the
+forecast; the card was describing a different population from the one the user
+was looking at.
+
+**Cause, in the decision that produced it.** D5-09 (i) said, verbatim:
+
+> **(i) The KPI card.** Title becomes **"Events in effect"**. The number is
+> unchanged — events applied on the volume path, `impactSummary.eventCount`.
+> The caption becomes **"moving volume · N switched on"**, with N from
+> `summaryRows`' own `enabled` field
+
+Two things follow from that and both showed up together. The number counts the
+**volume path only**, so an event that moves only ARPU counts zero; and the
+zero branch **replaces** the caption with the add-events text, so at zero the
+"N switched on" half — the half that would have contradicted the zero — is the
+part that disappears. A card that is silent in exactly the case where it is
+most wrong.
+
+**THE DECISION.**
+
+1. **The number is the size of the UNION** of the applied volume ids and
+   `appliedArpuIds`, across `adjustedMonths`. **Both sets already exist** and
+   are built in the same walk (`WhatIfTab.tsx:4918-4933`, D5-09B); this reads
+   them, and derives nothing new.
+
+2. **One caption, always rendered:**
+   `"{{v}} moving volume · {{a}} moving ARPU · {{on}} switched on"`.
+   It replaces the two current keys. The "Add events below" text is shown
+   **only when `{{on}}` is 0** — that is, only when the user genuinely has no
+   event switched on, which is the one case where the invitation is true.
+
+3. **No new `isEventOn` call.** The on-count stays what D5-09 made it: the
+   derived row's own `enabled` field, already set by the builder. The
+   REQ-D6-01 pins do not move.
+
+**What is NOT changed:** the engine, the two sets, the Events summary table's
+EFFECT column (D5-09 (ii)), Compare's panels (iii), and the summary bar's
+badge, which counts a different population on purpose (decision 6).
+
+**Why the union rather than a second number.** The card has one number and the
+user reads it as "how many of my events are doing something". Two numbers side
+by side would be honest and would also be a new question to answer every time
+the card is read; the union answers the question actually being asked, and the
+caption decomposes it for anyone who wants the split.
+
 #### D5-11 DECIDED (Jon, 2026-09-09) — the Value card reconciles to the chart
 
 **User-raised: Alessandro and Jon, UAT, 2026-09-09.** The Value card's Baseline
