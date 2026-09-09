@@ -2657,14 +2657,24 @@ async function main() {
     console.log('  D5-13 rival line -> ' + JSON.stringify(withRival.rival));
     check('D5-13: the box renders at all', withRival.present,
       'every assertion below would be vacuous on an absent box');
-    check('D5-13: the rival line NAMES the first-saved event and its month',
-      !!withRival.rival && withRival.rival.includes('first saved')
-        && withRival.rival.includes(MONTHS[1]),
+    // THE MONTHS ARE FORMATTED, through the same `fmtMonth` the delta
+    // selector and the KPI tooltips use — a raw '2026-02' in a sentence is
+    // the only place in Step 2 that would still show one.
+    //
+    // The expected text is WRITTEN OUT, not re-derived through monthLabel: an
+    // assertion built from the same function it is checking passes whatever
+    // that function does, which is the shape that makes a formatter change
+    // invisible. These two strings are what a reader sees.
+    check('D5-13: the rival line names the event and its month, FORMATTED',
+      withRival.rival
+        === "Feb 2026: 'first saved' applies instead · this event applies from Mar 2026",
       JSON.stringify(withRival.rival));
-    check('D5-13: and names the FOLLOWING month as the draft first win',
-      !!withRival.rival && withRival.rival.includes(MONTHS[2]),
+    check('D5-13: and neither month renders as a raw key',
+      !!withRival.rival && !withRival.rival.includes(MONTHS[1])
+        && !withRival.rival.includes(MONTHS[2]),
       JSON.stringify(withRival.rival)
-      + ' — the draft rolls forward, so it wins from the month after the tie');
+      + ' — MONTHS[1]/[2] are the raw keys the memo carries, and they must not'
+      + ' reach the sentence');
     check('D5-13: the superseded line does NOT render when the draft wins later',
       withRival.superseded === null, JSON.stringify(withRival.superseded));
 
@@ -2685,8 +2695,9 @@ async function main() {
     check('D5-13: a draft that wins NOWHERE gets the superseded line',
       never.superseded !== null && never.rival === null,
       JSON.stringify([never.rival, never.superseded]));
-    check('D5-13: and that line does not name a month it never wins',
-      !!never.superseded && !never.superseded.includes(MONTHS[2]),
+    check('D5-13: and that line names no month at all, raw or formatted',
+      !!never.superseded && !never.superseded.includes(MONTHS[2])
+        && !never.superseded.includes('Mar 2026'),
       JSON.stringify(never.superseded));
   }
   report();

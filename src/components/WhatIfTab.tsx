@@ -9024,9 +9024,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             <p data-testid="yield-preview-rival"
                                className="text-[10px] text-amber-700 mt-1">
                               {t('whatif_yield_preview_rival', {
-                                month: yieldPreview.rival.month,
+                                // FORMATTED AT RENDER, through the same
+                                // `fmtMonth` the delta selector (:5286) and
+                                // the three KPI tooltips use. The memo keeps
+                                // RAW keys deliberately: they are what the
+                                // engine compares and what trap 198 is about,
+                                // and a memo that formatted them would put a
+                                // locale in the middle of a month comparison.
+                                month: fmtMonth(yieldPreview.rival.month),
                                 name: yieldPreview.rival.name,
-                                first: yieldPreview.rival.firstWin })}
+                                first: fmtMonth(yieldPreview.rival.firstWin) })}
                             </p>
                           ) : (
                             <p data-testid="yield-preview-superseded"
