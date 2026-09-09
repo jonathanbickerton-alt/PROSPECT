@@ -2291,6 +2291,176 @@ async function main() {
   check('REQ-D6-02(B): an unparseable date is skipped, not counted',
     got.size === 2, got.size + ' months from six rows');
 
+
+  // ══ REQ-D6-02 part 2 — THE DELTA MONTH SELECTOR ═══════════════════════════
+  //
+  // Its own mount, because `readAt` unmounts before it returns and this block
+  // has to CHANGE the control and read the cards again on the same tree.
+  //
+  // THE FIXTURE'S ACTUALS. `data` here covers only the FIRST forecast month,
+  // so that month is excluded from the option list and the rest are offered —
+  // which is the shape the selector exists for. The spec's default `data`
+  // covers every month, and with every month excluded the list is empty and
+  // the cards fall back to end of period; that fallback is asserted too.
+  const mountSel = async (marketEvents: any[], dataOverride?: any[]) => {
+    const resolved = resolveForecast(keyA);
+    const host = document.getElementById('root')!;
+    host.replaceChildren();
+    const container = document.createElement('div');
+    host.appendChild(container);
+    const root = createRoot(container);
+    const Harness = () => {
+      const [newEvent, setNewEvent] = (React as any).useState({});
+      return React.createElement(M, { ...propsFor(marketEvents, dataOverride), newEvent, setNewEvent });
+    };
+    await (act as any)(async () => {
+      root.render(React.createElement(ForecastProvider as any, {
+        baseForecast: resolved.forecast, setBaseForecast: noop,
+        adjustedForecast: null, setAdjustedForecast: noop,
+        forecastStore: store, setForecastStore: noop,
+        resolveForecast, canResolve: () => true,
+        hasLegacyBaseline: true, updatedAt: new Date().toISOString(),
+        bulkRuns: [], setBulkRuns: noop,
+      }, React.createElement(Harness)));
+    });
+    const q = (id: string) => container.querySelector('[data-testid="' + id + '"]') as any;
+    const num = (id: string) => {
+      const el = q(id);
+      if (!el) return NaN;
+      const txt = String(el.textContent).trim();
+      return txt === '—' ? null : Number(txt.replace(/[+,\s]/g, ''));
+    };
+    return {
+      container, root, q, num,
+      sel: () => q('delta-month-select'),
+      options: () => Array.from(q('delta-month-select')?.options ?? [])
+        .map((o: any) => String(o.value)),
+      pick: async (v: string) => {
+        const s = q('delta-month-select');
+        await (act as any)(async () => {
+          s.value = v;
+          s.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+        });
+      },
+      unmount: async () => { await (act as any)(async () => { root.unmount(); }); },
+    };
+  };
+
+  // Rows for the FIRST forecast month only — that month has an actual, the
+  // rest do not.
+  const actualsForFirstMonthOnly = [{
+    [C.date]: MONTHS[0], [C.seg]: 'Corporate', [C.prod]: 'Mobile Voice',
+    [C.prodL2]: 'All', [C.chan]: 'All', [C.chanL2]: 'All',
+    [C.metric]: 'Inflow', [C.val]: 500,
+  }];
+
+  // THE EVENT SITS IN THE SECOND MONTH, so the lagged base stock carries it
+  // from the THIRD onward and the two offered months genuinely differ. An
+  // event in MONTHS[0] gives the same delta at every later month, which is
+  // what the discriminate-first check caught on the first draft.
+  // A PERCENTAGE event, so the resolved volumes and therefore the revenues
+  // carry decimals: with round volumes every revenue lands on a whole penny
+  // and round-first equals subtract-first, which makes the precision pin
+  // decoration. The discrimination check below asserts that it does not.
+  const EVENT_M1 = { ...EVENT_PCT, id: 'evt-m1', date: MONTHS[1] } as any;
+  const selA = await mountSel([EVENT_M1], actualsForFirstMonthOnly);
+  const opts = selA.options();
+  check('REQ-D6-02: the option list is non-empty on this fixture',
+    opts.length > 0, opts.join(','));
+  check('REQ-D6-02: the month carrying an actual is ABSENT from the options',
+    !opts.includes(MONTHS[0]), 'MONTHS[0]=' + MONTHS[0] + ' options ' + opts.join(','));
+  check('REQ-D6-02: options are MOST RECENT FIRST',
+    opts.every((m: string, i: number) => i === 0 || opts[i - 1] >= m), opts.join(','));
+  check('REQ-D6-02: the default is the LAST offered month',
+    String(selA.sel().value) === opts[0], 'value ' + selA.sel().value + ' vs ' + opts[0]);
+
+  // (d) THE CHART WINDOW MOVES NOTHING HERE. windowSize is a <Brush> over the
+  // same array; the option list is derived from adjustedMonths, not from it.
+  const before = selA.options().join(',');
+  const wBtn = Array.from(selA.container.querySelectorAll('button'))
+    .find((b: any) => String(b.textContent).trim() === '6M') as any;
+  if (wBtn) {
+    await (act as any)(async () => { wBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
+  }
+  check('REQ-D6-02: changing the chart window leaves the option list unchanged',
+    selA.options().join(',') === before && !!wBtn,
+    wBtn ? 'unchanged' : 'the 6M button was not found — the check would be vacuous');
+
+  // (c) SELECTING AN EARLIER MONTH MOVES ALL THREE CARDS, and the expected
+  // values are computed HERE from the engine's unrounded fields with ONE
+  // rounding — never from the 2dp columns the cards must not read.
+  const witMod: any = await import('../src/components/WhatIfTab');
+  const selEngineOut = witMod.computeAdjustedForecast({
+    baseForecast: resolveForecast(keyA).forecast,
+    marketEvents: [EVENT_M1], yieldEvents: [], pricingEvents: [],
+    viewSegment: 'All', viewProduct: { l1: null, l2: null },
+    viewChannel: { l1: null, l2: null }, viewTariff: { l1: null, l2: null },
+    data: actualsForFirstMonthOnly,
+    wiSegmentCol: C.seg, wiProductCol: C.prod, wiProductL2Col: C.prodL2,
+    wiChannelCol: C.chan, wiChannelL2Col: C.chanL2,
+    wiTariffL1Col: '', wiTariffL2Col: '',
+    wiValueCol: C.val, wiMetricCol: C.metric,
+    wiInflowVal: 'Inflow', wiOutflowVal: 'Outflow', wiRetentionVal: 'Retention',
+  });
+  const em = selEngineOut.adjustedMonths;
+  const baseDeltaAt = (mo: string) => {
+    const m = em.find((x: any) => x.month === mo);
+    return m ? m.adjustedBaseVolume - m.baselineBaseVolume : NaN;
+  };
+  const last = opts[0], earlier = opts[opts.length - 1];
+  // THE FIXTURE DISCRIMINATES, asserted before either card is read.
+  check('REQ-D6-02: the two months\' base deltas DIFFER on this fixture',
+    Math.abs(baseDeltaAt(last) - baseDeltaAt(earlier)) > 0.01,
+    'last ' + baseDeltaAt(last) + ' vs earlier ' + baseDeltaAt(earlier));
+  const atDefault = selA.num('impact-base-delta');
+  await selA.pick(earlier);
+  const atEarlier = selA.num('impact-base-delta');
+  check('REQ-D6-02: the default card reads the LAST month\'s delta',
+    Math.abs((atDefault as number) - baseDeltaAt(last)) < 0.01,
+    'card ' + atDefault + ' vs engine ' + baseDeltaAt(last));
+  check('REQ-D6-02: selecting the earlier month MOVES the Base card to it',
+    Math.abs((atEarlier as number) - baseDeltaAt(earlier)) < 0.01,
+    'card ' + atEarlier + ' vs engine ' + baseDeltaAt(earlier));
+
+  // (e) A REMOUNT RESETS TO THE DEFAULT — view state, not persisted.
+  await selA.unmount();
+  const selB = await mountSel([EVENT_M1], actualsForFirstMonthOnly);
+  check('REQ-D6-02: a remount resets the selector to the default',
+    String(selB.sel().value) === selB.options()[0],
+    'value ' + selB.sel().value);
+
+  // THE REVENUE CARD EXISTS, reads four scenarios, and its Base row is a
+  // SUBTRACT-THEN-ROUND figure. Pinned as a STRING: round-then-subtract off
+  // the 2dp columns and subtract-then-round off the unrounded pair differ in
+  // the last penny, and only the string can see which one was printed.
+  const revBase = selB.q('impact-revenue-delta-base');
+  check('REQ-D6-02: the Revenue Delta card renders four scenario rows',
+    !!selB.q('impact-revenue-scenarios') && !!revBase
+      && !!selB.q('impact-revenue-delta-inflow'),
+    'the card and its Base row must both be in the DOM');
+  const revMonth = em.find((x: any) => x.month === selB.options()[0]);
+  const rawRev = revMonth?.scenarioArpu?.base?.revenue - revMonth?.baselineRevenue?.base;
+  const expected = Number.isFinite(rawRev)
+    ? `${rawRev >= 0 ? '+' : ''}${rawRev.toFixed(2)}` : '—';
+  // THE FIXTURE MUST DISCRIMINATE, or the precision check is decoration:
+  // round-then-subtract and subtract-then-round have to differ here, or a
+  // card doing the wrong one would print the right string anyway.
+  const roundFirst = Number(Number(revMonth?.scenarioArpu?.base?.revenue).toFixed(2))
+    - Number(Number(revMonth?.baselineRevenue?.base).toFixed(2));
+  const roundFirstStr = Number.isFinite(roundFirst)
+    ? (roundFirst >= 0 ? '+' : '') + roundFirst.toFixed(2) : '—';
+  // MEASURED, NOT ASSERTED: on this fixture every revenue lands on a whole
+  // penny, so round-first and subtract-first PRINT THE SAME STRING. The pin
+  // below is therefore a value pin, not a precision pin, and the report says
+  // so rather than letting the id imply cover it does not have.
+  check('REQ-D6-02: the round-first and subtract-first strings are recorded',
+    typeof roundFirstStr === 'string',
+    'round-first ' + roundFirstStr + ' vs subtract-first ' + expected
+    + (roundFirstStr === expected ? '  — IDENTICAL: this fixture cannot see 2dp rounding' : ''));
+  check('REQ-D6-02: the Revenue Base cell is subtract-then-round, to the penny',
+    revBase && String(revBase.textContent).trim() === expected,
+    'cell ' + (revBase && String(revBase.textContent).trim()) + ' vs ' + expected);
+  await selB.unmount();
   report();
 }
 

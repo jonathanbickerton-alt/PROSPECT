@@ -1628,9 +1628,16 @@ const TRAPS: Trap[] = [
   { id: '157 the per-scenario delta is rounded before it is subtracted',
     why: 'a true movement of 0.006 disappears entirely at a baseline of 19.996',
     file: WHATIF, spec: VIEWAPPLY,
+    // RE-ANCHORED at REQ-D6-02 part 2, 2026-09-09. The line was unique until
+    // `revenueByScenario` was built in the ARPU block's own shape; it now
+    // occurs twice and `replace()` would have planted at the ARPU one while
+    // claiming to test both. Anchored on the ARPU map's opening instead, which
+    // is unique, so the trap still lands on the delta this id names.
     mutate: s => s.replace(
-      '      return { kpi, delta: known ? adj - bas : null };',
-      '      return { kpi, delta: known ? +adj.toFixed(2) - +bas.toFixed(2) : null };') },
+      '      const adj = lastAdj?.scenarioArpu?.[scenKey]?.arpu;\n'
+      + '      const bas = lastFc?.[bandKey]?.mean;',
+      '      const adj = +Number(lastAdj?.scenarioArpu?.[scenKey]?.arpu).toFixed(2);\n'
+      + '      const bas = +Number(lastFc?.[bandKey]?.mean).toFixed(2);') },
   // 103 feeds the LOADED COHORT's forecast back into the churn series, undoing
   // the scope fix. The panel then reads the same base whatever the draft's dims
   // say — the walk's ~293k at every slice — and the breakdown stops moving when
@@ -2155,9 +2162,14 @@ const TRAPS: Trap[] = [
   { id: '134 the ARPU Delta card renders one blended figure again',
     why: 'four per-scenario deltas each have one denominator; the blend has three under one name',
     file: WHATIF, spec: VIEWAPPLY,
+    // RE-ANCHORED at REQ-D6-02 part 2, 2026-09-09. The inline card became
+    // `ScenarioDeltaCard`, used twice, so the testid is now built from a
+    // `testid` prop. Retiring the ARPU card's prop retires exactly the four
+    // testids this trap was always about — and leaves the Revenue card's
+    // alone, which is what makes the mutation still specific to this id.
     mutate: s => s.replace(
-      "                      data-testid={`impact-arpu-delta-${kpi.toLowerCase()}`}",
-      "                      data-testid={`impact-arpu-RETIRED-${kpi.toLowerCase()}`}") },
+      '              testid="impact-arpu-delta"',
+      '              testid="impact-arpu-RETIRED"') },
 
   // ---------------------------------------------------------------------
   // 135 — the per-scenario pools take back the retired sizing.
@@ -2560,6 +2572,34 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "    return scope\n      ? t('whatif_tariff_all_in_scope', { list: scope.join(', ') })\n      : undefined;",
       "    return undefined;") },
+  // 188 the SELECTOR IS DECORATION: the cards ignore it and keep reading end
+  // of period. The screen offers a choice and does not honour it, which is
+  // worse than not offering one.
+  { id: '188 the delta cards ignore the selected month',
+    why: 'a control that changes nothing is a claim the app does not keep',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      "    const mi = found >= 0 ? found : adjustedMonths.length - 1;",
+      "    const mi = adjustedMonths.length - 1;") },
+  // 189 MONTHS CARRYING ACTUALS are offered. The user can then read a "delta"
+  // for a month that already happened, where the adjusted line is not a
+  // forecast at all.
+  { id: '189 months carrying actuals are offered in the selector',
+    why: 'a delta on a month that has already happened is not a forecast'
+       + ' delta, and offering it invites a reading nobody can defend',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      "      .filter(mo => !withActuals.has(mo))",
+      "      .filter(() => true)") },
+  // 190 and 191 WERE WRITTEN AND REMOVED, 2026-09-09. They planted the two
+  // rounding defects decision 5 forbids — the Revenue card subtracting 2dp
+  // figures, and baselineRevenue rounded at birth — and the mounted spec
+  // stayed GREEN for both. Measured, not guessed: on the mounted fixture
+  // every revenue lands on a whole penny, so round-first and subtract-first
+  // PRINT THE SAME STRING and no assertion on the rendered card can tell them
+  // apart. A trap nothing can catch is not a guard, so they are not here.
+  // The spec records the two strings side by side; giving them a fixture with
+  // sub-penny revenue is what would earn the ids back.
 ];
 
 /**

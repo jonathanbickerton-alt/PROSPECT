@@ -18,7 +18,7 @@ import type { DragWall } from '../utils/mixConstraint';
 import { EventsSummaryTable } from './EventsSummaryTable';
 import { EventOnOffSwitch, OFF_ROW } from './EventOnOffSwitch';
 import { foldChurnRamp, linearChurnRamp, type ChurnFoldMonth } from '../utils/churnFold';
-import { canShowBaseForecast, resolveEventScopeForecast, tariffScopeFor } from '../utils/forecasting';
+import { canShowBaseForecast, resolveEventScopeForecast, tariffScopeFor, monthsCarryingActuals } from '../utils/forecasting';
 import { scenarioAdjustedArpu } from '../utils/scenarioArpu';
 import { MixSliderRow } from './MixSliderRow';
 import { MixTargetPanel } from './MixTargetPanel';
@@ -526,6 +526,64 @@ interface BuildPromoEventsParams {
  *  The metric follows `scenario`, so a Retention percentage resolves against
  *  the view's forecast RETENTION for the month with no arithmetic added here
  *  - which is decision 6's stated basis. */
+/**
+ * REQ-D6-02(4). ONE CARD, used TWICE — the ARPU deltas and the Revenue
+ * deltas.
+ *
+ * The ARPU card was inline JSX and the brief's instruction was explicit: if it
+ * is inline, extract one component and use it twice rather than fork a copy.
+ * The two cards differ in exactly three things — title, tone and testid prefix
+ * — and everything that matters is shared: four rows keyed by scenario, the
+ * scenario names rendered RAW as identifiers (translating them would make the
+ * card disagree with the pills above it), and absence as an EM DASH rather
+ * than a fabricated 0.00.
+ *
+ * `tone` is a pair of literal class strings, not an interpolated colour name:
+ * Tailwind scans source text, and a class it cannot see is a class it does not
+ * emit.
+ */
+const DELTA_TONE = {
+  cyan:   { box: 'bg-cyan-50 border-cyan-100',     pos: 'text-cyan-700' },
+  violet: { box: 'bg-violet-50 border-violet-100', pos: 'text-violet-700' },
+} as const;
+
+const ScenarioDeltaCard: React.FC<{
+  title: string;
+  caption: string;
+  rows: ReadonlyArray<{ kpi: string; delta: number | null }>;
+  /** Per-row testid prefix — , . */
+  testid: string;
+  /** The GROUP testid. Named separately and passed explicitly because the
+   *  ARPU card's is , which predates this component
+   *  and is read by the mounted specs; deriving it from  would have
+   *  renamed a public handle for tidiness. */
+  groupTestid: string;
+  tone: keyof typeof DELTA_TONE;
+  formatNumber: (v: number) => string;
+}> = ({ title, caption, rows, testid, groupTestid, tone, formatNumber }) => {
+  const c = DELTA_TONE[tone];
+  return (
+    <div className={`p-4 rounded-2xl border ${c.box}`}>
+      <p className="text-xs font-semibold text-slate-500 mb-1">{title}</p>
+      <div className="space-y-0.5" data-testid={groupTestid}>
+        {rows.map(({ kpi, delta }) => (
+          <div key={kpi} className="flex items-baseline justify-between gap-2">
+            <span className="text-[11px] text-slate-500">{kpi}</span>
+            <span
+              data-testid={`${testid}-${kpi.toLowerCase()}`}
+              className={`text-sm font-bold tabular-nums ${
+                delta === null ? 'text-slate-400'
+                  : delta >= 0 ? c.pos : 'text-rose-700'}`}>
+              {delta === null ? '—' : `${delta >= 0 ? '+' : ''}${formatNumber(delta)}`}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="text-[10px] text-slate-400 mt-1">{caption}</p>
+    </div>
+  );
+};
+
 /**
  * D5-10(7). ONE BODY for "a targeted tariff left the selection".
  *
@@ -2068,6 +2126,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const [activeTab, setActiveTab] = useState<'volume' | 'value' | 'pricing' | 'promotion'>('volume');
 
   const [windowSize, setWindowSize] = useState(12);
+  /**
+   * REQ-D6-02(3). The month the three delta cards read. VIEW STATE, beside the
+   * chart window and the measure and for the same reason — not exported, not
+   * persisted, reset on reload.
+   *
+   * `''` means "not chosen", and the option list resolves it to the default
+   * rather than a `useEffect` writing state on mount: an effect would make the
+   * first render show one month and the second another, and a remount would
+   * have to be watched to prove it resets. Deriving it means there is nothing
+   * to reset.
+   */
+  const [selectedDeltaMonth, setSelectedDeltaMonth] = useState<string>('');
   const [windowOffset, setWindowOffset] = useState(0);
 
   // ── Volume spread state ────────────────────────────────────────────────────
@@ -4587,6 +4657,34 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // Impact summary
   // -------------------------------------------------------------------------
 
+  /**
+   * REQ-D6-02(1). THE SELECTABLE MONTHS: every forecast month that carries no
+   * actual, MOST RECENT FIRST.
+   *
+   * The exclusion goes through `monthsCarryingActuals` — the ONE predicate
+   * extracted in part 1 — and not through a second copy of its rule. It is
+   * given the same two candidate date columns the import modal gives it, so
+   * the selector and the modal agree about which months have arrived.
+   *
+   * DERIVED, NOT WINDOWED: this reads `adjustedMonths`, the whole horizon.
+   * `windowSize` is a Recharts <Brush> over the same array and moves nothing
+   * here — a fact the spec pins rather than leaves to inspection.
+   */
+  const deltaMonthOptions = useMemo(() => {
+    const withActuals = monthsCarryingActuals(data, [wiDateCol], wiValueCol);
+    return adjustedMonths
+      .map(m => m.month)
+      .filter(mo => !withActuals.has(mo))
+      .reverse();
+  }, [adjustedMonths, data, wiDateCol, wiValueCol]);
+
+  /** The month actually read: the user's choice while it is still offered,
+   *  else the default — the LAST forecast month without an actual, which is
+   *  today's "end of period" whenever no actuals have arrived. */
+  const deltaMonth = deltaMonthOptions.includes(selectedDeltaMonth)
+    ? selectedDeltaMonth
+    : (deltaMonthOptions[0] ?? '');
+
   const impactSummary = useMemo(() => {
     if (!chartData.length) return null;
     /**
@@ -4604,7 +4702,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
      * are what the columns are rounded FROM — so this is a CORRECTION and may
      * move the printed figure by up to a hundredth. The columns are untouched.
      */
-    const lastMonth = adjustedMonths[adjustedMonths.length - 1];
+    // REQ-D6-02: the index is the SELECTED month, not the last. Every figure
+    // below reads , so the three cards cannot drift onto different months.
+    // NOT-FOUND IS THE LAST MONTH, never month 0. An unresolvable selection
+    // (no options, or a month that has since acquired an actual) must fall
+    // back to end of period — the figure every existing reader expects —
+    // and Math.max(0, -1) would silently have shown the FIRST month instead.
+    const found = adjustedMonths.findIndex(m => m.month === deltaMonth);
+    const mi = found >= 0 ? found : adjustedMonths.length - 1;
+    const lastMonth = adjustedMonths[mi];
     const baseDelta = lastMonth.adjustedBaseVolume - lastMonth.baselineBaseVolume;
     /**
      * Q4 (Jon, 2026-09-02): the ARPU Delta card shows FOUR per-scenario deltas.
@@ -4657,12 +4763,34 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       Retention: ['retention', 'retentionArpu'],
       Base:      ['base',      'baseArpu'],
     } as const;
-    const lastAdj = adjustedMonths[adjustedMonths.length - 1];
-    const lastFc: any = baseForecast?.months?.[adjustedMonths.length - 1];
+    const lastAdj = adjustedMonths[mi];
+    const lastFc: any = baseForecast?.months?.[mi];
     const arpuByScenario = SCENARIO_LIST.map(kpi => {
       const [scenKey, bandKey] = RAW_SOURCE[kpi];
       const adj = lastAdj?.scenarioArpu?.[scenKey]?.arpu;
       const bas = lastFc?.[bandKey]?.mean;
+      const known = typeof adj === 'number' && Number.isFinite(adj)
+        && typeof bas === 'number' && Number.isFinite(bas);
+      return { kpi, delta: known ? adj - bas : null };
+    });
+    /**
+     * REQ-D6-02(4). THE REVENUE DELTA, four per-scenario rows.
+     *
+     * Both halves UNROUNDED and subtracted before any rounding — decision 5,
+     * and the reason part 1 persisted `baselineRevenue` at all. Reading the
+     * 2dp `<S> Revenue (Baseline|Adjusted)` columns instead would reintroduce
+     * exactly the shape `e5f1e79` removed, at a magnitude where a penny of
+     * pure rounding is invisible and therefore worse.
+     *
+     * ABSENCE TRAVELS, as it does for ARPU: a scenario the engine could not
+     * price has `revenue: null`, and a band that could not be fitted has no
+     * baseline revenue. Either one is an em dash, never a subtraction
+     * against zero.
+     */
+    const revenueByScenario = SCENARIO_LIST.map(kpi => {
+      const [scenKey] = RAW_SOURCE[kpi];
+      const adj = lastAdj?.scenarioArpu?.[scenKey]?.revenue;
+      const bas = lastAdj?.baselineRevenue?.[scenKey];
       const known = typeof adj === 'number' && Number.isFinite(adj)
         && typeof bas === 'number' && Number.isFinite(bas);
       return { kpi, delta: known ? adj - bas : null };
@@ -4700,12 +4828,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     }
     // D5-09: the SETS travel, not only their size. `eventCount` is unchanged
     // and is still what the card's number reads — the sets are additional.
-    return { baseDelta, arpuByScenario, eventCount: appliedHere.size,
+    return { baseDelta, arpuByScenario, revenueByScenario, month: deltaMonth,
+             eventCount: appliedHere.size,
              appliedIds: appliedHere, zeroCoverageIds: zeroCoverageHere,
              appliedArpuIds: arpuAppliedHere, arpuCandidateIds: arpuCandidatesHere };
     // baseForecast is READ above - the dependency array is the read-set, and
     // a narrower one is how a stale closure ships (D3-04).
-  }, [chartData, adjustedMonths, baseForecast]);
+  }, [chartData, adjustedMonths, baseForecast, deltaMonth]);
 
   /**
    * D5-09. The row's effect, decided by the ONE shared function.
@@ -4947,9 +5076,32 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             for a display-only control. */}
         {/* Impact summary cards */}
         {impactSummary && (
-          <div className="grid grid-cols-3 gap-4">
+          <>
+          {/* REQ-D6-02(1). ONE selector at the top of the strip, shared by the
+              three delta cards. A native <select>: the option list is short,
+              keyboard-navigable for free, and readable by the mounted spec
+              without driving a popover. */}
+          {deltaMonthOptions.length > 0 && (
+            <div className="flex items-center gap-2 mb-3">
+              <label htmlFor="delta-month" className="text-xs font-semibold text-slate-500">
+                {t('whatif_delta_month')}
+              </label>
+              <select
+                id="delta-month"
+                data-testid="delta-month-select"
+                value={deltaMonth}
+                onChange={e => setSelectedDeltaMonth(e.target.value)}
+                className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white outline-none focus:border-[#e60000]"
+              >
+                {deltaMonthOptions.map(mo => (
+                  <option key={mo} value={mo}>{monthLabel(mo, i18n.language)}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="grid grid-cols-4 gap-4">
             <div className={`p-4 rounded-2xl border ${impactSummary.baseDelta >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
-              <p className="text-xs font-semibold text-slate-500 mb-1">{t('whatif_base_volume_delta_end_of_period')}</p>
+              <p className="text-xs font-semibold text-slate-500 mb-1">{t('whatif_base_volume_delta_at', { month: monthLabel(impactSummary.month, i18n.language) })}</p>
               <p data-testid="impact-base-delta"
                  className={`text-2xl font-bold ${impactSummary.baseDelta >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
                 {impactSummary.baseDelta >= 0 ? '+' : ''}{formatNumber(impactSummary.baseDelta)}
@@ -4957,30 +5109,27 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               <p className="text-[10px] text-slate-400 mt-1">{t('whatif_adjusted_vs_baseline')}</p>
             </div>
             {/* Q4 (Jon, 2026-09-02): FOUR per-scenario deltas, not one blend.
-                The scenario names are IDENTIFIERS and are rendered raw, exactly
-                as the scenario pills above render them — translating them here
-                would make the card disagree with the control beside it. */}
-            <div className="p-4 rounded-2xl border bg-cyan-50 border-cyan-100">
-              <p className="text-xs font-semibold text-slate-500 mb-1">{t('whatif_arpu_delta_end_of_period')}</p>
-              <div className="space-y-0.5" data-testid="impact-arpu-scenarios">
-                {impactSummary.arpuByScenario.map(({ kpi, delta }) => (
-                  <div key={kpi} className="flex items-baseline justify-between gap-2">
-                    <span className="text-[11px] text-slate-500">{kpi}</span>
-                    <span
-                      data-testid={`impact-arpu-delta-${kpi.toLowerCase()}`}
-                      className={`text-sm font-bold tabular-nums ${
-                        delta === null ? 'text-slate-400'
-                          : delta >= 0 ? 'text-cyan-700' : 'text-rose-700'}`}>
-                      {/* ABSENCE IS AN EM DASH, never a 0.00 — a band that could
-                          not be fitted has no delta, and printing one would
-                          state a movement nothing measured. */}
-                      {delta === null ? '—' : `${delta >= 0 ? '+' : ''}${formatNumber(delta)}`}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <p className="text-[10px] text-slate-400 mt-1">{t('whatif_adjusted_vs_baseline')}</p>
-            </div>
+                REQ-D6-02(4): the same card, twice. The testid prefix is
+                unchanged — `impact-arpu-delta-<kpi>` — because the mounted
+                spec and trap 134 read it. */}
+            <ScenarioDeltaCard
+              title={t('whatif_arpu_delta_at', { month: monthLabel(impactSummary.month, i18n.language) })}
+              caption={t('whatif_adjusted_vs_baseline')}
+              rows={impactSummary.arpuByScenario}
+              testid="impact-arpu-delta"
+              groupTestid="impact-arpu-scenarios"
+              tone="cyan"
+              formatNumber={formatNumber}
+            />
+            <ScenarioDeltaCard
+              title={t('whatif_revenue_delta_at', { month: monthLabel(impactSummary.month, i18n.language) })}
+              caption={t('whatif_adjusted_vs_baseline')}
+              rows={impactSummary.revenueByScenario}
+              testid="impact-revenue-delta"
+              groupTestid="impact-revenue-scenarios"
+              tone="violet"
+              formatNumber={formatNumber}
+            />
             <div className="p-4 rounded-2xl border bg-slate-50 border-slate-100">
               {/* D5-09. "Events in effect", NOT "Active" — active is the
                   switch's word, and a five-on / four-in-effect pair is two
@@ -5001,6 +5150,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               </p>
             </div>
           </div>
+          </>
         )}
 
         {/* Chart */}
