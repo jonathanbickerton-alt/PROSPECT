@@ -7153,6 +7153,88 @@ the **Events summary panel's** chip (`EventsSummaryTable.tsx:109`,
 `{ count: rows.length }`). The two carry similar labels and count different
 things by design; the chip has always counted all rows, and no spec asserts its
 semantics either way.
+#### REQ-D6-02 — THE DELTA MONTH SELECTOR AND THE REVENUE CARD (Jon, 2026-09-09)
+
+**Raised by Alessandro in UAT, 2026-09-09: the Market Events KPI cards fix
+their figures at end of period; he wants to choose the month, and he wants a
+Revenue delta beside the other two.** Recorded before any code, against the
+inventory in `reports/2026-09-09-0939-delta-month-inventory.md` and the stop
+in `reports/2026-09-09-0948-delta-month-selector.md`.
+
+1. **ONE month selector, shared by the delta cards.** Not one per card. Its
+   options are every month of the **forecast horizon** — never the chart
+   window, which is a Recharts `<Brush>` and a display device — that carries a
+   forecast and **no actual**, listed **most-recent first**.
+
+2. **The default is the last such month**, which is today's "end of period",
+   so an untouched screen reads exactly as it does now. A change of default is
+   a change of what every existing reader believes the card says.
+
+3. **View state only.** Not exported, not persisted, reset on reload. It sits
+   beside the chart window and the measure selection, which are view state for
+   the same reason.
+
+4. **The Base Volume Delta and ARPU Delta cards read the selected month**, and
+   a **third card, Revenue Delta**, shows **FOUR per-scenario deltas** —
+   Inflow, Outflow, Retention, Base — in the ARPU card's form, with an **em
+   dash for absence**. Absence is not zero, here as everywhere.
+
+5. **Every delta subtracts UNROUNDED adjusted minus baseline at the month and
+   rounds ONCE** — `e5f1e79`'s rule. Never the 2dp `chartData` columns. This
+   binds the existing Base Volume Delta card too, which reads those columns
+   today; moving it onto the unrounded fields is a **correction**, not a
+   refactor, and it may change the figure it prints.
+
+6. **The card titles show the selected month** through a locale-aware month
+   formatter, where "(end of period)" stands today. **No new stock-vs-flow
+   caption** — see the watch below.
+
+**AUTHORISED AT THE 0948 STOP (Jon, 2026-09-09).** The stop reported that
+decision 5 could not be built as a lookup: adjusted revenue is on the record,
+but baseline revenue is computed *and rounded* inside `perScenarioColumns`, and
+for the Base scenario its volume is `newBBase`, a loop local that nothing
+persists. `BaseForecastMonth` has no base volume band, because base volume is
+never fitted. Two authorisations follow.
+
+**(A) The engine persists what it already computes.** `computeAdjustedForecast`
+writes, per month, on the adjusted record:
+
+- **`baselineBaseVolume`** — `newBBase`, captured before it is consumed;
+- **`baselineRevenue.{inflow,outflow,retention,base}`** — the four baseline
+  revenues, **produced ONCE where `perScenarioColumns` already computes them**,
+  never re-multiplied by a caller. A second implementation of `bArpu × baseVol`
+  would drift from the first, which is the parallel-implementation shape this
+  codebase has removed repeatedly.
+
+The 2dp columns keep rounding **their own copy** from the same source, exactly
+as the ARPU columns do beside the unrounded ARPU the KPI card reads. **The
+columns are therefore the negative control**: rounding the new field to 2dp
+must equal the existing column to the penny, for every month and every
+scenario, or the field and the column disagree about the same quantity.
+**The export must not move** — no new sheet, no new column.
+
+**(B) ONE predicate `monthHasActuals(...)`, exported.** The import modal's test
+— *a month has actuals when the dataset holds at least one row for it whose
+value column is populated, non-blank and non-zero* — is **extracted verbatim**
+from `App.tsx`, used by **the modal and by the selector's option list**, and
+the modal's inline copy is **retired**. There are then two callers of one
+definition, not two definitions.
+
+**Step 3's cohort-scoped map is untouched.** `effectiveActualMap` answers a
+different question — *does this cohort have actuals at this month, scoped to
+the forecast coverage being scored* — and collapsing the two would put
+cohort-scoping into a view-level list. Two questions, two answers, and this
+entry says so rather than leaving the next reader to discover it.
+
+**RECORDED WATCH, NOT FIXED (from the 0948 stop, §e).** At a **mid-horizon**
+month the Base card and the flow rows are not the same kind of quantity: Base
+is a **stock at M**, and a lagged one — the stock rolls last month's flows
+(`newBBase = prev + prevIn - prevOut`), and a pool reaches Base ARPU only once
+delivered — while Inflow, Outflow and Retention are **flows in M**. At end of
+period nobody asks; at month 3 of 24 a reader comparing the two may. Decision 6
+declines a caption for it deliberately; if UAT trips on it, that is a new
+observation and not a defect in this one.
+
 
 #### D5-09 DECIDED (Jon, 2026-09-08) — the app says which events are in effect, and why
 
