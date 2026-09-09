@@ -7262,6 +7262,20 @@ or it could restrict which tariffs the mix redistributes across. Until that is
 decided, no `tariffScopeFor` call is placed on the yield path and
 `TARIFF_SCOPE_SITES` stays at **9**.
 
+**DECIDED (Jon, 2026-09-09) — reading (1), the apply-to reading.** A yield
+(Value-card) event saved while Tariffs in scope is a **strict subset** applies
+**only to the in-scope tariffs, whatever its mix axis**. The two readings the
+entry left open are settled by taking the first: a tariff scope says where the
+event applies, not which tariffs its mix redistributes across. A value-axis
+mix and a tariff-axis mix are therefore scoped identically, which is what
+"whatever its mix axis" is there to fix in place.
+
+`tariffScope` is materialised on **every yield emitter** by the same
+`tariffScopeFor`, with the draft's tariff treated as `'All'` — the Value card
+has no Tariff control, so there is no draft value to read and `'All'` is what
+the absence means. **Absent still means all tariffs**, so every existing save
+reloads unchanged, exactly as for the other three cards.
+
 **CLOSED `fb51506` (halves `7850298`, `fb51506`); walked by Jon 2026-09-09 on
 his 13-event save: RED S shows nothing, RED M and RED L split the ramp and sum
 to All, the three controls read All in scope (…), plain All at a full
@@ -7362,6 +7376,12 @@ still the last forecast month**, which after the reversal is the LAST option
 rather than the first, so the default is expressed as a month key and not as a
 position. Nothing else about the selector moves: the actuals exclusion, the
 view-state rule and the three cards are as decided.
+
+**CLOSED `360a591` (parts `9c93807`, `0e67708`, `360a591`); walked by Jon
+2026-09-09 on the 09 Sep 14:25 save: selector chronological with Jun 2028
+default at +15.72K, three cards move with the month (Sep 2026 Base +0.00 then
+Oct 2026 +2.50K at SOHO/Mobile Voice), Revenue card four rows, 6M leaves the
+list unchanged, reload resets.**
 
 #### D5-09 DECIDED (Jon, 2026-09-08) — the app says which events are in effect, and why
 
