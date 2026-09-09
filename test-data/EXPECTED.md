@@ -7206,6 +7206,11 @@ instead; the card stops attributing another event's figure to the draft.
 **What is NOT changed:** the tie rule, the candidate filter, the month the box
 reads, the two figures it shows, and every saved forecast.
 
+**CLOSED f252700; walked by Jon 2026-09-09 on the 09 Sep 19:30 save at SOHO /
+Mobile Voice: the rival line names 'test save W3' for Oct and the draft from Nov
+over 10.65 → 10.09; with W3 off the line is gone and the preview reads
+10.65 → 20.58, matching the chart's Oct tooltip.**
+
 #### D5-12 DECIDED (Jon, 2026-09-09) — "Events in effect" counts the union, and the caption always renders
 
 **Recorded before any code. This SUPERSEDES D5-09 (i)**, which is quoted below
