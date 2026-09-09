@@ -297,7 +297,7 @@
   "whatif_adjusted_vs_baseline": "Ajustada face à base",
   "whatif_active_market_events": "Eventos de mercado ativos",
   "whatif_events_in_effect": "Eventos em efeito",
-  "whatif_effect_caption": "movem volume · {{count}} ativados",
+  "whatif_effect_caption_full": "{{v}} movem volume · {{a}} movem ARPU · {{on}} ativados",
   "whatif_effect_volume": "Volume",
   "whatif_effect_no_coverage": "Sem cobertura",
   "whatif_effect_off": "Desativado",

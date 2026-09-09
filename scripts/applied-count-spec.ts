@@ -121,7 +121,19 @@ check('fixture: the store holds TWO events, so a view-scoped count can differ fr
   check('CARD: the summary no longer counts the raw array',
     !src.includes('eventCount: marketEvents.length'),
     'that count is identical at every view and cannot disagree with the deltas beside it');
-  check('CARD: it counts distinct applied ids', src.includes('eventCount: appliedHere.size'));
+  // RE-AIMED at D5-12, 2026-09-09: the card's number became the UNION of the
+  // volume set and the ARPU set, because counting the volume path alone read
+  // 0 while a yield event moved the chart. The pin is not relaxed — it now
+  // names the union AND both halves it is made of, so an implementation that
+  // quietly dropped one half would fail here rather than only in the caption.
+  check('CARD: it counts distinct applied ids — the UNION of both paths',
+    src.includes('eventCount: unionHere.size'));
+  check('CARD: and the union is built from the two sets already walked',
+    src.includes('const unionHere = new Set<string>([...appliedHere, ...arpuAppliedHere]);'),
+    'a third pass over adjustedMonths could disagree with the two beside it');
+  check('CARD: both halves travel so the caption re-derives nothing',
+    src.includes('volumeCount: appliedHere.size, arpuCount: arpuAppliedHere.size'),
+    'a caption computing its own split is a second answer to one question');
   check('CARD: gathered from the engine\'s own appliedEventIds',
     src.includes('for (const m of adjustedMonths) for (const id of m.appliedEventIds ?? []) appliedHere.add(id);'),
     're-deriving it beside the engine would drift from what the engine did');

@@ -297,7 +297,7 @@
   "whatif_adjusted_vs_baseline": "Angepasst vs. Basis",
   "whatif_active_market_events": "Aktive Marktereignisse",
   "whatif_events_in_effect": "Ereignisse in Wirkung",
-  "whatif_effect_caption": "bewegen Menge · {{count}} eingeschaltet",
+  "whatif_effect_caption_full": "{{v}} bewegen Menge · {{a}} bewegen ARPU · {{on}} eingeschaltet",
   "whatif_effect_volume": "Menge",
   "whatif_effect_no_coverage": "Keine Abdeckung",
   "whatif_effect_off": "Aus",

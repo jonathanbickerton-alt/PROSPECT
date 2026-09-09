@@ -304,6 +304,14 @@ async function main() {
       rendered: !!deltaEl,
       delta: deltaEl ? Number(String(deltaEl.textContent).replace(/[+,\s]/g, '')) : NaN,
       count: countEl ? String(countEl.textContent).trim() : null,
+      // D5-12. The caption is read AS RENDERED, and the add-events line is
+      // read as PRESENCE — the decision is that one always shows and the
+      // other shows only where it is true, so a check on the text alone
+      // could not tell "absent" from "present and empty".
+      caption: q('impact-event-caption')
+        ? String(q('impact-event-caption').textContent).trim() : null,
+      addEvents: q('impact-event-add')
+        ? String(q('impact-event-add').textContent).trim() : null,
       arpuDelta: arpuEl ? Number(String(arpuEl.textContent).replace(/[+,\s]/g, '')) : NaN,
       arpuInflow: perScen('inflow'), arpuOutflow: perScen('outflow'),
       arpuRetention: perScen('retention'), arpuBase: perScen('base'),
@@ -2468,6 +2476,86 @@ async function main() {
     revBase && String(revBase.textContent).trim() === expected,
     'cell ' + (revBase && String(revBase.textContent).trim()) + ' vs ' + expected);
   await selB.unmount();
+
+  // ══ D5-12 — "Events in effect" counts the UNION ══════════════════════════
+  //
+  // MOUNTED, because the defect was entirely in what the card SAID. The
+  // engine was right throughout: a yield event was moving Inflow ARPU +6.70
+  // and Revenue +33.99K while the card read 0 and invited the user to add an
+  // event. Nothing below an engine-level assertion could have seen that.
+  {
+    // One VOLUME event and one ARPU event on the same cohort. EVENT_ABS lands
+    // on the volume path; the yield event reaches appliedArpuIds and nothing
+    // else, which is exactly the population D5-09 (i) could not count.
+    const D12_VOL = { ...EVENT_ABS, id: 'd12-vol' } as any;
+    const D12_YLD = {
+      id: 'd12-yld', name: 'd12 yield', ibro: 'Inflow',
+      segment: 'All', product: 'All', channelL1: 'All', channelL2: 'All',
+      month: MONTHS[0], rollForward: true, mixAxis: 'value',
+      tariffMix: { High: 25, Low: 75 },
+      tariffBaseArpu: { High: 40, Low: 10 },
+    } as any;
+
+    // ── THE FIXTURE DISCRIMINATES, asserted BEFORE the card is read ────────
+    //
+    // The whole block turns on the yield event actually landing in
+    // appliedArpuIds. If it did not, every caption below would read
+    // "0 moving ARPU" and the checks would pass for the wrong reason — the
+    // vacuous-result trap, on the one surface this session exists to fix.
+    //
+    // Asserted through an INDEPENDENT observable: the rendered per-scenario
+    // Inflow ARPU delta. The pool rate is 22 x (0.25x40 + 0.75x10)/((40+10)/2)
+    // = 15.40 against a fitted 22, so a landed event MUST move it and a
+    // dropped one cannot.
+    const d12YldOnly = await readAt(keyA, [], undefined, undefined,
+                                    BUNDLE_Y3, false, [D12_YLD]);
+    check('D5-12 fixture: the yield event LANDS — the ARPU KPI moves',
+      Number.isFinite(d12YldOnly.arpuInflow as number)
+        && Math.abs(d12YldOnly.arpuInflow as number) > 0.005,
+      'inflow ARPU delta ' + d12YldOnly.arpuInflow
+      + ' — a yield event that never applied would make every caption below'
+      + ' read "0 moving ARPU" and pass for the wrong reason');
+
+    // ── BOTH ON: the number is the UNION, not either half ─────────────────
+    const d12Both = await readAt(keyA, [D12_VOL], undefined, undefined,
+                                 BUNDLE_Y3, false, [D12_YLD]);
+    check('D5-12: both on — the card reads 2, the union of the two sets',
+      d12Both.count === '2',
+      String(d12Both.count) + ' — 1 under D5-09 (i), which counted volume only');
+    check('D5-12: both on — the caption names all three counts',
+      d12Both.caption === '1 moving volume · 1 moving ARPU · 2 switched on',
+      JSON.stringify(d12Both.caption));
+    check('D5-12: both on — no add-events invitation',
+      d12Both.addEvents === null,
+      'the invitation must not appear while something is switched on');
+
+    // ── YIELD ONLY: the case that read ZERO and said "add events" ─────────
+    check('D5-12: yield only — the card reads 1, not 0',
+      d12YldOnly.count === '1',
+      String(d12YldOnly.count) + ' — THE UAT DEFECT: 0 while the chart moved');
+    check('D5-12: yield only — the caption reads 0 volume, 1 ARPU, 1 on',
+      d12YldOnly.caption === '0 moving volume · 1 moving ARPU · 1 switched on',
+      JSON.stringify(d12YldOnly.caption));
+    check('D5-12: yield only — still no add-events invitation',
+      d12YldOnly.addEvents === null,
+      'an event IS switched on, so the invitation would be false');
+
+    // ── BOTH OFF: the one case where the invitation is true ───────────────
+    const d12Off = await readAt(keyA, [{ ...D12_VOL, enabled: false }], undefined,
+                                undefined, BUNDLE_Y3, false,
+                                [{ ...D12_YLD, enabled: false }]);
+    check('D5-12: both off — the card reads 0', d12Off.count === '0',
+      String(d12Off.count));
+    check('D5-12: both off — the caption STILL renders, all three zero',
+      d12Off.caption === '0 moving volume · 0 moving ARPU · 0 switched on',
+      JSON.stringify(d12Off.caption)
+      + ' — the zero branch used to REPLACE this line, which is how the'
+      + ' "switched on" half vanished exactly where it mattered');
+    check('D5-12: both off — and NOW the add-events invitation appears',
+      d12Off.addEvents === 'Add events below to adjust the forecast',
+      JSON.stringify(d12Off.addEvents));
+  }
+
   report();
 }
 

@@ -2001,11 +2001,15 @@ const TRAPS: Trap[] = [
   // nothing — it would have printed 1 at a view the engine never touched. A
   // caption that cannot be wrong cannot be evidence, and this one was quoted
   // as evidence in a walk.
+  // RE-ANCHORED at D5-12, 2026-09-09: the card's number became the UNION's
+  // size, so the anchor moved from `appliedHere` to `unionHere`. The
+  // mutation is unchanged in substance — it still swaps a view-sensitive
+  // count for the raw array, which is the defect this id names.
   { id: '126 the applied-events caption counts the store, not the view',
     why: 'a count identical at every view cannot disagree with the deltas beside it, so it reads as corroboration when it is not',
     file: WHATIF, spec: APPLIEDCOUNT,
     mutate: s => s.replace(
-      "eventCount: appliedHere.size",
+      "eventCount: unionHere.size",
       "eventCount: marketEvents.length") },
 
   // ---------------------------------------------------------------------
@@ -2667,6 +2671,33 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "         ...(yieldDraft ? [yieldDraft] : [])]",
       "         ]") },
+  // 195 THE UNION DROPS THE ARPU HALF — the UAT defect, restored exactly. The
+  // card goes back to the volume path alone, so a yield event moving Inflow
+  // ARPU +6.70 and Revenue +33.99K on the chart directly below counts ZERO.
+  // Nothing throws, nothing looks broken, and the caption beside it still
+  // says "0 moving volume" quite truthfully — which is what let this survive
+  // to UAT. Only a MOUNTED read of the rendered number can see it.
+  { id: '195 the card number drops the ARPU set and counts volume only',
+    why: 'a card that says 0 while the chart beneath it moves is worse than'
+       + ' a card that says nothing: the user reads it as confirmation',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      "    const unionHere = new Set<string>([...appliedHere, ...arpuAppliedHere]);",
+      "    const unionHere = new Set<string>([...appliedHere]);") },
+  // 196 THE ZERO BRANCH HIDES THE ON-COUNT — the second half of the same
+  // defect, and the subtler one. D5-09 (i) made the invitation REPLACE the
+  // caption at zero, so the "N switched on" half disappeared in exactly the
+  // case where it contradicts the zero. Here the invitation is made
+  // unconditional, which hides the caption whenever nothing is switched on
+  // and, at the moment the union is also wrong, hides the only figure that
+  // would have exposed it.
+  { id: '196 the always-rendered caption is hidden behind the zero branch',
+    why: 'the half that contradicts a zero must not be the half that vanishes'
+       + ' at zero — that is how the card went silent where it was most wrong',
+    file: WHATIF, spec: VIEWAPPLY,
+    mutate: s => s.replace(
+      "                {t('whatif_effect_caption_full', {",
+      "                {switchedOnCount === 0 ? '' : t('whatif_effect_caption_full', {") },
 ];
 
 /**

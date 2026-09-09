@@ -1006,19 +1006,28 @@ async function main() {
       && effectText('e-off') === 'Off' && effectText('e-arpu') === 'ARPU',
     JSON.stringify(['e-vol', 'e-zero', 'e-off', 'e-arpu'].map(effectText)));
 
-  // THE CARD'S TWO NUMBERS. The number counts the volume path; the caption's
-  // on-count spans all three carriers. They are MEANT to differ, and the
-  // fixture makes them differ: 1 applied, 3 on (vol + zero + arpu).
+  // THE CARD'S TWO NUMBERS. SUPERSEDED AT D5-12, 2026-09-09: the number is
+  // now the UNION of the volume and ARPU sets, not the volume path alone —
+  // D5-09 (i) counted volume only, so a yield event moving the chart read 0.
+  // The pins are re-aimed at the new decision and made STRONGER while they
+  // move: the caption is asserted as its whole rendered string rather than by
+  // `includes('3')`, which a caption containing any 3 would have satisfied.
+  //
+  // The two still DIFFER on this fixture and are still meant to: 2 in effect
+  // (the applied volume event and the ARPU one) against 3 switched on (the
+  // zero-coverage event is on and reaching nothing).
   const cardNum = eff.q('impact-event-count');
   const cardCap = eff.q('impact-event-caption');
   console.log('  card    number ' + (cardNum && cardNum.textContent)
     + '  caption ' + JSON.stringify(cardCap && String(cardCap.textContent).trim()));
-  check('D5-09: the card number is the volume-path applied count',
-    cardNum && String(cardNum.textContent).trim() === '1',
-    String(cardNum && cardNum.textContent));
-  check('D5-09: the caption carries the on-count across all carriers',
-    cardCap && String(cardCap.textContent).includes('3'),
-    String(cardCap && cardCap.textContent)
+  check('D5-12: the card number is the UNION of the volume and ARPU sets',
+    cardNum && String(cardNum.textContent).trim() === '2',
+    String(cardNum && cardNum.textContent)
+    + ' — 1 under D5-09 (i), which counted the volume path alone');
+  check('D5-12: the caption names all three counts, as rendered',
+    cardCap && String(cardCap.textContent).trim()
+      === '1 moving volume · 1 moving ARPU · 3 switched on',
+    JSON.stringify(cardCap && String(cardCap.textContent).trim())
     + ' — 3 on (volume, zero-coverage, yield); the OFF one must not count');
 
   // FLIP THE OFF EVENT ON: its label must MOVE. A status that never changes is
@@ -1132,8 +1141,11 @@ async function main() {
     await h2.close();
   }
 
-  // (f) THE CARD IS UNTOUCHED BY ALL OF THIS. Its number is the volume-path
-  //     applied count and none of the ARPU work may move it.
+  // (f) THE CARD COUNTS THE ARPU CARRIERS TOO, since D5-12. Under D5-09B this
+  //     read "the card is untouched by all of this" — its number was the
+  //     volume-path count and the ARPU work was forbidden to move it. That is
+  //     exactly what produced the UAT report, so the pin is re-aimed: with one
+  //     market, one yield and one pricing event all applying, the number is 3.
   {
     const { h2 } = await arpuCase('f', [EVENT],
       { yieldEvents: [{ ...YEV, id: 'y-f' }], pricingEvents: [{ ...PEV, id: 'p-f' }] });
@@ -1141,11 +1153,14 @@ async function main() {
     const cap = h2.q('impact-event-caption');
     console.log('  (f) card number/caption   -> ' + (n && n.textContent)
       + ' / ' + JSON.stringify(cap && String(cap.textContent).trim()));
-    check('D5-09B(f): the card number is still the volume-path count',
-      n && String(n.textContent).trim() === '1', String(n && n.textContent));
-    check('D5-09B(f): the caption still counts every switched-on carrier',
-      cap && String(cap.textContent).includes('3'),
-      String(cap && cap.textContent) + ' — 1 market + 1 yield + 1 pricing');
+    check('D5-12(f): the card number counts the ARPU carriers too',
+      n && String(n.textContent).trim() === '3', String(n && n.textContent)
+      + ' — 1 under D5-09B, with the yield and pricing events invisible');
+    check('D5-12(f): and the caption splits them, as rendered',
+      cap && String(cap.textContent).trim()
+        === '1 moving volume · 2 moving ARPU · 3 switched on',
+      JSON.stringify(cap && String(cap.textContent).trim())
+      + ' — 1 market on the volume path, yield + pricing on the ARPU one');
     await h2.close();
   }
 

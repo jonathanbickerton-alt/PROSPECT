@@ -2721,6 +2721,24 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     [marketEvents, yieldEvents, pricingEvents, t]);
 
   /**
+   * D5-12. HOW MANY EVENTS ARE SWITCHED ON — derived ONCE.
+   *
+   * The card's caption and the add-events invitation ask this same question,
+   * and before this they each answered it with their own
+   * `summaryRows.filter(...)`. Two copies of one predicate is the shape that
+   * let the pool's definition of "off" drift for three sessions, and it is why
+   * the REQ-D6-01 pin counts `.enabled` READS rather than trusting them to
+   * agree. One derivation, two readers, one answer.
+   *
+   * It reads the derived row's own `enabled`, already set by the builder's
+   * `isEventOn` — no thirteenth call to the predicate. It counts ALL THREE
+   * carriers, deliberately a different population from the number above it,
+   * which is the union of what actually APPLIED.
+   */
+  const switchedOnCount = useMemo(
+    () => summaryRows.filter(r => r.enabled).length, [summaryRows]);
+
+  /**
    * The month's volumes the pricing weighting is computed over, read from the
    * SAME series the apply path wrote them to.
    *
@@ -4931,10 +4949,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       for (const id of m.appliedArpuIds ?? []) arpuAppliedHere.add(id);
       for (const id of m.arpuCandidateIds ?? []) arpuCandidatesHere.add(id);
     }
-    // D5-09: the SETS travel, not only their size. `eventCount` is unchanged
-    // and is still what the card's number reads — the sets are additional.
+    // D5-12: THE CARD'S NUMBER IS THE UNION. D5-09 (i) made it the volume
+    // path alone, and a yield event moving ARPU +6.70 on the chart below it
+    // therefore counted zero — the card describing a different population
+    // from the one the user was looking at.
+    //
+    // Built from the two sets ALREADY walked above, not from a third pass:
+    // an event can be in both (a promotion that moves volume and re-bands),
+    // and a Set is where that double-count goes.
+    const unionHere = new Set<string>([...appliedHere, ...arpuAppliedHere]);
+    // D5-09: the SETS travel, not only their size. `eventCount` is now the
+    // UNION's size; the two halves travel beside it so the caption can name
+    // them without re-deriving anything.
     return { baseDelta, arpuByScenario, revenueByScenario, month: deltaMonth,
-             eventCount: appliedHere.size,
+             eventCount: unionHere.size,
+             volumeCount: appliedHere.size, arpuCount: arpuAppliedHere.size,
              appliedIds: appliedHere, zeroCoverageIds: zeroCoverageHere,
              appliedArpuIds: arpuAppliedHere, arpuCandidateIds: arpuCandidatesHere };
     // baseForecast is READ above - the dependency array is the read-set, and
@@ -5236,6 +5265,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               formatNumber={formatNumber}
             />
             <div className="p-4 rounded-2xl border bg-slate-50 border-slate-100">
+              {/* D5-12. ONE read of the derived row's `enabled`, shared by the
+                  caption and the invitation. They ask the same question, and
+                  two copies of a predicate is precisely the shape that drifted
+                  for three sessions — which is why the REQ-D6-01 pin counts
+                  reads rather than trusting them to agree. */}
               {/* D5-09. "Events in effect", NOT "Active" — active is the
                   switch's word, and a five-on / four-in-effect pair is two
                   honest counts rather than a discrepancy. The NUMBER is
@@ -5243,16 +5277,27 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
               <p className="text-xs font-semibold text-slate-500 mb-1">{t('whatif_events_in_effect')}</p>
               <p data-testid="impact-event-count"
                  className="text-2xl font-bold text-slate-700">{impactSummary.eventCount}</p>
+              {/* D5-12. ALWAYS RENDERED, and that is the point: the zero
+                  branch used to REPLACE this line with the add-events text,
+                  so the "switched on" half — the half that contradicts a
+                  zero — vanished in exactly the case where it was needed.
+                  The on-count still reads summaryRows' own `enabled`, set by
+                  the builder's isEventOn, so no thirteenth call to the
+                  predicate and the REQ-D6-01 pins do not move. */}
               <p data-testid="impact-event-caption" className="text-[10px] text-slate-400 mt-1">
-                {impactSummary.eventCount === 0
-                  ? t('whatif_add_events_below_to_adjust_the_forecast')
-                  /* The on-count reads summaryRows' own `enabled`, set by the
-                     builder's isEventOn — no thirteenth call to the predicate,
-                     so the REQ-D6-01 pins do not move. It counts ALL THREE
-                     carriers, deliberately a different population from the
-                     number above, which is volume-path only. */
-                  : t('whatif_effect_caption', { count: summaryRows.filter(r => r.enabled).length })}
+                {t('whatif_effect_caption_full', {
+                  v: impactSummary.volumeCount,
+                  a: impactSummary.arpuCount,
+                  on: switchedOnCount })}
               </p>
+              {/* The invitation, only where it is TRUE — nothing is switched
+                  on. An event that is on and simply not reaching this cohort
+                  is a different situation and must not be told to add one. */}
+              {switchedOnCount === 0 && (
+                <p data-testid="impact-event-add" className="text-[10px] text-slate-400 mt-1">
+                  {t('whatif_add_events_below_to_adjust_the_forecast')}
+                </p>
+              )}
             </div>
           </div>
           </>
