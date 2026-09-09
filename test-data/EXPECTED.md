@@ -7262,6 +7262,12 @@ or it could restrict which tariffs the mix redistributes across. Until that is
 decided, no `tariffScopeFor` call is placed on the yield path and
 `TARIFF_SCOPE_SITES` stays at **9**.
 
+**CLOSED `fb51506` (halves `7850298`, `fb51506`); walked by Jon 2026-09-09 on
+his 13-event save: RED S shows nothing, RED M and RED L split the ramp and sum
+to All, the three controls read All in scope (…), plain All at a full
+selection, Promotion auto-clear works, export/import keeps the scope, Compare
+applies nothing at RED S and shows the list.**
+
 #### REQ-D6-02 — THE DELTA MONTH SELECTOR AND THE REVENUE CARD (Jon, 2026-09-09)
 
 **Raised by Alessandro in UAT, 2026-09-09: the Market Events KPI cards fix
@@ -7343,6 +7349,11 @@ delivered — while Inflow, Outflow and Retention are **flows in M**. At end of
 period nobody asks; at month 3 of 24 a reader comparing the two may. Decision 6
 declines a caption for it deliberately; if UAT trips on it, that is a new
 observation and not a defect in this one.
+
+**PART 2 BUILT (2026-09-09), no new decision.** The selector, the three cards
+reading the selected month and the Revenue Delta card are built against the
+six decisions and the two authorisations above; nothing in them changed. Part
+1 — the engine fields and the actuals predicate — landed at `9c93807`.
 
 #### D5-09 DECIDED (Jon, 2026-09-08) — the app says which events are in effect, and why
 
