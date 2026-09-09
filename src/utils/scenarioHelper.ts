@@ -1,6 +1,6 @@
 import { format, addMonths, parse } from 'date-fns';
 import { eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume,
-         eventScopeMatchesView, pricedVolumesFor, applyPricingToBlend,
+         eventScopeMatchesView, pricedVolumesFor, applyPricingToBlend, tariffScopeFromRow,
          isEventOn, eventRowId } from './forecasting';
 import type { ProRataLeaf, ProRataScope } from './forecasting';
 
@@ -114,6 +114,11 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
     productL2: String(e.Product_L2 ?? 'All'),
     channel: String(e.Channel ?? 'All'), channelL2: String(e.Channel_L2 ?? 'All'),
     tariffL1: String(e.Tariff_L1 ?? 'All'), tariffL2: String(e.Tariff_L2 ?? 'All'),
+    // D5-10. Through the ONE reader, so Compare parses the column exactly as
+    // the What-If readers do. leafWithinScope already carries the branch, and
+    // Compare's leaves carry tariffL1 (built above), so the weighting reaches
+    // the tariff without a second copy of anything.
+    tariffScope: tariffScopeFromRow(e.Tariff_Scope),
   });
   const leavesFor = (e: any) =>
     leavesByMetric[(String(e.Scenario) as MetricKey) in leavesByMetric
@@ -223,7 +228,9 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       return eventScopeMatchesView(
         { segment: e.Segment, product: e.Product, productL2: e.Product_L2,
           channelL1: e.Channel, channelL2: e.Channel_L2,
-          tariffL1: e.Tariff_L1, tariffL2: e.Tariff_L2 },
+          tariffL1: e.Tariff_L1, tariffL2: e.Tariff_L2,
+          // D5-10, Compare match site.
+          tariffScope: tariffScopeFromRow(e.Tariff_Scope) },
         viewScopeForMatch);
     });
 
@@ -431,7 +438,9 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
         return eventScopeMatchesView(
           { segment: e.Segment, product: e.Product, productL2: e.Product_L2,
             channelL1: e.Channel, channelL2: e.Channel_L2,
-            tariffL1: e.Tariff_L1, tariffL2: e.Tariff_L2 },
+            tariffL1: e.Tariff_L1, tariffL2: e.Tariff_L2,
+          // D5-10, Compare match site.
+          tariffScope: tariffScopeFromRow(e.Tariff_Scope) },
           viewScopeForMatch);
       });
 
@@ -496,6 +505,8 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
         segment: e.Segment, product: e.Product, productL2: e.Product_L2,
         channelL1: e.Channel_L1, channelL2: e.Channel_L2,
         tariffL1: e.Tariff_L1, tariffL2: e.Tariff_L2,
+        // D5-10, Compare match site — the pricing one.
+        tariffScope: tariffScopeFromRow(e.Tariff_Scope),
       }, {
         segment: vseg,
         productL1: vprodL1, productL2: vprodL2,

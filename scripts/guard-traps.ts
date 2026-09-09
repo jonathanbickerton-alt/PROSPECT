@@ -2530,6 +2530,36 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "  if (cell === undefined || cell === null || cell === '') return undefined;",
       "  if (true) return undefined;") },
+  // 185 COMPARE's reader ignores the column, so the same saved event that is
+  // correctly refused at RED S in What-If applies there in Compare. The half
+  // D5-10's first session deliberately shed, now guarded.
+  { id: '185 Compare\'s scopeOf drops Tariff_Scope',
+    why: 'a scope the What-If engine honours and Compare ignores is two'
+       + ' answers to one question from one saved file',
+    file: SCENHELPER, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      "    tariffScope: tariffScopeFromRow(e.Tariff_Scope),\n  });",
+      "  });") },
+  // 186 ONE emitter loses its call, which is the failure mode the site pin
+  // exists for: eight of nine still scope their events, so every screen the
+  // author checks looks right and one save path quietly does not.
+  { id: '186 an emitter skips tariffScopeFor and the site pin misses it',
+    why: 'nine sites and no funnel: the pin is the only thing standing'
+       + ' between a missed emitter and a silently unscoped event',
+    file: WHATIF, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      "      // D5-10, tariff scope site 3 of 9 — VOLUME spread.\n",
+      "      // D5-10 REMOVED site 3\n") },
+  // 187 the LABEL always says plain "All", so the control goes back to saying
+  // "All" while the save records a subset — the exact disagreement between
+  // what the user reads and what the event carries that D5-10 exists to end.
+  { id: '187 the Tariff control\'s label ignores the scope',
+    why: 'the control said "All" and the engine meant "unnarrowed"; it must'
+       + ' not now say "All" while the event means a subset',
+    file: WHATIF, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      "    return scope\n      ? t('whatif_tariff_all_in_scope', { list: scope.join(', ') })\n      : undefined;",
+      "    return undefined;") },
 ];
 
 /**

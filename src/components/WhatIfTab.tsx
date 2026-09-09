@@ -526,6 +526,31 @@ interface BuildPromoEventsParams {
  *  The metric follows `scenario`, so a Retention percentage resolves against
  *  the view's forecast RETENTION for the month with no arithmetic added here
  *  - which is decision 6's stated basis. */
+/**
+ * D5-10(7). ONE BODY for "a targeted tariff left the selection".
+ *
+ * The Volume and Pricing drafts each carried their own copy of this effect and
+ * the Promotion draft carried none — so a promotion could be saved against a
+ * tariff the user had just deselected, from a dropdown that no longer listed
+ * it. The copies are retired rather than tripled.
+ *
+ * Deps are `selectedTariffs` alone, deliberately and as before: this fires
+ * when the SELECTION changes, not when the user edits the draft. Listing the
+ * draft would re-run it on every keystroke and fight the form.
+ */
+function useClearTariffOnDeselect<T extends { tariffL1?: string; tariffL2?: string }>(
+  draft: T,
+  setDraft: React.Dispatch<React.SetStateAction<T>>,
+  selectedTariffs: readonly string[],
+): void {
+  useEffect(() => {
+    if (draft.tariffL1 && draft.tariffL1 !== 'All'
+        && !selectedTariffs.includes(draft.tariffL1)) {
+      setDraft({ ...draft, tariffL1: 'All', tariffL2: 'All' });
+    }
+  }, [selectedTariffs]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
 export function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
   // DILUTION RIDES THE PERCENTAGE ARM, exactly as the Pricing card's dilution
   // events ride the pricing pass. `dilutionAmountPct` is the SAME exported
@@ -2000,6 +2025,22 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // P7 targeting dropdowns and the tariff mix axis. Empty selection = no options,
   // so nothing renders until the user selects tariffs (per the scoping control).
   const fullTariffTree = tariffTree ?? new Map<string, string[]>();
+  /**
+   * D5-10(6). THE ONE HELPER that decides the Tariff control's "All" text.
+   *
+   * All three cards read it, so the label cannot disagree between them, and
+   * it asks the SAME function the save asks — `tariffScopeFor` — so the
+   * control says "All in scope (…)" exactly when a save would record that
+   * scope. A label derived from its own copy of the strict-subset rule would
+   * drift from the event the user then saves.
+   */
+  const tariffAllLabel = useMemo(() => {
+    const scope = tariffScopeFor('All', selectedTariffs, [...fullTariffTree.keys()]);
+    return scope
+      ? t('whatif_tariff_all_in_scope', { list: scope.join(', ') })
+      : undefined;   // undefined = the dropdown's own t('hierdrop_all')
+  }, [selectedTariffs, fullTariffTree, t]);
+
   const targetTariffTree = useMemo<Map<string, string[]>>(() => {
     if (!selectedTariffs.length) return new Map();
     const t = new Map<string, string[]>();
@@ -2011,16 +2052,17 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   // If a targeted tariff leaves the selected set, clear it from the draft event
   // forms so a now-hidden dropdown can't silently save a deselected tariff scope.
-  useEffect(() => {
-    if (newEvent.tariffL1 && newEvent.tariffL1 !== 'All' && !selectedTariffs.includes(newEvent.tariffL1)) {
-      setNewEvent({ ...newEvent, tariffL1: 'All', tariffL2: 'All' });
-    }
-  }, [selectedTariffs]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (newPricingEvent.tariffL1 && newPricingEvent.tariffL1 !== 'All' && !selectedTariffs.includes(newPricingEvent.tariffL1)) {
-      setNewPricingEvent({ ...newPricingEvent, tariffL1: 'All', tariffL2: 'All' });
-    }
-  }, [selectedTariffs]); // eslint-disable-line react-hooks/exhaustive-deps
+  //
+  // D5-10(7). THREE CALLS, ONE BODY. The Volume and Pricing effects were
+  // structural copies of each other — same condition, same patch, different
+  // draft and setter — and the Promotion draft had NO copy at all, which is
+  // how it kept a deselected tariff while its two siblings cleared theirs.
+  // Adding a third copy would have made the omission twice as likely next
+  // time; the rule now lives in `useClearTariffOnDeselect` above.
+  useClearTariffOnDeselect(newEvent, setNewEvent, selectedTariffs);
+  useClearTariffOnDeselect(newPricingEvent, setNewPricingEvent, selectedTariffs);
+  // The Promotion call sits beside its own draft's declaration below, because
+  // `newPromo` is declared after this block.
 
   // ── Tab state ─────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<'volume' | 'value' | 'pricing' | 'promotion'>('volume');
@@ -2337,6 +2379,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   const [promoTarget, setPromoTarget] = useState<'Inflow' | 'Retention'>('Inflow');
   const [newPromo, setNewPromo] = useState<PromoDraft>(blankPromo());
+  // D5-10(7). The Promotion draft's clear-on-deselect — the third caller of
+  // the shared body above, and the one that did not exist before D5-10.
+  useClearTariffOnDeselect(newPromo, setNewPromo, selectedTariffs);
 
   const [promoSpreadEnabled, setPromoSpreadEnabled] = useState(false);
   const [promoSpreadMonths, setPromoSpreadMonths] = useState(3);
@@ -5427,6 +5472,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   <HierarchicalDropdown
                     label=""
                     tree={targetTariffTree}
+                    allLabel={tariffAllLabel}
                     value={{
                       l1: newEvent.tariffL1 && newEvent.tariffL1 !== 'All' ? newEvent.tariffL1 : null,
                       l2: newEvent.tariffL2 && newEvent.tariffL2 !== 'All' ? newEvent.tariffL2 : null,
@@ -6774,6 +6820,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       <HierarchicalDropdown
                         label=""
                         tree={targetTariffTree}
+                        allLabel={tariffAllLabel}
                         value={{
                           l1: newPricingEvent.tariffL1 && newPricingEvent.tariffL1 !== 'All' ? newPricingEvent.tariffL1 : null,
                           l2: newPricingEvent.tariffL2 && newPricingEvent.tariffL2 !== 'All' ? newPricingEvent.tariffL2 : null,
@@ -7491,6 +7538,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       <HierarchicalDropdown
                         label=""
                         tree={targetTariffTree}
+                        allLabel={tariffAllLabel}
                         value={{
                           l1: newPromo.tariffL1 !== 'All' ? newPromo.tariffL1 : null,
                           l2: newPromo.tariffL2 !== 'All' ? newPromo.tariffL2 : null,

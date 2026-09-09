@@ -212,6 +212,7 @@
   "compare_volumes": "Volumi",
   "common_value": "Valore",
   "compare_plot_on_chart": "Traccia sul grafico",
+  "whatif_tariff_all_in_scope": "Tutti quelli nell'ambito ({{list}})",
   "common_tariff": "Tariffa",
   "compare_remove_session": "Rimuovi la sessione",
   "baseline_standard_forecast": "Previsione standard",

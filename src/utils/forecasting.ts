@@ -1116,9 +1116,18 @@ export const EFFECT_LABEL_KEY: Record<EffectStatus, string> = {
 
 /** Dimensions, wildcards omitted. 'All' and absent both mean "no filter", and
  *  printing them would fill the column with noise that says nothing. */
-function scopeOf(dims: (string | undefined)[], t: SummaryT): string {
+// D5-10(6). The SCOPE cell APPENDS the tariff list when the event carries
+// one, so a row reading "All" and a row reading "All (RED L, RED M)" are
+// visibly different events. Appended rather than substituted: the other
+// dimensions still say what they said.
+function scopeOf(
+  dims: (string | undefined)[],
+  t: SummaryT,
+  tariffScope?: readonly string[],
+): string {
   const kept = dims.filter(d => d && d !== 'All');
-  return kept.length ? kept.join(' / ') : t('whatif_summary_scope_all');
+  const base = kept.length ? kept.join(' / ') : t('whatif_summary_scope_all');
+  return tariffScope && tariffScope.length ? base + ' (' + tariffScope.join(', ') + ')' : base;
 }
 
 /**
@@ -1155,7 +1164,7 @@ export function buildEventsSummaryRows(
       name: named || t(promo ? 'whatif_summary_unnamed_promo' : 'whatif_summary_unnamed_volume'),
       unnamed: !named,
       adjusts: promo ? promoEventSummary(e, t) : volumeEventSummary(e, t),
-      scope: scopeOf([e.segment, e.product, e.productL2, e.channel, e.channelL2, e.tariffL1, e.tariffL2], t),
+      scope: scopeOf([e.segment, e.product, e.productL2, e.channel, e.channelL2, e.tariffL1, e.tariffL2], t, e.tariffScope),
       // MarketEvent has no duration or roll-forward concept — one row is one
       // month. Rendering an empty cell would read as "unknown"; the dash is a
       // statement that the carrier has no such field.
@@ -1172,7 +1181,7 @@ export function buildEventsSummaryRows(
       name: named || t('whatif_summary_unnamed_yield'),
       unnamed: !named,
       adjusts: yieldEventSummary(e, t),
-      scope: scopeOf([e.segment, e.product, e.channelL1, e.channelL2], t),
+      scope: scopeOf([e.segment, e.product, e.channelL1, e.channelL2], t, e.tariffScope),
       when: e.rollForward ? `${e.month} · ${t('whatif_all_fwd')}` : e.month,
       month: e.month,
       enabled: isEventOn(e),
@@ -1187,7 +1196,7 @@ export function buildEventsSummaryRows(
       name: named || t('whatif_summary_unnamed_pricing'),
       unnamed: !named,
       adjusts: pricingEventSummary(e, t),
-      scope: scopeOf([e.segment, e.product, e.productL2, e.channelL1, e.channelL2, e.tariffL1, e.tariffL2], t),
+      scope: scopeOf([e.segment, e.product, e.productL2, e.channelL1, e.channelL2, e.tariffL1, e.tariffL2], t, e.tariffScope),
       when: e.duration === 'recurring' ? `${e.month} · ${t('whatif_summary_recurring')}` : e.month,
       month: e.month,
       enabled: isEventOn(e),

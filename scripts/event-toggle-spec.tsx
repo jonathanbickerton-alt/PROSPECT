@@ -237,6 +237,80 @@ async function main() {
   check('D5-10: an unscoped event still weights over the whole book',
     Math.abs((shAll as number) - 100 / 1000) < 1e-9,
     'expected 0.10 (100 of all three), got ' + shAll);
+
+  // ── D5-10 second half: the SCOPE cell, and Compare ──────────────────────
+  const scopedRows = fc.buildEventsSummaryRows({
+    marketEvents: [{ id: 'sc1', scenario: 'Retention', date: MONTHS[0], segment: 'All',
+      product: 'All', productL2: 'All', channel: 'All', channelL2: 'All',
+      tariffL1: 'All', tariffL2: 'All', subscriberVolume: 10, customerVolume: 0,
+      revenue: 0, arpu: 1, name: 'scoped', tariffScope: ['RED L', 'RED M'] }],
+    yieldEvents: [], pricingEvents: [],
+  } as any, ((k: string) => k) as any);
+  const plainRows = fc.buildEventsSummaryRows({
+    marketEvents: [{ id: 'sc2', scenario: 'Retention', date: MONTHS[0], segment: 'All',
+      product: 'All', productL2: 'All', channel: 'All', channelL2: 'All',
+      tariffL1: 'All', tariffL2: 'All', subscriberVolume: 10, customerVolume: 0,
+      revenue: 0, arpu: 1, name: 'plain' }],
+    yieldEvents: [], pricingEvents: [],
+  } as any, ((k: string) => k) as any);
+  check('D5-10: the SCOPE cell APPENDS the list when the event carries one',
+    scopedRows[0]?.scope.endsWith('(RED L, RED M)'), scopedRows[0]?.scope);
+  check('D5-10: and is untouched when it does not',
+    !plainRows[0]?.scope.includes('('), plainRows[0]?.scope);
+  // THE CELLS DIFFER — the fixture discriminates before either is trusted.
+  check('D5-10: the scoped and unscoped SCOPE cells differ',
+    scopedRows[0]?.scope !== plainRows[0]?.scope,
+    scopedRows[0]?.scope + ' vs ' + plainRows[0]?.scope);
+
+  // COMPARE'S ENGINE, through the same column. A scoped event must not apply
+  const shMod = await import('../src/utils/scenarioHelper');
+  // at an out-of-scope tariff there either — its readers now parse the column
+  // and leafWithinScope already carried the branch.
+  const cmpSession = (scope: string) => ({
+    baselineRows: [
+      { Segment: 'All', Product: 'All', Product_L2: 'All', Channel: 'All', Channel_L2: 'All',
+        Tariff_L1: 'RED M', Tariff_L2: 'All', Month: MONTHS[0], Seed_Base_Volume: 1000,
+        Inflow_Mean: 100, Outflow_Mean: 10, Retention_Mean: 200, ARPU_Mean: 10 },
+      { Segment: 'All', Product: 'All', Product_L2: 'All', Channel: 'All', Channel_L2: 'All',
+        Tariff_L1: 'RED L', Tariff_L2: 'All', Month: MONTHS[0], Seed_Base_Volume: 1000,
+        Inflow_Mean: 100, Outflow_Mean: 10, Retention_Mean: 400, ARPU_Mean: 10 },
+      { Segment: 'All', Product: 'All', Product_L2: 'All', Channel: 'All', Channel_L2: 'All',
+        Tariff_L1: 'RED S', Tariff_L2: 'All', Month: MONTHS[0], Seed_Base_Volume: 1000,
+        Inflow_Mean: 100, Outflow_Mean: 10, Retention_Mean: 600, ARPU_Mean: 10 },
+    ],
+    marketEvents: [{ ID: 'c1', Scenario: 'Retention', Date: MONTHS[0], Segment: 'All',
+      Product: 'All', Product_L2: 'All', Channel: 'All', Channel_L2: 'All',
+      Tariff_L1: 'All', Tariff_L2: 'All', Subscriber_Volume: 500, Enabled: 'Yes',
+      Tariff_Scope: scope }],
+    yieldEvents: [], pricingEvents: [],
+  });
+  const retAt = (sess: any, tar: string | null) => {
+    const out = shMod.computeScenarioForFilter(sess, 'All', { l1: null, l2: null },
+      { l1: null, l2: null }, { l1: tar, l2: null });
+    return out.length ? Number(out[0]?.adjustedRetention) : null;
+  };
+  const scopedS = retAt(cmpSession('["RED L","RED M"]'), 'RED S');
+  const openS   = retAt(cmpSession(''), 'RED S');
+  check('D5-10 Compare: the fixture discriminates at RED S',
+    scopedS !== null && openS !== null && Math.abs((openS as number) - (scopedS as number)) > 1,
+    'scoped ' + scopedS + ' vs unscoped ' + openS);
+  check('D5-10 Compare: a scoped event applies NOTHING at an out-of-scope view',
+    Math.abs((scopedS as number) - 600) < 1e-6,
+    'RED S adjustedRetention should equal baseline 600, got ' + scopedS);
+  check('D5-10 Compare: an UNSCOPED event still reaches RED S',
+    (openS as number) > 600.5, 'got ' + openS);
+  // AND THE WEIGHTING, which the match sites alone do not exercise. Trap 185
+  // removes scopeOf's field and every check above stayed GREEN: the event is
+  // still refused at RED S by the match, but its SHARE at RED M is taken over
+  // the whole book instead of over the in-scope leaves. The quiet half again.
+  const scopedM = retAt(cmpSession('["RED L","RED M"]'), 'RED M');
+  const openM   = retAt(cmpSession(''), 'RED M');
+  check('D5-10 Compare: the fixture discriminates at RED M too',
+    scopedM !== null && openM !== null && Math.abs((scopedM as number) - (openM as number)) > 1,
+    'scoped ' + scopedM + ' vs unscoped ' + openM);
+  check('D5-10 Compare: the share is taken over the IN-SCOPE leaves only',
+    Math.abs((scopedM as number) - (200 + 500 * (200 / 600))) < 0.5,
+    'expected 200 + 500 x 200/600, got ' + scopedM);
   // THE DISPLAY SITES ARE PINNED SEPARATELY, and that separation is the point:
   // they are decision 7, not decision 1, and moving one into the other class
   // must be a visible change rather than a silent one.
@@ -519,8 +593,12 @@ async function main() {
         wiMetricCol: C.metric, wiInflowVal: 'Inflow', wiOutflowVal: 'Outflow',
         wiRetentionVal: 'Retention', wiValueCol: C.val, wiRevenueCol: '', wiArpuCol: '',
         productTree: new Map([['Mobile Voice', ['All']], ['Broadband', ['All']]]),
-        channelTree: new Map(), tariffTree: new Map(),
-        selectedTariffs: [], setSelectedTariffs: noop, cohortAvgArpu: 20,
+        channelTree: new Map(),
+        // D5-10: opt-in, so every existing mount keeps an empty tariff world.
+        tariffTree: opts.tariffTree ?? new Map(),
+        wiTariffL1Col: opts.wiTariffL1Col ?? '',
+        selectedTariffs: opts.selectedTariffs ?? [],
+        setSelectedTariffs: noop, cohortAvgArpu: 20,
         marketEvents: me, setMarketEvents: setMe, addMarketEvent: noop,
         removeMarketEvent: noop, updateMarketEvent: upd(setMe),
         yieldEvents: ye, newYieldEvent: {}, setNewYieldEvent: noop, addYieldEvent: noop,
@@ -1213,6 +1291,23 @@ async function main() {
     'x must be the `seen` key (the event\'s own e.date) and the axis must'
     + ' follow the measure — a hard-coded axis is the D5-07 defect');
 
+
+  // ── D5-10(6): the CONTROL'S LABEL, read from the rendered DOM ───────────
+  //
+  // Trap 187 makes the helper always return plain "All" and every check above
+  // stayed GREEN — the label is a rendering, and only a rendering can see it.
+  const TARIFF_WORLD = new Map([['RED M', ['All']], ['RED L', ['All']], ['RED S', ['All']]]);
+  const labelled = await mount([], { tariffTree: TARIFF_WORLD, selectedTariffs: ['RED M', 'RED L'], wiTariffL1Col: 'Tariff_L1' });
+  const openTree = await mount([], { tariffTree: TARIFF_WORLD, selectedTariffs: ['RED M', 'RED L', 'RED S'], wiTariffL1Col: 'Tariff_L1' });
+  const allText = (c: any) => (c.textContent ?? '');
+  check('D5-10: a STRICT subset labels the control with the keyed string',
+    allText(labelled.container).includes('whatif_tariff_all_in_scope')
+      || allText(labelled.container).includes('All in scope'),
+    'expected the in-scope label somewhere in the card');
+  check('D5-10: selecting EVERY tariff does not label it',
+    !allText(openTree.container).includes('All in scope')
+      && !allText(openTree.container).includes('whatif_tariff_all_in_scope'),
+    'a full selection is not a narrowing, so the control says plain All');
   console.log('');
   console.log(`event-toggle spec: ${pass} passed, ${fails.length} failed`);
   fails.forEach(f => console.log('  FAIL  ' + f));

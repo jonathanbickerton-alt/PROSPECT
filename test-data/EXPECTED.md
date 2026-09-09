@@ -7233,6 +7233,35 @@ restore must NOT recompute scope, because the sheet already carries the answer.
 construction function. Pricing reaches state through two App writers. Volume
 has no funnel and its emitters each build their own literal.
 
+**BUILT IN TWO HALVES (2026-09-09).** Clauses (1)–(5), (8) and (9) — the
+carrier, `tariffScopeFor`, both predicate branches, the nine save sites and
+their pin, the `Tariff_Scope` column and its one reader — landed at `7850298`.
+Clauses **(6) display, (7) the Promotion auto-clear and Compare** landed in the
+second half; no decision changed between them, and the first half's report
+named the gap while it stood.
+
+**CLARIFIED (Jon, 2026-09-09): D5-10 applies to the Value card too** — the
+entry named three cards by omission, not by decision.
+
+**MEASURED THE SAME DAY, AND THE MECHANISM IS RESERVED.** The Value card has
+**no Tariff control**: `targetTariffTree` renders at exactly three sites
+(`WhatIfTab.tsx:5469` Volume, `:6817` Pricing, `:7535` Promotion). And the
+yield emitter writes **no tariff dimension at all** — `handleAddYieldEvent`
+(`:2911`) builds `segment`, `product`, `channelL1`, `channelL2` and stops.
+It does not write `'All'`; it writes nothing, which `eventScopeMatchesView`
+reads as unnarrowed through its `!dim` arm. That is why every yield scope
+object in both engines omits the tariff dims (`WhatIfTab.tsx:1354`, `:1574`,
+`:3008`; `scenarioHelper.ts:374`).
+
+**So "in scope" has no settled meaning for a yield event, and it is a
+different question from the other three cards.** A `YieldEvent` already
+relates to tariffs, but as a **mix axis** — `tariffMix` redistributes value
+ACROSS tariffs — not as a scope. Two readings are open, and they are not the
+same: a tariff scope could restrict which tariffs the event applies to at all,
+or it could restrict which tariffs the mix redistributes across. Until that is
+decided, no `tariffScopeFor` call is placed on the yield path and
+`TARIFF_SCOPE_SITES` stays at **9**.
+
 #### REQ-D6-02 — THE DELTA MONTH SELECTOR AND THE REVENUE CARD (Jon, 2026-09-09)
 
 **Raised by Alessandro in UAT, 2026-09-09: the Market Events KPI cards fix

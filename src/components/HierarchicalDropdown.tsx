@@ -28,6 +28,10 @@ interface HierarchicalDropdownProps {
    * 'light' = light card style (used in WhatIfTab local view bar)
    */
   variant?: 'dark' | 'light';
+  /** D5-10. Overrides the collapsed button's and the list's "All" text, so a
+   *  Tariff control whose tree is filtered to a subset can say "All in scope
+   *  (RED M, RED L)" and mean it. Absent keeps t('hierdrop_all'). */
+  allLabel?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +59,7 @@ export function HierarchicalDropdown({
   onChange,
   className = '',
   variant = 'dark',
+  allLabel,
 }: HierarchicalDropdownProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -189,7 +194,7 @@ export function HierarchicalDropdown({
         className,
       ].join(' ');
 
-  const displayText = selectionLabel(value, t('hierdrop_all'));
+  const displayText = selectionLabel(value, allLabel ?? t('hierdrop_all'));
 
   if (tree.size === 0) return null;
 
@@ -242,7 +247,7 @@ export function HierarchicalDropdown({
                 ${focusIdx === 0 ? 'bg-slate-100' : ''}
                 ${!value.l1 ? 'bg-slate-800 text-white' : 'text-slate-700 hover:bg-slate-50'}`}
             >
-              <span className="font-semibold">{t('hierdrop_all')}</span>
+              <span className="font-semibold">{allLabel ?? t('hierdrop_all')}</span>
             </button>
 
             {/* L1 / L2 nodes */}
