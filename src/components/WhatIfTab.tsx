@@ -678,7 +678,7 @@ export function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
       segment: p.draft.segment, product: p.draft.product, productL2: p.draft.productL2,
       channel: p.draft.channel, channelL2: p.draft.channelL2,
       tariffL1: p.draft.tariffL1, tariffL2: p.draft.tariffL2,
-      // D5-10, tariff scope site 1 of 9 — PROMOTION, all three save paths.
+      // D5-10, tariff scope site 1 of 10 — PROMOTION, all three save paths.
       // The add, the row edit and the campaign edit all reach an event
       // through this function, so one call here is the whole card.
       tariffScope: tariffScopeFor(p.draft.tariffL1, p.selectedTariffs, p.fullTariffL1s),
@@ -1445,7 +1445,9 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
             // which reads only null as All while cohortScope hands over the string.
             if (!eventScopeMatchesView(
               { segment: ye.segment, product: ye.product,
-                channelL1: ye.channelL1, channelL2: ye.channelL2 },
+                channelL1: ye.channelL1, channelL2: ye.channelL2,
+                // D5-10 yield: the scope reaches the predicate here too.
+                tariffScope: ye.tariffScope },
               viewScopeForMatch)) return false;
             if (ye.rollForward) return ye.month <= prevMonthKey;
             return ye.month === prevMonthKey;
@@ -1665,7 +1667,9 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
           // which reads only null as All while cohortScope hands over the string.
           if (!eventScopeMatchesView(
             { segment: ye.segment, product: ye.product,
-              channelL1: ye.channelL1, channelL2: ye.channelL2 },
+              channelL1: ye.channelL1, channelL2: ye.channelL2,
+              // D5-10 yield: the scope reaches the predicate here too.
+              tariffScope: ye.tariffScope },
             viewScopeForMatch)) return false;
           if (ye.rollForward) return ye.month <= m.month;
           return ye.month === m.month;
@@ -2995,6 +2999,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       channelL1: newYieldEvent.channelL1 ?? 'All',
       channelL2: newYieldEvent.channelL2 ?? 'All',
       month: newYieldEvent.month,
+      // D5-10, tariff scope site 10 of 10 — VALUE (yield), add AND edit.
+      // The Value card has no Tariff control, so the draft has no tariff to
+      // read and 'All' is what its absence means. One call covers both
+      // dispositions because this is the card's ONE construction site.
+      tariffScope: tariffScopeFor('All', selectedTariffs, [...fullTariffTree.keys()]),
       mixAxis,
       tariffMix: { ...draftMix },
       // The user's padlocks, absent when there are none — same rule as the
@@ -3133,6 +3142,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const yeForMonth = yieldEvents.filter(e => isEventOn(e) && e.month === label && eventScopeMatchesView({
       segment: e.segment, product: e.product,
       channelL1: e.channelL1, channelL2: e.channelL2,
+      tariffScope: e.tariffScope,
     }, tipView));
     // REQ-D6-01 DISPLAY 3 of 6.
     const peForMonth = pricingEvents.filter(e => isEventOn(e) && e.month === label && eventScopeMatchesView(e, tipView));
@@ -3606,7 +3616,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       channelL1: newPricingEvent.channelL1 ?? 'All',
       channelL2: newPricingEvent.channelL2 ?? 'All',
       tariffL1:  newPricingEvent.tariffL1  ?? 'All',
-      // D5-10, tariff scope site 8 of 9 — PRICING add and edit.
+      // D5-10, tariff scope site 8 of 10 — PRICING add and edit.
       tariffScope:     tariffScopeFor(newPricingEvent.tariffL1, selectedTariffs, [...fullTariffTree.keys()]),
       tariffL2:  newPricingEvent.tariffL2  ?? 'All',
       month:     newPricingEvent.month,
@@ -3693,7 +3703,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         channel:         newEvent.channel   || 'All',
         channelL2:       newEvent.channelL2 || 'All',
         tariffL1:        newEvent.tariffL1  || 'All',
-        // D5-10, tariff scope site 2 of 9 — VOLUME churn ramp.
+        // D5-10, tariff scope site 2 of 10 — VOLUME churn ramp.
         tariffScope:     tariffScopeFor(newEvent.tariffL1, selectedTariffs, [...fullTariffTree.keys()]),
         tariffL2:        newEvent.tariffL2  || 'All',
         date:            m.month,
@@ -3761,7 +3771,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         channel:         newEvent.channel   || 'All',
         channelL2:       newEvent.channelL2 || 'All',
         tariffL1:        newEvent.tariffL1  || 'All',
-        // D5-10, tariff scope site 3 of 9 — VOLUME spread.
+        // D5-10, tariff scope site 3 of 10 — VOLUME spread.
         tariffScope:     tariffScopeFor(newEvent.tariffL1, selectedTariffs, [...fullTariffTree.keys()]),
         tariffL2:        newEvent.tariffL2  || 'All',
         date:            monthStr,
@@ -4145,7 +4155,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         channel: newEvent.channel || 'All',
         channelL2: newEvent.channelL2 || 'All',
         tariffL1: newEvent.tariffL1 || 'All',
-        // D5-10, tariff scope site 4 of 9 — VOLUME handleSaveCampaign, churn rebuild.
+        // D5-10, tariff scope site 4 of 10 — VOLUME handleSaveCampaign, churn rebuild.
         tariffScope:     tariffScopeFor(newEvent.tariffL1, selectedTariffs, [...fullTariffTree.keys()]),
         tariffL2: newEvent.tariffL2 || 'All',
         date: newEvent.date,
@@ -4184,7 +4194,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           channel: newEvent.channel || 'All',
           channelL2: newEvent.channelL2 || 'All',
           tariffL1: newEvent.tariffL1 || 'All',
-          // D5-10, tariff scope site 5 of 9 — VOLUME handleSaveCampaign, volume rebuild.
+          // D5-10, tariff scope site 5 of 10 — VOLUME handleSaveCampaign, volume rebuild.
           tariffScope:     tariffScopeFor(newEvent.tariffL1, selectedTariffs, [...fullTariffTree.keys()]),
           tariffL2: newEvent.tariffL2 || 'All',
           date: format(addMonths(baseDate, i), 'yyyy-MM'),
@@ -4322,7 +4332,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         channel: newEvent.channel ?? 'All',
         channelL2: newEvent.channelL2 ?? 'All',
         tariffL1: newEvent.tariffL1 ?? 'All',
-        // D5-10, tariff scope site 6 of 9 — VOLUME handleSaveEdit, spread rebuild.
+        // D5-10, tariff scope site 6 of 10 — VOLUME handleSaveEdit, spread rebuild.
         tariffScope:     tariffScopeFor(newEvent.tariffL1, selectedTariffs, [...fullTariffTree.keys()]),
         tariffL2: newEvent.tariffL2 ?? 'All',
         date: m.month,
@@ -4369,7 +4379,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       channel: newEvent.channel ?? 'All',
       channelL2: newEvent.channelL2 ?? 'All',
       tariffL1: newEvent.tariffL1 ?? 'All',
-      // D5-10, tariff scope site 7 of 9 — VOLUME handleSaveEdit, single row.
+      // D5-10, tariff scope site 7 of 10 — VOLUME handleSaveEdit, single row.
       tariffScope:     tariffScopeFor(newEvent.tariffL1, selectedTariffs, [...fullTariffTree.keys()]),
       tariffL2: newEvent.tariffL2 ?? 'All',
       date: newEvent.date,

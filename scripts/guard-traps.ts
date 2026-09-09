@@ -2560,7 +2560,9 @@ const TRAPS: Trap[] = [
        + ' between a missed emitter and a silently unscoped event',
     file: WHATIF, spec: EVTOGGLE,
     mutate: s => s.replace(
-      "      // D5-10, tariff scope site 3 of 9 — VOLUME spread.\n",
+      // RE-ANCHORED 2026-09-09: the markers were renumbered 9 -> 10 when the
+      // Value card became the tenth site, and trap-anchors caught it.
+      "      // D5-10, tariff scope site 3 of 10 — VOLUME spread.\n",
       "      // D5-10 REMOVED site 3\n") },
   // 187 the LABEL always says plain "All", so the control goes back to saying
   // "All" while the save records a subset — the exact disagreement between
@@ -2600,6 +2602,28 @@ const TRAPS: Trap[] = [
   // apart. A trap nothing can catch is not a guard, so they are not here.
   // The spec records the two strings side by side; giving them a fixture with
   // sub-penny revenue is what would earn the ids back.
+  // 190 the VALUE card's emitter loses its call. It is the card's ONE
+  // construction site serving BOTH add and edit, so one missed call unscopes
+  // every yield event the user ever saves — and the other nine sites still
+  // scope theirs, so every other screen looks right.
+  { id: '190 the yield emitter skips tariffScopeFor and the pin misses it',
+    why: 'ten sites and no funnel across cards: the pin is the only thing'
+       + ' standing between a missed emitter and a silently unscoped event',
+    file: WHATIF, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      "      // D5-10, tariff scope site 10 of 10 — VALUE (yield), add AND edit.\n",
+      "      // D5-10 REMOVED the Value site\n") },
+  // 191 COMPARE's YIELD site ignores the column, so the same saved yield event
+  // is refused at an out-of-scope tariff in What-If and applied there in
+  // Compare — two answers to one question from one file, which is exactly the
+  // shape trap 185 guards for the other three carriers.
+  { id: '191 Compare\'s yield site drops Tariff_Scope',
+    why: 'the yield half must land in BOTH engines or a saved file reads'
+       + ' differently depending on which tab is open',
+    file: SCENHELPER, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      "              tariffScope: tariffScopeFromRow(ye.Tariff_Scope) },",
+      "              },") },
 ];
 
 /**

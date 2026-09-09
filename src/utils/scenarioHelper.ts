@@ -375,7 +375,11 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
           if (ye.IBRO !== 'Inflow') return false;
           if (!eventScopeMatchesView(
             { segment: ye.Segment, product: ye.Product,
-              channelL1: ye.Channel_L1, channelL2: ye.Channel_L2 },
+              channelL1: ye.Channel_L1, channelL2: ye.Channel_L2,
+              // D5-10 yield: through the ONE reader, as the other three
+              // Compare sites do. Site 10 was left alone in the display half
+              // because a yield event could not carry a scope; now it can.
+              tariffScope: tariffScopeFromRow(ye.Tariff_Scope) },
             viewScopeForMatch)) return false;
           if (ye.Roll_Forward === 'Yes') return ye.Month <= prevMonthKey;
           return ye.Month === prevMonthKey;

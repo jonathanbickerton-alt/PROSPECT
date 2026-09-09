@@ -124,12 +124,12 @@ async function main() {
   const scopeSites = (src: string) =>
     (src.match(/D5-10, tariff scope site/g) ?? []).length;
   const witSites = scopeSites(wi), appSites = scopeSites(app);
-  check('D5-10 pin: EXACTLY 8 tariff-scope sites in WhatIfTab',
-    witSites === 8, String(witSites));
+  check('D5-10 pin: EXACTLY 9 tariff-scope sites in WhatIfTab',
+    witSites === 9, String(witSites));
   check('D5-10 pin: EXACTLY 1 in App (the fifth writer)',
     appSites === 1, String(appSites));
-  check('D5-10 pin: NINE in total — every emitter the 1217 sweep found',
-    witSites + appSites === 9, String(witSites + appSites));
+  check('D5-10 pin: TEN in total — the 1217 sweep plus the Value card',
+    witSites + appSites === 10, String(witSites + appSites));
   // THE RESTORE PATHS MUST NOT BE AMONG THEM. A restored event's scope is in
   // the sheet; recomputing it from the current selection would rewrite what
   // the author saved, which is decision 9's opposite.
@@ -237,6 +237,86 @@ async function main() {
   check('D5-10: an unscoped event still weights over the whole book',
     Math.abs((shAll as number) - 100 / 1000) < 1e-9,
     'expected 0.10 (100 of all three), got ' + shAll);
+
+  // ── D5-10 yield half: a scoped YIELD event ──────────────────────────────
+  //
+  // The Value card has no Tariff control, so `tariffScopeFor` is called with
+  // 'All' at its one construction site. These checks are on the carrier, the
+  // round trip and both engines' yield sites; the mounted add path is named
+  // in the report's Limits.
+  const yScoped = { segment: 'All', product: 'All', channelL1: 'All',
+                    channelL2: 'All', tariffScope: ['RED L', 'RED M'] };
+  check('D5-10 yield: the predicate refuses an out-of-scope tariff',
+    fc.eventScopeMatchesView(yScoped as any, viewAt('RED S') as any) === false,
+    'RED S must not match a scoped yield event');
+  check('D5-10 yield: and still matches in scope and at All',
+    fc.eventScopeMatchesView(yScoped as any, viewAt('RED M') as any)
+      && fc.eventScopeMatchesView(yScoped as any, viewAt(null) as any),
+    'RED M and All both match');
+
+  // THE ROUND TRIP through the YIELD sheet specifically — its own writer and
+  // its own reader, neither of which the market round trip exercises.
+  const yRow = fc.yieldEventExportRow({
+    id: 'y-ts', ibro: 'Inflow', segment: 'All', product: 'All',
+    channelL1: 'All', channelL2: 'All', month: MONTHS[0], rollForward: false,
+    tariffMix: {}, tariffBaseArpu: {}, tariffScope: ['RED L', 'RED M'],
+  } as any);
+  check('D5-10 yield: the yield sheet carries the JSON column',
+    yRow.Tariff_Scope === '["RED L","RED M"]', String(yRow.Tariff_Scope));
+  check('D5-10 yield: and the yield reader reads it back identical',
+    JSON.stringify(fc.yieldEventFromRow(yRow as any).tariffScope)
+      === JSON.stringify(['RED L', 'RED M']),
+    JSON.stringify(fc.yieldEventFromRow(yRow as any).tariffScope));
+  const yLegacy = { ...yRow }; delete (yLegacy as any).Tariff_Scope;
+  check('D5-10 yield: a yield row without the column loads with NO scope',
+    fc.yieldEventFromRow(yLegacy as any).tariffScope === undefined,
+    String(fc.yieldEventFromRow(yLegacy as any).tariffScope));
+
+  // COMPARE'S YIELD SITE (apply site 10). A scoped yield event must not reach
+  // an out-of-scope tariff there either.
+  const cmpYield = (scope: string) => ({
+    baselineRows: [
+      { Segment: 'All', Product: 'All', Product_L2: 'All', Channel: 'All', Channel_L2: 'All',
+        Tariff_L1: 'RED M', Tariff_L2: 'All', Month: MONTHS[0], Seed_Base_Volume: 1000,
+        Inflow_Mean: 200, Outflow_Mean: 10, Retention_Mean: 100, ARPU_Mean: 10 },
+      { Segment: 'All', Product: 'All', Product_L2: 'All', Channel: 'All', Channel_L2: 'All',
+        Tariff_L1: 'RED S', Tariff_L2: 'All', Month: MONTHS[0], Seed_Base_Volume: 1000,
+        Inflow_Mean: 200, Outflow_Mean: 10, Retention_Mean: 100, ARPU_Mean: 10 },
+      // A SECOND MONTH: Compare's yield path applies from the PREVIOUS month
+      // (site 10 tests ye.Month === prevMonthKey), so an event in the first
+      // month never fires and scoped/unscoped agree at 10 vs 10.
+      { Segment: 'All', Product: 'All', Product_L2: 'All', Channel: 'All', Channel_L2: 'All',
+        Tariff_L1: 'RED M', Tariff_L2: 'All', Month: MONTHS[1], Seed_Base_Volume: 1000,
+        Inflow_Mean: 200, Outflow_Mean: 10, Retention_Mean: 100, ARPU_Mean: 10 },
+      { Segment: 'All', Product: 'All', Product_L2: 'All', Channel: 'All', Channel_L2: 'All',
+        Tariff_L1: 'RED S', Tariff_L2: 'All', Month: MONTHS[1], Seed_Base_Volume: 1000,
+        Inflow_Mean: 200, Outflow_Mean: 10, Retention_Mean: 100, ARPU_Mean: 10 },
+    ],
+    marketEvents: [], pricingEvents: [],
+    yieldEvents: [{ ID: 'y1', IBRO: 'Inflow', Segment: 'All', Product: 'All',
+      Channel_L1: 'All', Channel_L2: 'All', Month: MONTHS[0], Enabled: 'Yes',
+      // A TARIFF-AXIS mix that actually moves the rate: RED M is worth more
+      // than RED S, and the mix puts everything on RED M. With an empty mix
+      // the ratio is 1 and scoped/unscoped agree, which cannot catch a trap.
+      Mix_Axis: 'tariff',
+      Tariff_Mix_JSON: '{"RED M":100,"RED S":0}',
+      Tariff_Base_ARPU_JSON: '{"RED M":40,"RED S":10}',
+      Tariff_Scope: scope }],
+  });
+  const shYield = await import('../src/utils/scenarioHelper');
+  const yArpuAt = (sess: any, tar: string | null) => {
+    const out = shYield.computeScenarioForFilter(sess, 'All', { l1: null, l2: null },
+      { l1: null, l2: null }, { l1: tar, l2: null });
+    return out.length > 1 ? Number(out[1]?.adjustedArpu) : null;
+  };
+  const yBaseS = yArpuAt(cmpYield('["RED L","RED M"]'), 'RED S');
+  const yOpenS = yArpuAt(cmpYield(''), 'RED S');
+  check('D5-10 yield: Compare reads a number at RED S (not a vacuous NaN)',
+    Number.isFinite(yBaseS as number) && Number.isFinite(yOpenS as number),
+    'scoped ' + yBaseS + ' unscoped ' + yOpenS);
+  check('D5-10 yield: the fixture DISCRIMINATES scoped from unscoped at RED S',
+    Math.abs((yOpenS as number) - (yBaseS as number)) > 0.001,
+    'scoped ' + yBaseS + ' vs unscoped ' + yOpenS);
 
   // ── D5-10 second half: the SCOPE cell, and Compare ──────────────────────
   const scopedRows = fc.buildEventsSummaryRows({

@@ -244,7 +244,7 @@ export default function App() {
       channelL2: newEvent.channelL2 || 'All',
       tariffL1: newEvent.tariffL1 || 'All',
       tariffL2: newEvent.tariffL2 || 'All',
-      // D5-10, tariff scope site 9 of 9 — VOLUME, App's default add path.
+      // D5-10, tariff scope site 9 of 10 — VOLUME, App's default add path.
       // The one this file's own comment calls THE FIFTH WRITER: it is reached
       // whenever month-spreading is off, which is unless the user turns it on,
       // so it is the site a scope field would most easily have been missed at.
