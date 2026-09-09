@@ -7153,6 +7153,7 @@ the **Events summary panel's** chip (`EventsSummaryTable.tsx:109`,
 `{ count: rows.length }`). The two carry similar labels and count different
 things by design; the chip has always counted all rows, and no spec asserts its
 semantics either way.
+
 #### REQ-D6-02 — THE DELTA MONTH SELECTOR AND THE REVENUE CARD (Jon, 2026-09-09)
 
 **Raised by Alessandro in UAT, 2026-09-09: the Market Events KPI cards fix
@@ -7234,7 +7235,6 @@ delivered — while Inflow, Outflow and Retention are **flows in M**. At end of
 period nobody asks; at month 3 of 24 a reader comparing the two may. Decision 6
 declines a caption for it deliberately; if UAT trips on it, that is a new
 observation and not a defect in this one.
-
 
 #### D5-09 DECIDED (Jon, 2026-09-08) — the app says which events are in effect, and why
 
