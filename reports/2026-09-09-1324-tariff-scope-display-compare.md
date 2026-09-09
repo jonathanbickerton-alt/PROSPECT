@@ -18,8 +18,8 @@ BASE 7850298 + 2afc6f2 (reports/ ONLY; ZERO drift). Premise lines all held.
   sites parse via the ONE tariffScopeFromRow; the 4th is YIELD, unchanged.
 4 SPEC 136 -> 146: Compare through the REAL engine, the label from the DOM;
   a NaN fixture bug caught by discriminate-first, not shipped green.
-  TWO STAYED GREEN FIRST — 185 needed a Compare WEIGHTING case, 187 a DOM read.
-  until the label was read from the DOM — the trap-183 lesson, twice more.
+5 TRAPS 185/186/187, each RED by hand (md5 6522e072a8 / dce3932a8e, 1 site);
+  TWO STAYED GREEN FIRST — 185 needed a WEIGHTING case, 187 a DOM read.
 6 GATE: guard-traps 183/183 CAUGHT, 0 MISSED/INCONC/CRASHED, restored. suite
   61/61, event-toggle 146/146, view-apply 177/177, anchors 195/195, survival
   104/26 + 27/27 (RED on my own spec; GUARDED, not re-baselined), i18n 200/200
