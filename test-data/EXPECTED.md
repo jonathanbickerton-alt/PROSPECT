@@ -7276,6 +7276,10 @@ has no Tariff control, so there is no draft value to read and `'All'` is what
 the absence means. **Absent still means all tariffs**, so every existing save
 reloads unchanged, exactly as for the other three cards.
 
+**YIELD HALF CLOSED `7a0bc1d`; walked by Jon 2026-09-09: a Value-card event
+under RED M + RED L shows no ARPU movement at RED S and moves at RED M; SCOPE
+shows the list.**
+
 **CLOSED `fb51506` (halves `7850298`, `fb51506`); walked by Jon 2026-09-09 on
 his 13-event save: RED S shows nothing, RED M and RED L split the ramp and sum
 to All, the three controls read All in scope (…), plain All at a full
