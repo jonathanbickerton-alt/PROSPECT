@@ -4865,3 +4865,59 @@ export function analyzeAndRecommendConfidence(
 }
 
 
+
+/**
+ * REQ-D6-02(B). THE ONE DEFINITION OF "THIS MONTH CARRIES AN ACTUAL".
+ *
+ * Extracted from `App.tsx`'s import handler, where it was the modal's
+ * "already loaded" test and the only such test in the app. REQ-D6-02's month
+ * selector needs the same fact — a month carrying an actual is not offered —
+ * and a second copy of a rule this specific would have drifted from the first.
+ *
+ * THE RULE, unchanged from the extraction: a month carries an actual when the
+ * dataset holds at least one row for that month whose VALUE column is
+ * populated — not undefined, not null, not blank, and not zero. Date-existence
+ * alone is deliberately NOT the test, because forecast rows share the same
+ * dates as the actuals beside them; a row's date says when, and only its value
+ * says whether anything was recorded.
+ *
+ * IT RETURNS THE SET, not a per-month answer. Both callers need every month at
+ * once — the modal marks each row it lists, the selector removes each month it
+ * would otherwise offer — so a predicate taking one month would make both walk
+ * the dataset once per month. Named for what it returns; the predicate is
+ * `monthsCarryingActuals(...).has(month)`.
+ *
+ * NOT Step 3's question. `effectiveActualMap` asks whether a COHORT has
+ * actuals at a month, scoped to the forecast coverage being scored. That is a
+ * different question with a different answer, and it is untouched.
+ */
+export function monthsCarryingActuals(
+  rows: ReadonlyArray<Record<string, unknown>>,
+  /**
+   * Candidate date columns, tried IN ORDER ON EACH ROW. A list rather than one
+   * name because the extraction site read `row[wiDateCol] || row[dateCol]`:
+   * the mapped column first, the incoming file's detected column as the
+   * fallback, decided per row. Collapsing that to a single column would change
+   * the modal's behaviour on a file whose date column is named differently
+   * from the mapped one, which is the case the fallback exists for.
+   */
+  dateCols: ReadonlyArray<string | undefined>,
+  valueCol: string | undefined,
+): Set<string> {
+  const months = new Set<string>();
+  if (!rows || rows.length === 0 || !valueCol) return months;
+  for (const row of rows) {
+    let raw: unknown = undefined;
+    for (const c of dateCols) {
+      if (c && row[c]) { raw = row[c]; break; }
+    }
+    if (!raw) continue;
+    const d = raw instanceof Date ? raw : new Date(raw as string);
+    if (!isValid(d)) continue;
+    const val = row[valueCol];
+    if (val !== undefined && val !== null && val !== '' && Number(val) !== 0) {
+      months.add(format(d, 'yyyy-MM'));
+    }
+  }
+  return months;
+}

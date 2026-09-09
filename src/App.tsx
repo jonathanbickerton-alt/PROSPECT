@@ -4,7 +4,7 @@ import { FileSpreadsheet, Info, XCircle } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import { isPlaceholderSheet } from './utils/sheetGuards';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, readStoredRateMap, marketEventExportRow, marketEventFromRow, yieldEventExportRow, yieldEventFromRow, pricingEventExportRow, pricingEventFromRow, activeCohortMetaRows, readActiveCohortMeta, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, readStoredRateMap, marketEventExportRow, marketEventFromRow, yieldEventExportRow, yieldEventFromRow, pricingEventExportRow, pricingEventFromRow, activeCohortMetaRows, readActiveCohortMeta, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey, monthsCarryingActuals } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
 import { filterToKey, cohortToFilter, forecastForView, forecastForStep1Selection, step1ResolveDecision, describeScope } from './utils/viewFilter';
@@ -363,29 +363,20 @@ export default function App() {
         // A month is "already loaded" when the current dataset contains at least one row
         // for that month where the actual value column is populated (non-blank, non-zero).
         // We do NOT use date-existence alone, because forecast rows share the same dates.
-        const monthsWithActuals = new Set<string>();
-        if (data.length > 0) {
-          const existingValueCol = wiValueCol || detectedValueCol;
-          data.forEach(row => {
-            const raw = row[wiDateCol] || row[dateCol];
-            if (!raw) return;
-            const d = raw instanceof Date ? raw : new Date(raw);
-            if (!isValid(d)) return;
-            const label = format(d, 'yyyy-MM');
-            // Only mark as loaded if an actual value is present on this row
-            const val = row[existingValueCol];
-            if (val !== undefined && val !== null && val !== '' && Number(val) !== 0) {
-              monthsWithActuals.add(label);
-            }
-          });
-        }
+        //
+        // REQ-D6-02(B): the rule that stood here is now `monthsCarryingActuals` in
+        // `utils/forecasting.ts`, because the delta-month selector asks the
+        // same question of the same dataset. This is one of its two callers;
+        // the inline copy is retired rather than duplicated.
+        const monthsLoaded = monthsCarryingActuals(
+          data, [wiDateCol, dateCol], wiValueCol || detectedValueCol);
 
         const sortedMonths = Array.from(monthCounts.entries())
           .sort((a, b) => b[0].localeCompare(a[0])) // newest first
           .map(([label, count]) => ({
             label,
             count,
-            alreadyLoaded: monthsWithActuals.has(label),
+            alreadyLoaded: monthsLoaded.has(label),
           }));
 
         setImportActualsState({ rows, months: sortedMonths, detectedDateCol: dateCol });

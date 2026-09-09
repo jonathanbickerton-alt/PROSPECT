@@ -1826,9 +1826,15 @@ const TRAPS: Trap[] = [
   { id: '118 revenue is ARPU times another scenario\'s volume',
     why: 'revenue must be that scenario\'s rate over that scenario\'s population, or it belongs to neither',
     file: WHATIF, spec: SCENARPU,
+    // RE-ANCHORED at REQ-D6-02(A), 2026-09-09. The anchor was the one-line
+    // column assignment; the column is now rounded FROM a named unrounded
+    // value, and `spec:trap-anchors` caught the old anchor the same session it
+    // aged out. The trap is strictly STRONGER on the new anchor: it corrupts
+    // the single producer, so the persisted `baselineRevenue` field and the
+    // 2dp column go wrong together rather than the column alone.
     mutate: s => s.replace(
-      "    out[`${label} Revenue (Baseline)`] = bArpu === null ? null : +(bArpu * baseVol).toFixed(2);",
-      "    out[`${label} Revenue (Baseline)`] = bArpu === null ? null : +(bArpu * m.baseline.inflow).toFixed(2);") },
+      "    const rawBaselineRevenue = bArpu === null ? null : bArpu * baseVol;",
+      "    const rawBaselineRevenue = bArpu === null ? null : bArpu * m.baseline.inflow;") },
   // 119 drops an EXISTING chart column. The chart export writes chartData
   // wholesale, so the row's key order IS the export's column order and removing
   // one is a removed export column — which the additive-only rule forbids. The

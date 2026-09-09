@@ -598,6 +598,50 @@ export interface AdjustedForecastMonth {
    */
   appliedArpuIds?: string[];
   arpuCandidateIds?: string[];
+  /**
+   * REQ-D6-02(A). THE BASELINE SIDE, UNROUNDED — the two quantities the delta
+   * cards need at an arbitrary month and could not previously reach.
+   *
+   * `baselineBaseVolume` is the derived BASELINE base stock for this month.
+   * Base volume is never fitted, so `BaseForecastMonth` has no band for it; it
+   * was computed inside the row loop as `prev + prevIn - prevOut` and thrown
+   * away, surviving only as the 2dp `Base (Baseline)` column. A card reading
+   * that column subtracts two already-rounded figures, which is the shape
+   * `e5f1e79` removed for ARPU.
+   *
+   * `baselineRevenue` is that scenario's baseline ARPU times ITS OWN baseline
+   * volume — base against the base stock, flows against their own flows,
+   * mirroring the adjusted side's rule.
+   *
+   * PRODUCED ONCE, in `perScenarioColumns`, which is where the rounded
+   * columns are produced from the same values. A caller re-multiplying
+   * `bArpu x volume` for itself would be a second implementation of one
+   * quantity, and the two would drift.
+   *
+   * null is ABSENCE, never zero: a band that could not be fitted has no mean,
+   * so it has no revenue either, and the card renders an em dash.
+   *
+   * Optional so a workbook written before REQ-D6-02 still restores.
+   */
+  baselineBaseVolume?: number;
+  baselineRevenue?: Record<ScenarioKey, number | null>;
+  /**
+   * REQ-D6-02(A), extended by one field beyond the literal authorisation, and
+   * named as such in the 1039 report.
+   *
+   * (A) authorises `baselineBaseVolume` so the Base Volume Delta card can stop
+   * subtracting two 2dp columns. It cannot: that delta has TWO sides, and the
+   * ADJUSTED base stock `newBAdj` is a loop local for exactly the same reason
+   * the baseline one was. Persisting only the baseline half would leave the
+   * card mixing an unrounded figure with a rounded one, which is worse than
+   * the symmetric rounding it replaces.
+   *
+   * `scenarioArpu.base.volume` is NOT this quantity and was not used for it:
+   * it is `max(0, natural) + max(0, pools)`, which equals the base stock only
+   * while the delivered pools do not exceed it, and it is absent altogether on
+   * a pre-schema forecast.
+   */
+  adjustedBaseVolume?: number;
   /** The uplifted values BEFORE the zero floor. Equal to `uplifted` unless an
    *  event drove a metric negative — which is what makes a floor breach
    *  reportable rather than silently clipped. */

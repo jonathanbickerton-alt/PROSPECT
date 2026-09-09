@@ -2181,6 +2181,116 @@ async function main() {
     m0Leaf.arpuOutflow === null || Math.abs(m0Leaf.arpuOutflow as number) < 0.005,
     'outflow ' + m0Leaf.arpuOutflow);
 
+
+  // ── REQ-D6-02(A): the persisted baseline fields vs their own columns ─────
+  //
+  // THE COLUMN IS THE NEGATIVE CONTROL. `perScenarioColumns` now produces the
+  // unrounded baseline revenue ONCE and rounds a copy of it into the column,
+  // so rounding the persisted field must reproduce the column to the penny for
+  // every month and every scenario. If it ever does not, the field and the
+  // column have stopped describing the same quantity — which is the whole
+  // failure this arrangement exists to make impossible.
+  //
+  // Driven through `computeAdjustedForecast` directly rather than the mount:
+  // the fields are engine output, and a mounted read would test the card's
+  // indexing at the same time as the engine's arithmetic.
+  const { computeAdjustedForecast } = await import('../src/components/WhatIfTab');
+  const engineOut = (computeAdjustedForecast as any)({
+    baseForecast: resolveForecast(keyA).forecast,
+    marketEvents: [], yieldEvents: [], pricingEvents: [],
+    viewSegment: 'All',
+    viewProduct: { l1: null, l2: null },
+    viewChannel: { l1: null, l2: null },
+    viewTariff:  { l1: null, l2: null },
+    data,
+    wiSegmentCol: C.seg, wiProductCol: C.prod, wiProductL2Col: C.prodL2,
+    wiChannelCol: C.chan, wiChannelL2Col: C.chanL2,
+    wiTariffL1Col: '', wiTariffL2Col: '',
+    wiValueCol: C.val, wiMetricCol: C.metric,
+    wiInflowVal: 'Inflow', wiOutflowVal: 'Outflow', wiRetentionVal: 'Retention',
+  });
+  const eMonths = engineOut.adjustedMonths;
+  const eRows   = engineOut.chartData;
+  check('REQ-D6-02: the engine produced months to check',
+    eMonths.length > 0 && eRows.length === eMonths.length,
+    eMonths.length + ' months, ' + eRows.length + ' rows');
+
+  const SCEN: Array<[string, string]> = [
+    ['Inflow', 'inflow'], ['Outflow', 'outflow'],
+    ['Retention', 'retention'], ['Base', 'base'],
+  ];
+  let revMismatch = '';
+  let revCompared = 0;
+  let volMismatch = '';
+  for (let i = 0; i < eMonths.length; i++) {
+    const m = eMonths[i];
+    const r = eRows[i];
+    for (const [label, key] of SCEN) {
+      const field = m.baselineRevenue?.[key];
+      const col   = r[label + ' Revenue (Baseline)'];
+      if (field === null || field === undefined) {
+        if (col !== null && col !== undefined) {
+          revMismatch = revMismatch || (m.month + ' ' + label
+            + ': field absent, column ' + col);
+        }
+        continue;
+      }
+      revCompared++;
+      const rounded = +field.toFixed(2);
+      if (rounded !== col) {
+        revMismatch = revMismatch || (m.month + ' ' + label
+          + ': field ' + field + ' -> ' + rounded + ', column ' + col);
+      }
+    }
+    const volRounded = +Number(m.baselineBaseVolume).toFixed(2);
+    if (volRounded !== r['Base (Baseline)']) {
+      volMismatch = volMismatch || (m.month + ': field ' + m.baselineBaseVolume
+        + ' -> ' + volRounded + ', column ' + r['Base (Baseline)']);
+    }
+  }
+  // THE COMPARISON MUST HAVE HAPPENED. A loop that compared nothing passes
+  // every equality it never ran — the vacuous-pass shape this project has
+  // caught before, so the count is asserted before the verdict is trusted.
+  check('REQ-D6-02: baseline revenues were actually compared (not vacuous)',
+    revCompared >= eMonths.length,
+    revCompared + ' field/column pairs compared across ' + eMonths.length + ' months');
+  check('REQ-D6-02: every persisted baselineRevenue rounds to its own column',
+    revMismatch === '', revMismatch || 'all ' + revCompared + ' pairs equal to the penny');
+  check('REQ-D6-02: every persisted baselineBaseVolume rounds to Base (Baseline)',
+    volMismatch === '', volMismatch || 'all ' + eMonths.length + ' months equal');
+  check('REQ-D6-02: adjustedBaseVolume rounds to Base (Adjusted)',
+    eMonths.every((m: any, i: number) =>
+      +Number(m.adjustedBaseVolume).toFixed(2) === eRows[i]['Base (Adjusted)']),
+    'the adjusted half of the Base volume delta, persisted for the same reason');
+
+  // THE EXPORT MUST NOT MOVE. The new fields ride the month RECORD, not the
+  // chart row, and the export writes the row. A column count that changed
+  // would mean the workbook gained a column nobody asked for.
+  check('REQ-D6-02: the export row still carries exactly 29 columns',
+    Object.keys(eRows[0]).length === 29,
+    Object.keys(eRows[0]).length + ' columns on the first chart row');
+
+  // ── REQ-D6-02(B): the one actuals predicate ─────────────────────────────
+  const { monthsCarryingActuals } = await import('../src/utils/forecasting');
+  const pRows = [
+    { D: '2025-01-15', V: 100 },   // populated  -> counts
+    { D: '2025-02-15', V: 0 },     // zero       -> does not
+    { D: '2025-03-15', V: '' },    // blank      -> does not
+    { D: '2025-04-15' },           // absent     -> does not
+    { D: 'not a date', V: 5 },     // unparseable-> does not
+    { E: '2025-05-15', V: 7 },     // fallback column carries the date
+  ];
+  const got = monthsCarryingActuals(pRows as any, ['D', 'E'], 'V');
+  check('REQ-D6-02(B): only populated, non-blank, non-zero months count',
+    got.has('2025-01') && !got.has('2025-02') && !got.has('2025-03')
+      && !got.has('2025-04'),
+    [...got].sort().join(','));
+  check('REQ-D6-02(B): the per-row date-column fallback survived the extraction',
+    got.has('2025-05'),
+    'row 6 carries its date in the SECOND candidate column, as the modal did');
+  check('REQ-D6-02(B): an unparseable date is skipped, not counted',
+    got.size === 2, got.size + ' months from six rows');
+
   report();
 }
 

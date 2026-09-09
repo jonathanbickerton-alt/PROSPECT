@@ -942,8 +942,14 @@ function perScenarioColumns(
   fcM: any,
   baselineBase: number,
   _adjustedBase: number,
-): Record<string, number | null> {
+): { columns: Record<string, number | null>;
+     baselineRevenue: Record<ScenarioKey, number | null> } {
   const out: Record<string, number | null> = {};
+  // REQ-D6-02(A). The UNROUNDED baseline revenue, produced here and nowhere
+  // else. The column below rounds THIS value rather than recomputing it, so
+  // the two cannot disagree about the same quantity — and the column is the
+  // spec's negative control precisely because it is a rounded copy of it.
+  const baselineRevenue = {} as Record<ScenarioKey, number | null>;
   const scen: Array<[string, ScenarioKey, number | undefined, number]> = [
     ['Inflow',    'inflow',    fcM?.inflowArpu?.mean,    m.baseline.inflow],
     ['Outflow',   'outflow',   fcM?.outflowArpu?.mean,   m.baseline.outflow],
@@ -956,7 +962,10 @@ function perScenarioColumns(
     const bArpu = (baseArpuMean === undefined || baseArpuMean === null || !Number.isFinite(baseArpuMean))
       ? null : baseArpuMean;
     out[`${label} ARPU (Baseline)`] = bArpu === null ? null : +bArpu.toFixed(2);
-    out[`${label} Revenue (Baseline)`] = bArpu === null ? null : +(bArpu * baseVol).toFixed(2);
+    const rawBaselineRevenue = bArpu === null ? null : bArpu * baseVol;
+    baselineRevenue[key] = rawBaselineRevenue;
+    out[`${label} Revenue (Baseline)`] =
+      rawBaselineRevenue === null ? null : +rawBaselineRevenue.toFixed(2);
     // ADJUSTED: the engine's figure, with its own volume. A named absence
     // reaches the column as null rather than as a substituted blend.
     out[`${label} ARPU (Adjusted)`] = adj?.arpu === null || adj?.arpu === undefined
@@ -964,7 +973,7 @@ function perScenarioColumns(
     out[`${label} Revenue (Adjusted)`] = adj?.revenue === null || adj?.revenue === undefined
       ? null : +adj.revenue.toFixed(2);
   }
-  return out;
+  return { columns: out, baselineRevenue };
 }
 
 export function computeAdjustedForecast(input: AdjustedForecastInput): { chartData: any[]; adjustedMonths: AdjustedForecastMonth[]; eventShares: Map<string, number> } {
@@ -1833,6 +1842,17 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
         })(),
       };
 
+      // REQ-D6-02(A). ONE call, and its two outputs go to two places: the
+      // rounded columns into the chart row, the unrounded baseline revenue
+      // onto the month record beside the adjusted figures the cards already
+      // read. `baselineBaseVolume` is captured here for the same reason —
+      // `newBBase` is consumed by the carry-forward a few lines below and has
+      // never survived this loop.
+      const scenarioCols = perScenarioColumns(m, baseForecast.months[idx], newBBase, newBAdj);
+      m.baselineBaseVolume = newBBase;
+      m.adjustedBaseVolume = newBAdj;
+      m.baselineRevenue = scenarioCols.baselineRevenue;
+
       const row = {
         month: m.month,
         'Inflow (Baseline)':    +m.baseline.inflow.toFixed(2),
@@ -1866,7 +1886,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
         // `null`, never the blend and never 0. A zero here would read as "these
         // subscribers are worth nothing", which is a different claim from "we
         // cannot say" — the two-meanings-of-null rule, at the chart seam.
-        ...perScenarioColumns(m, baseForecast.months[idx], newBBase, newBAdj),
+        ...scenarioCols.columns,
       };
 
       p_prevBBaseIn  = m.baseline.inflow;
@@ -4498,8 +4518,23 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   const impactSummary = useMemo(() => {
     if (!chartData.length) return null;
-    const last = chartData[chartData.length - 1];
-    const baseDelta = last['Base (Adjusted)'] - last['Base (Baseline)'];
+    /**
+     * REQ-D6-02 decision 5, applied to the card that predates it.
+     *
+     * This read `chartData`'s `Base (Adjusted)` and `Base (Baseline)` columns,
+     * and those are rounded to 2dp at their source (`:1849-1850`) because they
+     * are chart and export values. Subtracting two rounded figures is the
+     * shape `e5f1e79` removed from the ARPU card; it survived here only
+     * because a subscriber stock is large enough that a hundredth reads as
+     * noise. It is still a delta carrying rounding that the engine did not
+     * produce, and decision 5 binds every delta, not only the new ones.
+     *
+     * The unrounded pair are the two fields the engine now persists, and they
+     * are what the columns are rounded FROM — so this is a CORRECTION and may
+     * move the printed figure by up to a hundredth. The columns are untouched.
+     */
+    const lastMonth = adjustedMonths[adjustedMonths.length - 1];
+    const baseDelta = lastMonth.adjustedBaseVolume - lastMonth.baselineBaseVolume;
     /**
      * Q4 (Jon, 2026-09-02): the ARPU Delta card shows FOUR per-scenario deltas.
      *
