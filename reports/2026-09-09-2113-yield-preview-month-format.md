@@ -3,8 +3,8 @@
 ```
 FOR ADVISOR
 Generated: 2026-09-09 21:13 +0100 (UTC 2026-09-09 20:13)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: 1254aff
+Repo: committed 1254aff, pushed (origin in sync)
 
 BASE f252700 + 6201c2b (reports/ ONLY fill). 0 DOCS 6eee37d, verbatim.
 1 TWO LINES, JSX :9027/:9029 via fmtMonth :2059 (the delta selector's own
