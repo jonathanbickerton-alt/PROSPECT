@@ -4,7 +4,7 @@ import { FileSpreadsheet, Info, XCircle } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import { isPlaceholderSheet } from './utils/sheetGuards';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, readStoredRateMap, marketEventExportRow, marketEventFromRow, yieldEventExportRow, yieldEventFromRow, pricingEventExportRow, pricingEventFromRow, activeCohortMetaRows, readActiveCohortMeta, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey, monthsCarryingActuals } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, readStoredRateMap, marketEventExportRow, marketEventFromRow, yieldEventExportRow, yieldEventFromRow, pricingEventExportRow, pricingEventFromRow, activeCohortMetaRows, readActiveCohortMeta, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey, monthsCarryingActuals, tariffScopeFor } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
 import { filterToKey, cohortToFilter, forecastForView, forecastForStep1Selection, step1ResolveDecision, describeScope } from './utils/viewFilter';
@@ -244,6 +244,11 @@ export default function App() {
       channelL2: newEvent.channelL2 || 'All',
       tariffL1: newEvent.tariffL1 || 'All',
       tariffL2: newEvent.tariffL2 || 'All',
+      // D5-10, tariff scope site 9 of 9 — VOLUME, App's default add path.
+      // The one this file's own comment calls THE FIFTH WRITER: it is reached
+      // whenever month-spreading is off, which is unless the user turns it on,
+      // so it is the site a scope field would most easily have been missed at.
+      tariffScope: tariffScopeFor(newEvent.tariffL1, selectedTariffs, [...tariffTree.keys()]),
       date: newEvent.date,
       subscriberVolume: neg(newEvent.subscriberVolume || 0),
       customerVolume:   neg(newEvent.customerVolume   || 0),

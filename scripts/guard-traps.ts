@@ -2110,7 +2110,10 @@ const TRAPS: Trap[] = [
     why: "a promotion's re-banded ARPU vanishes at every view broad enough to contain it",
     file: WHATIF, spec: VIEWAPPLY,
     mutate: s => s.replace(
-      "          eventScopeMatchesView(\n            { segment: e.segment, product: e.product, productL2: e.productL2,\n              channelL1: e.channel, channelL2: e.channelL2,\n              tariffL1: e.tariffL1, tariffL2: e.tariffL2 },\n            viewScopeForMatch),",
+      // RE-ANCHORED at D5-10, 2026-09-09: the scope object gained
+      // `tariffScope`, and spec:trap-anchors caught the stale anchor in the
+      // same session that aged it out.
+      "          eventScopeMatchesView(\n            { segment: e.segment, product: e.product, productL2: e.productL2,\n              channelL1: e.channel, channelL2: e.channelL2,\n              tariffL1: e.tariffL1, tariffL2: e.tariffL2, tariffScope: e.tariffScope },\n            viewScopeForMatch),",
       "          (e.product === \'All\' || !vprodL1 || e.product === vprodL1),") },
 
   // ---------------------------------------------------------------------
@@ -2491,8 +2494,42 @@ const TRAPS: Trap[] = [
       // Anchored on marketEventFromRow specifically — the `campaignName`
       // line below it is unique to that reader; the pricing reader's
       // id/name pair is otherwise identical.
-      '    id:               eventRowId(r),\n    name:             String(r.Name ?? \'\'),\n    // Legacy fallback: pre-campaign saves used Name as the grouping label',
+      // RE-ANCHORED at D5-10, 2026-09-09: the reader gained a `tariffScope`
+      // line between `id` and `name`, and spec:trap-anchors caught the stale
+      // anchor in the same session that aged it out.
+      '    id:               eventRowId(r),\n    tariffScope:      tariffScopeFromRow(r.Tariff_Scope),\n    name:             String(r.Name ?? \'\'),\n    // Legacy fallback: pre-campaign saves used Name as the grouping label',
       '    id:               String(r.ID ?? Math.random().toString(36).substr(2, 9)),\n    name:             String(r.Name ?? \'\'),\n    // Legacy fallback: pre-campaign saves used Name as the grouping label') },
+  // 182 the PREDICATE forgets the scope, so an event saved with "All in scope
+  // (RED M, RED L)" applies at RED S again — Jon's UAT finding, exactly.
+  { id: '182 eventScopeMatchesView ignores tariffScope',
+    why: 'the finding itself: the control lists two tariffs and the engine'
+       + ' applies the event at a third, because "All" meant "unnarrowed"',
+    file: ENGINE, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      "    && tariffScopeAdmits(d.tariffScope, v.tariffL1)\n",
+      "") },
+  // 183 the WEIGHTING forgets it. The predicate would still refuse RED S, so
+  // the event would not apply there — but at RED M its share would be taken
+  // over every leaf including the out-of-scope one, so the split is wrong
+  // while every row still looks plausible. The quiet half of the same defect.
+  { id: '183 leafWithinScope ignores tariffScope, so the split is wrong',
+    why: 'eventProRataShare and forecastCoverage must weight over the'
+       + ' in-scope leaves only, or an in-scope tariff receives too little',
+    file: ENGINE, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      "  if (!tariffScopeAdmits(scope.tariffScope, leaf.tariffL1 as string | undefined)) return false;\n",
+      "") },
+  // 184 the READER drops the column, so the scope survives the session and
+  // dies at the reload — the round trip loses it silently and the restored
+  // event applies everywhere again. Anchored on the reader because the three
+  // writer lines are byte-identical and an anchor must be unique.
+  { id: '184 the Tariff_Scope reader always returns undefined',
+    why: 'a scope that does not survive the round trip is a fix that lasts'
+       + ' until the user closes the app',
+    file: ENGINE, spec: EVTOGGLE,
+    mutate: s => s.replace(
+      "  if (cell === undefined || cell === null || cell === '') return undefined;",
+      "  if (true) return undefined;") },
 ];
 
 /**

@@ -364,6 +364,30 @@ export interface BaseForecast {
 export interface EventToggle {
   /** Absent means ON. Only an explicit `false` turns an event off. */
   enabled?: boolean;
+  /**
+   * D5-10 (Jon, 2026-09-09): THE TARIFFS THIS EVENT TARGETS, WHEN ITS OWN
+   * CONTROL SAYS "All" AND "All" MEANT A SUBSET.
+   *
+   * L1 names, sorted. **ABSENT MEANS ALL TARIFFS**, the same rule `enabled`
+   * follows above and for the same reason: every event saved before this
+   * field existed meant "all of them", and a reader that treated absence as
+   * an empty scope would silently stop applying every one of them.
+   *
+   * WHY IT IS ON THE EVENT rather than read from app state. The Tariff
+   * dropdown is filtered to the tariffs in scope, so "All" in that control
+   * lists RED M and RED L and nothing else — while the same token reaches
+   * `eventScopeMatchesView` meaning "unnarrowed", and the event then applies
+   * at RED S. The fix cannot be to hand `selectedTariffs` to the predicate:
+   * it is a pure function of the event and the view, shared by three carriers,
+   * two engines and sixteen call sites precisely because it is pure. So the
+   * event carries the answer, materialised at save by `tariffScopeFor`.
+   *
+   * Populated ONLY when the selection is a non-empty STRICT subset. A
+   * selection covering every tariff is not a narrowing, and recording it
+   * would turn a later widening of the tariff set into a silent narrowing of
+   * every event saved before it.
+   */
+  tariffScope?: string[];
 }
 
 export interface PricingEvent extends EventToggle {

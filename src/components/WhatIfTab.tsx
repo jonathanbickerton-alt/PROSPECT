@@ -18,7 +18,7 @@ import type { DragWall } from '../utils/mixConstraint';
 import { EventsSummaryTable } from './EventsSummaryTable';
 import { EventOnOffSwitch, OFF_ROW } from './EventOnOffSwitch';
 import { foldChurnRamp, linearChurnRamp, type ChurnFoldMonth } from '../utils/churnFold';
-import { canShowBaseForecast, resolveEventScopeForecast } from '../utils/forecasting';
+import { canShowBaseForecast, resolveEventScopeForecast, tariffScopeFor } from '../utils/forecasting';
 import { scenarioAdjustedArpu } from '../utils/scenarioArpu';
 import { MixSliderRow } from './MixSliderRow';
 import { MixTargetPanel } from './MixTargetPanel';
@@ -493,6 +493,11 @@ interface BuildPromoEventsParams {
   spreadMonths: number;
   spreadDistType: 'even' | 'custom';
   customDist: number[];
+  /** D5-10. The tariffs in scope and the full L1 set, so the ONE call to
+   *  `tariffScopeFor` can live here — the Promotion card's three save paths
+   *  all reach an event through this function, so this IS the card's site. */
+  selectedTariffs?: readonly string[];
+  fullTariffL1s?: readonly string[];
   /** First display slot for the rows produced; a spread takes consecutive
    *  slots from here. Required so a caller cannot forget to allocate one. */
   startSequence: number;
@@ -590,6 +595,10 @@ export function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
       segment: p.draft.segment, product: p.draft.product, productL2: p.draft.productL2,
       channel: p.draft.channel, channelL2: p.draft.channelL2,
       tariffL1: p.draft.tariffL1, tariffL2: p.draft.tariffL2,
+      // D5-10, tariff scope site 1 of 9 — PROMOTION, all three save paths.
+      // The add, the row edit and the campaign edit all reach an event
+      // through this function, so one call here is the whole card.
+      tariffScope: tariffScopeFor(p.draft.tariffL1, p.selectedTariffs, p.fullTariffL1s),
       date: monthStr,
       // For a percentage promotion this holds the PER CENT, spread across the
       // ramp exactly as a percentage volume event's is.
@@ -1090,7 +1099,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
       if (hit !== undefined) return hit;
       const v = eventProRataShare(
         { segment: e.segment, product: e.product, productL2: e.productL2, channel: e.channel,
-          channelL2: e.channelL2, tariffL1: e.tariffL1, tariffL2: e.tariffL2 },
+          channelL2: e.channelL2, tariffL1: e.tariffL1, tariffL2: e.tariffL2, tariffScope: e.tariffScope },
         viewScope,
         // Weights from the metric this event actually moves. ARPU never reaches
         // here — rate events are not pro-rated — but it falls back to Inflow
@@ -1153,7 +1162,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
         && eventScopeMatchesView(
           { segment: e.segment, product: e.product, productL2: e.productL2,
             channelL1: e.channel, channelL2: e.channelL2,
-            tariffL1: e.tariffL1, tariffL2: e.tariffL2 },
+            tariffL1: e.tariffL1, tariffL2: e.tariffL2, tariffScope: e.tariffScope },
           viewScopeForMatch));
 
       const applied = applyEventsToMonth(
@@ -1436,7 +1445,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
             eventScopeMatchesView(
               { segment: e.segment, product: e.product, productL2: e.productL2,
                 channelL1: e.channel, channelL2: e.channelL2,
-                tariffL1: e.tariffL1, tariffL2: e.tariffL2 },
+                tariffL1: e.tariffL1, tariffL2: e.tariffL2, tariffScope: e.tariffScope },
               viewScopeForMatch),
           )
           .forEach(e => {
@@ -1511,7 +1520,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
           eventScopeMatchesView(
             { segment: e.segment, product: e.product, productL2: e.productL2,
               channelL1: e.channel, channelL2: e.channelL2,
-              tariffL1: e.tariffL1, tariffL2: e.tariffL2 },
+              tariffL1: e.tariffL1, tariffL2: e.tariffL2, tariffScope: e.tariffScope },
             viewScopeForMatch),
         )
         .forEach(e => {
@@ -2764,6 +2773,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       cohortAvgArpu: promoCohortAvgArpu,
       spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
       startSequence: nextSequence(marketEvents),
+      selectedTariffs, fullTariffL1s: [...fullTariffTree.keys()],
     });
     if (events.length === 0) return;
 
@@ -3002,7 +3012,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const meForMonth = marketEvents.filter(e => isEventOn(e) && e.date === label && eventScopeMatchesView({
       segment: e.segment, product: e.product, productL2: e.productL2,
       channelL1: e.channel, channelL2: e.channelL2,
-      tariffL1: e.tariffL1, tariffL2: e.tariffL2,
+      tariffL1: e.tariffL1, tariffL2: e.tariffL2, tariffScope: e.tariffScope,
     }, tipView));
     // REQ-D6-01 DISPLAY 2 of 6.
     const yeForMonth = yieldEvents.filter(e => isEventOn(e) && e.month === label && eventScopeMatchesView({
@@ -3481,6 +3491,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       channelL1: newPricingEvent.channelL1 ?? 'All',
       channelL2: newPricingEvent.channelL2 ?? 'All',
       tariffL1:  newPricingEvent.tariffL1  ?? 'All',
+      // D5-10, tariff scope site 8 of 9 — PRICING add and edit.
+      tariffScope:     tariffScopeFor(newPricingEvent.tariffL1, selectedTariffs, [...fullTariffTree.keys()]),
       tariffL2:  newPricingEvent.tariffL2  ?? 'All',
       month:     newPricingEvent.month,
       // A dilution event IS a retention-scoped PERCENTAGE event. It rides the
@@ -3566,6 +3578,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         channel:         newEvent.channel   || 'All',
         channelL2:       newEvent.channelL2 || 'All',
         tariffL1:        newEvent.tariffL1  || 'All',
+        // D5-10, tariff scope site 2 of 9 — VOLUME churn ramp.
+        tariffScope:     tariffScopeFor(newEvent.tariffL1, selectedTariffs, [...fullTariffTree.keys()]),
         tariffL2:        newEvent.tariffL2  || 'All',
         date:            m.month,
         subscriberVolume: m.delta,
@@ -3632,6 +3646,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         channel:         newEvent.channel   || 'All',
         channelL2:       newEvent.channelL2 || 'All',
         tariffL1:        newEvent.tariffL1  || 'All',
+        // D5-10, tariff scope site 3 of 9 — VOLUME spread.
+        tariffScope:     tariffScopeFor(newEvent.tariffL1, selectedTariffs, [...fullTariffTree.keys()]),
         tariffL2:        newEvent.tariffL2  || 'All',
         date:            monthStr,
         subscriberVolume: neg(vol),
@@ -4014,6 +4030,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         channel: newEvent.channel || 'All',
         channelL2: newEvent.channelL2 || 'All',
         tariffL1: newEvent.tariffL1 || 'All',
+        // D5-10, tariff scope site 4 of 9 — VOLUME handleSaveCampaign, churn rebuild.
+        tariffScope:     tariffScopeFor(newEvent.tariffL1, selectedTariffs, [...fullTariffTree.keys()]),
         tariffL2: newEvent.tariffL2 || 'All',
         date: newEvent.date,
         subscriberVolume: neg(newEvent.subscriberVolume || 0),
@@ -4051,6 +4069,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           channel: newEvent.channel || 'All',
           channelL2: newEvent.channelL2 || 'All',
           tariffL1: newEvent.tariffL1 || 'All',
+          // D5-10, tariff scope site 5 of 9 — VOLUME handleSaveCampaign, volume rebuild.
+          tariffScope:     tariffScopeFor(newEvent.tariffL1, selectedTariffs, [...fullTariffTree.keys()]),
           tariffL2: newEvent.tariffL2 || 'All',
           date: format(addMonths(baseDate, i), 'yyyy-MM'),
           subscriberVolume: neg(vol),
@@ -4187,6 +4207,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         channel: newEvent.channel ?? 'All',
         channelL2: newEvent.channelL2 ?? 'All',
         tariffL1: newEvent.tariffL1 ?? 'All',
+        // D5-10, tariff scope site 6 of 9 — VOLUME handleSaveEdit, spread rebuild.
+        tariffScope:     tariffScopeFor(newEvent.tariffL1, selectedTariffs, [...fullTariffTree.keys()]),
         tariffL2: newEvent.tariffL2 ?? 'All',
         date: m.month,
         // SIGNED VERBATIM. No neg on this path, at all.
@@ -4232,6 +4254,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       channel: newEvent.channel ?? 'All',
       channelL2: newEvent.channelL2 ?? 'All',
       tariffL1: newEvent.tariffL1 ?? 'All',
+      // D5-10, tariff scope site 7 of 9 — VOLUME handleSaveEdit, single row.
+      tariffScope:     tariffScopeFor(newEvent.tariffL1, selectedTariffs, [...fullTariffTree.keys()]),
       tariffL2: newEvent.tariffL2 ?? 'All',
       date: newEvent.date,
       subscriberVolume: neg(newEvent.subscriberVolume ?? 0),
@@ -4443,6 +4467,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       // own single edit avoids it by patching rather than rebuilding.
       startSequence: marketEvents.find(e => e.id === editingPromoId)?.sequence
         ?? nextSequence(marketEvents),
+      selectedTariffs, fullTariffL1s: [...fullTariffTree.keys()],
     });
     if (events.length === 0) return;
     updateMarketEvent(editingPromoId, { ...events[0], id: editingPromoId });
@@ -4468,6 +4493,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       cohortAvgArpu: promoCohortAvgArpu,
       spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
       startSequence: nextSequence(marketEvents),
+      selectedTariffs, fullTariffL1s: [...fullTariffTree.keys()],
     });
     if (events.length === 0) return;
     // Only replace THIS card's rows for the campaign — a Volume-tab campaign

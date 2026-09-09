@@ -399,6 +399,15 @@ export function marketEventExportRow(e: MarketEvent): Record<string, unknown> {
     // Is_Promotion: a sheet cell is text, and the reader's absence rule is
     // easier to state over two literals than over a truthiness.
     Enabled: e.enabled === false ? 'No' : 'Yes',
+    // D5-10 (Jon, 2026-09-09), decision 5. APPENDED LAST, never inserted —
+    // the same rule Enabled and Promo_Mix_Locked follow, for the reason trap
+    // 119 protects: a reader keys by NAME, but a human diffing two exports
+    // reads column ORDER, and inserting shifts everything after it.
+    //
+    // JSON, on the Promo_Mix_Locked precedent. EMPTY when there is no scope:
+    // a bare [] would round-trip as "targets no tariff", which is the
+    // opposite of what absence means here.
+    Tariff_Scope: e.tariffScope && e.tariffScope.length ? JSON.stringify(e.tariffScope) : '',
   };
 }
 
@@ -533,6 +542,79 @@ export interface EventScopeDims {
   segment?: string; product?: string; productL2?: string;
   channelL1?: string; channelL2?: string;
   tariffL1?: string; tariffL2?: string;
+  /** D5-10. See `EventToggle.tariffScope`. Absent means all tariffs. */
+  tariffScope?: readonly string[];
+}
+
+/**
+ * D5-10. THE ONE MEMBERSHIP TEST, so the predicate and the leaf weighting
+ * cannot disagree about what an event's `'All'` covers.
+ *
+ * Returns true when this dimension does not narrow the event at all — no
+ * scope, or a scope that is empty, which is what every event saved before
+ * D5-10 carries. `view` null or `'All'` means the viewer has not narrowed
+ * either, and an unnarrowed view sees a scoped event: the event still applies
+ * SOMEWHERE inside that view, and the coverage weighting is what decides how
+ * much. Only a SPECIFIC tariff is tested for membership.
+ */
+export function tariffScopeAdmits(
+  scope: readonly string[] | undefined,
+  viewTariffL1: string | null | undefined,
+): boolean {
+  if (!scope || scope.length === 0) return true;
+  if (!viewTariffL1 || viewTariffL1 === 'All') return true;
+  return scope.includes(viewTariffL1);
+}
+
+/**
+ * D5-10. THE SCOPE AN EVENT IS SAVED WITH — one definition, called at every
+ * site where a draft becomes an event.
+ *
+ * The rule, whole: a scope is recorded only when the draft's own Tariff
+ * control says `'All'` AND the tariffs in scope are a NON-EMPTY STRICT SUBSET
+ * of every L1 the data carries. An event already aimed at one tariff needs no
+ * scope — `tariffL1` says it. A selection covering everything is not a
+ * narrowing, and recording it would turn a later widening of the tariff set
+ * into a silent narrowing of every event saved before it.
+ *
+ * Sorted, so two saves of the same selection produce the same array and a
+ * round trip through the sheet is comparable by value.
+ */
+/**
+ * D5-10(5). THE ONE READER of the `Tariff_Scope` column — three callers, one
+ * parse, on the `Promo_Mix_Locked` precedent it copies.
+ *
+ * A ROW WITHOUT THE COLUMN LOADS WITH NO SCOPE, which is what every workbook
+ * written before D5-10 is, and what "absent means all tariffs" requires. So
+ * does an empty cell, an empty array, a non-array, and anything unparseable:
+ * a half-read scope would narrow an event to a set nobody stated, and the
+ * failure would look exactly like the defect D5-10 fixes.
+ */
+export function tariffScopeFromRow(cell: unknown): string[] | undefined {
+  if (cell === undefined || cell === null || cell === '') return undefined;
+  try {
+    const parsed = JSON.parse(String(cell));
+    if (!Array.isArray(parsed) || parsed.length === 0) return undefined;
+    const names = parsed.filter(x => typeof x === 'string' && x !== '').map(String);
+    return names.length ? names : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function tariffScopeFor(
+  draftTariffL1: string | undefined | null,
+  selectedTariffs: readonly string[] | undefined,
+  fullL1s: readonly string[] | undefined,
+): string[] | undefined {
+  if (draftTariffL1 && draftTariffL1 !== 'All') return undefined;
+  if (!selectedTariffs || selectedTariffs.length === 0) return undefined;
+  if (!fullL1s || fullL1s.length === 0) return undefined;
+  const full = new Set(fullL1s);
+  const chosen = selectedTariffs.filter(t => full.has(t));
+  if (chosen.length === 0) return undefined;
+  if (chosen.length >= full.size) return undefined;   // not a narrowing
+  return [...chosen].sort();
 }
 
 /** The viewed slice, in the same terms. `null` means "All" on that axis. */
@@ -570,7 +652,11 @@ export function eventScopeMatchesView(d: EventScopeDims, v: ViewScope): boolean 
     && ok(d.productL2, v.productL2)
     && ok(d.channelL1, v.channelL1)
     && ok(d.channelL2, v.channelL2)
+    // D5-10. ONE BRANCH, and it composes with `ok` rather than replacing it:
+    // `ok` still decides a SPECIFIC tariffL1, and the scope only ever narrows
+    // the 'All' case. An event with no scope is unchanged in every direction.
     && ok(d.tariffL1, v.tariffL1)
+    && tariffScopeAdmits(d.tariffScope, v.tariffL1)
     && ok(d.tariffL2, v.tariffL2);
 }
 
@@ -1205,6 +1291,15 @@ export function pricingEventExportRow(e: PricingEvent): Record<string, unknown> 
     // Is_Promotion: a sheet cell is text, and the reader's absence rule is
     // easier to state over two literals than over a truthiness.
     Enabled: e.enabled === false ? 'No' : 'Yes',
+    // D5-10 (Jon, 2026-09-09), decision 5. APPENDED LAST, never inserted —
+    // the same rule Enabled and Promo_Mix_Locked follow, for the reason trap
+    // 119 protects: a reader keys by NAME, but a human diffing two exports
+    // reads column ORDER, and inserting shifts everything after it.
+    //
+    // JSON, on the Promo_Mix_Locked precedent. EMPTY when there is no scope:
+    // a bare [] would round-trip as "targets no tariff", which is the
+    // opposite of what absence means here.
+    Tariff_Scope: e.tariffScope && e.tariffScope.length ? JSON.stringify(e.tariffScope) : '',
   };
 }
 
@@ -1219,6 +1314,7 @@ export function pricingEventFromRow(r: Record<string, unknown>): PricingEvent {
   const mode = String(r.Pricing_Mode ?? '');
   return {
     id:               eventRowId(r),
+    tariffScope:      tariffScopeFromRow(r.Tariff_Scope),
     name:             String(r.Name ?? ''),
     segment:          String(r.Segment ?? 'All'),
     product:          String(r.Product ?? 'All'),
@@ -1372,6 +1468,7 @@ export function marketEventFromRow(
 function marketFieldsFromSessionRow(r: Record<string, any>) {
   return {
     id:               eventRowId(r),
+    tariffScope:      tariffScopeFromRow(r.Tariff_Scope),
     name:             String(r.Name ?? ''),
     // Legacy fallback: pre-campaign saves used Name as the grouping label
     campaignName:     String(r.Campaign_Name || r.Name || ''),
@@ -1474,6 +1571,15 @@ export function yieldEventExportRow(e: YieldEvent): Record<string, unknown> {
     // Is_Promotion: a sheet cell is text, and the reader's absence rule is
     // easier to state over two literals than over a truthiness.
     Enabled: e.enabled === false ? 'No' : 'Yes',
+    // D5-10 (Jon, 2026-09-09), decision 5. APPENDED LAST, never inserted —
+    // the same rule Enabled and Promo_Mix_Locked follow, for the reason trap
+    // 119 protects: a reader keys by NAME, but a human diffing two exports
+    // reads column ORDER, and inserting shifts everything after it.
+    //
+    // JSON, on the Promo_Mix_Locked precedent. EMPTY when there is no scope:
+    // a bare [] would round-trip as "targets no tariff", which is the
+    // opposite of what absence means here.
+    Tariff_Scope: e.tariffScope && e.tariffScope.length ? JSON.stringify(e.tariffScope) : '',
   };
 }
 
@@ -1506,6 +1612,7 @@ export function yieldEventFromRow(r: Record<string, any>): YieldEvent {
   const tariffBaseArpuOverride = readStoredRateMap(r.Tariff_Base_ARPU_Override_JSON);
   return {
     id:            eventRowId(r),
+    tariffScope:   tariffScopeFromRow(r.Tariff_Scope),
     name:          String(r.Name ?? ''),
     ibro:          (r.IBRO ?? 'Inflow') as 'Inflow' | 'Retention',
     segment:       String(r.Segment ?? 'All'),
@@ -3063,6 +3170,8 @@ export interface ProRataScope {
   channelL2?: string;
   tariffL1?: string;
   tariffL2?: string;
+  /** D5-10. See `EventToggle.tariffScope`. Absent means all tariffs. */
+  tariffScope?: readonly string[];
 }
 
 /** One populated leaf plus the volume used to weight its share. */
@@ -3096,6 +3205,11 @@ function leafWithinScope(scope: ProRataScope, leaf: ProRataScope): boolean {
     if (have === undefined) continue;               // leaf doesn't carry this dimension
     if (String(have) !== String(want)) return false;
   }
+  // D5-10. ONE BRANCH, the SAME membership test the predicate uses, so
+  // eventProRataShare and forecastCoverage weight over the in-scope leaves
+  // only. A leaf that does not carry a tariff is admitted, exactly as the
+  // loop above admits a leaf missing any dimension.
+  if (!tariffScopeAdmits(scope.tariffScope, leaf.tariffL1 as string | undefined)) return false;
   return true;
 }
 
@@ -3567,15 +3681,13 @@ export function makeForecastKey(
  * the helper below takes a normalised object rather than a raw draft. Callers
  * do the one-line mapping at their own site, where the field name is visible.
  */
-export interface EventScopeDims {
-  segment?: string;
-  product?: string;
-  productL2?: string;
-  channelL1?: string;
-  channelL2?: string;
-  tariffL1?: string;
-  tariffL2?: string;
-}
+/*
+ * D5-10(8): THE SECOND DECLARATION OF `EventScopeDims` STOOD HERE, and it is
+ * gone. It was byte-identical to the one at the top of this file, so
+ * TypeScript merged the two silently and neither reader could know of the
+ * other — which is a hazard the moment a field is added to one of them, as
+ * D5-10 adds `tariffScope`. One declaration now, above.
+ */
 
 /**
  * THE FORECAST A DRAFT EVENT IS SCOPED TO — one definition, two callers.

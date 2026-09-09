@@ -94,6 +94,7 @@ async function main() {
   // ══ 2. THE STRUCTURAL PINS ════════════════════════════════════════════
   const wi = fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8');
   const sh = fs.readFileSync('src/utils/scenarioHelper.ts', 'utf8');
+  const app = fs.readFileSync('src/App.tsx', 'utf8');
   const eng = fs.readFileSync('src/utils/forecasting.ts', 'utf8');
 
   // TWELVE APPLY SITES, counted by their own marker rather than by counting
@@ -108,6 +109,134 @@ async function main() {
   check('pin: TWELVE in total — the number the true-state inventory found',
     wiApply + shApply === 12, String(wiApply + shApply));
 
+  // ── D5-10: TARIFF_SCOPE_SITES, exact both ways ──────────────────────────
+  //
+  // Counted by MARKER TEXT, not by counting `tariffScopeFor(` calls, for the
+  // reason the twelve apply sites are counted that way: a call moved into a
+  // helper would still be one call and no longer one SITE, and a site that
+  // quietly loses its call would still leave the helper's call behind.
+  //
+  // NINE, not the brief's eight: App's `addMarketEvent` is a ninth emitter,
+  // and it is the one this codebase already calls THE FIFTH WRITER — reached
+  // whenever month-spreading is off, which is unless the user turns it on.
+  // Nothing funnels these: `setMarketEvents` has eleven callers, two of them
+  // RESTORE paths that must never recompute a scope the sheet already holds.
+  const scopeSites = (src: string) =>
+    (src.match(/D5-10, tariff scope site/g) ?? []).length;
+  const witSites = scopeSites(wi), appSites = scopeSites(app);
+  check('D5-10 pin: EXACTLY 8 tariff-scope sites in WhatIfTab',
+    witSites === 8, String(witSites));
+  check('D5-10 pin: EXACTLY 1 in App (the fifth writer)',
+    appSites === 1, String(appSites));
+  check('D5-10 pin: NINE in total — every emitter the 1217 sweep found',
+    witSites + appSites === 9, String(witSites + appSites));
+  // THE RESTORE PATHS MUST NOT BE AMONG THEM. A restored event's scope is in
+  // the sheet; recomputing it from the current selection would rewrite what
+  // the author saved, which is decision 9's opposite.
+  check('D5-10: no tariff-scope site sits in a restore path',
+    !/backfillSequences\(restoredEvents\)[\s\S]{0,400}D5-10, tariff scope site/.test(app),
+    'App restore must not call tariffScopeFor');
+
+  // ── D5-10: the rule itself ──────────────────────────────────────────────
+  const FULL3 = ['RED L', 'RED M', 'RED S'];
+  check('D5-10: a strict subset at All is recorded, SORTED',
+    JSON.stringify(fc.tariffScopeFor('All', ['RED M', 'RED L'], FULL3))
+      === JSON.stringify(['RED L', 'RED M']),
+    JSON.stringify(fc.tariffScopeFor('All', ['RED M', 'RED L'], FULL3)));
+  check('D5-10: selecting EVERY tariff is not a narrowing — no scope',
+    fc.tariffScopeFor('All', FULL3, FULL3) === undefined,
+    String(fc.tariffScopeFor('All', FULL3, FULL3)));
+  check('D5-10: an event aimed at ONE tariff needs no scope',
+    fc.tariffScopeFor('RED M', ['RED M', 'RED L'], FULL3) === undefined,
+    String(fc.tariffScopeFor('RED M', ['RED M', 'RED L'], FULL3)));
+  check('D5-10: an empty selection records nothing',
+    fc.tariffScopeFor('All', [], FULL3) === undefined, 'empty selection');
+
+  // THE MEMBERSHIP, and the direction that matters: an unnarrowed VIEW still
+  // sees a scoped event (coverage decides how much); a specific view does not.
+  check('D5-10: no scope admits every view (every pre-D5-10 save)',
+    fc.tariffScopeAdmits(undefined, 'RED S') && fc.tariffScopeAdmits([], 'RED S'),
+    'absent and empty both mean all tariffs');
+  check('D5-10: a scoped event is admitted at view All',
+    fc.tariffScopeAdmits(['RED L', 'RED M'], null)
+      && fc.tariffScopeAdmits(['RED L', 'RED M'], 'All'),
+    'All still sees it — coverage weights it');
+  check('D5-10: admitted at an IN-scope tariff, refused at an out-of-scope one',
+    fc.tariffScopeAdmits(['RED L', 'RED M'], 'RED M')
+      && !fc.tariffScopeAdmits(['RED L', 'RED M'], 'RED S'),
+    'RED M yes, RED S no — the finding, in one line');
+
+  // THE PREDICATE ITSELF, through the shared function the engines call.
+  const scopedEvent = { segment: 'All', product: 'All', channelL1: 'All',
+                        tariffL1: 'All', tariffScope: ['RED L', 'RED M'] };
+  const viewAt = (t: string | null) => ({ segment: 'All', productL1: null, productL2: null,
+    channelL1: null, channelL2: null, tariffL1: t, tariffL2: null });
+  check('D5-10: eventScopeMatchesView refuses the out-of-scope tariff',
+    fc.eventScopeMatchesView(scopedEvent as any, viewAt('RED S') as any) === false,
+    'RED S must not match');
+  check('D5-10: and still matches in scope and at All',
+    fc.eventScopeMatchesView(scopedEvent as any, viewAt('RED M') as any)
+      && fc.eventScopeMatchesView(scopedEvent as any, viewAt(null) as any),
+    'RED M and All both match');
+  const unscoped = { ...scopedEvent, tariffScope: undefined };
+  check('D5-10: an UNSCOPED event is unchanged in every direction',
+    fc.eventScopeMatchesView(unscoped as any, viewAt('RED S') as any)
+      && fc.eventScopeMatchesView(unscoped as any, viewAt(null) as any),
+    'absent means all tariffs, as before D5-10');
+
+  // ROUND TRIP, and the row that predates the column.
+  const rtRow = fc.marketEventExportRow({
+    id: 'ts1', sequence: 1, scenario: 'Retention', date: MONTHS[0], segment: 'All',
+    product: 'All', channel: 'All', subscriberVolume: 100, customerVolume: 0,
+    revenue: 0, arpu: 10, name: '', tariffScope: ['RED L', 'RED M'],
+  } as any);
+  check('D5-10: the column carries JSON', rtRow.Tariff_Scope === '["RED L","RED M"]',
+    String(rtRow.Tariff_Scope));
+  check('D5-10: and reads back identical',
+    JSON.stringify(fc.marketEventFromRow(rtRow as any).tariffScope)
+      === JSON.stringify(['RED L', 'RED M']),
+    JSON.stringify(fc.marketEventFromRow(rtRow as any).tariffScope));
+  const preD510Row = { ...rtRow }; delete (preD510Row as any).Tariff_Scope;
+  check('D5-10: a row WITHOUT the column loads with NO scope',
+    fc.marketEventFromRow(preD510Row as any).tariffScope === undefined,
+    String(fc.marketEventFromRow(preD510Row as any).tariffScope));
+  check('D5-10: an event with no scope writes an EMPTY cell, never []',
+    fc.marketEventExportRow({ ...rtRow, tariffScope: undefined, id: 'x' } as any)
+      .Tariff_Scope === undefined
+      || fc.marketEventExportRow({
+           id: 'ts2', sequence: 1, scenario: 'Retention', date: MONTHS[0], segment: 'All',
+           product: 'All', channel: 'All', subscriberVolume: 1, customerVolume: 0,
+           revenue: 0, arpu: 1, name: '',
+         } as any).Tariff_Scope === '',
+    'absence must not round-trip as "targets no tariff"');
+
+
+  // THE WEIGHTING, which the predicate alone does not exercise. Trap 183
+  // removes leafWithinScope's branch and every check above stayed GREEN — a
+  // trap nothing can catch is not a guard, so the discriminating case is
+  // here: at RED M a scoped event takes its share of the IN-SCOPE population,
+  // not of the whole book.
+  const tLeaves = [
+    { segment: 'All', product: 'All', channel: 'All', tariffL1: 'RED M', volume: 100, hasMetricData: true },
+    { segment: 'All', product: 'All', channel: 'All', tariffL1: 'RED L', volume: 300, hasMetricData: true },
+    { segment: 'All', product: 'All', channel: 'All', tariffL1: 'RED S', volume: 600, hasMetricData: true },
+  ];
+  const evScoped = { segment: 'All', product: 'All', channel: 'All',
+                     tariffL1: 'All', tariffScope: ['RED L', 'RED M'] };
+  const evAll = { segment: 'All', product: 'All', channel: 'All', tariffL1: 'All' };
+  const atM = { segment: 'All', product: 'All', channel: 'All', tariffL1: 'RED M' };
+  const shScoped = fc.eventProRataShare(evScoped as any, atM as any, tLeaves as any);
+  const shAll = fc.eventProRataShare(evAll as any, atM as any, tLeaves as any);
+  // THE FIXTURE DISCRIMINATES, asserted before either figure is trusted.
+  check('D5-10: the scoped and unscoped shares DIFFER on this fixture',
+    shScoped !== null && shAll !== null && Math.abs((shScoped as number) - (shAll as number)) > 0.01,
+    'scoped ' + shScoped + ' vs unscoped ' + shAll);
+  check('D5-10: eventProRataShare weights over the IN-SCOPE leaves only',
+    Math.abs((shScoped as number) - 100 / 400) < 1e-9,
+    'expected 0.25 (100 of RED M + RED L), got ' + shScoped);
+  check('D5-10: an unscoped event still weights over the whole book',
+    Math.abs((shAll as number) - 100 / 1000) < 1e-9,
+    'expected 0.10 (100 of all three), got ' + shAll);
   // THE DISPLAY SITES ARE PINNED SEPARATELY, and that separation is the point:
   // they are decision 7, not decision 1, and moving one into the other class
   // must be a visible change rather than a silent one.
@@ -213,20 +342,33 @@ async function main() {
   check('export: an event with no flag writes Enabled Yes',
     mktOn.Enabled === 'Yes', String(mktOn.Enabled));
 
-  // THE COLUMN IS LAST, on all three sheets. Trap 119's rule: a reader keys by
-  // name, but a human diffing two exports reads column ORDER.
+  // THE COLUMN IS APPENDED, on all three sheets. Trap 119's rule: a reader
+  // keys by name, but a human diffing two exports reads column ORDER.
+  //
+  // RE-AIMED at D5-10, 2026-09-09. `Enabled` was pinned as the LAST column
+  // and is now second-to-last, because D5-10 appended `Tariff_Scope` after
+  // it. That is the append-only rule working, not breaking: nothing was
+  // inserted and nothing moved. The pin now names BOTH positions, so a future
+  // column appended between them still goes red.
   const lastKey = (o: Record<string, unknown>) => Object.keys(o)[Object.keys(o).length - 1];
-  check('export: Enabled is the LAST column on Market_Events',
-    lastKey(mkt) === 'Enabled', lastKey(mkt));
+  const penultKey = (o: Record<string, unknown>) => Object.keys(o)[Object.keys(o).length - 2];
+  check('export: Enabled is the LAST REQ-D6-01 column on Market_Events',
+    penultKey(mkt) === 'Enabled', penultKey(mkt));
+  check('export: Tariff_Scope is LAST on Market_Events (D5-10)',
+    lastKey(mkt) === 'Tariff_Scope', lastKey(mkt));
   const yr = fc.yieldEventExportRow({ id: 'y1', ibro: 'Inflow', segment: 'All', product: 'All',
     channelL1: 'All', channelL2: 'All', month: MONTHS[0], rollForward: false,
     tariffMix: {}, tariffBaseArpu: {}, enabled: false } as any);
-  check('export: and on Yield_Events', lastKey(yr) === 'Enabled', lastKey(yr));
+  check('export: and on Yield_Events', penultKey(yr) === 'Enabled', penultKey(yr));
+  check('export: Tariff_Scope is LAST on Yield_Events (D5-10)',
+    lastKey(yr) === 'Tariff_Scope', lastKey(yr));
   const pr = fc.pricingEventExportRow({ id: 'p1', segment: 'All', product: 'All', productL2: 'All',
     channelL1: 'All', channelL2: 'All', month: MONTHS[0], inputMode: 'percentage',
     amount: 5, target: 'cohorts', cohortScope: 'both', duration: 'one-off',
     originalBaseArpu: 20, enabled: false } as any);
-  check('export: and on Pricing_Events', lastKey(pr) === 'Enabled', lastKey(pr));
+  check('export: and on Pricing_Events', penultKey(pr) === 'Enabled', penultKey(pr));
+  check('export: Tariff_Scope is LAST on Pricing_Events (D5-10)',
+    lastKey(pr) === 'Tariff_Scope', lastKey(pr));
 
   /** Through a REAL workbook, not an object handed straight back. */
   const throughXlsx = (rows: Record<string, unknown>[]) => {
