@@ -3,31 +3,29 @@
 ```
 FOR ADVISOR
 Generated: 2026-09-10 11:06 +0100 (UTC 2026-09-10 10:06)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: c11151e
+Repo: committed c11151e, pushed (origin in sync)
 
 BASE d94434b + 3 (reports/ ONLY). PREMISES 0854/0958 EXACT. FIRST d52a471.
 1 D5-15 FIXED — What-If's two lines verbatim; the dead Number(Duration)
-  window and its addMonths import deleted. 19:30 save, retention 25->20 at
-  2026-09, adjustedArpu delta at 2026-09/10/11/12 ... 2027-06:
+  window deleted. 19:30 save, 25->20 at 2026-09, adjustedArpu delta:
     BEFORE one-off   +.0554 +.0557 +.0562 +.0565 ... +.0561  never stopped
     BEFORE recurring +.0554  .0000  .0000  .0000 ...  .0000  stopped at once
     AFTER  one-off   +.0554 +.0615 +.0577 +.0538 ... +.0352  (tail = POOL)
     AFTER  recurring +.0554 +.1175 +.1763 +.2312 ... +.4724  accumulating
 2 COMPARE CARVES, push 2 -> 3: retention capped at min(vol, newBAdj),
   deltaOf anchored to Compare's BLENDED baseline (no base band), decaying
-  by Contract_Length_Months (absent -> 24), delivered at T+1, via the SAME
-  exported applyDelta — one arithmetic, two anchors.
+  by Contract_Length_Months (absent -> 24), T+1, via the same applyDelta.
   PARITY, blended ARPU delta T+1..T+12: What-If .1200 -> .0600, Compare
   .0615 -> .0287; 12 rows, SIGN MISMATCHES 0, MAX |diff| .0585, PINNED 0.08.
 3 SPEC scenario-pricing 22 -> 35, D5-15 isolated on a BASE-ONLY target.
-4 TRAPS 199/200/201 RED BY HAND, 1 site, restored to md5 227cc0e5. 200
-  planted GREEN first and earned a behavioural discriminator.
+4 TRAPS 199/200/201 RED BY HAND, 1 site, md5 227cc0e5; 200 planted GREEN
+  first and earned a behavioural discriminator.
 5 HELD: card control, mounted re-runs, 4 of 8 traps — a frozen-rate
-  regression would still pass the suite.
+  regression still passes the suite.
 6 GATE serial: suite 61/61, guard-traps 197/197 CAUGHT (0 M/I/C), evt 154,
-  mounted 208, pricing 150, yield 76, arpu 84, anchors 209, survival 27,
-  i18n 200, ai-hold 13, compare-filter 24, clean. PINS identical.
+  mounted 208, pricing 150, yield 76, arpu 84, anchors 209 (197 traps),
+  survival 27, i18n 200, ai-hold 13, compare-filter 24. PINS identical.
 ```
 
 ## 1. D5-15 — the duration inversion, fixed
