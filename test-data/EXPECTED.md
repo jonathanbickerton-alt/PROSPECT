@@ -10276,3 +10276,9 @@ rule could not sanction.
 8. A held tail is materialised to the LAST FORECAST MONTH AT BUILD
    TIME. Regenerating the baseline over a longer horizon does not
    lengthen an existing held campaign. Not a defect; re-save to extend.
+9. (Jon, 2026-09-10) Churn hold holds POINTS, not a proportion: every
+   held month states the same reduction against its own unadjusted
+   rate. The adjusted÷baseline outflow ratio therefore drifts with the
+   trend; measured 0.9724% over months 3–20 on the two-leaf fixture,
+   pinned at 1.0% with the direction (rising, never falling) asserted
+   separately. A falling ratio is compounding and a defect.
