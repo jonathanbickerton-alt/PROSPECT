@@ -388,6 +388,8 @@
   "whatif_pricing_arm": "Pricing-Arm",
   "whatif_editing_promotion_modify_the_fields_above_the": "Promotion wird bearbeitet — ändern Sie die Felder oben und klicken Sie dann auf Änderungen speichern.",
   "whatif_add_promotion": "Promotion hinzufügen",
+  "whatif_add_promotion_n": "Promotion hinzufügen · {{p0}} Ereignisse",
+  "whatif_hold_tail_months": "{{p0}} Monate",
   "whatif_arms": "Arme",
   "whatif_no_promotions_added_yet": "Noch keine Promotionen hinzugefügt",
   "whatif_yield_event_tariff_mix_override": "Yield-Ereignis — Tarifmix-Überschreibung",

@@ -388,6 +388,8 @@
   "whatif_pricing_arm": "Braço Pricing",
   "whatif_editing_promotion_modify_the_fields_above_the": "A editar a promoção — altere os campos acima e clique em Guardar alterações.",
   "whatif_add_promotion": "Adicionar promoção",
+  "whatif_add_promotion_n": "Adicionar promoção · {{p0}} eventos",
+  "whatif_hold_tail_months": "{{p0}} meses",
   "whatif_arms": "Braços",
   "whatif_no_promotions_added_yet": "Ainda não foram adicionadas promoções",
   "whatif_yield_event_tariff_mix_override": "Evento Yield — substituição do mix tarifário",

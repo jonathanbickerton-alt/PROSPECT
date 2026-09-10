@@ -2884,9 +2884,16 @@ const TRAPS: Trap[] = [
     // The `?? 0` it quoted is gone: `horizonMonths` became REQUIRED because a
     // 0 default silently disables the tail. The trap is unchanged in what it
     // plants — `hold` forced false — only in the text it matches.
+    // RE-ANCHORED AGAIN at walk C, and `spec:trap-anchors` said so again:
+    //   [ZERO — the anchor has aged out; the trap plants nothing]
+    // The lines it quoted are gone: `buildPromoEvents` no longer computes the
+    // shape at all, it is handed one. The trap's SUBJECT is unchanged — the
+    // held tail failing to reach the emitted rows — so it now drops the held
+    // months from the shape it was given, which is the same defect at the
+    // seam that replaced the old one.
     mutate: s => s.replace(
-      '    hold: !!p.hold,\n    horizonMonths: p.horizonMonths,',
-      '    hold: false, // planted\n    horizonMonths: p.horizonMonths,') },
+      '  const shape = p.shape;',
+      '  const shape = p.shape.filter(x => !x.held);') },
   // 210 DROPS `hold` FROM THE EMITTED ROW while the shape still holds. The
   // rows are right, the chart is right, and the campaign is UNREOPENABLE as
   // what it is: the restore reads the column, finds nothing, and reverse-
@@ -3024,6 +3031,45 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '      setRestoreFellBack(false);' + nl + '      try {',
       '      try {') },
+  // ══ WALK C — THE PROMOTION PREVIEW ═══════════════════════════════════════
+  //
+  // 219 SENDS THE GRID BACK TO THE HOLD-OFF SPLIT while the emitted rows keep
+  // holding. That is EXACTLY the state Jon met: chart right, card wrong. It is
+  // the worst shape a defect can take — the app disagreeing with itself, with
+  // the wrong half being the half the user reads before committing.
+  { id: '219 the promotion preview grid reverts to the hold-off split',
+    why: 'the card shows +1,000 x3 while Add emits 1,000 / 2,000 / 3,000 and'
+       + ' nineteen more — the chart is right and the preview is not',
+    file: WHATIF, spec: PROMOHOLD,
+    mutate: s => s.replace(
+      '                        const rampRows = promoShape.filter(s => !s.held);',
+      '                        const rampRows = spreadShape({ months: promoSpreadMonths, dist: pcts, hold: false, horizonMonths: 0 });') },
+  // 220 DROPS THE BUTTON'S COUNT. It reads "Add Promotion" while adding
+  // twenty-two — the label that let this ship, since a user with no row count
+  // in front of them has nothing to compare the three-row grid against.
+  { id: '220 the promotion Add button stops reporting its row count',
+    why: 'the button says "Add Promotion" while adding twenty-two events, so'
+       + ' nothing on the card contradicts the three-row grid',
+    file: WHATIF, spec: PROMOHOLD,
+    mutate: s => s.replace(
+      '                      {promoShape.length > 1' + nl
+      + "                        ? t('whatif_add_promotion_n', { p0: promoShape.length })" + nl
+      + "                        : t('whatif_add_promotion')}",
+      "                      {t('whatif_add_promotion')}") },
+  // 221 REMOVES THE TAIL LINE. The ramp rows stay correct, so the grid is not
+  // wrong — it is INCOMPLETE, which reads as a three-month campaign and is the
+  // same misreading by a quieter route.
+  { id: '221 the promotion tail line is not rendered under Hold ON',
+    why: 'the grid shows three correct ramp rows and nothing about the'
+       + ' nineteen held months, so it still reads as a three-month campaign',
+    file: WHATIF, spec: PROMOHOLD,
+    mutate: s => s.replace(
+      '                            {heldRows.length > 0 && (' + nl
+      + '                              <p className="mt-2 text-[10px] text-slate-500 font-medium"' + nl
+      + '                                 data-testid="promo-hold-tail">',
+      '                            {false && (' + nl
+      + '                              <p className="mt-2 text-[10px] text-slate-500 font-medium"' + nl
+      + '                                 data-testid="promo-hold-tail">') },
 ];
 
 

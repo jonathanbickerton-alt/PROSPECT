@@ -388,6 +388,8 @@
   "whatif_pricing_arm": "Volet Pricing",
   "whatif_editing_promotion_modify_the_fields_above_the": "Modification de la promotion — modifiez les champs ci-dessus puis cliquez sur Enregistrer les modifications.",
   "whatif_add_promotion": "Ajouter une promotion",
+  "whatif_add_promotion_n": "Ajouter la promotion · {{p0}} événements",
+  "whatif_hold_tail_months": "{{p0}} mois",
   "whatif_arms": "Volets",
   "whatif_no_promotions_added_yet": "Aucune promotion ajoutée pour l'instant",
   "whatif_yield_event_tariff_mix_override": "Événement Yield — remplacement du mix tarifaire",

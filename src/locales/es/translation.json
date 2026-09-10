@@ -388,6 +388,8 @@
   "whatif_pricing_arm": "Rama Pricing",
   "whatif_editing_promotion_modify_the_fields_above_the": "Editando la promoción: modifique los campos de arriba y haga clic en Guardar cambios.",
   "whatif_add_promotion": "Añadir promoción",
+  "whatif_add_promotion_n": "Añadir promoción · {{p0}} eventos",
+  "whatif_hold_tail_months": "{{p0}} meses",
   "whatif_arms": "Ramas",
   "whatif_no_promotions_added_yet": "Aún no se han añadido promociones",
   "whatif_yield_event_tariff_mix_override": "Evento Yield: sustitución del mix de tarifa",

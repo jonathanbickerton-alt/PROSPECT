@@ -388,6 +388,8 @@
   "whatif_pricing_arm": "Pricing arm",
   "whatif_editing_promotion_modify_the_fields_above_the": "Editing promotion — modify the fields above then click Save Changes.",
   "whatif_add_promotion": "Add Promotion",
+  "whatif_add_promotion_n": "Add Promotion · {{p0}} events",
+  "whatif_hold_tail_months": "{{p0}} months",
   "whatif_arms": "Arms",
   "whatif_no_promotions_added_yet": "No promotions added yet",
   "whatif_yield_event_tariff_mix_override": "Yield Event — Tariff Mix Override",

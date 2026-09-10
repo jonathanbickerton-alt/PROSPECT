@@ -406,8 +406,36 @@ async function main() {
     check('(4) the campaign-name input is reachable', !!nameInput);
     if (!nameInput) { report(); return; }
     await type(nameInput, 'Promo');
+    // ── WALK C — THE GRID SHOWS WHAT THE SAVE EMITS ───────────────────────
+    //
+    // HAND-WRITTEN, both sides, and NEVER one against the other: a check that
+    // compared the grid to the rows would pass with both wrong, which is the
+    // whole failure being fixed. 3,000 over a 3-month even ramp under hold is
+    //   3000 x 1/3 = 1000, 3000 x 2/3 = 2000, 3000 x 3/3 = 3000
+    // and the campaign starts at MONTHS[0] on a 24-month forecast, so the
+    // tail is 24 - 3 = 21 months of 3,000.
+    const gridVols = [...container.querySelectorAll('.text-emerald-600')]
+      .map((e: any) => norm(e.textContent || ''))
+      .filter((s: string) => /^\+[\d,]+$/.test(s));
+    check('(C) the PREVIEW GRID reads +1,000 / +2,000 / +3,000',
+      gridVols.join(' ') === '+1,000 +2,000 +3,000', gridVols.join(' '));
+    const tail = byTestId('promo-hold-tail');
+    check('(C) a tail line is present under Hold ON', !!tail);
+    check('(C) it names the held figure and the last month',
+      (tail?.textContent ?? '').includes('3,000')
+      && (tail?.textContent ?? '').includes('21'),
+      norm(tail?.textContent ?? ''));
+    const addBtn = byTestId('promo-add');
+    check('(C) the button reports 24, not "Add Promotion"',
+      /24/.test(addBtn?.textContent ?? ''), norm(addBtn?.textContent ?? ''));
     await click(byTestId('promo-add'));
+
     check('(4) a held promo campaign was built', captured.length === 24, String(captured.length));
+    // AND THE EMITTED ROWS MATCH THE SAME HAND-WRITTEN LITERAL.
+    check('(C) the EMITTED rows are 1000 / 2000 / 3000, then 3000 held',
+      captured.slice(0, 3).map((e: any) => e.subscriberVolume).join(',') === '1000,2000,3000'
+      && captured.slice(3).every((e: any) => e.subscriberVolume === 3000),
+      captured.slice(0, 4).map((e: any) => e.subscriberVolume).join(','));
     check('(4) its ramp is 1000 / 2000 / 3000, then 3000 held',
       captured.slice(0, 3).map((e: any) => e.subscriberVolume).join(',') === '1000,2000,3000'
       && captured.slice(3).every((e: any) => e.subscriberVolume === 3000),
