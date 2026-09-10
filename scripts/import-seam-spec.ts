@@ -112,7 +112,25 @@ const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails
       why: 'sets the `forecast` returned by forecastForStep1Selection(selection, resolveForecast) — the seam reached through the extracted transition helper, null included, no early return on a miss' },
     handleStep3FilterChange: { count: 1, seam: true,
       why: 'sets the `forecast` destructured from resolveForecast() one line above' },
-    handleImportSaveFile: { count: 2, seam: false,
+    // RE-AIMED at REQ-D6-04, 2026-09-10. The two sites did not move, did not
+    // change, and did not gain a third: the FUNCTION AROUND THEM was renamed,
+    // because the import-save body was lifted out of its own FileReader
+    // callback so the input drop could hand a sniffed session workbook
+    // straight to it. `handleImportSaveFile` still exists and is still the
+    // control's handler; it now calls this.
+    //
+    // Seen RED before the re-aim, all three lines:
+    //   FAIL ENUMERATION: both session-import sites were located  [found 0]
+    //   FAIL ENUMERATION: every setBaseForecast call site is accounted for BY
+    //        SITE  [App.tsx:899 in applyImportSaveWorkbook ; App.tsx:962 in
+    //        applyImportSaveWorkbook]
+    //   FAIL ENUMERATION: handleImportSaveFile still has exactly 2 site(s)
+    //        [found 0 — ...]
+    //
+    // RE-AIMED, NOT LOOSENED: the count stays exactly 2 and the reason is
+    // unchanged, so a third site appearing inside the extracted body still
+    // goes red rather than inheriting a reason nobody re-checked.
+    applyImportSaveWorkbook: { count: 2, seam: false,
       why: 'two sites: the Is_Active restore resolves via resolveFromStore before setting (bf); the legacy pre-option-C restore is CLEARED at the site (restoredBf)' },
     generateStandardForecast: { count: 2, seam: false,
       why: 'fresh fit; the anyAggregated decline above it makes an All-bearing cohort unreachable' },
@@ -135,7 +153,8 @@ const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails
   for (const s of rest) byFn.set(fnOf(s.line), (byFn.get(fnOf(s.line)) ?? 0) + 1);
 
   // The import fix specifically: the Is_Active site must resolve before setting.
-  const importSites = rest.filter(s => fnOf(s.line) === 'handleImportSaveFile');
+  // RE-AIMED at REQ-D6-04 to the extracted body's name — see ACCOUNTED above.
+  const importSites = rest.filter(s => fnOf(s.line) === 'applyImportSaveWorkbook');
   check('ENUMERATION: both session-import sites were located', importSites.length === 2,
     `found ${importSites.length}`);
 
