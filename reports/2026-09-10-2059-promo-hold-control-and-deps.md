@@ -29,8 +29,8 @@ BASE 487e21b (code 477b171); HEAD 520735d. status --short EMPTY; diff
   NOT — `churnFold` is listed and carries it transitively. Listed
   anyway; measured 40/40 before and after. §5.
 SHED: item 1's fix half (STOP, as briefed); item 2.2/2.3 entirely.
-guard-traps: __/__ PENDING
-full suite:  __/__ PENDING
+guard-traps: 214/214 CAUGHT (0 missed/inconclusive/crashed).
+full suite:  67/67 GREEN (unchanged — no spec added or removed).
 Repo: __ PENDING
 ```
 
@@ -230,24 +230,24 @@ to hand-fix only the site with a real argument behind it.
 
 | check | figure |
 |---|---|
-| `npm run suite` | __ PENDING |
-| guard-traps | __ PENDING |
+| `npm run suite` | **67/67 green** |
+| guard-traps | **214/214 caught** — 0 MISSED, 0 INCONCLUSIVE, 0 CRASHED |
 | `spec:promo-hold-mounted` | **45 passed, 0 failed** |
 | `spec:churn-hold-mounted` | **40 passed, 0 failed** |
-| `spec:trap-anchors` | __ PENDING |
-| `spec:i18n-parity` | __ PENDING |
-| `spec:survival` | __ PENDING |
+| `spec:trap-anchors` | **226 passed, 0 failed** (214 traps, 221 anchors) |
+| `spec:i18n-parity` | **200 passed, 0 failed** |
+| `spec:survival` | **27 passed, 0 failed** — 104 dereferences across 26 files |
 | `tsc --noEmit` / `lint` | clean |
-| `npm run build` | __ PENDING |
+| `npm run build` | built in 6.72s |
 
 ### Exact counts the brief named
 
 | pin | required | measured |
 |---|---|---|
-| `runIngest` sites | 3 | __ PENDING |
-| last-column, Market / Yield / Pricing | 3 / 2 / 3 | __ PENDING |
-| apply sites | 12 | __ PENDING |
-| display markers | 6 | __ PENDING |
+| `runIngest` sites | 3 | **3** |
+| last-column, Market / Yield / Pricing | 3 / 2 / 3 | **3 / 2 / 3** (`spec:event-toggle` 155/155) |
+| apply sites | 12 | **12** |
+| display markers | 6 | **6** |
 
 ## What was shed
 
