@@ -3754,6 +3754,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   /** THE RAMP IS OPT-IN, mirroring the volume spread's radio. Unchecked means
    *  a single month, which goes through the SAME fold as a one-month ramp. */
   const [churnRampOn, setChurnRampOn] = useState(false);
+  /**
+   * REQ-D6-03 session 2 — HOLD AFTER THE CHURN RAMP.
+   *
+   * Its own state beside `churnRampOn`, on the same independence rule the
+   * volume card follows: a one-month statement held to the horizon is a legal
+   * and useful campaign, so hold must not live inside the ramp switch.
+   *
+   * What it holds is the REACHED CUMULATIVE REDUCTION, repeated. It is not a
+   * second rate and not a decay — see the `statedReductions` extension below,
+   * which is the only place it changes an emitted figure.
+   */
+  const [churnHold, setChurnHold] = useState(false);
   /** CUMULATIVE stated reductions, one per ramp month. Prefilled linear and
    *  then editable — 1/3/6 stays 1/3/6, because nothing renormalises them. */
   const [churnStated, setChurnStated] = useState<number[]>(() => linearChurnRamp(1, 3));
@@ -3780,6 +3792,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setChurnMonths(3);
     setChurnRampOn(false);
     setChurnStated(linearChurnRamp(1, 1));
+    // REQ-D6-03 s2 — HERE, in the ONE churn reset writer, rather than at each
+    // of its four call sites. `churnRampOn` is cleared on this line's
+    // neighbours for the same reason: a discarded draft must not leave a
+    // control lit for the next one.
+    setChurnHold(false);
   }, []);
 
   /** ONE WRITER. Every arm click and every scenario change goes through here. */
@@ -3907,6 +3924,71 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   }, [isChurnDraft, newEvent.date, churnScopeResolution, churnExcludedIds,
       marketEvents, yieldEvents, pricingEvents, data]);
 
+  /**
+   * REQ-D6-03 decision 1 — HOW MANY MONTHS A CAMPAIGN STARTING HERE MAY FILL.
+   *
+   * From `startMonth` to the LAST FORECAST MONTH inclusive, so a campaign
+   * starting at the last month gets 1 and a campaign starting one month
+   * before it gets 2.
+   *
+   * READ OFF `adjustedMonths`, WHICH IS WHAT THE DELTA-MONTH SELECTOR READS
+   * (see `deltaMonthOptions`, which maps the same array). The brief said reuse
+   * it rather than re-derive it, and the reason is the one the selector's own
+   * comment gives: `adjustedMonths` is the whole horizon, `windowSize` is a
+   * <Brush> over it, and a second derivation would be a second thing to keep
+   * in step. The selector then filters months carrying actuals; this does not,
+   * because a month with an actual is still a month the campaign occupies.
+   *
+   * NOT MEMOISED ON `startMonth`: it is called from two build handlers with
+   * whatever the draft holds at click time, so it takes the month rather than
+   * closing over one.
+   *
+   * ZERO when the month is not in the horizon at all — a start date typed
+   * before the forecast begins or after it ends. `spreadShape` reads that as
+   * "no months to hold into" and emits the ramp alone, which is the honest
+   * answer rather than a fabricated tail.
+   */
+  const horizonMonthsFrom = useCallback((startMonth: string): number => {
+    const idx = adjustedMonths.findIndex(m => m.month === startMonth);
+    return idx < 0 ? 0 : adjustedMonths.length - idx;
+  }, [adjustedMonths]);
+
+  /**
+   * REQ-D6-03 session 2 — THE STATED TRAJECTORY, TAIL INCLUDED.
+   *
+   * The ramp's own figures, then — with hold on — the REACHED CUMULATIVE
+   * FIGURE REPEATED to the last forecast month. Repeated, not extended: the
+   * user reached 2 points and holds 2 points, so every held month states the
+   * same number.
+   *
+   * WHY THAT IS "NOT COMPOUNDING", which is the whole of this feature. The
+   * fold computes `target_i = current_i - stated_i`, and `current_i` is read
+   * from the UNADJUSTED series each month. So a repeated 2 asks every held
+   * month to sit two points below its own untouched rate. The plausible wrong
+   * version derives each held month from the PREVIOUS ADJUSTED rate, which
+   * subtracts 2 again and again — 2, 4, 6, 8 points — and produces a churn
+   * curve collapsing to zero that looks, month by month, entirely reasonable.
+   * Trap 207 plants exactly that.
+   *
+   * THE HORIZON IS `horizonMonthsFrom`, the volume path's function, not a
+   * second derivation. The fold clips on `if (!m) break` if the scoped series
+   * is shorter, so asking for more months than exist is safe by construction
+   * rather than by a length check here.
+   *
+   * SEPARATE FROM THE FOLD MEMO because the grid, the Add handler and the
+   * button count all need the trajectory, and deriving it three times is how
+   * the three come to disagree.
+   */
+  const churnStatedWithHold: number[] = useMemo(() => {
+    const ramp = churnRampOn ? churnStated.slice(0, churnMonths) : [churnTargetPct];
+    if (!churnHold) return ramp;
+    const reached = ramp[ramp.length - 1] ?? 0;
+    const span = horizonMonthsFrom(newEvent.date ?? '');
+    const tail = Math.max(0, span - ramp.length);
+    return [...ramp, ...Array.from({ length: tail }, () => reached)];
+  }, [churnRampOn, churnStated, churnMonths, churnTargetPct, churnHold,
+      horizonMonthsFrom, newEvent.date]);
+
   /** The fold's output for the current draft — the per-month figures the grid
    *  shows and the Add handler stores. Cheap: arithmetic over a cached series. */
   const churnFold: ChurnFoldMonth[] = useMemo(() => {
@@ -3926,13 +4008,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       // arithmetic. A special case here would be a second way to compute the
       // same statement, and the two would drift.
       series, startIndex: idx,
-      statedReductions: churnRampOn ? churnStated.slice(0, churnMonths) : [churnTargetPct],
+      statedReductions: churnStatedWithHold,
       // THE SCOPED forecast's seed, not the loaded cohort's: a slice can be
       // seed-unknown while the aggregate is not, and the absence must belong
       // to the slice the user is stating a rate for.
       prevBaseAtStart, seedBaseKnown: canShowBaseForecast(churnScopeResolution?.forecast),
     });
-  }, [churnScopeSeries, newEvent.date, churnStated, churnMonths, churnRampOn, churnTargetPct, churnScopeResolution]);
+    // THE READ-SET. `churnStatedWithHold` replaces the four state values the
+    // fold used to read directly, and it carries them; listing both would be a
+    // second route to the same inputs. `churnHold` reaches here through it.
+  }, [churnScopeSeries, newEvent.date, churnStatedWithHold, churnScopeResolution]);
 
   /**
    * THE ONE REASON THE CHURN DRAFT CANNOT BE ADDED, or null — the
@@ -4095,34 +4180,6 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   }, [newPricingEvent, chartData, addPricingEvent, editingPricingId, updatePricingEvent, setNewPricingEvent]);
 
   // ── Volume spread handler ─────────────────────────────────────────────────
-  /**
-   * REQ-D6-03 decision 1 — HOW MANY MONTHS A CAMPAIGN STARTING HERE MAY FILL.
-   *
-   * From `startMonth` to the LAST FORECAST MONTH inclusive, so a campaign
-   * starting at the last month gets 1 and a campaign starting one month
-   * before it gets 2.
-   *
-   * READ OFF `adjustedMonths`, WHICH IS WHAT THE DELTA-MONTH SELECTOR READS
-   * (see `deltaMonthOptions`, which maps the same array). The brief said reuse
-   * it rather than re-derive it, and the reason is the one the selector's own
-   * comment gives: `adjustedMonths` is the whole horizon, `windowSize` is a
-   * <Brush> over it, and a second derivation would be a second thing to keep
-   * in step. The selector then filters months carrying actuals; this does not,
-   * because a month with an actual is still a month the campaign occupies.
-   *
-   * NOT MEMOISED ON `startMonth`: it is called from two build handlers with
-   * whatever the draft holds at click time, so it takes the month rather than
-   * closing over one.
-   *
-   * ZERO when the month is not in the horizon at all — a start date typed
-   * before the forecast begins or after it ends. `spreadShape` reads that as
-   * "no months to hold into" and emits the ramp alone, which is the honest
-   * answer rather than a fabricated tail.
-   */
-  const horizonMonthsFrom = useCallback((startMonth: string): number => {
-    const idx = adjustedMonths.findIndex(m => m.month === startMonth);
-    return idx < 0 ? 0 : adjustedMonths.length - idx;
-  }, [adjustedMonths]);
 
   const handleAddMarketEvent = useCallback(() => {
     if (!newEvent.date || newEvent.subscriberVolume === undefined) return;
@@ -4183,6 +4240,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         amountType:      'absolute',
         percentageBasis: 'baseline',
         retentionLinked: newEvent.retentionLinked ?? true,
+        // REQ-D6-03 s2 — every churn row, the held tail included.
+        hold:            churnHold,
         churnMode:       'churn',
         churnTargetPct:  m.statedReductionPct,
         churnCurrentPct: m.currentPct,
@@ -4398,7 +4457,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // A single-row campaign reaches here through handleEditCampaignStart's
     // rows.length === 1 branch, which is why a held campaign that fits in one
     // month restores correctly without a second copy of this line.
-    setHoldAfterRamp(event.hold ?? false);
+    //
+    // REQ-D6-03 session 2 — TWO TOGGLES, ONE COLUMN, AND EXACTLY ONE OF THEM
+    // LIT. `hold` is the row's; which control it restores depends on what kind
+    // of row it is. Setting both from it would leave a churn draft carrying a
+    // volume toggle, and the volume path's Add would then materialise a tail
+    // beside the fold's.
+    const churnRow = event.churnMode === 'churn';
+    setHoldAfterRamp(!churnRow && (event.hold ?? false));
+    setChurnHold(churnRow && (event.hold ?? false));
     // ── CHURN SEEDING — the third mode joins the lesson three lines above ──
     //
     // The comment on amountType/percentageBasis says restoring them is not
@@ -4525,16 +4592,34 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       // the transition writer had it refused against a draft whose scenario
       // arrived in the same batch.
       setStoredAmountControl('churn');
-      setChurnRampOn(trajectory.length > 1);
-      setChurnMonths(trajectory.length);
-      setChurnStated(trajectory);
+      // ── REQ-D6-03 session 2 — A HELD CHURN CAMPAIGN RESTORES FROM ITS ROWS ─
+      //
+      // The plain path above reopens the WHOLE trajectory as the ramp, which is
+      // right for a terminating ramp and wrong for a held one: a 24-row held
+      // campaign would reopen as a 24-month ramp whose later months the user
+      // never typed, and the duration box would read 24.
+      //
+      // Decision 5's three values, on the churn carrier: the TOGGLE from the
+      // COLUMN — never inferred, because 2/2/2 is indistinguishable from a
+      // one-month statement held twice and only the column knows which — the
+      // CUMULATIVE TARGET from the last row's `churnTargetPct`, and the RAMP
+      // LENGTH from `holdPlateauStart` over the same figures. One function
+      // across both carriers, because it is one rule.
+      const heldChurn = rows.some(e => e.hold);
+      const churnRamp = heldChurn
+        ? trajectory.slice(0, holdPlateauStart(trajectory))
+        : trajectory;
+      setChurnHold(heldChurn);
+      setChurnRampOn(churnRamp.length > 1);
+      setChurnMonths(churnRamp.length);
+      setChurnStated(churnRamp);
       // The headline target is the LAST cumulative figure, because that is what
-      // the trajectory arrives at.
-      setChurnTargetPct(trajectory[trajectory.length - 1] ?? 0);
+      // the trajectory arrives at — and on a held campaign the ramp's last
+      // figure IS the held one, so this reads the same number either way.
+      setChurnTargetPct(churnRamp[churnRamp.length - 1] ?? 0);
       setSpreadEnabled(false);
-      // REQ-D6-03 — churn's own hold arrives in session 2; until then a churn
-      // restore must CLEAR the volume toggle rather than inherit whatever the
-      // previous draft left on it.
+      // The VOLUME toggle, cleared: churn has its own now, and a churn restore
+      // must not inherit whatever the previous volume draft left on that one.
       setHoldAfterRamp(false);
       setEditingEventId(null);
       setEditingCampaign(campaign);
@@ -4617,6 +4702,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       // one-month held campaign restores with the SPREAD SWITCH OFF and the
       // hold toggle on, which is exactly the state that built it.
       setHoldAfterRamp(true);
+      // ...and the CHURN toggle off, the other half of the one-lit rule.
+      setChurnHold(false);
       setSpreadEnabled(rampLen > 1);
       setSpreadMonths(Math.max(2, rampLen));
       setSpreadDistType(heldIsEven ? 'even' : 'custom');
@@ -4660,6 +4747,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // branch by construction (`isHeld` returned above), so the toggle is set
     // false rather than left alone, for the reason handleEditStart gives.
     setHoldAfterRamp(false);
+    setChurnHold(false);
     setSpreadMonths(span);
     setSpreadDistType(isEven ? 'even' : 'custom');
     setCustomDist(pcts);
@@ -4710,6 +4798,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         amountType:      'absolute',
         percentageBasis: 'baseline',
         retentionLinked: newEvent.retentionLinked ?? true,
+        // REQ-D6-03 s2 — every churn row, the held tail included.
+        hold:            churnHold,
         churnMode:       'churn',
         // RE-SNAPSHOT AS A PAIR. A freshly stated target beside a stale
         // prevBase would be a row whose figures came from two moments.
@@ -4961,6 +5051,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         percentageBasis: 'baseline',
         retentionLinked: newEvent.retentionLinked ?? true,
         // THE STATEMENT AND THE DELTA MOVE TOGETHER.
+        // REQ-D6-03 s2 — every churn row, the held tail included.
+        hold:            churnHold,
         churnMode: 'churn',
         churnTargetPct: m.statedReductionPct,
         churnCurrentPct: m.currentPct,
@@ -6516,6 +6608,35 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       <span className="text-[11px] font-medium text-slate-600">{t('whatif_churn_ramp')}</span>
                     </label>
 
+                    {/* REQ-D6-03 session 2 — HOLD, beside the ramp switch and
+                        OUTSIDE it, on the volume card's independence rule:
+                        ramp off plus hold on is a one-month statement held to
+                        the horizon, and a checkbox nested inside `churnRampOn`
+                        could not express it.
+
+                        The SAME two keys the volume toggle uses. The sentence
+                        is true of both carriers — the entered figure is the
+                        target, the ramp builds to it, later months hold it —
+                        and a second pair saying the same thing in six
+                        languages is two things to keep in step. */}
+                    <label className="flex items-center gap-2 cursor-pointer select-none"
+                           title={t('whatif_hold_after_ramp_help')}>
+                      <input
+                        type="checkbox"
+                        data-testid="churn-hold-toggle"
+                        checked={churnHold}
+                        onChange={e => setChurnHold(e.target.checked)}
+                        className="rounded border-slate-300 text-[#e60000] focus:ring-[#e60000]"
+                      />
+                      <span className="text-[11px] font-medium text-slate-600">{t('whatif_hold_after_ramp_label')}</span>
+                    </label>
+                    {churnHold && (
+                      <p className="text-[10px] text-slate-400 leading-snug"
+                         data-testid="churn-hold-tail">
+                        {t('whatif_hold_after_ramp_help')}
+                      </p>
+                    )}
+
                     {churnRampOn && (
                     <>
                     {/* THE PER-MONTH GRID. The bound figures are CUMULATIVE
@@ -7118,9 +7239,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         is excluded because it emits its own fold's rows. */}
                     {(() => {
                       if (isChurnDraft) {
-                        return spreadEnabled
-                          ? t('whatif_add_events', { p0: spreadMonths })
-                          : t('whatif_add_event');
+                        // REQ-D6-03 s2 — THE FOLD'S OWN USABLE COUNT, which is
+                        // what the handler emits (`!absence && delta !== 0`).
+                        // This read `spreadEnabled ? spreadMonths : 1`, and
+                        // `spreadEnabled` is force-cleared for churn — so the
+                        // button already said "Add Event" for a three-month
+                        // ramp, and would now say it while adding twenty-four.
+                        const n = churnFold.filter(m => !m.absence && m.delta !== 0).length;
+                        return n > 1 ? t('whatif_add_events', { p0: n }) : t('whatif_add_event');
                       }
                       const n = (!spreadEnabled && !holdAfterRamp)
                         || newEvent.scenario === 'ARPU'

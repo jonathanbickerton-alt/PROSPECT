@@ -77,6 +77,7 @@ const CMPRENDER = 'scripts/compare-render-spec.ts';
 const CHURNFOLD = 'scripts/churn-fold-spec.ts';
 const CHURNENGINE = 'src/utils/churnFold.ts';
 const HOLDSHAPE = 'scripts/hold-shape-spec.ts';
+const CHURNHOLD = 'scripts/churn-hold-mounted-spec.tsx';
 const SCENARPU = 'scripts/scenario-arpu-spec.ts';
 const AMTCTRL = 'scripts/amount-control-spec.ts';
 const AMTENGINE = 'src/utils/amountControl.ts';
@@ -2823,6 +2824,47 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '      out.push({ offset: i, fraction: pcts[i] / total, held: false });',
       '      out.push({ offset: i, fraction: (100 / months) / 100, held: false });') },
+  // ══ REQ-D6-03 SESSION 2 — CHURN HOLD ═════════════════════════════════════
+  //
+  // 206 STOPS THE CHURN TAIL. The ramp still folds, the figures are still
+  // right, and the campaign quietly becomes the terminating ramp it was — the
+  // same shape as 202 on the other carrier, and the same absence of symptom:
+  // the toggle stays lit and the button keeps promising the rows.
+  { id: '206 the churn held tail is never appended',
+    why: 'a held churn campaign silently reverts to a terminating ramp with'
+       + ' the toggle still lit and the button still promising the rows',
+    file: WHATIF, spec: CHURNHOLD,
+    mutate: s => s.replace(
+      '    const tail = Math.max(0, span - ramp.length);',
+      '    const tail = 0; void Math.max(0, span - ramp.length);') },
+  // 207 MAKES THE TAIL COMPOUND — the defect this whole feature is defined
+  // against, and the one a reader would not catch by inspection. Each held
+  // month takes the PREVIOUS month's stated figure and subtracts the reached
+  // one again, so the trajectory runs 2, 4, 6, 8 … and churn collapses to
+  // zero on a curve that looks entirely reasonable month by month.
+  //
+  // ITS DISCRIMINATOR IS BEHAVIOURAL, not structural: the row count is
+  // right, every row carries hold, and the months are consecutive. Only the
+  // stated points and the outflow ratio tell the two apart.
+  { id: '207 the churn held tail compounds instead of repeating',
+    why: 'the reached reduction is applied again every month, so churn walks'
+       + ' to zero — right row count, right flags, wrong curve',
+    file: WHATIF, spec: CHURNHOLD,
+    mutate: s => s.replace(
+      '    return [...ramp, ...Array.from({ length: tail }, () => reached)];',
+      '    return [...ramp, ...Array.from({ length: tail }, (_, i) => reached * (i + 2))];') },
+  // 208 DROPS THE COLUMN FROM THE CHURN RESTORE. The campaign reopens with
+  // its WHOLE trajectory as the ramp — a 23-month ramp whose later months the
+  // user never typed — and the duration box reads 23. Re-saving then writes
+  // that back as a hand-stated ramp, so the statement is lost on a round trip
+  // through an edit rather than on the save itself.
+  { id: '208 the churn restore ignores the Hold column',
+    why: 'a held churn campaign reopens as a 23-month hand-typed ramp and'
+       + ' re-saves as one, losing the statement through an edit',
+    file: WHATIF, spec: CHURNHOLD,
+    mutate: s => s.replace(
+      '      const heldChurn = rows.some(e => e.hold);',
+      '      const heldChurn = false; void rows.some(e => e.hold);') },
 ];
 
 
