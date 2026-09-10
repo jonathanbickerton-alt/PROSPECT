@@ -3,36 +3,29 @@
 ```
 FOR ADVISOR
 Generated: 2026-09-10 21:14 +0100 (UTC 2026-09-10 20:14)
-Certifies: __ PENDING
+Certifies: 477b171 (the tree the gate ran against)
 
 BASE 083843c (code fd1ad78); HEAD df1135d. status --short EMPTY; diff
   fd1ad78..HEAD -- src scripts test-data EMPTY. Both quoted in the body.
-1 B8 IS A STALE CLOSURE, not a missing horizonMonths. All three callers
-  DO pass the pair. The Add handler's deps list omitted `promoHold`, so
-  React returned a callback closed over hold=false. CLICKING HOLD LAST
-  is what exposes it — `promoSpreadEnabled` IS listed, so touching the
-  ramp after the toggle rebuilt the callback and hid it.
-2 REPRODUCED BEFORE FIXING: reordering the spec to Jon's order gave
-  3 rows of 3.3333 — his exact symptom — on unchanged code.
-3 THE SPEC WAS TRUE AS MOUNTED AND FALSE AS RUN because it drove
-  amount -> HOLD -> ramp. It now drives amount -> ramp -> HOLD.
-  A harness can pass what the card passes and still lie about ORDER.
-4 horizonMonths is now REQUIRED (no `?? 0`): tsc went RED at the one
-  omitting site and clean after. Quoted in the body.
-5 SUBS/% CONTROL IS PRESENT AND UNCONDITIONAL, on HEAD and on 9bbb389 —
-  labelled "Subs"/"%", inside `activeTab === 'promotion'` and nothing
-  narrower. No STOP. It does not match the walk note; §4.
-6 B10 IS NEITHER OF THE TWO OPTIONS. Both saves record
-  Active_Cohort_*=All and it RESOLVES (72 leaves) — so that import
-  raises no banner. The flag had ONE writer to true and one to false
-  (the dismiss button): a banner survived every later import. FIXED.
-7 MY EXTRACTION IS EXONERATED: the restore block is byte-identical
-  9bbb389 vs HEAD (24 lines, `diff` empty).
-8 TRAPS 217, 218 CAUGHT; 209 re-anchored (spec:trap-anchors said so).
+1 B8 IS A STALE CLOSURE, not a missing horizonMonths — all three callers
+  DO pass the pair. The Add handler's deps omitted `promoHold`. MEASURED
+  FIRST: reordering the spec's clicks gave 3 rows of 3.3333, unchanged code.
+2 CLICKING HOLD LAST EXPOSES IT: promoSpreadEnabled IS listed, so touching
+  the ramp after the toggle rebuilt the callback and hid it. The spec drove
+  amount->HOLD->ramp; Jon drove amount->ramp->HOLD. Third time in this file.
+3 horizonMonths is REQUIRED now: tsc RED at the omitting site, clean after.
+4 SUBS/% CONTROL PRESENT AND UNCONDITIONAL on HEAD and 9bbb389 ("Subs"/"%").
+  No STOP; I cannot reconcile it with the walk note and did not invent one.
+5 B10 IS NEITHER OPTION. Both saves record Active_Cohort_*=All and it
+  RESOLVES (72 leaves) — that import raises NO banner. The defect: one writer
+  to true, one to false (the DISMISS BUTTON), so a banner survived every
+  later correct import. FIXED.
+6 EXTRACTION EXONERATED: block identical 9bbb389 vs HEAD; no worktree run.
+7 TRAPS 217, 218 CAUGHT. 209 aged out on my own edit and 217's anchor was
+  ambiguous — spec:trap-anchors caught both BEFORE their first run.
 SHED: nothing. Both items measured, both fixed, both trapped.
-guard-traps: 214/214 CAUGHT (209 re-anchored, 217, 218; 0 missed).
-full suite:  67/67 GREEN (66 -> 67: restore-banner 11).
-Repo: __ PENDING
+guard-traps 214/214 CAUGHT; full suite 67/67 GREEN (+restore-banner 11).
+Repo: committed 487e21b, pushed (origin in sync); code at 477b171.
 ```
 
 ## 0. The base check
