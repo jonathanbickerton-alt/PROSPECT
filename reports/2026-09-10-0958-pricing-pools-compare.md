@@ -9,12 +9,10 @@ Repo: no src change; docs d94434b pushed
 BASE fa8c4ff + 2 (reports/ ONLY). PREMISE 0854 EXACT. DOCS d94434b.
 1 STOP — THE DIVERGENCE CHECK CANNOT RUN AS SPECIFIED. Compare has NO
   Base ARPU: its row carries ONE blended adjustedArpu (sh:574-595) and
-  `scenarioArpu` appears ZERO times in the file. Its baseline aggregation
-  reads only ARPU_Mean, by its own words "an approximation of size for
-  weighting ARPU" (sh:191-197) — never BaseARPU_Mean. So "Compare's Base
-  ARPU equals What-If's to the penny" has NO LEFT-HAND SIDE, and the
-  nearest quantity is computed a different, self-declared approximate
-  way. Item 1's acceptance test is unmeetable; NOTHING BUILT.
+  `scenarioArpu` appears ZERO times there. Its baseline aggregation reads
+  only ARPU_Mean, by its own words "an approximation of size for weighting
+  ARPU" (sh:191-197) — never BaseARPU_Mean. So the parity test has NO
+  LEFT-HAND SIDE and is unmeetable; NOTHING BUILT.
 1b AND COMPARE IS NOT INERT — withdrawing my own 0854 wording. MEASURED,
   19:30 save, retention 25 -> 20 at 2026-09, vs a no-event control:
     Duration='one-off'    +0.0554 +0.0557 +0.0562 ... +0.0561 @2027-06
