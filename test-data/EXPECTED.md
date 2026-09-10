@@ -7237,6 +7237,39 @@ coincidence worth stating plainly before it is chosen.
 STOP 1 blocks it, because a pool with no stated decay is not the pool this
 decision describes.
 
+**THE TWO STOPS ARE RESOLVED (Jon, 2026-09-10). Recorded before code.**
+
+**(1) DECAY — the Pricing card gains a Contract Length control.** Months,
+**default 24**, in the Promotion card's control shape. Stored on `PricingEvent`
+as **`contractLength`**; exported as **`Contract_Length_Months` appended LAST**
+on the pricing sheet — *after* `Tariff_Scope`, which moves the D5-10 last-column
+pin along by one and is the append-only rule working, not breaking. The reader
+treats **absent → 24 as a STATED rule**, not a silent fallback: a sheet written
+before this decision has no column, and 24 is what such an event has always
+meant. **The carved pool decays by it exactly as a promotion's pool does** — the
+same `contractLength` field on the same pool shape, read by the same at-risk
+churn arithmetic.
+
+**(2) NO DOUBLE PRICING.** A pricing event whose target includes cohorts carves
+pools per D5-14, **and its base-side repricing (Cohorts + Base) prices the base
+EXCLUDING pools** — `pricesPools: false` at `scenarioArpu.ts:144-152` for such
+an event. The pool carries the cohort's priced rate; the base side prices the
+rest. Each subscriber is priced exactly once.
+
+**That this equals today's Cohorts + Base Recurring figure — 15.4773 / 15 075 at
+T+1 on the 0725 fixture — is BY CONSTRUCTION, not a coincidence**, and is
+recorded as such. The same subscribers are priced once either way; what changes
+is *which* component carries the priced rate, and therefore what happens in
+later months when the event stops applying. The 0725 report flagged the equality
+as "either the right answer or a coincidence"; it is the former, and the reason
+is stated here so no future session has to re-derive it.
+
+**Base-only is unchanged** — it creates no pool and its `pricesPools` stays
+`false`, as it already is.
+
+**Existing saves carrying a cohort-target pricing event change forecast.**
+Recorded.
+
 #### D5-13 DECIDED (Jon, 2026-09-09) — the Value card's preview names the winner
 
 **Recorded before any code.**
