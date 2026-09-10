@@ -3,8 +3,8 @@
 ```
 FOR ADVISOR
 Generated: 2026-09-10 08:54 +0100 (UTC 2026-09-10 07:54)
-Certifies: __PENDING__
-Repo: __PENDING__
+Certifies: fa8c4ff
+Repo: committed fa8c4ff, pushed (origin in sync)
 
 BASE a1084e4 + 5288da1 (reports/ ONLY). PREMISES 0725/0750/0810 EXACT.
 RECORDED FIRST 795db52 — the anchored-delta decision, in full.
@@ -20,8 +20,8 @@ RECORDED FIRST 795db52 — the anchored-delta decision, in full.
 2 SIGN TABLE T+1..T+21, retention 25->20 One-Off cl=24, app path:
   POSITIVE 21, ZERO 0, NEGATIVE 0. +0.482% at T+1 (brief ~+0.5%),
   decaying to +0.128% at T+21. Base VOLUME unchanged every month.
-  ANCHOR CORRECTED MID-BUILD: the blended baseline gave +0.069% and 17
-  rounding zeros; the base band gives +0.482%. pricing 137 -> 150.
+  ANCHOR CORRECTED MID-BUILD: the blend gave +0.069% and 17 rounding
+  zeros; the base band gives +0.482%. pricing-roundtrip 137 -> 150.
 3 TRAPS NOT WRITTEN; Compare and the card control held — and COMPARE NOW
   DISAGREES with What-If on such an event until its session lands.
 4 GATE serial: suite 61/61, guard-traps 194/194 CAUGHT (0 M/I/C, no trap
