@@ -10268,3 +10268,11 @@ rule could not sanction.
    figure equals the last row's (the plateau start).
 6. A held campaign is ONE campaign: one pill, one switch, D5-05's bar,
    Show all — nothing new.
+7. (ratified 2026-09-10) A percentage draft may be spread ONLY under
+   Hold ON — the entered percentage is the target reached at month N
+   and held. With Hold OFF the spread section stays hidden for a
+   percentage draft, byte-identical to c11151e. Percentage amounts are
+   not rounded; absolute amounts round as before.
+8. A held tail is materialised to the LAST FORECAST MONTH AT BUILD
+   TIME. Regenerating the baseline over a longer horizon does not
+   lengthen an existing held campaign. Not a defect; re-save to extend.
