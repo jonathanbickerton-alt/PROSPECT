@@ -7154,6 +7154,66 @@ the **Events summary panel's** chip (`EventsSummaryTable.tsx:109`,
 things by design; the chip has always counted all rows, and no spec asserts its
 semantics either way.
 
+#### D5-15 DECIDED (Jon, 2026-09-10) — Compare's pricing durations are inverted, and become What-If's two lines
+
+**Recorded before any code.**
+
+**Found in `reports/2026-09-10-0958-pricing-pools-compare.md`, confirmed by
+Jon's Compare screenshot.** Compare applies a **One-Off** pricing event in
+**every** month from its own, and a **Recurring** one for a **single** month.
+Exactly backwards. What-If is correct.
+
+**The cause, `scenarioHelper.ts:523-526`:**
+
+```ts
+const duration = Number(e.Duration) || 1;
+const endMs = addMonths(parse(e.Month, 'yyyy-MM', new Date()), duration).getTime();
+if (e.Duration !== 'one-off' && currMs >= endMs) return false;
+return true;
+```
+
+`Duration` is a two-value enum (`'one-off' | 'recurring'`,
+`types/forecast.ts:417`), so `Number(e.Duration)` is **always `NaN`** and
+`|| 1` always gives a one-month window — the `duration` variable is **dead in
+every real case**. For `'one-off'` the guard's first term is false, so the
+early return never fires and the event applies forever; for `'recurring'` the
+one-month window drops it from the second month.
+
+**Measured on the 19:30 save**, SOHO / Mobile Voice, retention 25 → 20 at
+2026-09, against a no-event control (`adjustedArpu` delta):
+
+| `Duration` | 2026-09 | 2026-10 | 2026-11 | 2026-12 | 2027-01 | 2027-06 |
+|---|---|---|---|---|---|---|
+| `one-off` | +0.0554 | +0.0557 | +0.0562 | +0.0565 | +0.0562 | +0.0561 |
+| `recurring` | +0.0554 | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
+
+**THE DECISION.** Compare's duration test becomes **What-If's two lines
+verbatim**: `one-off` ⇒ the event month only; otherwise from the event month
+onward. **The dead `Number(Duration)` window is deleted.**
+
+**Existing saves' Compare figures change, because they are wrong today.**
+Recorded as such.
+
+---
+
+**D5-14's COMPARE CLAUSE, AMENDED (Jon, 2026-09-10).**
+
+Compare carves the same pools: **retention capped** at
+`min(priced retention, base volume)`, **inflow joining at T+1**, `deltaOf`
+**anchored to Compare's blended baseline ARPU at the month** — Compare has no
+base band, so the blend is what it has — decaying by `Contract_Length_Months`
+through the one reader, and `pricesPools` false for the carving event.
+
+**Parity with What-If is asserted as SAME SIGN at every month T+1..T+cl, and
+blended-ARPU deltas within a TOLERANCE measured in this session and then pinned
+as a literal — never "to the penny".** The 0958 report established why: Compare
+emits one blended `adjustedArpu` and no per-scenario decomposition, and its
+baseline ARPU is volume-weighted by its own self-described approximation, so the
+two engines cannot agree to the penny on quantities they compute differently.
+
+**The structural gap — Compare has no base band and one blend — stays on the
+after-UAT list.**
+
 #### D5-14 DECIDED (Jon, 2026-09-10) — a Pricing event carves a pool, and Base sees it at T+1
 
 **Recorded before any code. THIS ENTRY ALSO SETTLES WHAT NOTHING PREVIOUSLY
