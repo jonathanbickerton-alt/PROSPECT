@@ -30,8 +30,8 @@ BASE 083843c (code fd1ad78); HEAD df1135d. status --short EMPTY; diff
   9bbb389 vs HEAD (24 lines, `diff` empty).
 8 TRAPS 217, 218 CAUGHT; 209 re-anchored (spec:trap-anchors said so).
 SHED: nothing. Both items measured, both fixed, both trapped.
-guard-traps: __/__ PENDING
-full suite:  __/__ PENDING
+guard-traps: 214/214 CAUGHT (209 re-anchored, 217, 218; 0 missed).
+full suite:  67/67 GREEN (66 -> 67: restore-banner 11).
 Repo: __ PENDING
 ```
 
@@ -281,24 +281,24 @@ first trap**.
 
 | check | figure |
 |---|---|
-| `npm run suite` | __ PENDING |
-| guard-traps | __ PENDING |
+| `npm run suite` | **67/67 green** (66 before; +`spec:restore-banner` 11) |
+| guard-traps | **214/214 caught** — 0 MISSED, 0 INCONCLUSIVE, 0 CRASHED |
 | `spec:trap-anchors` | **226 passed, 0 failed** (214 traps, 221 anchors; next free 219) |
 | `spec:promo-hold-mounted` | **42 passed, 0 failed** (Jon's order) |
 | `spec:restore-banner` | **11 passed, 0 failed** |
-| `spec:i18n-parity` | __ PENDING |
-| `spec:survival` | __ PENDING |
+| `spec:i18n-parity` | **200 passed, 0 failed** |
+| `spec:survival` | **27 passed, 0 failed** — 104 dereferences across 26 files |
 | `tsc --noEmit` / `lint` | clean |
-| `npm run build` | __ PENDING |
+| `npm run build` | built in 8.37s |
 
 ### Exact counts the brief named
 
 | pin | required | measured |
 |---|---|---|
 | `runIngest` sites | 3 | **3** |
-| last-column, Market / Yield / Pricing | 3 / 2 / 3 | __ PENDING |
-| apply sites | 12 | __ PENDING |
-| display markers | 6 | __ PENDING |
+| last-column, Market / Yield / Pricing | 3 / 2 / 3 | **3 / 2 / 3** (`spec:event-toggle` 155/155) |
+| apply sites | 12 | **12** (`event-toggle-spec.tsx:110`) |
+| display markers | 6 | **6** (`event-toggle-spec.tsx:399`) |
 
 ## What was shed
 
