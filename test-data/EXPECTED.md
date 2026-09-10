@@ -10282,3 +10282,22 @@ rule could not sanction.
    trend; measured 0.9724% over months 3–20 on the two-leaf fixture,
    pinned at 1.0% with the direction (rising, never falling) asserted
    separately. A falling ratio is compounding and a defect.
+
+---
+
+## REQ-D6-04 — FILE SIZE 200MB, PRE-PARSE NOTICE, SESSION-FILE ROUTING (Jon, 2026-09-10)
+
+1. ONE size limit constant, 200MB, read by all three ingest paths
+   (input drop, Import Save, Import Actuals). The refusal message
+   states the file's size and the limit.
+2. Before any synchronous parse begins, a notice is PAINTED (the parse
+   is deferred past a frame yield, not started in the same task):
+   "Reading <name> (<size> MB) — large files can take up to a minute;
+   the page will not respond until it finishes." The success line
+   that follows carries the measured parse time ("Loaded N rows in
+   S s") so the number is read from the app, never estimated.
+3. On the input drop, a file whose workbook carries the session
+   sheets (Metadata AND Market_Events) is routed to Import Save
+   automatically, with one line saying so. Detection reads sheet
+   NAMES only, before the full parse where the reader allows;
+   otherwise it is stated that the sniff costs a parse.
