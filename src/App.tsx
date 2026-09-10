@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { isPlaceholderSheet } from './utils/sheetGuards';
 import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, readStoredRateMap, marketEventExportRow, marketEventFromRow, yieldEventExportRow, yieldEventFromRow, pricingEventExportRow, pricingEventFromRow, activeCohortMetaRows, readActiveCohortMeta, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey, monthsCarryingActuals, tariffScopeFor } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
+import { runIngest, isSessionWorkbook, loadedLineText } from './utils/ingest';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
 import { filterToKey, cohortToFilter, forecastForView, forecastForStep1Selection, step1ResolveDecision, describeScope } from './utils/viewFilter';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort, Provenance, SkipReason } from './types/forecast';
@@ -124,6 +125,10 @@ export default function App() {
   const [columns, setColumns] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  /** REQ-D6-04 decision 2 — the pre-parse notice, painted before any parse. */
+  const [ingestNotice, setIngestNotice] = useState<string | null>(null);
+  /** REQ-D6-04 decision 2 — "Loaded N rows in S s", the measured figure. */
+  const [loadedLine, setLoadedLine] = useState<string | null>(null);
   const [logoError, setLogoError] = useState(false);
 
   // Shared Data Mapping State
@@ -318,11 +323,19 @@ export default function App() {
     if (!file) return;
     e.target.value = '';
 
-    const reader = new FileReader();
-    reader.onload = (evt) => {
+    // REQ-D6-04 decision 1 and 2 — INGEST PATH 3 of 3, Import Actuals. This
+    // path had NO SIZE CHECK either; it reads the one constant now.
+    void runIngest<any>({
+      file, t,
+      showNotice: setIngestNotice,
+      onRefuse: (message) => { alert(message); },
+      read: (f) => readWorkbook(f as File),
+      onError: (err) => {
+        console.error(err);
+        alert('Error reading file. Please ensure it is a valid .xlsx or .xls file.');
+      },
+      onResult: (wb) => {
       try {
-        const buffer = evt.target?.result;
-        const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
         const sheetName = wb.SheetNames[0];
         const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[sheetName]);
         if (rows.length === 0) return;
@@ -389,8 +402,8 @@ export default function App() {
         console.error(err);
         alert('Error reading file. Please ensure it is a valid .xlsx or .xls file.');
       }
-    };
-    reader.readAsArrayBuffer(file);
+      },
+    });
   };
 
   const handleImportActualsConfirm = (selectedMonths: Set<string>) => {
@@ -686,16 +699,37 @@ export default function App() {
   // ---------------------------------------------------------------------------
   // Session import — restores full ForecastContext state from a PROSPECT save.
   // ---------------------------------------------------------------------------
-  const handleImportSaveFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-
+  /**
+   * REQ-D6-04 — READ A FILE TO A WORKBOOK. One place, three ingest paths.
+   *
+   * A promise rather than a callback, because `runIngest` owns the ordering
+   * now: it paints the notice, waits for a frame, and only then awaits this.
+   * The SheetJS options are the ones all three paths already used, unchanged.
+   */
+  const readWorkbook = (file: File): Promise<any> => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (evt) => {
+      try { resolve(XLSX.read(evt.target?.result, { type: 'array', cellDates: true })); }
+      catch (err) { reject(err); }
+    };
+    reader.onerror = () => reject(new Error('Failed to read file.'));
+    reader.readAsArrayBuffer(file);
+  });
+
+  /**
+   * REQ-D6-04 decision 3 — THE IMPORT-SAVE BODY, extracted from its own
+   * FileReader callback so the INPUT DROP can hand a sniffed session workbook
+   * straight to it.
+   *
+   * EXTRACTED, NOT COPIED, and not re-read either: routing by re-opening the
+   * file would parse a file we have already parsed — up to 200MB of it, twice,
+   * on the one thread the notice exists to apologise for. The workbook comes
+   * in as an argument.
+   *
+   * The body below is unchanged from the callback it was lifted out of.
+   */
+  const applyImportSaveWorkbook = (wb: any) => {
       try {
-        const buffer = evt.target?.result;
-        const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
 
         // ── Validate ──────────────────────────────────────────────────────────
         const requiredSheets = [
@@ -1107,8 +1141,33 @@ export default function App() {
           error: 'Failed to parse the file — ensure it is a valid PROSPECT save (.xlsx).',
         });
       }
-    };
-    reader.readAsArrayBuffer(file);
+  };
+
+  /**
+   * REQ-D6-04 decision 1 and 2 — INGEST PATH 2 of 3, Import Save.
+   *
+   * This path had NO SIZE CHECK AT ALL before today: a 500MB file dropped here
+   * went straight into `FileReader` and `XLSX.read`. It now reads the one
+   * constant, through the one orchestrator, like the other two.
+   */
+  const handleImportSaveFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    void runIngest<any>({
+      file, t,
+      showNotice: setIngestNotice,
+      onRefuse: (message) => setImportSaveResult({ success: false, error: message }),
+      read: (f) => readWorkbook(f as File),
+      onResult: (wb) => applyImportSaveWorkbook(wb),
+      onError: (err) => {
+        console.error('[ImportSave] Error:', err);
+        setImportSaveResult({
+          success: false,
+          error: 'Failed to parse the file — ensure it is a valid PROSPECT save (.xlsx).',
+        });
+      },
+    });
   };
 
   // NOTE: exportToExcel was deleted here on 2026-07-31. It was dead code —
@@ -1850,10 +1909,9 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 50 * 1024 * 1024) {
-      setError('File size exceeds 50MB limit.');
-      return;
-    }
+    // REQ-D6-04 decision 1 — INGEST PATH 1 of 3. The 50MB literal that stood
+    // here is gone; the figure now lives in `MAX_UPLOAD_BYTES` and this path
+    // reads it through `runIngest` below, like the other two.
 
     setIsLoading(true);
     setError('');
@@ -1881,12 +1939,43 @@ export default function App() {
     setWiBaseVal('');
     setWiRetentionVal('');
 
-    const reader = new FileReader();
-    reader.onload = (evt) => {
+    void runIngest<any>({
+      file, t,
+      showNotice: setIngestNotice,
+      onRefuse: (message) => { setError(message); setIsLoading(false); },
+      read: (f) => readWorkbook(f as File),
+      onError: (err) => {
+        console.error(err);
+        setError('Error reading Excel file. Please ensure it is a valid .xlsx or .xls file.');
+        setIsLoading(false);
+      },
+      onResult: (wb, parseMs) => {
       try {
-        const buffer = evt.target?.result;
-        const wb = XLSX.read(buffer, { type: 'array', cellDates: true });
-        
+        // ── REQ-D6-04 decision 3 — THE SNIFF ───────────────────────────────
+        //
+        // A saved session dropped on the INPUT control is routed to Import
+        // Save rather than parsed as a fact table, where it would fail later
+        // and obscurely: `Fact_IBRO` is absent, so the input path would take
+        // sheet [0] and report an empty or nonsensical actuals sheet.
+        //
+        // NAMES ONLY — `wb.SheetNames`, not a body. THE SNIFF COSTS NO EXTRA
+        // PARSE HERE, and it costs no LESS either: this path has already read
+        // the workbook by the time it runs, because the input drop needs every
+        // sheet's rows anyway. A `{ bookSheets: true }` pre-read would be ~4ms
+        // against a 766ms full parse (1147 report), and is the right shape for
+        // a path that could refuse before parsing — this one cannot, since a
+        // non-session file must be parsed regardless. Stated rather than
+        // implied, because "reads names only" and "costs nothing" are two
+        // different claims and only the first is true here.
+        if (isSessionWorkbook(wb.SheetNames)) {
+          setError('');
+          setIsLoading(false);
+          setImportSaveResult(null);
+          setIngestNotice(t('app_routed_to_import_save'));
+          applyImportSaveWorkbook(wb);
+          return;
+        }
+
         const sheetsData: Record<string, any[]> = {};
         wb.SheetNames.forEach(name => {
           sheetsData[name] = XLSX.utils.sheet_to_json(wb.Sheets[name]);
@@ -1910,8 +1999,16 @@ export default function App() {
         const cols = Object.keys(jsonData[0] as object);
         setColumns(cols);
         setData(jsonData);
-        
+
         setError('');
+        // REQ-D6-04 decision 2 — THE SUCCESS LINE CARRIES THE MEASURED TIME.
+        //
+        // `parseMs` is wall time across `read` and nothing else, taken by
+        // `runIngest` from a real clock. It is here so the notice's "up to a
+        // minute" can be replaced by a figure someone READ rather than
+        // estimated — which is the whole reason the line exists, and why trap
+        // 214 plants its removal.
+        setLoadedLine(loadedLineText(jsonData.length, parseMs, t));
         setForecastData([]);
 
         // Restore market events if the file contains a Market_Events sheet
@@ -1931,12 +2028,8 @@ export default function App() {
       } finally {
         setIsLoading(false);
       }
-    };
-    reader.onerror = () => {
-      setError('Failed to read file.');
-      setIsLoading(false);
-    };
-    reader.readAsArrayBuffer(file);
+      },
+    });
     e.target.value = '';
   };
 
@@ -4397,6 +4490,26 @@ export default function App() {
               className="shrink-0 opacity-60 hover:opacity-100 transition-opacity"
             ><XCircle size={16} /></button>
           </div>
+        )}
+
+        {/* REQ-D6-04 decision 2 — THE PRE-PARSE NOTICE.
+            ABOVE the step indicator and outside every tab, because it must be
+            on screen for whichever of the three ingest controls was used, and
+            because the thread is about to freeze: a notice rendered inside a
+            panel that the parse then blocks from mounting is no notice. */}
+        {ingestNotice && (
+          <div
+            data-testid="ingest-notice"
+            role="status"
+            aria-live="polite"
+            className="mb-4 px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-sm"
+          >{ingestNotice}</div>
+        )}
+        {loadedLine && !ingestNotice && (
+          <div
+            data-testid="ingest-loaded"
+            className="mb-4 px-4 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs"
+          >{loadedLine}</div>
         )}
 
         {/* Step indicator row — always visible so users can see the journey */}

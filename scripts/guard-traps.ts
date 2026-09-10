@@ -79,6 +79,8 @@ const CHURNENGINE = 'src/utils/churnFold.ts';
 const HOLDSHAPE = 'scripts/hold-shape-spec.ts';
 const CHURNHOLD = 'scripts/churn-hold-mounted-spec.tsx';
 const PROMOHOLD = 'scripts/promo-hold-mounted-spec.tsx';
+const INGESTSPEC = 'scripts/ingest-spec.tsx';
+const INGEST = 'src/utils/ingest.ts';
 const SCENARPU = 'scripts/scenario-arpu-spec.ts';
 const AMTCTRL = 'scripts/amount-control-spec.ts';
 const AMTENGINE = 'src/utils/amountControl.ts';
@@ -106,7 +108,7 @@ const DEBUNDLE = 'src/locales/de/translation.json';
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const APP_COMPARE = 'src/components/ScenarioCompareTab.tsx';
 const SCENARPUENGINE = 'src/utils/scenarioArpu.ts';
-const TARGETS = [FILE, ENGINE, WHATIF, APP, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE, SLIDERROW, TARGETPANEL, SUMMARYBAR, PKGJSON, ENVEXAMPLE, SUMMARYTABLE];
+const TARGETS = [FILE, ENGINE, WHATIF, APP, INGEST, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE, SLIDERROW, TARGETPANEL, SUMMARYBAR, PKGJSON, ENVEXAMPLE, SUMMARYTABLE];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -2912,6 +2914,65 @@ const TRAPS: Trap[] = [
       + '    const figures = volByOffset.map(v => Math.abs(v));',
       '    const isHeld = false; void rows.some(e => e.hold);' + nl
       + '    const figures = volByOffset.map(v => Math.abs(v));') },
+  // ══ REQ-D6-04 — INGEST ═══════════════════════════════════════════════════
+  //
+  // 212 PUTS A LITERAL BACK where the constant belongs. The refusal still
+  // works, the message still names two figures, and the app quietly refuses at
+  // 50MB again — the state decision 1 exists to end. It is the shape the whole
+  // constant is for: nothing about a literal LOOKS wrong at the line.
+  { id: '212 the size check reads a literal instead of the constant',
+    why: 'the app silently refuses at 50MB again while every message and every'
+       + ' other site still says 200',
+    file: INGEST, spec: INGESTSPEC,
+    mutate: s => s.replace(
+      '  if (file.size <= MAX_UPLOAD_BYTES) return null;',
+      '  if (file.size <= 50 * 1024 * 1024) return null;') },
+  // 213 REMOVES THE FRAME YIELD. The notice is still created, still rendered,
+  // still correct — and the synchronous parse starts in the same task, so the
+  // browser never paints it. On screen that is INDISTINGUISHABLE from having
+  // no notice at all, and no source reading of the handler would show it.
+  //
+  // ASSERTED BY CALL ORDER, not by pixels: the spec's stub reader records
+  // whether the notice element was in the DOM at the moment it ran.
+  { id: '213 the pre-parse frame yield is removed',
+    why: 'the notice never paints, so a 200MB parse freezes the tab with'
+       + ' nothing on screen — the exact failure the notice exists to prevent',
+    file: INGEST, spec: INGESTSPEC,
+    mutate: s => s.replace(
+      '  p.showNotice(ingestNoticeText(p.file, p.t));' + nl + '  await nextPaint();',
+      '  p.showNotice(ingestNoticeText(p.file, p.t));') },
+  // 214 DROPS THE MEASURED TIME from the success line. The line still appears
+  // and still counts rows, so it reads as working; what is gone is the only
+  // figure in the product that was measured rather than guessed, and the
+  // notice's "up to a minute" then has nothing to be corrected against.
+  { id: '214 the success line loses its measured time',
+    why: 'the one number read from the app rather than estimated disappears,'
+       + ' and the notice can never be re-worded from evidence',
+    file: INGEST, spec: INGESTSPEC,
+    mutate: s => s.replace(
+      "    p1: (ms / 1000).toFixed(1),",
+      "    p1: '',") },
+  // 215 STOPS THE SNIFF ROUTING. A saved session dropped on the input control
+  // is parsed as a fact table again and fails later and obscurely — the
+  // failure decision 3 was written to remove.
+  { id: '215 the session sniff never routes',
+    why: 'a saved session dropped on the input control is parsed as a fact'
+       + ' table and fails later, on a sheet the user has never heard of',
+    file: INGEST, spec: INGESTSPEC,
+    mutate: s => s.replace(
+      "  return sheetNames.includes('Metadata') && sheetNames.includes('Market_Events');",
+      '  return false;') },
+  // 216 LOOSENS THE SNIFF to Metadata alone. This is the direction that breaks
+  // INPUT files rather than save files: 'Metadata' is a plausible tab name in
+  // an analyst's own workbook, and such a file would be routed into Import
+  // Save and refused for missing sheets it was never meant to have.
+  { id: '216 the session sniff routes on Metadata alone',
+    why: "an analyst's own workbook with a Metadata tab is routed to Import"
+       + ' Save and refused for sheets it was never meant to have',
+    file: INGEST, spec: INGESTSPEC,
+    mutate: s => s.replace(
+      "  return sheetNames.includes('Metadata') && sheetNames.includes('Market_Events');",
+      "  return sheetNames.includes('Metadata');") },
 ];
 
 
@@ -3054,7 +3115,9 @@ try {
       // REQ-D6-03 s3. REGISTERED WITH ITS FIRST TRAP, which is the lesson
       // session 2 paid for: HOLDSHAPE carried four traps for a session
       // without being here, and they could all have caught vacuously.
-      || specFails(PROMOHOLD)) {
+      || specFails(PROMOHOLD)
+      // REQ-D6-04. Registered WITH its first trap, per session 2's finding.
+      || specFails(INGESTSPEC)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

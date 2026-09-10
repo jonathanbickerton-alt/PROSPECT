@@ -75,6 +75,7 @@
     "spec:hold-mounted": "tsx scripts/hold-mounted-spec.tsx",
     "spec:churn-hold-mounted": "tsx scripts/churn-hold-mounted-spec.tsx",
     "spec:promo-hold-mounted": "tsx scripts/promo-hold-mounted-spec.tsx",
+    "spec:ingest": "tsx scripts/ingest-spec.tsx",
     "spec:amount-control": "tsx scripts/amount-control-spec.ts",
     "spec:view-apply-mounted": "tsx scripts/view-apply-mounted-spec.tsx",
     "spec:lock-roundtrip": "tsx scripts/lock-roundtrip-spec.ts",
