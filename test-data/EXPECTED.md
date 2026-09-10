@@ -10238,3 +10238,33 @@ rule could not sanction.
    intended site and watching the spec die, 1653 by planting there and watching
    the whole suite stay green. Neither was visible from reading the registry.
 
+
+---
+
+## REQ-D6-03 — RAMP THEN HOLD (Jon, 2026-09-10)
+
+1. Hold is MATERIALISED AS ROWS at build, one row per month, through the
+   existing ramp generators, to the LAST FORECAST HORIZON MONTH. No
+   carrier field. Apply sites, Compare and pools UNCHANGED.
+2. With Hold ON the entered figure is the TARGET and the ramp is
+   linear-cumulative to it: 10% over 3 = +3.33% / +6.67% / +10%, then
+   +10% held; 2,500 over 3 = 833 / 1,667 / 2,500, then 2,500 held.
+   A percentage event holds the percentage; an absolute event holds the
+   level reached; churn holds the reached cumulative reduction —
+   "2% reached is 2% held, never compounding" (closes R7 decision 3's
+   open tail). Custom distribution under Hold ON: the normalised shares
+   are CUMULATED to the target (Even is the linear case).
+3. With Hold OFF the existing split is UNCHANGED, byte-identical: the
+   entered figure is a total distributed by share over N months, then
+   nothing (WhatIfTab:4046-4049 as at c11151e).
+4. A "Hold after ramp" toggle on the Volume spread, the Promotion spread
+   and the churn ramp. The toggle is independent of the spread switch:
+   spread OFF + Hold ON = ramp length 1 + hold (the figure every month).
+5. A `Hold` column ('Yes'/'No') appended LAST on Market_Events, after
+   Tariff_Scope. Reader: absent or anything but 'Yes' -> off, so every
+   existing save reloads unchanged. Every row of a held campaign carries
+   it. Edit-restore rebuilds the toggle from the column, the target from
+   the last row, and the ramp length as the index of the FIRST row whose
+   figure equals the last row's (the plateau start).
+6. A held campaign is ONE campaign: one pill, one switch, D5-05's bar,
+   Show all — nothing new.
