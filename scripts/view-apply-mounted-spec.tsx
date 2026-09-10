@@ -70,7 +70,7 @@ async function main() {
   const fc: any = await import('../src/utils/forecasting');
   const { ForecastProvider } = await import('../src/context/ForecastContext');
   const M: any = (await import('../src/components/WhatIfTab')).WhatIfTab;
-  const { buildPromoEvents } = await import('../src/components/WhatIfTab');
+  const { buildPromoEvents, spreadShape } = await import('../src/components/WhatIfTab');
   const { dilutionAmountPct } = fc;
 
   const noop = () => {};
@@ -409,7 +409,12 @@ async function main() {
       mixEnabled: false, mixAxis: 'value', draftMix: {}, mixLocked: [],
       tierData: [], pricingEnabled: false, pricingMode: 'percentage',
       pricingAmount: 0, cohortAvgArpu: 20,
-      spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [],
+      // WALK C — the builder is HANDED its shape now; it no longer computes
+      // one. A single row with no tail is what this section asserts, so the
+      // shape is stated rather than implied by five spread parameters.
+      // The old params were passed through `as any`, which is why tsc did not
+      // name this call when they were removed — the crash did, at the gate.
+      shape: spreadShape({ months: 1, dist: [100], hold: false, horizonMonths: 0 }),
       startSequence: 1,
     } as any);
 
@@ -478,7 +483,8 @@ async function main() {
       mixEnabled: false, mixAxis: 'value', draftMix: {}, mixLocked: [],
       tierData: [], pricingEnabled: false, pricingMode: 'percentage',
       pricingAmount: 0, cohortAvgArpu: 20,
-      spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [],
+      // WALK C — the builder is handed its shape; see the first call site.
+      shape: spreadShape({ months: 1, dist: [100], hold: false, horizonMonths: 0 }),
       startSequence: 2,
     } as any)[0];
     const absRead = await readAt(keyA, [absPromoRow], undefined, undefined, undefined, true);
@@ -522,7 +528,8 @@ async function main() {
       tierData: TIERS,
       pricingEnabled: false, pricingMode: 'percentage', pricingAmount: 0,
       cohortAvgArpu: 20,
-      spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [],
+      // WALK C — the builder is handed its shape; see the first call site.
+      shape: spreadShape({ months: 1, dist: [100], hold: false, horizonMonths: 0 }),
       startSequence: 1,
     } as any)[0] as any;
 
@@ -660,7 +667,8 @@ async function main() {
       tierData: TIERS3,
       pricingEnabled: false, pricingMode: 'percentage', pricingAmount: 0,
       cohortAvgArpu: 20,
-      spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [],
+      // WALK C — the builder is handed its shape; see the first call site.
+      shape: spreadShape({ months: 1, dist: [100], hold: false, horizonMonths: 0 }),
       startSequence: 1,
     } as any)[0] as any;
 
@@ -707,7 +715,8 @@ async function main() {
       target: 'Inflow', amountType: 'absolute', draft: promoDraft,
       mixEnabled: false, mixAxis: 'value', draftMix: {}, mixLocked: [],
       tierData: [], cohortAvgArpu: 20,
-      spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [],
+      // WALK C — the builder is handed its shape; see the first call site.
+      shape: spreadShape({ months: 1, dist: [100], hold: false, horizonMonths: 0 }),
       startSequence: 1,
     };
 
@@ -1043,7 +1052,8 @@ async function main() {
         mixEnabled: false, mixAxis: 'value', draftMix: {}, mixLocked: [],
         tierData: [], pricingEnabled: false, pricingMode: 'percentage',
         pricingAmount: 0, cohortAvgArpu: 20,
-        spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [],
+        // WALK C — the builder is handed its shape; see the first call site.
+      shape: spreadShape({ months: 1, dist: [100], hold: false, horizonMonths: 0 }),
         startSequence: 1,
       } as any)[0] as any;
 
@@ -1181,7 +1191,8 @@ async function main() {
       tierData: [{ tier: 'High', baseArpu: 30 }, { tier: 'Low', baseArpu: 15 }],
       pricingEnabled: false, pricingMode: 'percentage', pricingAmount: 0,
       cohortAvgArpu: 20,
-      spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [],
+      // WALK C — the builder is handed its shape; see the first call site.
+      shape: spreadShape({ months: 1, dist: [100], hold: false, horizonMonths: 0 }),
       startSequence: 1,
     } as any)[0] as any;
 
@@ -1564,7 +1575,8 @@ async function main() {
       pricingEnabled: true, pricingMode: 'dilution', pricingAmount: 0,
       pricingDilutionCurrentPct: 25, pricingDilutionTargetPct: 20,
       cohortAvgArpu: 25,
-      spreadEnabled: true, spreadMonths: 2, spreadDistType: 'even', customDist: [],
+      // WALK C — a two-month EVEN ramp, stated as a shape.
+      shape: spreadShape({ months: 2, dist: [50, 50], hold: false, horizonMonths: 0 }),
       startSequence: 1,
     } as any) as any[];
 
@@ -1712,8 +1724,9 @@ async function main() {
       mixEnabled: false, mixAxis: 'value', draftMix: {}, mixLocked: [],
       tierData: [], pricingEnabled: false, pricingMode: 'percentage',
       pricingAmount: 0, cohortAvgArpu: 25,
-      spreadEnabled: true, spreadMonths: 2, spreadDistType: 'custom',
-      customDist: [60, 40], startSequence: 1,
+      // WALK C — a two-month 60/40 CUSTOM ramp, stated as a shape.
+      shape: spreadShape({ months: 2, dist: [60, 40], hold: false, horizonMonths: 0 }),
+      startSequence: 1,
     } as any) as any[];
 
     const readSet = (e: any) => ({
