@@ -2724,6 +2724,43 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "    const winnerHere = yieldWinnerAt(wanted);",
       "    const winnerHere = yieldWinnerAt(draft.month);") },
+  // 199 D5-15 REVERTED — the duration test goes back to testing the wrong
+  // side. `!== 'one-off'` means a ONE-OFF never reaches the early return, so
+  // it applies in every month from its own; and Number('recurring') is NaN so
+  // `|| 1` gives a one-month window and a RECURRING event stops after one.
+  // Measured backwards on the 19:30 save before D5-15: one-off +0.0554 at its
+  // month and still +0.0561 twenty-one months later, recurring +0.0554 then
+  // nothing. Nothing throws, and What-If reads correctly the whole time — the
+  // two tabs simply disagree about the same saved file.
+  { id: '199 Compare\'s pricing durations invert again',
+    why: 'a One-Off that never stops and a Recurring that stops at once is'
+       + ' one saved file reading two ways, and only Compare is wrong',
+    file: SCENHELPER, spec: SCENPRICE,
+    mutate: s => s.replace(
+      "      if (e.Duration === 'one-off') return currMs === startMs;",
+      "      if (e.Duration !== 'one-off' && currMs >= startMs) return false;") },
+  // 200 COMPARE CARVES NOTHING — the divergence D5-14's What-If half opened,
+  // restored. The pricing pass still applies its delta for the month, so the
+  // blend moves and nothing looks broken; what disappears is the pool that
+  // carries the effect forward, which is the whole of the parity claim.
+  { id: '200 Compare stops carving the pricing pool',
+    why: 'What-If carries a cohort-target event forward and Compare does not,'
+       + ' so one saved file reads differently on two tabs',
+    file: SCENHELPER, spec: SCENPRICE,
+    mutate: s => s.replace(
+      "      const tgt = String(pe.Target ?? 'cohorts');",
+      "      const tgt = 'base-only'; void String(pe.Target ?? 'cohorts');") },
+  // 201 THE RETENTION CAP IS REMOVED in Compare, so a retention flow larger
+  // than the stock carves a pool the blend cannot hold — subscribers priced
+  // into a base they never joined. The What-If side has the same cap for the
+  // same reason; this is the Compare half of that guard.
+  { id: '201 Compare\'s retention carve loses its cap',
+    why: 'a retention event reprices a slice of the stock and adds no'
+       + ' subscribers; without the cap it can carve more than exists',
+    file: SCENHELPER, spec: SCENPRICE,
+    mutate: s => s.replace(
+      "        const sized = scen === 'retention' ? Math.min(volume, newBAdj) : volume;",
+      "        const sized = volume;") },
 ];
 
 

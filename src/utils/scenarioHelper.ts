@@ -1,8 +1,11 @@
-import { format, addMonths, parse } from 'date-fns';
+import { format, parse } from 'date-fns';
 import { eventProRataShare, eventCoverage, applyEventsToMonth, resolvedEventVolume,
          eventScopeMatchesView, pricedVolumesFor, applyPricingToBlend, tariffScopeFromRow,
          isEventOn, eventRowId } from './forecasting';
 import type { ProRataLeaf, ProRataScope } from './forecasting';
+// D5-14. The pricing pass OWN delta function, so Compare and What-If cannot
+// disagree about what a delta does — one arithmetic, two anchors.
+import { applyDelta } from './scenarioArpu';
 
 export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod: any, vchan: any, vtariff?: any) {
   const { baselineRows, marketEvents, yieldEvents, pricingEvents } = parsedSession;
@@ -313,6 +316,20 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
     contractLength: number;
     enterMonthIdx: number;
     size: number;
+    /**
+     * D5-14 (Compare clause, amended 2026-09-10). The anchored delta, when
+     * this pool was carved by a PRICING event — the same optional field
+     * WhatIfTab's pool carries, for the same reason: a rate frozen at one
+     * month's level stops tracking the forecast and flips sign.
+     *
+     * ANCHORED TO COMPARE'S BLENDED BASELINE, because Compare has no base
+     * band — it emits one blended ARPU and never reads BaseARPU_Mean
+     * (:191-197). That is why parity with What-If is asserted as SAME SIGN
+     * and a measured tolerance rather than to the penny.
+     */
+    deltaOf?: { inputMode: 'percentage' | 'absolute'; amount: number };
+    /** The month this pool was carved, so Base sees it only at T+1. */
+    eventMonthIdx?: number;
   }
   
   let p_bBase = totalSeedBase;
@@ -485,11 +502,36 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       });
     }
 
-    const eventTotal = p_eventPools.reduce((s, p) => s + p.size, 0);
+    /**
+     * D5-14, Compare's equivalent of WhatIfTab's `poolRate` — the ONE place a
+     * pool's rate is resolved here, and the only place `deltaOf` is read.
+     *
+     * Anchored to `m.baseline.arpu`, Compare's blended baseline for the month,
+     * because Compare has no base band. Evaluated through the pricing pass's
+     * OWN `applyDelta`, the same exported function WhatIfTab uses, so the two
+     * engines cannot disagree about what a delta does even though they anchor
+     * it to different quantities.
+     *
+     * A pool with no `deltaOf` returns `arpu` untouched — every market-event
+     * pool and the yield-ratio pool.
+     */
+    const poolRate = (p: EventPool): number =>
+      p.deltaOf
+        ? applyDelta(m.baseline.arpu, { ...p.deltaOf, pricesPools: false })
+        : p.arpu;
+    // D5-14. BASE SEES A POOL ONLY ONCE THE LAG HAS DELIVERED IT — the same
+    // rule WhatIfTab states at its base scenario. A pool carved THIS month is
+    // not yet in the stock it will join.
+    const deliveredPools = p_eventPools.filter(
+      p => p.eventMonthIdx === undefined || p.eventMonthIdx < idx,
+    );
+
+    const eventTotal = deliveredPools.reduce((s, p) => s + p.size, 0);
     p_basePool = Math.max(0, newBAdj - eventTotal);
 
-    const tSubs = p_basePool + p_eventPools.reduce((s, p) => s + p.size, 0);
-    const tRev = (p_basePool * m.uplifted.arpu) + p_eventPools.reduce((s, p) => s + p.size * p.arpu, 0);
+    const tSubs = p_basePool + eventTotal;
+    const tRev = (p_basePool * m.uplifted.arpu)
+      + deliveredPools.reduce((s, p) => s + p.size * poolRate(p), 0);
     const blendedArpu = tSubs > 0 ? tRev / tSubs : m.uplifted.arpu;
 
     let finalArpu = blendedArpu;
@@ -520,11 +562,27 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       
       const startMs = parse(e.Month, 'yyyy-MM', new Date()).getTime();
       const currMs = parse(m.month, 'yyyy-MM', new Date()).getTime();
-      if (currMs < startMs) return false;
-      const duration = Number(e.Duration) || 1;
-      const endMs = addMonths(parse(e.Month, 'yyyy-MM', new Date()), duration).getTime();
-      if (e.Duration !== 'one-off' && currMs >= endMs) return false;
-      return true;
+      /**
+       * D5-15 (Jon, 2026-09-10). WHAT-IF'S TWO LINES, VERBATIM.
+       *
+       * What stood here was inverted, and measured so on the 19:30 save: a
+       * ONE-OFF event applied in every month from its own (+0.0554 at 2026-09
+       * and still +0.0561 at 2027-06), while a RECURRING one applied for a
+       * single month and then nothing.
+       *
+       * The cause was a dead variable. `Duration` is a two-value enum
+       * ('one-off' | 'recurring', types/forecast.ts:417), so
+       * `Number(e.Duration)` was ALWAYS NaN and `|| 1` always gave a
+       * one-month window — the window never described what the user chose.
+       * The guard then tested `!== 'one-off'`, so one-off never hit the
+       * early return at all.
+       *
+       * These are now WhatIfTab's own two lines (site 6, :1791), not a second
+       * expression of the same rule: one-off is its own month, anything else
+       * is its month onward. Nothing computes a window, because there is none.
+       */
+      if (e.Duration === 'one-off') return currMs === startMs;
+      return currMs >= startMs;
     });
 
     // WEIGHTED BY WHAT THE EVENT ACTUALLY PRICES, through the SAME functions
@@ -545,6 +603,39 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       const priced = pe.Input_Mode === 'percentage'
         ? finalArpu * (1 + amount / 100)
         : finalArpu + amount;
+
+      /**
+       * D5-14, Compare's carve — the equivalent of WhatIfTab's
+       * `carveCohortPool`, and the close of the divergence that half opened.
+       *
+       * Retention is CAPPED at the base volume it reprices and adds no
+       * subscribers; inflow is not capped, because inflow genuinely joins the
+       * base. The pool stores the DELTA, not the rate, so it tracks the
+       * baseline for its contract length.
+       */
+      const carve = (volume: number, scen: 'inflow' | 'retention') => {
+        const sized = scen === 'retention' ? Math.min(volume, newBAdj) : volume;
+        if (!(sized > 0)) return;
+        p_eventPools.push({
+          arpu: priced,
+          deltaOf: {
+            inputMode: pe.Input_Mode === 'percentage' ? 'percentage' : 'absolute',
+            amount,
+          },
+          // D5-14(1). The event's own stated months, 24 by the SAME rule the
+          // What-If reader states — absence is 24, not a silent fallback.
+          contractLength: Number(pe.Contract_Length_Months) || 24,
+          enterMonthIdx: idx,
+          eventMonthIdx: idx,
+          size: sized,
+        });
+      };
+      const tgt = String(pe.Target ?? 'cohorts');
+      if (tgt !== 'base-only') {
+        const sc = String(pe.Cohort_Scope ?? 'both');
+        if (sc !== 'retention') carve(m.uplifted.inflow, 'inflow');
+        if (sc !== 'inflow') carve(m.uplifted.retention, 'retention');
+      }
       const pools = pricedVolumesFor(
         {
           target: (pe.Target ?? 'cohorts') as 'cohorts' | 'cohorts+base' | 'base-only',
@@ -557,6 +648,10 @@ export function computeScenarioForFilter(parsedSession: any, vseg: string, vprod
       // base pool against the event pools there, which this pass does not model,
       // so the unweighted application is KEPT for that target rather than
       // replaced by a weight that belongs to neither.
+      // D5-14. pricesPools false for a carving event: the pool it just carved
+      // already holds the priced rate, so pricing the whole blend again would
+      // price those subscribers twice. `applyPricingToBlend` weights over the
+      // priced volume only, which is that rule expressed in this pass's shape.
       finalArpu = pools
         ? applyPricingToBlend(pools.pricedVol, priced, pools.totalVol, finalArpu)
         : priced;
