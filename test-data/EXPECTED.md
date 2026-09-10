@@ -7305,6 +7305,37 @@ Retention 2.96K**, matching the app exactly.
 **The hand-derived aggregate is retired.** Every measurement from here runs
 through the restore path or a mounted run.
 
+**THE POOL CARRIES AN ANCHORED DELTA (Jon, 2026-09-10). Recorded before code.**
+
+**A pricing event's pool carries the event's DELTA anchored to the moving
+baseline, not a frozen nominal rate.** At every month the pool persists, its
+rate is `applyDelta(that month's baseline Base ARPU, event)` — a **ratio** for
+the % and Dilution modes, an **additive amount** for a € Direct mode — through
+the **SAME delta arithmetic the pricing pass already uses**
+(`scenarioArpu`'s `applyDelta`). So a dilution improvement stays an improvement
+for its whole contract length.
+
+**Promotion pools are unchanged.** A promotion states an absolute price, so its
+pool keeps its nominal rate and its path stays byte-identical.
+
+**THE REASON, measured in `reports/2026-09-10-0810-pricing-pools-retention.md`.**
+With the pool frozen at the repriced rate of its own month (14.58) while the
+baseline Base ARPU rises across the horizon (14.51 → 15.58), a dilution
+**improvement** was above baseline at T+1 and **below it from T+2 onward** —
++0.0100 at 2026-10, then −0.0200 at 2027-02 and −0.0200 at 2028-06. The sign
+flipped and stayed flipped, so an improvement became a drag for twenty-two of
+twenty-four months. A frozen rate stops tracking the forecast; an anchored delta
+does not. This is the same reasoning the yield path already records — *"we
+express the yield as an ARPU ratio … so the improvement is anchored to the
+forecast level"* — applied to the pricing pass.
+
+**Everything else stands:** the retention pool is capped at
+`min(priced retention volume, base stock)` and **replaces** that slice's rate;
+the inflow pool joins with the inflow at T+1; `contractLength` on
+`PricingEvent`, `Contract_Length_Months` appended last, absent → 24;
+`pricesPools` false for a carving event's base side; Base-only unchanged;
+Compare parity; **existing saves carrying such an event change forecast.**
+
 #### D5-13 DECIDED (Jon, 2026-09-09) — the Value card's preview names the winner
 
 **Recorded before any code.**
