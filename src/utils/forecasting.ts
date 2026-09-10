@@ -1309,6 +1309,15 @@ export function pricingEventExportRow(e: PricingEvent): Record<string, unknown> 
     // a bare [] would round-trip as "targets no tariff", which is the
     // opposite of what absence means here.
     Tariff_Scope: e.tariffScope && e.tariffScope.length ? JSON.stringify(e.tariffScope) : '',
+    // D5-14 (Jon, 2026-09-10). APPENDED LAST, after Tariff_Scope — the same
+    // append-only rule Enabled and Tariff_Scope follow, and the reason trap
+    // 119 protects. This moves the D5-10 last-column pin along by one on
+    // THIS sheet only, which is the rule working rather than breaking.
+    //
+    // A NUMBER, not the '' absence carrier: absence here has a STATED
+    // meaning (24), so writing the resolved figure keeps the sheet
+    // self-describing instead of making every reader re-apply the rule.
+    Contract_Length_Months: e.contractLength ?? 24,
   };
 }
 
@@ -1344,6 +1353,11 @@ export function pricingEventFromRow(r: Record<string, unknown>): PricingEvent {
     ...(mode === 'dilution' ? { pricingMode: 'dilution' as const } : {}),
     dilutionCurrentPct: readOptionalNumber(r.Dilution_Current_Pct),
     dilutionTargetPct:  readOptionalNumber(r.Dilution_Target_Pct),
+    // D5-14. ABSENT IS 24 BY RULE. A pre-D5-14 sheet has no column; a blank
+    // cell is not a stated zero here, because a pool that dies immediately
+    // is not what "no column" ever meant. A real 0 reads as 24 too — the
+    // card's minimum is 1, so 0 cannot be a figure the user stated.
+    contractLength:     Number(r.Contract_Length_Months) || 24,
     pricedVol:          readOptionalNumber(r.Priced_Vol),
     totalVol:           readOptionalNumber(r.Total_Vol),
     comment:          String(r.Comment ?? ''),

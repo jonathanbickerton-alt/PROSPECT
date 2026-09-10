@@ -416,6 +416,16 @@ export interface PricingEvent extends EventToggle {
   /** 'one-off' = reverts next month; 'recurring' = persists from month onwards */
   duration: 'one-off' | 'recurring';
   /**
+   * D5-14 (Jon, 2026-09-10). How long the pool this event carves survives.
+   *
+   * Months, default 24 — the Promotion card's control and the same field name
+   * a MarketEvent already carries, so the pool shape reads ONE `contractLength`
+   * whoever built it. ABSENT MEANS 24 AS A STATED RULE, not a silent fallback:
+   * a sheet written before D5-14 has no column, and 24 is what such an event
+   * has always meant to the at-risk churn arithmetic.
+   */
+  contractLength?: number;
+  /**
    * Pre-event blended ARPU snapshot taken at event-creation time.
    * Used in the results table to show baseline vs adjusted ARPU.
    */

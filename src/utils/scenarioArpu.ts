@@ -88,8 +88,15 @@ export interface ScenarioArpuResult {
   absence: ArpuAbsence | null;
 }
 
-/** Apply one pricing delta. Percentage scales; absolute shifts. */
-function applyDelta(arpu: number, p: ScenarioPricing): number {
+/**
+ * Apply one pricing delta. Percentage scales; absolute shifts.
+ *
+ * EXPORTED at D5-14 (Jon, 2026-09-10) so the POOL evaluates its anchored
+ * delta through this same function rather than a copy of it. The pool and the
+ * pricing pass must not be able to disagree about what a delta does, and one
+ * exported function is the only way to guarantee that rather than test for it.
+ */
+export function applyDelta(arpu: number, p: ScenarioPricing): number {
   return p.inputMode === 'percentage' ? arpu * (1 + p.amount / 100) : arpu + p.amount;
 }
 

@@ -520,9 +520,22 @@ async function main() {
     channelL1: 'All', channelL2: 'All', month: MONTHS[0], inputMode: 'percentage',
     amount: 5, target: 'cohorts', cohortScope: 'both', duration: 'one-off',
     originalBaseArpu: 20, enabled: false } as any);
-  check('export: and on Pricing_Events', penultKey(pr) === 'Enabled', penultKey(pr));
-  check('export: Tariff_Scope is LAST on Pricing_Events (D5-10)',
-    lastKey(pr) === 'Tariff_Scope', lastKey(pr));
+  // RE-AIMED AGAIN at D5-14, 2026-09-10, and ONLY on this sheet: the pricing
+  // row gained `Contract_Length_Months` AFTER `Tariff_Scope`, so the three
+  // trailing columns are now Enabled / Tariff_Scope / Contract_Length_Months.
+  // Market_Events and Yield_Events are untouched and still end at Tariff_Scope.
+  //
+  // The pin names ALL THREE positions rather than just the last, for the same
+  // reason it named two at D5-10: a column appended between any of them still
+  // goes red, which is what makes append-only a rule rather than a hope.
+  const antepenultKey = (o: Record<string, unknown>) =>
+    Object.keys(o)[Object.keys(o).length - 3];
+  check('export: Enabled is third-from-last on Pricing_Events (D5-14)',
+    antepenultKey(pr) === 'Enabled', antepenultKey(pr));
+  check('export: Tariff_Scope is second-to-last on Pricing_Events (D5-14)',
+    penultKey(pr) === 'Tariff_Scope', penultKey(pr));
+  check('export: Contract_Length_Months is LAST on Pricing_Events (D5-14)',
+    lastKey(pr) === 'Contract_Length_Months', lastKey(pr));
 
   /** Through a REAL workbook, not an object handed straight back. */
   const throughXlsx = (rows: Record<string, unknown>[]) => {

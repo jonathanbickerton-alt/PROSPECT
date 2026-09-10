@@ -19,7 +19,7 @@ import { EventsSummaryTable } from './EventsSummaryTable';
 import { EventOnOffSwitch, OFF_ROW } from './EventOnOffSwitch';
 import { foldChurnRamp, linearChurnRamp, type ChurnFoldMonth } from '../utils/churnFold';
 import { canShowBaseForecast, resolveEventScopeForecast, tariffScopeFor, monthsCarryingActuals } from '../utils/forecasting';
-import { scenarioAdjustedArpu } from '../utils/scenarioArpu';
+import { applyDelta, scenarioAdjustedArpu } from '../utils/scenarioArpu';
 import { MixSliderRow } from './MixSliderRow';
 import { MixTargetPanel } from './MixTargetPanel';
 import type { ScenarioKey, ScenarioPricing } from '../utils/scenarioArpu';
@@ -1336,6 +1336,22 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
     interface EventPool {
       eventId: string;
       arpu: number;           // fixed per-subscriber ARPU for this cohort
+      /**
+       * D5-14 (Jon, 2026-09-10). THE ANCHORED DELTA, when this pool was carved
+       * by a PRICING event.
+       *
+       * A promotion states an absolute price, so its pool keeps `arpu` and
+       * this is absent — its path is byte-identical. A pricing event states a
+       * CHANGE, and a change frozen at one month's level stops tracking the
+       * forecast: measured in the 0810 session, a dilution improvement was
+       * +0.0100 at T+1 and -0.0200 by T+5, because the pool held 14.58 while
+       * the baseline rose to 15.58. The sign flipped and stayed flipped.
+       *
+       * Carrying the delta instead means the rate is re-evaluated against each
+       * month's own baseline, so an improvement stays an improvement for the
+       * whole contract length.
+       */
+      deltaOf?: { inputMode: 'percentage' | 'absolute'; amount: number };
       contractLength: number; // protection window in months
       enterMonthIdx: number;  // 0-based index when they enter Base (event month + 1)
       size: number;           // current subscriber count
@@ -1649,6 +1665,30 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
       // events are applied (Option A). Events shift it from this anchor.
       let baseARPU = m.baseline.arpu;
 
+      /**
+       * D5-14. THE POOL'S RATE THIS MONTH — the ONE place a pool's rate is
+       * resolved, and the only place `deltaOf` is read.
+       *
+       * Anchored to the month's BASELINE BASE ARPU — the band the base
+       * scenario itself is built from (`fcM.baseArpu.mean`), NOT the blended
+       * `m.baseline.arpu`. Measured: anchoring to the blend applies the delta
+       * to 13.75 and lands at 14.66 against a base band of 14.51, so a 6.67%
+       * improvement arrives as +1.0% — six times too small. The pool sits IN
+       * the base band, so the band is what its delta must move.
+       *
+       * Evaluated through `applyDelta` — the pricing pass's OWN function,
+       * exported for this at scenarioArpu.ts:99, so the pool and the pass
+       * cannot disagree about what a delta does.
+       *
+       * A pool with no `deltaOf` returns `p.arpu` untouched, which is every
+       * promotion pool and every market-event pool.
+       */
+      const poolAnchor = baseForecast.months[idx]?.baseArpu?.mean ?? m.baseline.arpu;
+      const poolRate = (p: EventPool): number =>
+        p.deltaOf
+          ? applyDelta(poolAnchor, { ...p.deltaOf, pricesPools: false })
+          : p.arpu;
+
       // Retention yield events: adjust the effective base ARPU to reflect the
       // yield mix on the retained cohort for this month.
       // RATE event — NOT pro-rated. Yield shifts a per-head ARPU, not a
@@ -1717,7 +1757,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
         // Contract length controls when event subs enter the at-risk churn pool,
         // keeping their per-subscriber ARPU in the blend for the protected period.
         const baseRevenue  = p_basePool * baseARPU;
-        const eventRevenue = p_eventPools.reduce((s, p) => s + p.size * p.arpu, 0);
+        const eventRevenue = p_eventPools.reduce((s, p) => s + p.size * poolRate(p), 0);
         blendedARPU = Math.max(0, (baseRevenue + eventRevenue) / newBAdj);
       }
 
@@ -1759,6 +1799,74 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
           const applyDelta = (arpu: number) =>
             pe.inputMode === 'percentage' ? arpu * (1 + pe.amount / 100) : arpu + pe.amount;
 
+          /**
+           * D5-14 (Jon, 2026-09-10). THE POOL A COHORT-TARGET PRICING EVENT
+           * CARVES — the whole of Alessandro's finding.
+           *
+           * Before this, a Pricing event re-blended `pricingARPU` for the month
+           * and created nothing that outlived it, while `baseARPU` is re-read
+           * from the baseline every month (:1650, Option A). So a priced
+           * cohort reached Base never — the effect was real, visible on the
+           * Retention line, and gone by T+1.
+           *
+           * The priced subscribers now enter a pool at the priced rate,
+           * through the SAME shape a re-banded promotion uses, and the
+           * EXISTING lag delivers it to Base at T+1 (:1931,
+           * `eventMonthIdx < idx`). One-Off carves in its own month only;
+           * Recurring carves one per month, because the filter above already
+           * admits it in every month from its own.
+           *
+           * NOT for base-only: it prices the standing base in place and has
+           * no cohort to carve.
+           */
+          const carveCohortPool = (
+            volume: number, arpu: number, scen: 'inflow' | 'retention',
+          ) => {
+            // D5-14. The pool stores the EVENT'S DELTA; `arpu` below is the
+            // rate at THIS month, kept as the fallback and as the figure a
+            // reader sees when the delta cannot be applied.
+            const deltaOf = { inputMode: pe.inputMode ?? 'percentage', amount: Number(pe.amount) || 0 };
+            /**
+             * D5-14 RETENTION SHAPE (Jon, 2026-09-10). A retention-target
+             * pricing event REPRICES A SLICE OF THE EXISTING STOCK — it adds
+             * no subscribers — so its pool is CAPPED at the stock it reprices
+             * and REPLACES that slice's rate in the blend.
+             *
+             * The cap is the one the retention-yield path already uses at
+             * :1687, `Math.min(m.uplifted.retention, p_basePool)`, and it is
+             * the same reasoning: you cannot reprice more of the base than
+             * there is base. Without it a retention flow larger than the stock
+             * carves a pool the blend cannot hold, and `p_basePool` clamps to
+             * zero — measured in the 0750 session on a harness whose stock was
+             * 42x too small, which is exactly the state this guards against.
+             *
+             * INFLOW IS NOT CAPPED: inflow genuinely ADDS subscribers, and its
+             * pool joins the base with them at T+1. The two scenarios differ
+             * in kind, not in degree, which is why the cap is here and not in
+             * the callers.
+             */
+            const sized = scen === 'retention'
+              ? Math.min(volume, p_basePool)
+              : volume;
+            if (!(sized > 0) || !Number.isFinite(arpu)) return;
+            volume = sized;
+            p_eventPools.push({
+              eventId: `pricing-${pe.id}-${m.month}-${scen}`,
+              arpu,
+              deltaOf,
+              // D5-14(1). The event's OWN stated months, 24 by rule when the
+              // sheet predates the column. Same field, same pool shape, same
+              // at-risk arithmetic as a promotion's.
+              contractLength: pe.contractLength ?? DEFAULT_CONTRACT_N,
+              enterMonthIdx: idx,
+              // Retention prices subscribers already in this month's stock, so
+              // the pool's event month is THIS month and Base sees it at T+1 —
+              // the re-banded Retention pool's rule, not the Inflow one's.
+              eventMonthIdx: idx,
+              size: volume,
+            });
+          };
+
           if (pe.target === 'cohorts') {
             // Cohorts Only: price the selected cohort type(s); base + unselected cohorts stay unchanged.
             const inflowVol     = pe.cohortScope !== 'retention' ? m.uplifted.inflow     : 0;
@@ -1768,6 +1876,11 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
             if (totalVol > 0 && pricedVol > 0) {
               const pricedARPU = applyDelta(pricingARPU);
               pricingARPU = applyPricingToBlend(pricedVol, pricedARPU, totalVol, pricingARPU);
+              // D5-14. The same two volumes that were just priced, at the same
+              // rate — read from this branch rather than re-derived, so the
+              // pool and the blend cannot disagree about who was priced.
+              carveCohortPool(inflowVol, pricedARPU, 'inflow');
+              carveCohortPool(retentionVol, pricedARPU, 'retention');
             }
           } else if (pe.target === 'base-only') {
             // Base Only: delta applies to the base pool component only;
@@ -1775,13 +1888,16 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
             if (newBAdj > 0) {
               const pricedBaseARPU = applyDelta(baseARPU);
               const baseRevenue  = p_basePool * pricedBaseARPU;
-              const eventRevenue = p_eventPools.reduce((s, p) => s + p.size * p.arpu, 0);
+              const eventRevenue = p_eventPools.reduce((s, p) => s + p.size * poolRate(p), 0);
               pricingARPU = (baseRevenue + eventRevenue) / newBAdj;
             }
           } else {
             // Cohorts + Base: base always included; cohortScope controls which cohort type(s) also get the delta.
             if (pe.cohortScope === 'both') {
               pricingARPU = applyDelta(pricingARPU);
+              // D5-14. 'both' prices every cohort, so both cohorts are carved.
+              carveCohortPool(m.uplifted.inflow, pricingARPU, 'inflow');
+              carveCohortPool(m.uplifted.retention, pricingARPU, 'retention');
             } else {
               const inflowVol    = pe.cohortScope !== 'retention' ? m.uplifted.inflow    : 0;
               const retentionVol = pe.cohortScope !== 'inflow'    ? m.uplifted.retention : 0;
@@ -1790,6 +1906,8 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
               if (totalVol > 0 && pricedVol > 0) {
                 const pricedARPU = applyDelta(pricingARPU);
                 pricingARPU = applyPricingToBlend(pricedVol, pricedARPU, totalVol, pricingARPU);
+                carveCohortPool(inflowVol, pricedARPU, 'inflow');
+                carveCohortPool(retentionVol, pricedARPU, 'retention');
               }
             }
           }
@@ -1884,7 +2002,17 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
             // A base-only event prices the standing base and leaves event pools
             // at their own fixed rates — the engine's own distinction, carried
             // as a flag so the two cannot drift.
-            pricesPools: pe.target !== 'base-only',
+            // D5-14(2). FALSE FOR A COHORT TARGET TOO, now that such an event
+            // carves a pool: the pool already carries the priced rate, and
+            // pricing the whole blend would price those subscribers twice —
+            // measured at +0.3019 ARPU / +294 revenue at T+1 on the 0725
+            // fixture, compounding every later month.
+            //
+            // So this is now "does this event leave any pool unpriced", and
+            // the answer is no for every target: base-only prices the standing
+            // base and leaves pools alone, and a cohort target prices its
+            // cohorts INTO a pool. Each subscriber is priced exactly once.
+            pricesPools: false,
             };
           });
 
@@ -1932,7 +2060,7 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
           return scenarioAdjustedArpu({
             baselineArpu: fcM?.baseArpu?.mean,
             naturalVolume: Math.max(0, newBAdj - delivered.reduce((t, p) => t + p.size, 0)),
-            pools: delivered.map(p => ({ volume: p.size, arpu: p.arpu })),
+            pools: delivered.map(p => ({ volume: p.size, arpu: poolRate(p) })),
             pricing: pricingFor('base'),
           });
         })(),

@@ -27,6 +27,7 @@
  *    nearly did.
  */
 import fs from 'fs';
+import * as XLSX from 'xlsx';
 import {
   pricingEventExportRow, pricingEventFromRow, pricingEventSummary,
   retainedRevenueRatio, dilutionAmountPct, isValidDilutionPct,
@@ -681,6 +682,83 @@ check('row: the stored branch goes through the SHARED applyPricingToBlend',
     'the blended read is what Q3 retires');
 }
 
+
+// ══ D5-14 — contractLength, the column, and the anchored pool ═════════════
+{
+  // A REAL workbook, not an object handed straight back: a column the writer
+  // fails to emit must be invisible to the reader AND to this spec at the same
+  // moment, which is only true if it goes through xlsx.
+  const XLSXR: any = XLSX;
+  const throughXlsx = (rows: Record<string, unknown>[]) => {
+    const wb = XLSXR.utils.book_new();
+    XLSXR.utils.book_append_sheet(wb, XLSXR.utils.json_to_sheet(rows), 'P');
+    const buf = XLSXR.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    return XLSXR.utils.sheet_to_json(XLSXR.read(buf, { type: 'buffer' }).Sheets['P']);
+  };
+  const tab = fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8');
+
+  // ── THE COLUMN IS LAST, AFTER Tariff_Scope ────────────────────────────
+  const row = pricingEventExportRow({
+    id: 'p-cl', segment: 'All', product: 'All', productL2: 'All',
+    channelL1: 'All', channelL2: 'All', month: '2026-09',
+    inputMode: 'percentage', amount: 5, target: 'cohorts',
+    cohortScope: 'retention', duration: 'one-off', originalBaseArpu: 20,
+    contractLength: 6,
+  } as any);
+  const keys = Object.keys(row);
+  check('D5-14: Contract_Length_Months is the LAST column on Pricing_Events',
+    keys[keys.length - 1] === 'Contract_Length_Months', keys[keys.length - 1]);
+  check('D5-14: and Tariff_Scope is now second-to-last, not last',
+    keys[keys.length - 2] === 'Tariff_Scope', keys[keys.length - 2]);
+  check('D5-14: the stated months are written as a NUMBER, not the empty carrier',
+    row.Contract_Length_Months === 6, String(row.Contract_Length_Months));
+
+  // ── ROUND TRIP, THROUGH A REAL WORKBOOK ───────────────────────────────
+  const back: any = pricingEventFromRow(throughXlsx([row])[0]);
+  check('D5-14: contractLength survives writer -> xlsx -> reader',
+    back.contractLength === 6, String(back.contractLength));
+
+  // ── ABSENT IS 24 BY RULE, not by accident ─────────────────────────────
+  const noCol = { ...row } as any; delete noCol.Contract_Length_Months;
+  const back24: any = pricingEventFromRow(throughXlsx([noCol])[0]);
+  check('D5-14: a row with NO column reads back 24, the stated rule',
+    back24.contractLength === 24, String(back24.contractLength));
+  const blank: any = pricingEventFromRow(throughXlsx([{ ...row, Contract_Length_Months: '' }])[0]);
+  check('D5-14: and a BLANK cell reads 24 too — absence is not a stated zero',
+    blank.contractLength === 24, String(blank.contractLength));
+
+  // ── THE POOL CARRIES A DELTA, EVALUATED IN ONE PLACE ──────────────────
+  check('D5-14: the pool can carry an anchored delta',
+    tab.includes("deltaOf?: { inputMode: 'percentage' | 'absolute'; amount: number };"),
+    'a pool frozen at one month rate flips sign as the baseline moves');
+  check('D5-14: ONE evaluation site, anchored to the BASE BAND',
+    tab.includes('const poolAnchor = baseForecast.months[idx]?.baseArpu?.mean ?? m.baseline.arpu;')
+      && (tab.split('const poolRate = (p: EventPool): number =>').length - 1) === 1,
+    'anchoring to the blended baseline under-applies the delta six-fold');
+  check('D5-14: and it uses the pricing pass OWN applyDelta, not a copy',
+    tab.includes('applyDelta(poolAnchor, { ...p.deltaOf, pricesPools: false })')
+      && tab.includes("import { applyDelta, scenarioAdjustedArpu } from '../utils/scenarioArpu';"),
+    'two delta implementations is how the pool and the pass drift apart');
+  check('D5-14: every pool-rate read goes through poolRate — none reads p.arpu',
+    (tab.split('p.size * poolRate(p)').length - 1) === 2
+      && tab.includes('pools: delivered.map(p => ({ volume: p.size, arpu: poolRate(p) })),')
+      && !tab.includes('p.size * p.arpu, 0)'),
+    'a missed reader is a month priced at the frozen rate');
+
+  // ── THE RETENTION CAP, AND THE INFLOW NON-CAP ─────────────────────────
+  check('D5-14: the retention carve is CAPPED at the base stock',
+    tab.includes("const sized = scen === 'retention'")
+      && tab.includes('? Math.min(volume, p_basePool)'),
+    'a retention event reprices a slice of the stock; it adds no subscribers');
+  check('D5-14: inflow is NOT capped — it adds subscribers',
+    tab.includes(': volume;'),
+    'inflow genuinely joins the base with the inflow at T+1');
+
+  // ── THE BASE SIDE PRICES THE REST, NOT THE POOL ───────────────────────
+  check('D5-14: pricesPools is false so no subscriber is priced twice',
+    tab.includes('pricesPools: false,') && !tab.includes("pricesPools: pe.target !== 'base-only',"),
+    'the pool already carries the priced rate');
+}
 
 console.log(`\npricing-roundtrip spec: ${pass} passed, ${fails.length} failed`);
 fails.forEach(f => console.log('  FAIL  ' + f));
