@@ -3,35 +3,29 @@
 ```
 FOR ADVISOR
 Generated: 2026-09-10 21:59 +0100 (UTC 2026-09-10 20:59)
-Certifies: __ PENDING
+Certifies: a60e3a1 (the tree the gate ran against)
 
 BASE 487e21b (code 477b171); HEAD 520735d. status --short EMPTY; diff
   477b171..HEAD -- src scripts test-data EMPTY. Both quoted in the body.
-1 THE CONTROLS ARE NOT EXCLUSIVE — both are <button type="button"> with
-  independent onClick; no type=radio, no name=, no role=. Driven
-  mounted: after clicking Hold the ramp control, its panel and its "3"
-  are all still there. 45/45. So I STOP on the fix half, per 1.2.
-2 WHAT READS AS A RADIO IS THE GLYPH: `rounded-full border-2` with a
-  `rounded-full bg-white` dot — a radio dot — on both, side by side in
-  one flex row. The Volume card uses the SAME idiom; CHURN uses real
-  <input type="checkbox">. Two idioms in one app. Jon's call. §2.
-3 LABELS DO NOT CHANGE WITH HOLD, measured on all three cards. §3.
-4 THERE IS NO ESLINT IN THIS REPO. `npm run lint` is `tsc --noEmit`;
-  no config, no dependency. The rule is not off/warn/error — it does
-  not exist. And 10 `eslint-disable-line react-hooks/exhaustive-deps`
-  comments sit in src/ suppressing a rule that has never run.
-5 INSTALLED IT AND MEASURED: 34 violations — WhatIfTab 17, App 12,
-  ForecastVsActuals 4, ScenarioCompare 1. >25, so 2.2's second branch.
-6 POSITIVE CONTROLS ALL RED: re-planting the churn-fold and
-  handleEditStart omissions, and B8's own promoHold, each reddens the
-  rule by name. It WOULD have caught B8. §4.
-7 CORRECTION: I first wrote that churnHold was a live B8 twin. It is
-  NOT — `churnFold` is listed and carries it transitively. Listed
-  anyway; measured 40/40 before and after. §5.
+1 THE CONTROLS ARE NOT EXCLUSIVE — both <button type="button">, no
+  radio/name/role. Mounted: after Hold the ramp control, its panel AND its
+  "3" all survive (45/45). STOP on the fix half per 1.2; card unchanged.
+2 WHAT READS AS A RADIO IS THE GLYPH: a rounded-full ring + white dot,
+  twice, in one row. Volume same; CHURN uses real checkboxes. JON'S CALL.
+3 LABELS DO NOT CHANGE WITH HOLD on any card: "Subscriber Volume (+/-)"
+  states the hold-OFF reading while the help says TARGET. Both at once.
+4 THERE IS NO ESLINT IN THIS REPO — lint is `tsc --noEmit`, no config, no
+  dependency; the rule is not off/warn/error, it does not exist. TEN inert
+  eslint-disable-line comments suppress it. Installed --no-save; measured
+  34 (WhatIfTab 17, App 12, FvA 4, Compare 1) — >25, so 2.2's branch two.
+5 ALL THREE POSITIVE CONTROLS RED, incl. B8's own promoHold: the rule
+  WOULD have caught it before the walk did. §4.
+6 CORRECTION: I began writing churnHold up as a live B8 twin. It is NOT —
+  churnFold carries it transitively; 40/40 before and after. Listed anyway.
+7 A VACUOUS GREEN CAUGHT: a scripted patch broke parsing; 0 meant 0 read. §6.
 SHED: item 1's fix half (STOP, as briefed); item 2.2/2.3 entirely.
-guard-traps: 214/214 CAUGHT (0 missed/inconclusive/crashed).
-full suite:  67/67 GREEN (unchanged — no spec added or removed).
-Repo: __ PENDING
+guard-traps 214/214 CAUGHT; full suite 67/67 GREEN (no spec added).
+Repo: committed 7e95170, pushed (origin in sync); code at a60e3a1.
 ```
 
 ## 0. The base check
