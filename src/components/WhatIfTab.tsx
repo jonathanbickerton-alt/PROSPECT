@@ -493,6 +493,21 @@ interface BuildPromoEventsParams {
   spreadMonths: number;
   spreadDistType: 'even' | 'custom';
   customDist: number[];
+  /**
+   * REQ-D6-03 session 3 — "ramp then hold" on the Promotion card.
+   *
+   * INDEPENDENT OF `spreadEnabled`, the rule both other carriers follow:
+   * spread off with hold on is a ramp of length 1 plus the tail.
+   */
+  hold?: boolean;
+  /**
+   * Months this campaign may occupy, ramp INCLUDED, counted from its start
+   * month to the last forecast month. Passed in for the reason `spreadShape`
+   * documents: the horizon belongs to the forecast the card sits on, not to
+   * this function, and a second derivation would be a second thing to keep in
+   * step. Ignored entirely when `hold` is false.
+   */
+  horizonMonths?: number;
   /** D5-10. The tariffs in scope and the full L1 set, so the ONE call to
    *  `tariffScopeFor` can live here — the Promotion card's three save paths
    *  all reach an event through this function, so this IS the card's site. */
@@ -631,13 +646,33 @@ export function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
   const applyPricing = (arpu: number) =>
     p.pricingMode === 'absolute' ? arpu + pricingAmount : arpu * (1 + pricingAmount / 100);
 
+  // REQ-D6-03 session 3 — THE SHARED GENERATOR, and the card's own
+  // `pct / total` RETIRED rather than left beside it.
+  //
+  // This read:
+  //     const total    = pcts.reduce((s, pct) => s + pct, 0)
+  //     const fraction = pct / total                       // at the map below
+  // which is `spreadShape`'s hold-off arm expression for expression. Keeping
+  // both would be two implementations of one shape on one card, and the whole
+  // point of session 1's generator was that the Volume card's two sites could
+  // not drift apart. A third site outside it would reopen exactly that.
+  //
+  // HOLD OFF IS BYTE-IDENTICAL, and the mounted spec pins it against a
+  // hand-written literal taken from the c11151e arithmetic rather than from
+  // this function.
+  const rampMonths = p.spreadEnabled ? p.spreadMonths : 1;
   const pcts = p.spreadEnabled
     ? (p.spreadDistType === 'even'
         ? Array.from({ length: p.spreadMonths }, () => 100 / p.spreadMonths)
         : p.customDist.slice(0, p.spreadMonths))
     : [100];
-  const total = pcts.reduce((s, pct) => s + pct, 0);
-  if (total <= 0) return [];
+  const shape = spreadShape({
+    months: rampMonths,
+    dist: pcts,
+    hold: !!p.hold,
+    horizonMonths: p.horizonMonths ?? 0,
+  });
+  if (!shape.length) return [];
 
   // THE SAME MAP THE CARD BLENDS, from the SAME function — stated rates
   // included. This used to be hand-rolled from `t.baseArpu` alone, which meant
@@ -658,11 +693,16 @@ export function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
   const baseDate = parse(p.draft.date, 'yyyy-MM', new Date());
   const promoRebanded = p.target === 'Retention' && (p.mixEnabled || p.pricingEnabled);
 
-  return pcts.map((pct, i) => {
-    const fraction = pct / total;
+  return shape.map(({ offset: i, fraction }) => {
     const isPct = p.amountType === 'percentage';
     const monthStr = format(addMonths(baseDate, i), 'yyyy-MM');
-    const vol = Math.round(p.draft.subscriberVolume * fraction);
+    // A PERCENTAGE AMOUNT IS A RATE AND MUST NOT BE ROUNDED — clause 7, and
+    // the same rule the Volume card follows. 10% over three months is
+    // 3.33 / 6.67 / 10, and `Math.round` makes it 3 / 7 / 10, where the only
+    // month the user would recognise is the last. Absolute amounts round
+    // exactly as before, which is what decision 3's byte-identity is about.
+    const rawVol = p.draft.subscriberVolume * fraction;
+    const vol = isPct ? rawVol : Math.round(rawVol);
 
     // Base ARPU: the mix arm's blended tier ARPU, or (no mix) the cohort's
     // trailing-average — the exact same P4 fallback used for a plain volume
@@ -697,6 +737,10 @@ export function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
       comment: p.draft.comment,
       contractLength: p.draft.contractLength,
       isPromotion: true,
+      // REQ-D6-03 s3 — EVERY emitted row, the held tail included. A campaign
+      // whose tail rows lacked it would reopen with a ramp length read off a
+      // truncated plateau.
+      hold: !!p.hold,
       amountType: p.amountType,
       // 'baseline' is the untouched forecast, which is decision 6's wording
       // for both arms: the view's fitted inflow, or its fitted retention.
@@ -2735,6 +2779,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   useClearTariffOnDeselect(newPromo, setNewPromo, selectedTariffs);
 
   const [promoSpreadEnabled, setPromoSpreadEnabled] = useState(false);
+  /**
+   * REQ-D6-03 session 3 — "Hold after ramp" on the Promotion card.
+   *
+   * Its own state beside the spread switch, on the rule both other carriers
+   * follow: spread off plus hold on is a ramp of length 1 and a tail.
+   */
+  const [promoHold, setPromoHold] = useState(false);
   const [promoSpreadMonths, setPromoSpreadMonths] = useState(3);
   const [promoSpreadDistType, setPromoSpreadDistType] = useState<'even' | 'custom'>('even');
   const [promoCustomDist, setPromoCustomDist] = useState<number[]>([34, 33, 33]);
@@ -3133,6 +3184,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const resetPromoDraft = useCallback(() => {
     setNewPromo(blankPromo());
     setPromoSpreadEnabled(false);
+    // REQ-D6-03 s3 — a discarded draft must not leave the toggle lit.
+    setPromoHold(false);
     setPromoSpreadMonths(3);
     setPromoSpreadDistType('even');
     setPromoCustomDist([34, 33, 33]);
@@ -3186,6 +3239,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       pricingDilutionCurrentPct: promoDilutionCurrent, pricingDilutionTargetPct: promoDilutionTarget,
       cohortAvgArpu: promoCohortAvgArpu,
       spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
+      // REQ-D6-03 s3 — the hold pair, on the two paths that build a CAMPAIGN.
+      hold: promoHold, horizonMonths: horizonMonthsFrom(newPromo.date ?? ''),
       startSequence: nextSequence(marketEvents),
       selectedTariffs, fullTariffL1s: [...fullTariffTree.keys()],
     });
@@ -5169,6 +5224,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoDilutionCurrent(event.promoDilutionCurrentPct);
     setPromoDilutionTarget(event.promoDilutionTargetPct);
     setPromoSpreadEnabled(false);
+    // REQ-D6-03 s3 — THE TOGGLE FOLLOWS THE ROW, set unconditionally so that
+    // opening a plain promotion after a held one turns it OFF.
+    setPromoHold(event.hold ?? false);
     setEditingPromoId(event.id);
     setEditingPromoCampaign(null);
   }, []);
@@ -5197,6 +5255,33 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       volByOffset[off] += Math.abs(e.subscriberVolume);
       totalSub += Math.abs(e.subscriberVolume);
     });
+    // ── REQ-D6-03 s3 — A HELD PROMO CAMPAIGN RESTORES FROM ITS ROWS ───────
+    //
+    // The reverse-engineering above is right for a terminating ramp and wrong
+    // for a held one in the way that looks like a data change: a held
+    // campaign's rows SUM to far more than the target, so `totalSub` would
+    // seed the amount box with a figure the user never typed and `span` a
+    // 20-month ramp.
+    //
+    // Decision 5's three values, and NO NEW FUNCTION: the toggle from the
+    // COLUMN (never inferred — a flat three-month promo is indistinguishable
+    // from a one-month one held twice), the target from the LAST row, and the
+    // ramp length from `holdPlateauStart`, session 1's, over the same figures.
+    const isHeld = rows.some(e => e.hold);
+    const figures = volByOffset.map(v => Math.abs(v));
+    const heldTarget = figures[figures.length - 1] ?? 0;
+    const heldRampLen = holdPlateauStart(figures);
+    // The cumulative fractions the ramp months reached, differenced back into
+    // the per-month shares the generator re-cumulates — the read that
+    // round-trips, so re-saving untouched reproduces the same rows.
+    const heldCum = figures.slice(0, heldRampLen)
+      .map(v => heldTarget > 0 ? (v / heldTarget) * 100 : 0);
+    const heldShares = heldCum.map((c, i) => i === 0 ? c : c - heldCum[i - 1]);
+    const heldPcts = heldShares.map(s => Math.round(s));
+    heldPcts[0] += 100 - heldPcts.reduce((s, p) => s + p, 0);
+    const heldEvenShare = 100 / heldRampLen;
+    const heldIsEven = heldShares.every(s => Math.abs(s - heldEvenShare) <= 1);
+
     const pcts = volByOffset.map(v => totalSub > 0 ? Math.round((v / totalSub) * 100) : 0);
     pcts[0] += 100 - pcts.reduce((s, p) => s + p, 0);
     const mean = totalSub / span;
@@ -5206,7 +5291,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       segment: first.segment, product: first.product, productL2: first.productL2 ?? 'All',
       channel: first.channel, channelL2: first.channelL2 ?? 'All',
       tariffL1: first.tariffL1 ?? 'All', tariffL2: first.tariffL2 ?? 'All',
-      date: first.date, subscriberVolume: totalSub, contractLength: first.contractLength,
+      date: first.date,
+      // THE TARGET, not the sum — decisions 2 and 5 read together.
+      subscriberVolume: isHeld ? heldTarget : totalSub,
+      contractLength: first.contractLength,
       campaignName: campaign, comment: rows.find(e => e.comment)?.comment ?? '',
     });
     setPromoTarget(first.scenario === 'Retention' ? 'Retention' : 'Inflow');
@@ -5232,10 +5320,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoPricingAmount(first.promoPricingAmount ?? 0);
     setPromoDilutionCurrent(first.promoDilutionCurrentPct);
     setPromoDilutionTarget(first.promoDilutionTargetPct);
-    setPromoSpreadEnabled(true);
-    setPromoSpreadMonths(span);
-    setPromoSpreadDistType(isEven ? 'even' : 'custom');
-    setPromoCustomDist(pcts);
+    // REQ-D6-03 s3 — decision 4's independence on the way back in as well as
+    // out: a one-month held promo restores with the RAMP SWITCH OFF and the
+    // hold toggle on, which is exactly the state that built it.
+    setPromoHold(isHeld);
+    setPromoSpreadEnabled(isHeld ? heldRampLen > 1 : true);
+    setPromoSpreadMonths(isHeld ? Math.max(1, heldRampLen) : span);
+    setPromoSpreadDistType((isHeld ? heldIsEven : isEven) ? 'even' : 'custom');
+    setPromoCustomDist(isHeld ? heldPcts : pcts);
     setEditingPromoId(null);
     setEditingPromoCampaign(campaign);
   }, [promoCampaignGroups, handleEditPromoStart]);
@@ -5292,6 +5384,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       pricingDilutionCurrentPct: promoDilutionCurrent, pricingDilutionTargetPct: promoDilutionTarget,
       cohortAvgArpu: promoCohortAvgArpu,
       spreadEnabled: false, spreadMonths: 1, spreadDistType: 'even', customDist: [100],
+      // REQ-D6-03 s3 — NO HOLD ON A ROW EDIT, deliberately. This path rebuilds
+      // ONE member of a campaign in place; materialising a tail from it would
+      // turn a single-row edit into a new campaign the user never asked for.
+      // A held campaign is re-stated through handleSavePromoCampaign, and
+      // trap 107's bar keeps a held member out of this path in the first place.
+      hold: false,
       // The row KEEPS its slot. nextSequence here handed an edited event a
       // brand-new end-of-table slot, moving it below everything — the exact
       // behaviour the sequence field exists to prevent, and the Volume tab's
@@ -5323,6 +5421,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       pricingDilutionCurrentPct: promoDilutionCurrent, pricingDilutionTargetPct: promoDilutionTarget,
       cohortAvgArpu: promoCohortAvgArpu,
       spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
+      // REQ-D6-03 s3 — the hold pair, on the two paths that build a CAMPAIGN.
+      hold: promoHold, horizonMonths: horizonMonthsFrom(newPromo.date ?? ''),
       startSequence: nextSequence(marketEvents),
       selectedTariffs, fullTariffL1s: [...fullTariffTree.keys()],
     });
@@ -8695,6 +8795,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                 {/* Ramp / decay — reuses the same spread mechanism as Volume events */}
                 <div className="mt-4">
+                  <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setPromoSpreadEnabled(v => !v)}
@@ -8707,6 +8808,32 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors ${promoSpreadEnabled ? 'border-white' : 'border-slate-400'}`}>
                       {promoSpreadEnabled && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
                     </span>{t('whatif_ramp_volume_over_multiple_months')}</button>
+                  {/* REQ-D6-03 s3 — BESIDE the ramp control and OUTSIDE its
+                      panel, the third carrier to follow the same rule: the two
+                      are independent, and a toggle nested inside
+                      `promoSpreadEnabled &&` could not say "this figure, every
+                      month". The SAME two keys as the other two cards. */}
+                  <button
+                    type="button"
+                    data-testid="promo-hold-toggle"
+                    title={t('whatif_hold_after_ramp_help')}
+                    aria-pressed={promoHold}
+                    onClick={() => setPromoHold(v => !v)}
+                    className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
+                      promoHold
+                        ? 'bg-[#e60000] text-white border-[#e60000]'
+                        : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors ${promoHold ? 'border-white' : 'border-slate-400'}`}>
+                      {promoHold && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </span>{t('whatif_hold_after_ramp_label')}</button>
+                  </div>
+                  {promoHold && (
+                    <p className="text-[10px] text-slate-400 mt-1.5 leading-snug">
+                      {t('whatif_hold_after_ramp_help')}
+                    </p>
+                  )}
 
                   {promoSpreadEnabled && (
                     <div className="mt-3 p-4 bg-white border border-slate-200 rounded-xl">

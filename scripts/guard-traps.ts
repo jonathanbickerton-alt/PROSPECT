@@ -78,6 +78,7 @@ const CHURNFOLD = 'scripts/churn-fold-spec.ts';
 const CHURNENGINE = 'src/utils/churnFold.ts';
 const HOLDSHAPE = 'scripts/hold-shape-spec.ts';
 const CHURNHOLD = 'scripts/churn-hold-mounted-spec.tsx';
+const PROMOHOLD = 'scripts/promo-hold-mounted-spec.tsx';
 const SCENARPU = 'scripts/scenario-arpu-spec.ts';
 const AMTCTRL = 'scripts/amount-control-spec.ts';
 const AMTENGINE = 'src/utils/amountControl.ts';
@@ -2865,6 +2866,52 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '      const heldChurn = rows.some(e => e.hold);',
       '      const heldChurn = false; void rows.some(e => e.hold);') },
+  // ══ REQ-D6-03 SESSION 3 — PROMOTION HOLD ═════════════════════════════════
+  //
+  // 209 STOPS THE PROMO TAIL, the third carrier's version of 202 and 206. The
+  // ramp still builds, the toggle stays lit, and the campaign quietly becomes
+  // the terminating ramp it was.
+  { id: '209 the promotion held tail is never emitted',
+    why: 'a held promotion silently reverts to a terminating ramp with the'
+       + ' toggle still lit and the target still showing',
+    file: WHATIF, spec: PROMOHOLD,
+    mutate: s => s.replace(
+      '    hold: !!p.hold,\n    horizonMonths: p.horizonMonths ?? 0,',
+      '    hold: false, // planted\n    horizonMonths: p.horizonMonths ?? 0,') },
+  // 210 DROPS `hold` FROM THE EMITTED ROW while the shape still holds. The
+  // rows are right, the chart is right, and the campaign is UNREOPENABLE as
+  // what it is: the restore reads the column, finds nothing, and reverse-
+  // engineers a 24-month ramp from figures that sum to 69,000.
+  //
+  // A DEFECT WITH NO SYMPTOM UNTIL SOMEONE EDITS — which is exactly the shape
+  // that survives review, so it earns its own trap rather than riding on 209.
+  { id: '210 the promotion row loses its hold flag',
+    why: 'the shape is right and the campaign cannot be reopened as held —'
+       + ' it reverse-engineers a 24-month ramp from a 69,000 sum',
+    file: WHATIF, spec: PROMOHOLD,
+    mutate: s => s.replace(
+      '      hold: !!p.hold,\n      amountType: p.amountType,',
+      '      amountType: p.amountType,') },
+  // 211 MAKES THE PROMO RESTORE IGNORE THE COLUMN — the promotion half of
+  // 208. The campaign reopens with its whole trajectory as the ramp and its
+  // amount box showing the sum, and re-saving writes that back.
+  { id: '211 the promotion restore ignores the Hold column',
+    why: 'a held promo campaign reopens as a 24-month hand-typed ramp showing'
+       + ' a total the user never entered, and re-saves as one',
+    file: WHATIF, spec: PROMOHOLD,
+    // ANCHOR EXTENDED before it ever ran. `const isHeld = rows.some(e => e.hold);`
+    // occurs TWICE — the Volume campaign restore (session 1) and this one —
+    // and `spec:trap-anchors` said so on the first run:
+    //   "2 occurrences — replace() takes the first, so the trap plants at the
+    //    wrong one".
+    // The `figures` line disambiguates: only the PROMO branch derives its
+    // figures from `volByOffset` on the line below. This is trap 102's lesson
+    // arriving early instead of after a misleading gate.
+    mutate: s => s.replace(
+      '    const isHeld = rows.some(e => e.hold);' + nl
+      + '    const figures = volByOffset.map(v => Math.abs(v));',
+      '    const isHeld = false; void rows.some(e => e.hold);' + nl
+      + '    const figures = volByOffset.map(v => Math.abs(v));') },
 ];
 
 
@@ -3003,7 +3050,11 @@ try {
       // here, so a red hold-shape spec would have let all four "catch"
       // vacuously — precisely what this control exists to prevent. CHURNHOLD
       // joins it with 206-208.
-      || specFails(HOLDSHAPE) || specFails(CHURNHOLD)) {
+      || specFails(HOLDSHAPE) || specFails(CHURNHOLD)
+      // REQ-D6-03 s3. REGISTERED WITH ITS FIRST TRAP, which is the lesson
+      // session 2 paid for: HOLDSHAPE carried four traps for a session
+      // without being here, and they could all have caught vacuously.
+      || specFails(PROMOHOLD)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');
