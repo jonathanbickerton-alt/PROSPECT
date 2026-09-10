@@ -7336,6 +7336,13 @@ the inflow pool joins with the inflow at T+1; `contractLength` on
 `pricesPools` false for a carving event's base side; Base-only unchanged;
 Compare parity; **existing saves carrying such an event change forecast.**
 
+**SECOND HALF, 2026-09-10.** The What-If half landed at `fa8c4ff`; this
+half builds **Compare's equivalent carve**, the Pricing card's **Contract
+Length control**, and the **traps** against this decision. Until Compare lands,
+What-If and Compare disagree about a cohort-target pricing event on the same
+saved file — recorded in `reports/2026-09-10-0854-pricing-pools-anchored.md`
+as a live divergence, and it is the never-shed item of that session.
+
 #### D5-13 DECIDED (Jon, 2026-09-09) — the Value card's preview names the winner
 
 **Recorded before any code.**
