@@ -4461,7 +4461,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   }, [newEvent, spreadEnabled, holdAfterRamp, horizonMonthsFrom, spreadMonths,
       spreadDistType, customDist, addMarketEvent,
       setMarketEvents, marketEvents, setNewEvent, cohortAvgArpu,
-      isChurnDraft, churnFold, churnBlockReason, clearChurnDraft, t]);
+      // `churnHold` NAMED BY exhaustive-deps, and listed here — but it was NOT
+      // live, and the distinction is the point. B8's promotion twin was live
+      // because NOTHING carried `promoHold` into this list. Here `churnFold`
+      // IS listed, and its identity changes whenever `churnHold` does
+      // (churnHold -> churnStatedWithHold -> churnFold), so the handler was
+      // already being rebuilt. MEASURED: spec:churn-hold-mounted drives Hold
+      // LAST and was 40/40 before this line changed.
+      //
+      // Listed anyway, because a transitive rescue is a coincidence of the
+      // current memo chain, not a guarantee: shorten that chain and the
+      // promotion defect reappears here.
+      isChurnDraft, churnFold, churnBlockReason, clearChurnDraft, churnHold, t]);
 
   /** Is the draft a percentage event? Read in several places in the form,
    *  so derived once rather than re-tested. */
@@ -5020,7 +5031,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // exists to prevent, arriving through the dependency array instead.
     // REQ-D6-03 adds holdAfterRamp and horizonMonthsFrom on the same rule.
   }, [editingCampaign, newEvent, spreadEnabled, holdAfterRamp, horizonMonthsFrom, spreadMonths, spreadDistType, customDist, marketEvents, setMarketEvents, setNewEvent, cohortAvgArpu,
-      isChurnDraft, churnFold, churnBlockReason, clearChurnDraft]);
+      // Same as handleAddMarketEvent: named by the rule, not live today.
+      isChurnDraft, churnFold, churnBlockReason, clearChurnDraft, churnHold]);
 
   // ── Confirmation for changes that recalculate the forecast ───────────────
   //
@@ -5198,7 +5210,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // churnBlockReason, so it depends on them; omitting churnFold would re-state
     // the row against a fold from before the user's last keystroke.
   }, [editingEventId, newEvent, marketEvents, setNewEvent, cohortAvgArpu,
-      isChurnDraft, churnFold, churnBlockReason]);
+      // Same as handleAddMarketEvent: named by the rule, not live today.
+      isChurnDraft, churnFold, churnBlockReason, churnHold]);
 
   const handleCancelEdit = useCallback(() => {
     setEditingEventId(null);
