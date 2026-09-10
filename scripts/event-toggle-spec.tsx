@@ -506,10 +506,27 @@ async function main() {
   // column appended between them still goes red.
   const lastKey = (o: Record<string, unknown>) => Object.keys(o)[Object.keys(o).length - 1];
   const penultKey = (o: Record<string, unknown>) => Object.keys(o)[Object.keys(o).length - 2];
-  check('export: Enabled is the LAST REQ-D6-01 column on Market_Events',
-    penultKey(mkt) === 'Enabled', penultKey(mkt));
-  check('export: Tariff_Scope is LAST on Market_Events (D5-10)',
-    lastKey(mkt) === 'Tariff_Scope', lastKey(mkt));
+  const antepenult = (o: Record<string, unknown>) => Object.keys(o)[Object.keys(o).length - 3];
+  // RE-AIMED AGAIN at REQ-D6-03, 2026-09-10, and ONLY on Market_Events: the
+  // row gained `Hold` AFTER `Tariff_Scope`, so the three trailing columns are
+  // now Enabled / Tariff_Scope / Hold. Seen RED before the re-aim, both lines:
+  //   FAIL  export: Enabled is the LAST REQ-D6-01 column on Market_Events  [Tariff_Scope]
+  //   FAIL  export: Tariff_Scope is LAST on Market_Events (D5-10)  [Hold]
+  //
+  // THREE positions, on the Pricing_Events pattern below — RE-AIMED, NOT
+  // LOOSENED. Dropping to "Hold is last" would pass a build that reordered
+  // the two columns before it; naming all three keeps a column appended
+  // between ANY of them red, which is what makes append-only a rule.
+  //
+  // Yield_Events is deliberately untouched and still ends at Tariff_Scope:
+  // decision 5 puts Hold on Market_Events alone, and the pin below proves it
+  // did not leak.
+  check('export: Enabled is third-from-last on Market_Events (REQ-D6-03)',
+    antepenult(mkt) === 'Enabled', antepenult(mkt));
+  check('export: Tariff_Scope is second-to-last on Market_Events (REQ-D6-03)',
+    penultKey(mkt) === 'Tariff_Scope', penultKey(mkt));
+  check('export: Hold is LAST on Market_Events (REQ-D6-03)',
+    lastKey(mkt) === 'Hold', lastKey(mkt));
   const yr = fc.yieldEventExportRow({ id: 'y1', ibro: 'Inflow', segment: 'All', product: 'All',
     channelL1: 'All', channelL2: 'All', month: MONTHS[0], rollForward: false,
     tariffMix: {}, tariffBaseArpu: {}, enabled: false } as any);

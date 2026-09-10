@@ -76,6 +76,7 @@ const CMPWINDOW = 'scripts/compare-window-spec.ts';
 const CMPRENDER = 'scripts/compare-render-spec.ts';
 const CHURNFOLD = 'scripts/churn-fold-spec.ts';
 const CHURNENGINE = 'src/utils/churnFold.ts';
+const HOLDSHAPE = 'scripts/hold-shape-spec.ts';
 const SCENARPU = 'scripts/scenario-arpu-spec.ts';
 const AMTCTRL = 'scripts/amount-control-spec.ts';
 const AMTENGINE = 'src/utils/amountControl.ts';
@@ -2761,6 +2762,67 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "        const sized = scen === 'retention' ? Math.min(volume, newBAdj) : volume;",
       "        const sized = volume;") },
+  // ══ REQ-D6-03 — RAMP THEN HOLD ═══════════════════════════════════════════
+  //
+  // 202 STOPS THE TAIL. The ramp still emits, the figures are still right, and
+  // the campaign silently becomes the terminating spread it was before — which
+  // is the failure with no symptom on the card: the preview says "then held",
+  // the button says twenty-four, and three rows arrive.
+  { id: '202 the held tail is never emitted',
+    why: 'a held campaign silently reverts to a terminating spread, with the'
+       + ' preview and the button both still promising a tail',
+    file: WHATIF, spec: HOLDSHAPE,
+    mutate: s => s.replace(
+      '  for (let i = months; i < span; i++) {',
+      '  for (let i = months; i < months; i++) {') },
+  // 203 DROPS THE CUMULATION — the single most plausible wrong implementation,
+  // and the one the addendum was written to rule out. Hold ON then emits the
+  // SHARE SPLIT held: 833 / 833 / 833 / 833..., which reads as a working
+  // feature and states the opposite of decision 2. Nothing structural
+  // discriminates it: the row count is right, the tail is there, every row
+  // carries Hold. Only the ramp's FIGURES tell the two apart.
+  { id: '203 hold emits the share split instead of cumulating to the target',
+    why: 'the entered figure stops being the target and becomes a total again,'
+       + ' with the right row count and the wrong ramp',
+    file: WHATIF, spec: HOLDSHAPE,
+    mutate: s => s.replace(
+      '    out.push({ offset: i, fraction: i === months - 1 ? 1 : cum / total, held: false });',
+      '    out.push({ offset: i, fraction: pcts[i] / total, held: false });') },
+  // 204 INVERTS THE ABSENCE RULE. Decision 5 is explicit that absent means OFF,
+  // and this is the direction that breaks every save ever written: a workbook
+  // with no Hold column reopens as a held campaign, so the amount box shows the
+  // last row instead of the total and a re-save materialises a tail nobody
+  // asked for. `!== 'No'` is exactly the rule the line ABOVE it uses, which is
+  // what makes this a copy-paste away rather than a hypothetical.
+  { id: '204 the reader treats an absent Hold column as ON',
+    why: 'every save written before this column existed reopens as a held'
+       + ' campaign and re-saves with a tail the user never stated',
+    file: ENGINE, spec: HOLDSHAPE,
+    mutate: s => s.replace(
+      "    hold: row.Hold === 'Yes',",
+      "    hold: row.Hold !== 'No',") },
+  // 205 TOUCHES THE HOLD-OFF ARM, which decision 3 says is byte-identical.
+  //
+  // WHAT IT ACTUALLY PLANTS, stated as measured rather than as intended: the
+  // arm stops reading the distribution and emits an even split. Every EVEN
+  // case in the shape spec stays green under it — correctly, because an even
+  // split IS the right answer there — and the CUSTOM case goes red:
+  //
+  //   FAIL  HOLD OFF: custom 50/30/20 of 1000 is 500 / 300 / 200  [333,333,333]
+  //
+  // ONE red line out of ten hold-off checks, and that is the trap working
+  // rather than the trap being weak: it says the differential's discriminating
+  // power lives entirely in its UNEVEN cases, which is worth knowing. A
+  // registry entry claiming this catches a sub-rounding re-derivation would
+  // have been an overclaim — the first draft of this `why` said exactly that,
+  // and planting it is what showed the claim was not the mutation's.
+  { id: '205 the hold-off arm stops reading the distribution',
+    why: 'every custom spread silently becomes an even one, with the right row'
+       + ' count and the right total, on the path decision 3 froze',
+    file: WHATIF, spec: HOLDSHAPE,
+    mutate: s => s.replace(
+      '      out.push({ offset: i, fraction: pcts[i] / total, held: false });',
+      '      out.push({ offset: i, fraction: (100 / months) / 100, held: false });') },
 ];
 
 

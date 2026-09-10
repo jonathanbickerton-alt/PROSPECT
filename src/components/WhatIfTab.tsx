@@ -741,6 +741,148 @@ export function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
  * pre-filter `events` to their own card's rows (e.g. `!e.isPromotion` for
  * Volume, `e.isPromotion` for Promotion) before calling this.
  */
+// ═══════════════════════════════════════════════════════════════════════════
+// REQ-D6-03 — RAMP THEN HOLD: THE SHAPE
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** What one emitted month of a spread carries. */
+export interface SpreadShapeMonth {
+  /** Months after the campaign's start month. 0 is the start month itself. */
+  offset: number;
+  /**
+   * The multiplier every quantity on that row takes — volume, customers and
+   * revenue alike, exactly as the hand-rolled arithmetic did.
+   *
+   * Hold OFF it is a SHARE OF A TOTAL and the fractions sum to 1.
+   * Hold ON it is a FRACTION OF THE TARGET, rising to 1 and staying there —
+   * so the fractions do not sum to anything in particular, and are not meant
+   * to. That difference IS decision 2.
+   */
+  fraction: number;
+  /** True for a month in the held tail (offset >= months). */
+  held: boolean;
+}
+
+export interface SpreadShapeInput {
+  /** Ramp length in months. Clamped to >= 1; 1 is a legal ramp. */
+  months: number;
+  /** Per-month shares, un-normalised. Only the first `months` are read. */
+  dist: readonly number[];
+  /** REQ-D6-03 decision 4 — independent of the spread switch. */
+  hold: boolean;
+  /**
+   * How many months the campaign may occupy in total, ramp INCLUDED, counted
+   * from its start month to the LAST FORECAST MONTH inclusive.
+   *
+   * Decision 1 says the tail runs to the horizon end, and the horizon is not
+   * this function's to know — it belongs to the forecast the card is sitting
+   * on. Passing it in is what keeps this function pure and what stops a
+   * second derivation of "the last month" existing.
+   *
+   * A value at or below `months` emits the ramp alone. That is the honest
+   * degradation for a campaign starting at or past the horizon end: there are
+   * no months left to hold into, so none are invented.
+   */
+  horizonMonths: number;
+}
+
+/**
+ * THE ONE GENERATOR (REQ-D6-03, decisions 1-3).
+ *
+ * Both the Volume card's add path and its campaign rebuild call this, and so
+ * does the card's own preview — which is the point. The preview used to
+ * re-implement `pct / total` inline, and a preview that recomputes what the
+ * save computes is a preview that can disagree with it.
+ *
+ * HOLD OFF IS THE OLD ARITHMETIC, DELIBERATELY UNTOUCHED (decision 3). The
+ * fraction is `pcts[i] / total` — the same expression, in the same order, on
+ * the same un-normalised inputs — because "byte-identical" is a claim about
+ * floating point and not about intent. Rewriting it as a running sum would
+ * produce the same numbers to within 1e-16 and a different row now and then
+ * after `Math.round`. `spec:hold-shape` pins the hold-off list against a
+ * HAND-WRITTEN literal recorded before this function existed.
+ *
+ * HOLD ON CUMULATES THE SAME SHARES (decision 2). Month i takes the target
+ * times the shares up to and including i, so Even gives i/N — 3.33 / 6.67 /
+ * 10 over three — and a custom distribution cumulates its own shares to the
+ * same destination. Even is the linear case rather than a separate branch.
+ *
+ * THE LAST RAMP MONTH IS EXACTLY THE TARGET, asserted rather than approached:
+ * `fraction` is set to a literal 1 from `months - 1` onward instead of
+ * arriving at 0.9999999999999999 through three additions of 100/3. That is
+ * the same property `churn-fold-spec:244` already pins on the churn carrier —
+ * "the last month always equals the target" — and it is the one thing a user
+ * would notice, because it is the number they typed.
+ */
+export function spreadShape(input: SpreadShapeInput): SpreadShapeMonth[] {
+  const months = Math.max(1, Math.floor(input.months) || 1);
+  const pcts = input.dist.slice(0, months);
+  const total = pcts.reduce((s, p) => s + p, 0);
+  if (!(total > 0)) return [];
+
+  const out: SpreadShapeMonth[] = [];
+
+  if (!input.hold) {
+    // UNCHANGED. See the note above before touching this line.
+    for (let i = 0; i < months; i++) {
+      out.push({ offset: i, fraction: pcts[i] / total, held: false });
+    }
+    return out;
+  }
+
+  let cum = 0;
+  for (let i = 0; i < months; i++) {
+    cum += pcts[i];
+    // The literal 1, not cum/total — see "THE LAST RAMP MONTH" above.
+    out.push({ offset: i, fraction: i === months - 1 ? 1 : cum / total, held: false });
+  }
+  const span = Math.max(months, Math.floor(input.horizonMonths) || 0);
+  for (let i = months; i < span; i++) {
+    out.push({ offset: i, fraction: 1, held: true });
+  }
+  return out;
+}
+
+/**
+ * THE PLATEAU START (REQ-D6-03, decision 5) — the ramp length of a held
+ * campaign, read back off its rows.
+ *
+ * The figures arrive in date order and rise to the target, then repeat it.
+ * The ramp length is the 1-based index of the FIRST row equal to the last —
+ * so 833 / 1667 / 2500 / 2500 / 2500 restores 3, and a held campaign whose
+ * ramp was one month (spread off, hold on) restores 1 from 2500 / 2500 /
+ * 2500.
+ *
+ * WHY THE FIRST AND NOT A COUNT OF THE TAIL. Counting backwards from the end
+ * would give the same answer here and a different one on a ramp that happens
+ * to pass through its own target early — a custom distribution of 50/0/50
+ * cumulates to 50/50/100, and a backwards count is fine, but 100/0/0 shares
+ * cumulate to 100/100/100 and a backwards count would call that a one-month
+ * ramp of length 3. Reading forwards names the first month that reached the
+ * target, which is what the user set the length to.
+ *
+ * COMPARED WITH A RELATIVE TOLERANCE, and relative is load-bearing. An
+ * absolute one — half a subscriber, say — reads fine on the volumes it was
+ * chosen for and silently destroys a percentage ramp: a held +0.4% campaign
+ * stores 0.13 / 0.27 / 0.40, every step is inside half a unit of the target,
+ * and a 0.5 tolerance would call the FIRST month the plateau and restore a
+ * one-month ramp. Scaling with the target keeps one rule for both carriers.
+ *
+ * The epsilon is for float noise only, not for rounding: a workbook stores
+ * doubles exactly, so figures that went out as integers come back as the same
+ * integers, and the ramp steps a user can distinguish are orders of magnitude
+ * larger than 1e-9.
+ */
+export function holdPlateauStart(figures: readonly number[]): number {
+  if (!figures.length) return 1;
+  const last = figures[figures.length - 1];
+  const tol = Math.abs(last) * 1e-9 + 1e-9;
+  for (let i = 0; i < figures.length; i++) {
+    if (Math.abs(figures[i] - last) <= tol) return i + 1;
+  }
+  return figures.length;
+}
+
 /**
  * `reason` is a LOCALE KEY, not a sentence — empty string when editable.
  *
@@ -2274,6 +2416,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   // ── Volume spread state ────────────────────────────────────────────────────
   const [spreadEnabled, setSpreadEnabled] = useState(false);
+  /**
+   * REQ-D6-03 decision 4 — INDEPENDENT OF THE SPREAD SWITCH, and its own
+   * state for exactly that reason. Spread off with hold on is a legal and
+   * useful combination: a ramp of length 1 followed by the tail, i.e. the
+   * figure in every month from the start to the horizon end.
+   */
+  const [holdAfterRamp, setHoldAfterRamp] = useState(false);
   const [spreadMonths, setSpreadMonths] = useState(3);
   const [spreadDistType, setSpreadDistType] = useState<'even' | 'custom'>('even');
   const [customDist, setCustomDist] = useState<number[]>([34, 33, 33]);
@@ -3946,6 +4095,35 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   }, [newPricingEvent, chartData, addPricingEvent, editingPricingId, updatePricingEvent, setNewPricingEvent]);
 
   // ── Volume spread handler ─────────────────────────────────────────────────
+  /**
+   * REQ-D6-03 decision 1 — HOW MANY MONTHS A CAMPAIGN STARTING HERE MAY FILL.
+   *
+   * From `startMonth` to the LAST FORECAST MONTH inclusive, so a campaign
+   * starting at the last month gets 1 and a campaign starting one month
+   * before it gets 2.
+   *
+   * READ OFF `adjustedMonths`, WHICH IS WHAT THE DELTA-MONTH SELECTOR READS
+   * (see `deltaMonthOptions`, which maps the same array). The brief said reuse
+   * it rather than re-derive it, and the reason is the one the selector's own
+   * comment gives: `adjustedMonths` is the whole horizon, `windowSize` is a
+   * <Brush> over it, and a second derivation would be a second thing to keep
+   * in step. The selector then filters months carrying actuals; this does not,
+   * because a month with an actual is still a month the campaign occupies.
+   *
+   * NOT MEMOISED ON `startMonth`: it is called from two build handlers with
+   * whatever the draft holds at click time, so it takes the month rather than
+   * closing over one.
+   *
+   * ZERO when the month is not in the horizon at all — a start date typed
+   * before the forecast begins or after it ends. `spreadShape` reads that as
+   * "no months to hold into" and emits the ramp alone, which is the honest
+   * answer rather than a fabricated tail.
+   */
+  const horizonMonthsFrom = useCallback((startMonth: string): number => {
+    const idx = adjustedMonths.findIndex(m => m.month === startMonth);
+    return idx < 0 ? 0 : adjustedMonths.length - idx;
+  }, [adjustedMonths]);
+
   const handleAddMarketEvent = useCallback(() => {
     if (!newEvent.date || newEvent.subscriberVolume === undefined) return;
 
@@ -4024,7 +4202,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     }
 
 
-    if (!spreadEnabled || newEvent.scenario === 'ARPU') {
+    // REQ-D6-03 decision 4: HOLD IS ITS OWN ROUTE OUT OF THE SINGLE-EVENT
+    // PATH. `!spreadEnabled && holdAfterRamp` is the "ramp of length 1 plus a
+    // tail" case, and it must reach the generator below rather than
+    // `addMarketEvent`, which emits exactly one row and knows nothing of a
+    // horizon. ARPU is unchanged and still leaves here: the spread control is
+    // hidden for ARPU drafts and so is the hold toggle.
+    if ((!spreadEnabled && !holdAfterRamp) || newEvent.scenario === 'ARPU') {
       addMarketEvent();
       return;
     }
@@ -4032,18 +4216,41 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const isOutflow = newEvent.scenario === 'Outflow';
     const neg = (v: number) => isOutflow ? -Math.abs(v) : v;
 
-    const pcts = spreadDistType === 'even'
-      ? Array.from({ length: spreadMonths }, () => 100 / spreadMonths)
-      : customDist.slice(0, spreadMonths);
+    // With the spread switch off the ramp is ONE month — see decision 4. The
+    // distribution controls are not on screen in that case, so reading them
+    // would read whatever the user last left there.
+    const rampMonths = spreadEnabled ? spreadMonths : 1;
+    const pcts = !spreadEnabled
+      ? [100]
+      : spreadDistType === 'even'
+        ? Array.from({ length: spreadMonths }, () => 100 / spreadMonths)
+        : customDist.slice(0, spreadMonths);
 
-    const total = pcts.reduce((s, p) => s + p, 0);
-    if (total <= 0) return;
+    const shape = spreadShape({
+      months: rampMonths,
+      dist: pcts,
+      hold: holdAfterRamp,
+      horizonMonths: horizonMonthsFrom(newEvent.date),
+    });
+    if (!shape.length) return;
 
+    // REQ-D6-03 — A PERCENTAGE AMOUNT IS A RATE AND MUST NOT BE ROUNDED.
+    //
+    // `Math.round` is right for subscribers, which come in whole people, and
+    // destroys a percentage ramp: 10% over three months is 3.33 / 6.67 / 10,
+    // and rounding turns it into 3 / 7 / 10 — where the only month the user
+    // would recognise is the last one. Absolute amounts round exactly as they
+    // did, which is what decision 3's byte-identity is a claim about.
+    //
+    // Only subscriberVolume carries the percent (see the `amountType` comment
+    // on MarketEvent); customerVolume and revenue stay counts and stay
+    // rounded.
+    const isPctAmount = newEvent.amountType === 'percentage';
     const baseDate = parse(newEvent.date, 'yyyy-MM', new Date());
-    const events: MarketEvent[] = pcts.map((pct, i) => {
-      const fraction = pct / total;
+    const events: MarketEvent[] = shape.map(({ offset: i, fraction }) => {
       const monthStr = format(addMonths(baseDate, i), 'yyyy-MM');
-      const vol = Math.round((newEvent.subscriberVolume || 0) * fraction);
+      const rawVol = (newEvent.subscriberVolume || 0) * fraction;
+      const vol = isPctAmount ? rawVol : Math.round(rawVol);
       // Phase 3 P4: auto-populate ARPU from the cohort trailing average when the
       // user left it blank on a volume-only Inflow/Retention spread.
       const resolved = draftEventRate(newEvent, cohortAvgArpu, vol, Math.round((newEvent.revenue || 0) * fraction));
@@ -4069,6 +4276,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         campaignName:     newEvent.campaignName || '',
         comment:          newEvent.comment      || '',
         contractLength:   newEvent.contractLength ?? 24,
+        // REQ-D6-03 decision 5 — EVERY ROW, the held tail included. A campaign
+        // whose tail rows lacked it would reopen with a ramp length read off a
+        // truncated plateau.
+        hold:             holdAfterRamp,
         // Consecutive slots from the end. Omitting these was invisible to
         // tsc and put every spread row at the TOP of the table, because
         // bySequence reads a missing sequence as 0.
@@ -4086,6 +4297,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       subscriberVolume: 0, customerVolume: 0, revenue: 0, arpu: 0, name: '', campaignName: '', comment: '', contractLength: 24,
     });
     setSpreadEnabled(false);
+    setHoldAfterRamp(false);
     setSpreadMonths(3);
     setSpreadDistType('even');
     setCustomDist([34, 33, 33]);
@@ -4095,7 +4307,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // events of the fold as it stood BEFORE the toggle — one month, not three.
     // Found by the mounted harness on its first full run; no source reading had
     // caught it, because every individual line was right.
-  }, [newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, addMarketEvent,
+    //
+    // REQ-D6-03 adds two to the read-set for the same reason: the hold branch
+    // READS `holdAfterRamp` and `horizonMonthsFrom`, and omitting either would
+    // reproduce the stale-fold defect exactly — a handler emitting the shape
+    // as it stood before the toggle, or holding into a horizon from a forecast
+    // that has since been regenerated.
+  }, [newEvent, spreadEnabled, holdAfterRamp, horizonMonthsFrom, spreadMonths,
+      spreadDistType, customDist, addMarketEvent,
       setMarketEvents, marketEvents, setNewEvent, cohortAvgArpu,
       isChurnDraft, churnFold, churnBlockReason, clearChurnDraft, t]);
 
@@ -4168,6 +4387,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       percentageBasis: event.percentageBasis ?? 'baseline',
       retentionLinked: event.retentionLinked ?? true,
     });
+    // REQ-D6-03 — THE TOGGLE FOLLOWS THE ROW, in both directions.
+    //
+    // Set unconditionally rather than only when true, and that is the whole
+    // point: the card is a long-lived form, so opening a plain event after a
+    // held one must turn the toggle OFF. A one-sided restore is how a draft
+    // acquires a control the user never touched — and here it would silently
+    // re-materialise a tail on the next save.
+    //
+    // A single-row campaign reaches here through handleEditCampaignStart's
+    // rows.length === 1 branch, which is why a held campaign that fits in one
+    // month restores correctly without a second copy of this line.
+    setHoldAfterRamp(event.hold ?? false);
     // ── CHURN SEEDING — the third mode joins the lesson three lines above ──
     //
     // The comment on amountType/percentageBasis says restoring them is not
@@ -4301,6 +4532,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       // the trajectory arrives at.
       setChurnTargetPct(trajectory[trajectory.length - 1] ?? 0);
       setSpreadEnabled(false);
+      // REQ-D6-03 — churn's own hold arrives in session 2; until then a churn
+      // restore must CLEAR the volume toggle rather than inherit whatever the
+      // previous draft left on it.
+      setHoldAfterRamp(false);
       setEditingEventId(null);
       setEditingCampaign(campaign);
       return;
@@ -4322,6 +4557,74 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       totalCust += Math.abs(e.customerVolume);
       totalRev  += Math.abs(e.revenue);
     });
+
+    // ── REQ-D6-03 decision 5 — A HELD CAMPAIGN RESTORES FROM ITS ROWS ─────
+    //
+    // The reverse-engineering above is right for a terminating spread and
+    // wrong for a held one, in a way that would look like a data change: a
+    // held campaign's rows SUM to far more than the target, so `totalSub`
+    // would seed the amount box with a number the user never typed, and
+    // `span` would seed a 40-month ramp.
+    //
+    // The three restored values come from decision 5, in its words: the
+    // toggle from the COLUMN (never inferred from the shape — a flat
+    // three-month spread is indistinguishable from a one-month ramp held for
+    // two, and only the column knows which the user asked for), the target
+    // from the LAST ROW, and the ramp length from the plateau start.
+    //
+    // Distribution comes back as the ramp months' own shares of the target,
+    // which is the read that round-trips: shares that CUMULATE to the target
+    // are what the generator consumes, so re-saving without touching anything
+    // must reproduce the same rows.
+    const isHeld = rows.some(e => e.hold);
+    if (isHeld) {
+      const figures = volByOffset.map(v => Math.abs(v));
+      const target = figures[figures.length - 1] ?? 0;
+      const rampLen = holdPlateauStart(figures);
+      // The cumulative fractions the ramp months reached, differenced back
+      // into the per-month shares the generator will re-cumulate. The last
+      // one is 100 by construction, so the shares sum to 100.
+      const cumPct = figures.slice(0, rampLen)
+        .map(v => target > 0 ? (v / target) * 100 : 0);
+      const shares = cumPct.map((c, i) => i === 0 ? c : c - cumPct[i - 1]);
+      const rounded = shares.map(s => Math.round(s));
+      rounded[0] += 100 - rounded.reduce((s, p) => s + p, 0);
+      const evenShare = 100 / rampLen;
+      const heldIsEven = shares.every(s => Math.abs(s - evenShare) <= 1);
+
+      setNewEvent({
+        scenario: first.scenario,
+        segment: first.segment,
+        product: first.product,
+        productL2: first.productL2 ?? 'All',
+        channel: first.channel,
+        channelL2: first.channelL2 ?? 'All',
+        tariffL1: first.tariffL1 ?? 'All',
+        tariffL2: first.tariffL2 ?? 'All',
+        date: first.date,
+        // THE TARGET, not the sum — decision 2 and 5 read together.
+        subscriberVolume: target,
+        customerVolume: Math.abs(rows[rows.length - 1].customerVolume),
+        revenue: Math.abs(rows[rows.length - 1].revenue),
+        arpu: abs(first.arpu),
+        arpuOverride: first.arpuOverride,
+        name: '',
+        campaignName: campaign,
+        comment: rows.find(e => e.comment)?.comment ?? '',
+        contractLength: first.contractLength,
+      });
+      // Decision 4's independence, on the way back in as well as out: a
+      // one-month held campaign restores with the SPREAD SWITCH OFF and the
+      // hold toggle on, which is exactly the state that built it.
+      setHoldAfterRamp(true);
+      setSpreadEnabled(rampLen > 1);
+      setSpreadMonths(Math.max(2, rampLen));
+      setSpreadDistType(heldIsEven ? 'even' : 'custom');
+      setCustomDist(rounded);
+      setEditingEventId(null);
+      setEditingCampaign(campaign);
+      return;
+    }
 
     // Derive percentages summing to exactly 100 (residual goes to month 1,
     // matching the even-split remainder convention used on creation)
@@ -4353,6 +4656,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       contractLength: first.contractLength,
     });
     setSpreadEnabled(true);
+    // REQ-D6-03 — the OFF side of the restore. This is the terminating-spread
+    // branch by construction (`isHeld` returned above), so the toggle is set
+    // false rather than left alone, for the reason handleEditStart gives.
+    setHoldAfterRamp(false);
     setSpreadMonths(span);
     setSpreadDistType(isEven ? 'even' : 'custom');
     setCustomDist(pcts);
@@ -4429,7 +4736,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const isOutflow = newEvent.scenario === 'Outflow';
     const neg = (v: number) => isOutflow ? -Math.abs(v) : v;
 
-    if (!spreadEnabled || newEvent.scenario === 'ARPU') {
+    // REQ-D6-03 decision 4 — the same route out as the add path, and it must
+    // be the same condition: a held campaign re-saved through a branch that
+    // emits one row would silently drop its tail, which is the "re-saving a
+    // held campaign replaces ALL its rows" clause failing in the direction
+    // nobody would notice until the chart moved.
+    if ((!spreadEnabled && !holdAfterRamp) || newEvent.scenario === 'ARPU') {
       const resolvedSingle = draftEventRate(newEvent, cohortAvgArpu, newEvent.subscriberVolume || 0, newEvent.revenue);
       newEvents = [{
         id: Math.random().toString(36).substr(2, 9),
@@ -4458,15 +4770,28 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         sequence: 0,
       }];
     } else {
-      const pcts = spreadDistType === 'even'
-        ? Array.from({ length: spreadMonths }, () => 100 / spreadMonths)
-        : customDist.slice(0, spreadMonths);
-      const total = pcts.reduce((s, p) => s + p, 0);
-      if (total <= 0) return;
+      // THE SAME GENERATOR the add path calls, with the same three inputs —
+      // which is the whole reason it is a function. These two sites drifting
+      // apart is the failure mode a shared shape removes rather than guards.
+      const rampMonths = spreadEnabled ? spreadMonths : 1;
+      const pcts = !spreadEnabled
+        ? [100]
+        : spreadDistType === 'even'
+          ? Array.from({ length: spreadMonths }, () => 100 / spreadMonths)
+          : customDist.slice(0, spreadMonths);
+      const shape = spreadShape({
+        months: rampMonths,
+        dist: pcts,
+        hold: holdAfterRamp,
+        horizonMonths: horizonMonthsFrom(newEvent.date),
+      });
+      if (!shape.length) return;
+      // The same rate-not-count rule as the add path — see the comment there.
+      const isPctAmount = newEvent.amountType === 'percentage';
       const baseDate = parse(newEvent.date, 'yyyy-MM', new Date());
-      newEvents = pcts.map((pct, i) => {
-        const fraction = pct / total;
-        const vol = Math.round((newEvent.subscriberVolume || 0) * fraction);
+      newEvents = shape.map(({ offset: i, fraction }) => {
+        const rawVol = (newEvent.subscriberVolume || 0) * fraction;
+        const vol = isPctAmount ? rawVol : Math.round(rawVol);
         // Phase 3 P4: auto-populate ARPU from the cohort trailing average when the
         // user left it blank on a volume-only Inflow/Retention spread.
         const resolved = draftEventRate(newEvent, cohortAvgArpu, vol, Math.round((newEvent.revenue || 0) * fraction));
@@ -4492,6 +4817,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           campaignName: newEvent.campaignName || '',
           comment: newEvent.comment || '',
           contractLength: newEvent.contractLength ?? 24,
+          // REQ-D6-03 decision 5 — every row, the held tail included.
+          hold: holdAfterRamp,
           sequence: 0,
         };
       });
@@ -4507,6 +4834,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setEditingCampaign(null);
     setNewEvent(BLANK_EVENT);
     setSpreadEnabled(false);
+    setHoldAfterRamp(false);
     setSpreadMonths(3);
     setSpreadDistType('even');
     setCustomDist([34, 33, 33]);
@@ -4514,7 +4842,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // churnBlockReason are all READ above; omitting churnFold would re-state a
     // campaign against a stale fold, which is the defect this whole branch
     // exists to prevent, arriving through the dependency array instead.
-  }, [editingCampaign, newEvent, spreadEnabled, spreadMonths, spreadDistType, customDist, marketEvents, setMarketEvents, setNewEvent, cohortAvgArpu,
+    // REQ-D6-03 adds holdAfterRamp and horizonMonthsFrom on the same rule.
+  }, [editingCampaign, newEvent, spreadEnabled, holdAfterRamp, horizonMonthsFrom, spreadMonths, spreadDistType, customDist, marketEvents, setMarketEvents, setNewEvent, cohortAvgArpu,
       isChurnDraft, churnFold, churnBlockReason, clearChurnDraft]);
 
   // ── Confirmation for changes that recalculate the forecast ───────────────
@@ -6512,14 +6841,31 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 percentage events: spreading a percentage is ambiguous (is 10%
                 over three months a total of 10%, or 10% in each month?) and no
                 answer to that was settled. Hidden rather than guarded, so the
-                question is not raised in the UI at all. */}
+                question is not raised in the UI at all.
+
+                REQ-D6-03 SETTLES THAT QUESTION, and only for hold (Jon,
+                2026-09-10, decision 2: "A percentage event holds the
+                percentage"). Under hold the answer is NEITHER of the two the
+                comment above names: 10% over three months is 10% REACHED at
+                month three and held thereafter — 3.33 / 6.67 / 10, then 10.
+                That reading exists because the entered figure became a TARGET,
+                which is exactly what the old ambiguity lacked.
+
+                So the SPREAD switch stays hidden for a percentage draft with
+                hold off — decision 3 keeps that path byte-identical, and the
+                unsettled question stays unsettled where it still applies — and
+                the section opens for a percentage draft only once hold is on.
+                The hold toggle itself is always available: spread off plus
+                hold on is "10% in every month", which was never ambiguous. */}
             {/* Churn replaces the spread with its own ramp radio, so the
                 spread control is hidden as well as force-cleared. Hiding it
                 without clearing it, or clearing without hiding, each leave one
                 half of the question visible. */}
-            {newEvent.scenario !== 'ARPU' && !isPercentageDraft && !isChurnDraft && (
+            {newEvent.scenario !== 'ARPU' && !isChurnDraft && (
               <div className="mt-4">
                 {/* Toggle */}
+                <div className="flex flex-wrap items-center gap-2">
+                {(!isPercentageDraft || holdAfterRamp) && (
                 <button
                   type="button"
                   onClick={() => setSpreadEnabled(v => !v)}
@@ -6532,8 +6878,34 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors ${spreadEnabled ? 'border-white' : 'border-slate-400'}`}>
                     {spreadEnabled && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
                   </span>{t('whatif_spread_volume_over_multiple_months')}</button>
+                )}
+                {/* REQ-D6-03 decision 4 — BESIDE the spread control and OUTSIDE
+                    its panel, because the two are independent: spread off with
+                    hold on is a ramp of length 1 plus a tail, and a toggle
+                    nested inside `spreadEnabled &&` could not express it. */}
+                <button
+                  type="button"
+                  data-testid="volume-hold-toggle"
+                  title={t('whatif_hold_after_ramp_help')}
+                  aria-pressed={holdAfterRamp}
+                  onClick={() => setHoldAfterRamp(v => !v)}
+                  className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
+                    holdAfterRamp
+                      ? 'bg-[#e60000] text-white border-[#e60000]'
+                      : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors ${holdAfterRamp ? 'border-white' : 'border-slate-400'}`}>
+                    {holdAfterRamp && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                  </span>{t('whatif_hold_after_ramp_label')}</button>
+                </div>
+                {holdAfterRamp && (
+                  <p className="text-[10px] text-slate-400 mt-1.5 leading-snug">
+                    {t('whatif_hold_after_ramp_help')}
+                  </p>
+                )}
 
-                {spreadEnabled && (
+                {spreadEnabled && (!isPercentageDraft || holdAfterRamp) && (
                   <div className="mt-3 p-4 bg-white border border-slate-200 rounded-xl">
                     {/* Step 1: Duration */}
                     <div className="flex flex-wrap items-end gap-6 mb-4">
@@ -6578,6 +6950,28 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         : customDist.slice(0, spreadMonths);
                       const pctTotal = pcts.reduce((s, p) => s + p, 0);
                       const pctOk = Math.abs(pctTotal - 100) < 0.5;
+                      // REQ-D6-03 — THE PREVIEW READS THE SAME GENERATOR THE
+                      // SAVE DOES. It used to compute `pcts[i] / pctTotal`
+                      // inline, which was a second implementation of the
+                      // spread and would now be a WRONG one: with hold on it
+                      // would show 833/833/833 under a button that saves
+                      // 833/1667/2500. A preview that can disagree with the
+                      // save is worse than no preview.
+                      const shape = spreadShape({
+                        months: spreadMonths, dist: pcts, hold: holdAfterRamp,
+                        horizonMonths: horizonMonthsFrom(newEvent.date ?? ''),
+                      });
+                      const rampRows = shape.filter(s => !s.held);
+                      const heldRows = shape.filter(s => s.held);
+                      // The tail is summarised, never listed: a 40-row preview
+                      // of one repeated figure is not information.
+                      // The same rate-not-count rule the save uses.
+                      const heldVol = isPercentageDraft ? totalVol : Math.round(totalVol);
+                      const heldLast = heldRows.length && baseDate && isValid(baseDate)
+                        ? formatMonthDate(
+                            addMonths(baseDate, heldRows[heldRows.length - 1].offset),
+                            i18n.language)
+                        : '';
 
                       return (
                         <div>
@@ -6585,12 +6979,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_month')}</span>
                             <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_volume')}</span>
                             {spreadDistType === 'custom' && <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">%</span>}
-                            {Array.from({ length: spreadMonths }, (_, i) => {
+                            {rampRows.map(({ offset: i, fraction }) => {
                               const spreadLabel = baseDate && isValid(baseDate)
                                 ? formatMonthDate(addMonths(baseDate, i), i18n.language)
                                 : t('whatif_month', { p0: i + 1 });
-                              const fraction  = pcts[i] / (pctTotal || 1);
-                              const vol       = Math.round(totalVol * fraction);
+                              const raw       = totalVol * fraction;
+                              const vol       = isPercentageDraft
+                                ? Math.round(raw * 100) / 100 : Math.round(raw);
                               return (
                                 <React.Fragment key={i}>
                                   <span className="text-xs text-slate-600 py-1">{spreadLabel}</span>
@@ -6616,6 +7011,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               );
                             })}
                           </div>
+                          {heldRows.length > 0 && (
+                            <p className="mt-2 text-[10px] text-slate-500 font-medium"
+                               data-testid="volume-hold-tail">
+                              {t('whatif_hold_then_held_through', {
+                                p0: `${heldVol >= 0 ? '+' : ''}${heldVol.toLocaleString()}`,
+                                p1: heldLast,
+                              })}
+                            </p>
+                          )}
                           {spreadDistType === 'custom' && !pctOk && (
                             <p className="mt-2 text-[10px] text-amber-600 font-medium">
                               
@@ -6699,12 +7103,39 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       one this codebase's design principle names first —
                       blocked states are communicated, never silent. */}
                   <button
+                    data-testid="volume-add"
                     onClick={handleAddMarketEvent}
                     disabled={!newEvent.date || newEvent.subscriberVolume === undefined || churnBlockReason !== null}
                     title={churnBlockReason ?? undefined}
                     className="bg-[#e60000] text-white text-sm font-semibold py-2 px-6 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    {spreadEnabled ? t('whatif_add_events', { p0: spreadMonths }) : t('whatif_add_event')}
+                    {/* REQ-D6-03 — THE COUNT IS THE COUNT. This read
+                        `spreadMonths` whenever the spread was on, which was
+                        the row count until hold existed and would now be a
+                        button reading "Add 3 Events" that adds twenty-four.
+                        Derived from the SAME generator the click uses, so the
+                        label and the outcome cannot disagree; the churn branch
+                        is excluded because it emits its own fold's rows. */}
+                    {(() => {
+                      if (isChurnDraft) {
+                        return spreadEnabled
+                          ? t('whatif_add_events', { p0: spreadMonths })
+                          : t('whatif_add_event');
+                      }
+                      const n = (!spreadEnabled && !holdAfterRamp)
+                        || newEvent.scenario === 'ARPU'
+                        ? 1
+                        : spreadShape({
+                          months: spreadEnabled ? spreadMonths : 1,
+                          dist: !spreadEnabled ? [100]
+                            : spreadDistType === 'even'
+                              ? Array.from({ length: spreadMonths }, () => 100 / spreadMonths)
+                              : customDist.slice(0, spreadMonths),
+                          hold: holdAfterRamp,
+                          horizonMonths: horizonMonthsFrom(newEvent.date ?? ''),
+                        }).length;
+                      return n > 1 ? t('whatif_add_events', { p0: n }) : t('whatif_add_event');
+                    })()}
                   </button>
                   {/* ALREADY TRANSLATED — churnBlockReason returns sentences,
                       not keys, because it embeds the seam's own reason. */}

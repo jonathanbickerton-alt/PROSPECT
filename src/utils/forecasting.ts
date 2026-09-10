@@ -99,6 +99,25 @@ export interface MarketEvent extends EventToggle {
   comment: string;
   /** Months of churn protection for inflow-event subscribers before they enter the at-risk pool. Default 24. */
   contractLength: number;
+  /**
+   * REQ-D6-03 (Jon, 2026-09-10), decision 1: HOLD IS MATERIALISED AS ROWS.
+   *
+   * This field does NOT make the engine hold anything. The ramp generator
+   * emits one row per month all the way to the last forecast month, so by the
+   * time any apply site sees these events they are ordinary rows and the
+   * held tail is indistinguishable from a hand-typed one. Compare's raw-row
+   * engine therefore needs nothing at all: rows are rows.
+   *
+   * What it carries is the USER'S STATEMENT, for the same reason the churn
+   * fields do — so edit-restore can rebuild the toggle without inferring it,
+   * and so a held campaign can explain itself. Decision 1 says "no carrier
+   * field" about the ENGINE; this is a restore field, and it is read by the
+   * card and by nothing in the maths.
+   *
+   * ABSENT MEANS OFF — the opposite of `enabled`, and deliberately: every
+   * campaign saved before this existed was a plain terminating spread.
+   */
+  hold?: boolean;
   /** Phase 4 — Custom Promotion Card: marks events created via the combined promo
    *  card. Used only for the card's own event list/table — no effect on calculation. */
   isPromotion?: boolean;
@@ -230,6 +249,9 @@ export interface MarketEvent extends EventToggle {
  * recorded in EXPECTED.md rather than left for someone to find.
  */
 export interface StoredEventModifiers extends EventToggle {
+  /** REQ-D6-03 — "ramp then hold" was on when this campaign was built. A
+   *  RESTORE field: the tail is already materialised as rows. See MarketEvent. */
+  hold: boolean;
   amountType: 'absolute' | 'percentage';
   percentageBasis: 'baseline' | 'adjusted';
   retentionLinked: boolean;
@@ -408,6 +430,19 @@ export function marketEventExportRow(e: MarketEvent): Record<string, unknown> {
     // a bare [] would round-trip as "targets no tariff", which is the
     // opposite of what absence means here.
     Tariff_Scope: e.tariffScope && e.tariffScope.length ? JSON.stringify(e.tariffScope) : '',
+    // REQ-D6-03 (Jon, 2026-09-10), decision 5. APPENDED LAST, never inserted —
+    // the rule trap 119 protects, and the third time this sheet has followed
+    // it: Enabled at REQ-D6-01, Tariff_Scope at D5-10, Hold here.
+    //
+    // 'Yes'/'No' rather than a boolean, matching Enabled and Retention_Linked
+    // above, because a sheet cell is text and the reader's absence rule is
+    // easier to state over two literals than over a truthiness.
+    //
+    // ABSENT MEANS OFF here — the OPPOSITE of Enabled's rule, and for the same
+    // kind of reason Enabled's runs the other way: a campaign written before
+    // this column existed was a terminating spread, so absence must reload as
+    // one. EVERY ROW of a held campaign carries it, including the tail.
+    Hold: e.hold ? 'Yes' : 'No',
   };
 }
 
@@ -1398,6 +1433,18 @@ export function readStoredEventModifiers(row: Record<string, unknown>): StoredEv
     // with everything applying - which is what it meant. Exactly the shape
     // Retention_Linked already uses two lines away.
     enabled: row.Enabled === 'No' ? false : true,
+    // REQ-D6-03 decision 5. THE MIRROR IMAGE of the line above, and the
+    // asymmetry is the decision: only the literal 'Yes' turns hold ON, so an
+    // absent column, an empty cell, a stray 'TRUE' or anything else reloads a
+    // campaign as the terminating spread it was. Every save written before
+    // this column existed therefore round-trips byte-identically.
+    //
+    // It rides HERE rather than in either row reader for the reason the churn
+    // fields and the band map do: both market import routes spread this one
+    // function, so a field added here reaches both or neither. Hand-rolling
+    // per route is exactly how the promo fields came to round-trip on one
+    // path only.
+    hold: row.Hold === 'Yes',
     isPromotion:     row.Is_Promotion === 'Yes',
     promoRebanded:   row.Promo_Rebanded === 'Yes',
     promoMixAxis:    axis === 'tariff' ? 'tariff' : axis === 'value' ? 'value' : undefined,
