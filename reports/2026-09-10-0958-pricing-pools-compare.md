@@ -21,11 +21,10 @@ BASE fa8c4ff + 2 (reports/ ONLY). PREMISE 0854 EXACT. DOCS d94434b.
   `e.Duration !== 'one-off' && currMs >= endMs`, so ONE-OFF never stops;
   and Number('recurring')||1 gives a ONE-month window, so RECURRING stops
   after one. What-If is correct (WIT:1751-1752). PRE-EXISTING, unrelated
-  to D5-14, and it misreads EVERY existing save with a pricing event —
-  backwards. Fixing it changes those forecasts: A DECISION, and bigger
-  than the pool question it surfaced under.
-2-4 NOT REACHED: no card control, no mounted re-runs, no traps (199+
-  still unused), so a frozen-rate regression would still pass the suite.
+  to D5-14, and it misreads EVERY existing save with a pricing event,
+  backwards. Fixing it changes those forecasts: A DECISION.
+2-4 NOT REACHED: no card control, no mounted re-runs, no traps (199+ still
+  unused) — a frozen-rate regression would still pass the suite.
 5 GATE suite 61/61; ZERO code drift (git status clean).
 ```
 
