@@ -7270,6 +7270,41 @@ is stated here so no future session has to re-derive it.
 **Existing saves carrying a cohort-target pricing event change forecast.**
 Recorded.
 
+**THE RETENTION SHAPE (Jon, 2026-09-10). Recorded before code.**
+
+**A retention-target pricing event REPRICES A SLICE OF THE EXISTING STOCK; it
+adds no subscribers.** Its pool is sized by
+**`min(priced retention volume, base stock at that month)`** — the clamp the
+retention-yield path already uses at `WhatIfTab.tsx:1687` — carries the priced
+rate, **REPLACES that slice's rate in the base blend (no volume added)**, and
+persists by `contractLength` through the existing `p_eventPools` delivery at
+T+1.
+
+**An inflow-target pricing event's pool joins base WITH the inflow at T+1** —
+the ordinary pool, because inflow genuinely adds subscribers.
+
+**`pricesPools` is false for a carving event's base side**, re-derived from this
+decision rather than carried over: the pool holds the priced slice, the base
+side prices the rest, and each subscriber is priced exactly once.
+
+**Everything else in D5-14 stands** — `contractLength` on `PricingEvent`,
+`Contract_Length_Months` appended last, absent → 24, Base-only unchanged,
+Compare parity, and existing saves carrying such an event change forecast.
+
+**ALSO RECORDED: the 0750 retention measurement was a HARNESS ARTEFACT.** That
+session's hand-derived aggregate set `seedBaseKnown` from
+`Seed_Base_Known === 'Yes'` while the sheet stores the **boolean `true`**, so a
+**40,203** seed was discarded on every leaf and the base stock read **974**
+instead of **41.20K** — forty-two times too small, which is why the pool clamp
+erased the carve. **The "category error" concluded in 0750 is WITHDRAWN**:
+retention is not mis-modelled, the harness was. Reproduced through the app's own
+restore path (`restoreSeedKnown`, `makeForecastKey`, `buildRollUpIndex`,
+`resolveFromStore`): SOHO / Mobile Voice at 2026-09 reads **Base 41.20K,
+Retention 2.96K**, matching the app exactly.
+
+**The hand-derived aggregate is retired.** Every measurement from here runs
+through the restore path or a mounted run.
+
 #### D5-13 DECIDED (Jon, 2026-09-09) — the Value card's preview names the winner
 
 **Recorded before any code.**
