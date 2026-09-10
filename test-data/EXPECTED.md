@@ -7154,6 +7154,89 @@ the **Events summary panel's** chip (`EventsSummaryTable.tsx:109`,
 things by design; the chip has always counted all rows, and no spec asserts its
 semantics either way.
 
+#### D5-14 DECIDED (Jon, 2026-09-10) — a Pricing event carves a pool, and Base sees it at T+1
+
+**Recorded before any code. THIS ENTRY ALSO SETTLES WHAT NOTHING PREVIOUSLY
+RECORDED:** the relationship between a Pricing event and the Base scenario. The
+0705 inventory found the behaviour deliberate but unwritten; this is the first
+entry to state it.
+
+**User-raised: Alessandro, UAT, 2026-09-10.** A Pricing-card Dilution event on
+Retention, **Target Cohorts only**, current **95 % → target 0 %**, moves
+Retention ARPU in the event month and moves **Base revenue and Base ARPU by
+nothing in any later month**, One-Off or Recurring.
+
+**Cause, measured in `reports/2026-09-10-0705-dilution-and-hold-inventory.md`
+Part A.** A Pricing event creates **no pool**: site 6 assigns a local
+`pricingARPU` to `m.uplifted.arpu` and never touches `p_eventPools`, and site 8
+filters a `cohorts` target out of the base scenario at
+`touchesBase` (`WhatIfTab.tsx:1865-1866`). `baseARPU` is re-anchored to
+`m.baseline.arpu` every month (`:1650`, "Option A"), so **only pools reach Base
+at T+1 and after**.
+
+**THE DECISION.** A Pricing event whose Target **includes cohorts** (Cohorts
+only; Cohorts + Base) carves, for each month it applies — One-Off: the event
+month; Recurring: every month from it — **a pool for the priced cohort volume**
+(inflow and/or retention per Applies-to) **at the priced rate**, through the
+**ONE existing pool arithmetic**: the `promoRebanded` shape, sized by
+`resolvedEventVolume` at `idx`, decaying by contract length, and **delivered to
+Base at T+1 by the existing lag**. **Base-only is unchanged.** Compare's engine
+carves the same pools at its equivalent site.
+
+**This changes the forecast of every existing save carrying such an event**, and
+is recorded as such.
+
+---
+
+**TWO STOP CONDITIONS FIRED DURING DIAGNOSIS, 2026-09-10. NOTHING WAS BUILT.**
+
+**STOP 1 — the decay term has no source.** The decision says the pool decays
+"by contract length". **A `PricingEvent` has no `contractLength` field**
+(`types/forecast.ts:395-420`): it carries `month`, `inputMode`, `amount`,
+`target`, `cohortScope`, `duration` and the dilution pair, and nothing else.
+Contract length lives on `MarketEvent` (`forecasting.ts:101`, exported as
+`Contract_Length_Months` at `:347`) because a promotion's card asks for it.
+`DEFAULT_CONTRACT_N = 24` exists in both engines
+(`WhatIfTab.tsx:1334`, `scenarioHelper.ts:310`), **but silently defaulting to it
+would invent the decay term** — the pool's whole persistence profile — from a
+constant the user never stated. That is a decision, not an implementation
+detail, and the brief reserved it.
+
+**The options, for Jon:** (a) a new `contractLength` on `PricingEvent`, with a
+card control, an export column and its reader — the honest shape, and the
+largest; (b) `DEFAULT_CONTRACT_N` explicitly, recorded here as the stated rule
+rather than a fallback; (c) no decay at all — the pool persists until the base
+churn takes it, which is a different claim again.
+
+**STOP 2 — Cohorts + Base double counts, and it compounds.** Measured through
+the real `scenarioAdjustedArpu`, at T+1 on the 19:30 save's SOHO / Mobile Voice
+cohort (base ARPU 14.51, stock 974, priced cohort 285, dilution 25 → 20):
+
+| case | Base ARPU at T+1 | revenue |
+|---|---|---|
+| today, Cohorts only | 14.5100 | 14 133 |
+| PROPOSED, Cohorts only | 14.7930 | 14 408 |
+| PROPOSED, Cohorts + Base **One-Off** | 14.7930 | 14 408 |
+| PROPOSED, Cohorts + Base **Recurring** | **15.7793** | **15 369** |
+| today, Cohorts + Base Recurring | 15.4773 | 15 075 |
+| PROPOSED with `pricesPools: false` | 15.4773 | 15 075 |
+
+**+0.3019 ARPU and +294 revenue of double count at T+1, compounding every later
+month.** The mechanism is `scenarioArpu.ts:144-152`: `pricesPools` is
+`target !== 'base-only'`, so for **cohorts+base** the delta is applied to the
+**whole blend, pools included** — and the pool already carries the priced rate.
+**One-Off does not double count** (at T+1 the event no longer applies), only
+**Recurring** does.
+
+**The interaction is a decision.** The obvious repair — pass `pricesPools:
+false` for a cohorts+base event once it carves a pool — reproduces today's
+figure exactly (15.4773 / 15 075), which is either the right answer or a
+coincidence worth stating plainly before it is chosen.
+
+**Nothing in this entry is built.** The Cohorts-only case was not built either:
+STOP 1 blocks it, because a pool with no stated decay is not the pool this
+decision describes.
+
 #### D5-13 DECIDED (Jon, 2026-09-09) — the Value card's preview names the winner
 
 **Recorded before any code.**
