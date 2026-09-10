@@ -22,10 +22,10 @@ BUILT THEN REVERTED. The pool model is SOUND FOR INFLOW and CATEGORY-
   p_basePool and blends into baseARPU — but that is re-anchored monthly
   (Option A) so it would not persist either. What a retention price change
   carves, out of which stock, and how it persists, IS A DECISION.
-BUILT AND WORKING (scratchpad, uncommitted): contractLength on
-  PricingEvent; Contract_Length_Months appended LAST after Tariff_Scope;
-  reader absent -> 24; carve at site 6 (push 3 -> 4); pricesPools false.
-  COMPARE ALREADY HAS 2 PUSHES — that count is 2 -> 3, not 1 -> 2.
+BUILT, IN SCRATCHPAD, UNCOMMITTED: contractLength on PricingEvent;
+  Contract_Length_Months appended LAST after Tariff_Scope; reader absent
+  -> 24; carve at site 6 (push 3 -> 4); pricesPools false. COMPARE
+  ALREADY HAS 2 PUSHES — that count is 2 -> 3, not the brief's 1 -> 2.
 GATE suite 61/61 on the reverted tree; ZERO code drift from base.
 ```
 
