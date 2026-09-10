@@ -252,6 +252,22 @@ async function main() {
     await click(hold);
     check('(1) and ON after', byTestId('promo-hold-toggle').getAttribute('aria-pressed') === 'true');
 
+    // ── NOT A RADIO GROUP: BOTH STAY ON ───────────────────────────────────
+    //
+    // The two controls render as round dots side by side and READ as a radio
+    // pair on screen. They are not one: both are `<button type="button">`
+    // with independent togglers, and REQ-D6-03 clause 4 says the ramp and the
+    // hold are independent — ramp PLUS hold is the feature, not a choice
+    // between them. Asserted three ways, because "the toggle is still lit" is
+    // a weaker claim than "the ramp section is still on screen".
+    const rampStillOn = btnByText(i18n.t('whatif_ramp_volume_over_multiple_months'));
+    check('(1) EXCLUSIVITY: the ramp control is still present after Hold',
+      !!rampStillOn);
+    check('(1) EXCLUSIVITY: the ramp DURATION input is still in the DOM',
+      !!rampMonthsInput(), 'the ramp panel would be gone if the two were exclusive');
+    check('(1) EXCLUSIVITY: the ramp months value survived the Hold click',
+      Number(rampMonthsInput()?.value) === 3, String(rampMonthsInput()?.value));
+
     const add = byTestId('promo-add');
     check('(1) the Add control is reachable', !!add);
     if (!add) { report(); return; }
