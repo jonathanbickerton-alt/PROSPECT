@@ -408,8 +408,16 @@ async function main() {
     await type(pts[2], '2');
 
     const add = byTestId('volume-add');
-    check('case 2: with hold off the button reports 3',
-      /3/.test(add.textContent || ''), norm(add.textContent || ''));
+    // THE UNHELD LABEL IS UNCHANGED, and this asserts that deliberately.
+    //
+    // A churn ramp's button has read "Add Event" since R7 — `spreadEnabled` is
+    // force-cleared for churn, so the count branch never fires. That is a
+    // pre-existing inaccuracy and correcting it here broke `spec:mix-card`,
+    // which finds this button by that exact text. So the unheld label is
+    // FROZEN, and pinning it is what stops a future session "tidying" it and
+    // silently reddening every churn check in that file.
+    check('case 2: with hold off the label is UNCHANGED — "Add Event"',
+      norm(add.textContent || '') === 'Add Event', norm(add.textContent || ''));
     await click(add);
 
     check('case 2: EXACTLY 3 rows, then nothing', captured.length === 3, String(captured.length));

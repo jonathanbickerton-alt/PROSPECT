@@ -7239,12 +7239,30 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         is excluded because it emits its own fold's rows. */}
                     {(() => {
                       if (isChurnDraft) {
-                        // REQ-D6-03 s2 — THE FOLD'S OWN USABLE COUNT, which is
-                        // what the handler emits (`!absence && delta !== 0`).
-                        // This read `spreadEnabled ? spreadMonths : 1`, and
+                        // REQ-D6-03 s2 — THE HELD CASE ONLY, and deliberately
+                        // narrow.
+                        //
+                        // This reads `spreadEnabled ? spreadMonths : 1`, and
                         // `spreadEnabled` is force-cleared for churn — so the
-                        // button already said "Add Event" for a three-month
-                        // ramp, and would now say it while adding twenty-four.
+                        // button has said "Add Event" for a three-month ramp
+                        // since R7. That is a PRE-EXISTING inaccuracy and it is
+                        // NOT this session's to fix: correcting it changed the
+                        // label to "Add 3 Events" and `spec:mix-card` finds
+                        // this button by the text "Add Event", so every churn
+                        // check in that file went red on a click that never
+                        // landed. Reported rather than repaired.
+                        //
+                        // What IS this session's is the held case, where the
+                        // same line would have promised one row and added
+                        // twenty-three. The count is taken from the fold's own
+                        // usable rows — exactly what the handler emits — and
+                        // only when hold is on, so the unheld label is
+                        // byte-identical to what it was.
+                        if (!churnHold) {
+                          return spreadEnabled
+                            ? t('whatif_add_events', { p0: spreadMonths })
+                            : t('whatif_add_event');
+                        }
                         const n = churnFold.filter(m => !m.absence && m.delta !== 0).length;
                         return n > 1 ? t('whatif_add_events', { p0: n }) : t('whatif_add_event');
                       }
