@@ -12,11 +12,10 @@ RECORDED FIRST 795db52 — the anchored-delta decision, in full.
   baseForecast.months[idx].baseArpu.mean — the BASE BAND, not the blend.
   Through scenarioArpu's OWN applyDelta, now exported (:99). Pool gained
   optional deltaOf; promotion/market pools have none and take p.arpu
-  untouched; all THREE readers go through it. PUSH WhatIfTab 3 -> 4,
+  untouched; all THREE readers use it. PUSH WhatIfTab 3 -> 4,
   scenarioHelper UNCHANGED at 2 (Compare held). PINS apply 12, display 6,
   .enabled 5+1+0, TARIFF_SCOPE 10, engine 6, seriesFor 3 — all identical.
-  RE-AIMED not loosened: the Pricing_Events last-column pin now names all
-  THREE trailing columns; Market_ and Yield_Events untouched.
+  RE-AIMED not loosened: the Pricing_Events pin names all 3 trailing cols.
 2 SIGN TABLE T+1..T+21, retention 25->20 One-Off cl=24, app path:
   POSITIVE 21, ZERO 0, NEGATIVE 0. +0.482% at T+1 (brief ~+0.5%),
   decaying to +0.128% at T+21. Base VOLUME unchanged every month.
