@@ -506,8 +506,18 @@ interface BuildPromoEventsParams {
    * documents: the horizon belongs to the forecast the card sits on, not to
    * this function, and a second derivation would be a second thing to keep in
    * step. Ignored entirely when `hold` is false.
+   *
+   * REQUIRED, AND NOT OPTIONAL-WITH-A-DEFAULT — walk observation B8.
+   *
+   * It was `horizonMonths?: number` read through `?? 0`, and a 0 horizon
+   * silently disables the tail: the feature turns itself off, every row it
+   * still emits is correct, and nothing anywhere goes red. That is the
+   * guard-admits-0 class — the one value that makes everything downstream
+   * trivially true — and the cure is the TYPE, not a check. A caller that
+   * forgets this now fails tsc instead of shipping a feature that does
+   * nothing.
    */
-  horizonMonths?: number;
+  horizonMonths: number;
   /** D5-10. The tariffs in scope and the full L1 set, so the ONE call to
    *  `tariffScopeFor` can live here — the Promotion card's three save paths
    *  all reach an event through this function, so this IS the card's site. */
@@ -670,7 +680,7 @@ export function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
     months: rampMonths,
     dist: pcts,
     hold: !!p.hold,
-    horizonMonths: p.horizonMonths ?? 0,
+    horizonMonths: p.horizonMonths,
   });
   if (!shape.length) return [];
 
@@ -3217,44 +3227,6 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setDraftPromoBandArpu({});
   }, []);
 
-  // ── Add Custom Promotion event(s) ─────────────────────────────────────────
-  const handleAddPromotionEvent = useCallback(() => {
-    if (!newPromo.date || !newPromo.subscriberVolume) return;
-    if (promoMixEnabled && promoTierData.length === 0) return;
-    // WRITE-SIDE ENFORCEMENT. The card cannot save a mix that does not sum
-    // to the total, nor one whose blend is unknown. Both are refusals, not
-    // repairs: the engine conforms shares it PRODUCES, but a mix the user
-    // has left non-conforming is theirs to resolve, and silently rewriting
-    // it on save is the tool stating something on their behalf.
-    if (promoMixBlocksSave) return;
-    if (promoDilutionBlockReason !== null) return;
-
-    const events = buildPromoEvents({
-      target: promoTarget,
-      amountType: promoAmountMode, draft: newPromo,
-      mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
-      mixLocked: promoMixLocked,
-      bandArpuOverride: draftPromoBandArpu,
-      pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
-      pricingDilutionCurrentPct: promoDilutionCurrent, pricingDilutionTargetPct: promoDilutionTarget,
-      cohortAvgArpu: promoCohortAvgArpu,
-      spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
-      // REQ-D6-03 s3 — the hold pair, on the two paths that build a CAMPAIGN.
-      hold: promoHold, horizonMonths: horizonMonthsFrom(newPromo.date ?? ''),
-      startSequence: nextSequence(marketEvents),
-      selectedTariffs, fullTariffL1s: [...fullTariffTree.keys()],
-    });
-    if (events.length === 0) return;
-
-    setMarketEvents([...marketEvents, ...events]);
-    resetPromoDraft();
-  // THE DEPENDENCY ARRAY IS THE READ-SET (D3-04). All three promo builders
-  // read promoAmountMode, promoMixLocked and the two dilution figures, and
-  // none of them declared any of the four. It happened to work because
-  // newPromo is listed and every restore also sets it - which is the shape
-  // this codebase has stopped relying on twice already.
-  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, marketEvents, setMarketEvents, resetPromoDraft]);
-
   // ── Unique options for Yield Event form ───────────────────────────────────
   const ySegmentOptions = useMemo(
     () => Array.from(new Set(data.map(r => String(r[wiSegmentCol])).filter(v => v && v !== 'undefined'))).sort(),
@@ -4007,6 +3979,65 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const idx = adjustedMonths.findIndex(m => m.month === startMonth);
     return idx < 0 ? 0 : adjustedMonths.length - idx;
   }, [adjustedMonths]);
+
+  // ── Add Custom Promotion event(s) ────────────────────────────────────────
+  //
+  // MOVED HERE at B8, from above `adjustedMonths`. It must list
+  // `horizonMonthsFrom` in its read-set, and listing it where the handler used
+  // to sit is a real TDZ error, not a lint nicety:
+  //   TS2448: Block-scoped variable 'horizonMonthsFrom' used before its declaration.
+  // Moving the handler below the helper was preferred to re-deriving the
+  // horizon from `baseForecast.months`, which would have been the second
+  // derivation session 1 went out of its way not to create.
+  // ── Add Custom Promotion event(s) ─────────────────────────────────────────
+  const handleAddPromotionEvent = useCallback(() => {
+    if (!newPromo.date || !newPromo.subscriberVolume) return;
+    if (promoMixEnabled && promoTierData.length === 0) return;
+    // WRITE-SIDE ENFORCEMENT. The card cannot save a mix that does not sum
+    // to the total, nor one whose blend is unknown. Both are refusals, not
+    // repairs: the engine conforms shares it PRODUCES, but a mix the user
+    // has left non-conforming is theirs to resolve, and silently rewriting
+    // it on save is the tool stating something on their behalf.
+    if (promoMixBlocksSave) return;
+    if (promoDilutionBlockReason !== null) return;
+
+    const events = buildPromoEvents({
+      target: promoTarget,
+      amountType: promoAmountMode, draft: newPromo,
+      mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
+      mixLocked: promoMixLocked,
+      bandArpuOverride: draftPromoBandArpu,
+      pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
+      pricingDilutionCurrentPct: promoDilutionCurrent, pricingDilutionTargetPct: promoDilutionTarget,
+      cohortAvgArpu: promoCohortAvgArpu,
+      spreadEnabled: promoSpreadEnabled, spreadMonths: promoSpreadMonths, spreadDistType: promoSpreadDistType, customDist: promoCustomDist,
+      // REQ-D6-03 s3 — the hold pair, on the two paths that build a CAMPAIGN.
+      hold: promoHold, horizonMonths: horizonMonthsFrom(newPromo.date ?? ''),
+      startSequence: nextSequence(marketEvents),
+      selectedTariffs, fullTariffL1s: [...fullTariffTree.keys()],
+    });
+    if (events.length === 0) return;
+
+    setMarketEvents([...marketEvents, ...events]);
+    resetPromoDraft();
+  // THE DEPENDENCY ARRAY IS THE READ-SET (D3-04). All three promo builders
+  // read promoAmountMode, promoMixLocked and the two dilution figures, and
+  // none of them declared any of the four. It happened to work because
+  // newPromo is listed and every restore also sets it - which is the shape
+  // this codebase has stopped relying on twice already.
+    // THE READ-SET IS THE DEPENDENCY SET — walk observation B8, and the third
+    // time this exact defect has been found in this file.
+    //
+    // `promoHold` and `horizonMonthsFrom` are READ above and were NOT listed,
+    // so React handed back a callback closed over the OLD promoHold. Clicking
+    // Hold LAST — the order a user actually works in — left nothing to
+    // recreate it, and Add emitted the three-row share split with hold OFF.
+    // Measured, not deduced: reordering the mounted spec to click Hold last
+    // reproduced 3 rows of 3.3333 before a line of this was changed.
+    //
+    // It passed for a year of orders where the ramp switch was touched after
+    // the toggle, because promoSpreadEnabled IS listed and recreated it.
+  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, promoHold, horizonMonthsFrom, marketEvents, setMarketEvents, resetPromoDraft]);
 
   /**
    * REQ-D6-03 session 2 — THE STATED TRAJECTORY, TAIL INCLUDED.
@@ -5389,7 +5420,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       // turn a single-row edit into a new campaign the user never asked for.
       // A held campaign is re-stated through handleSavePromoCampaign, and
       // trap 107's bar keeps a held member out of this path in the first place.
-      hold: false,
+      //
+      // B8: horizonMonths is REQUIRED now, so it is stated rather than omitted.
+      // 0 is the honest value HERE and only here — this path emits one row and
+      // hold is false, so there is no tail to size. It is written beside
+      // `hold: false` so the two read as one decision.
+      hold: false, horizonMonths: 0,
       // The row KEEPS its slot. nextSequence here handed an edited event a
       // brand-new end-of-table slot, moving it below everything — the exact
       // behaviour the sequence field exists to prevent, and the Volume tab's
@@ -5443,7 +5479,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // none of them declared any of the four. It happened to work because
   // newPromo is listed and every restore also sets it - which is the shape
   // this codebase has stopped relying on twice already.
-  }, [editingPromoCampaign, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, marketEvents, setMarketEvents, resetPromoDraft]);
+    // B8, the same omission on the campaign-save path — it reads the same two.
+  }, [editingPromoCampaign, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, promoHold, horizonMonthsFrom, marketEvents, setMarketEvents, resetPromoDraft]);
 
   const handleCancelPromoEdit = useCallback(() => {
     setEditingPromoId(null);

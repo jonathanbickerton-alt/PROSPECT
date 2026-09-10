@@ -226,10 +226,20 @@ async function main() {
     if (!hold) { report(); return; }
     check('(1) it is OFF before it is clicked', hold.getAttribute('aria-pressed') === 'false');
 
+    // ── HOLD IS CLICKED LAST, AND THAT ORDER IS THE TEST ──────────────────
+    //
+    // This file drove amount -> HOLD -> ramp, and passed at 24 rows while the
+    // app emitted 3. The order was the whole difference: `promoSpreadEnabled`
+    // WAS in the Add handler's dependency list and `promoHold` was NOT, so
+    // touching the ramp switch after the toggle rebuilt the callback and
+    // hid the stale closure. Jon drove amount -> ramp -> HOLD, which is the
+    // order a form is actually filled in, and nothing rebuilt it.
+    //
+    // So the drive below is Jon's, deliberately, and it is the LAST control
+    // touched that matters. A harness that passes what the card passes can
+    // still lie if it does not press the buttons in the order a person does.
     await click(byTestId('promo-amount-pct'));
     await type(byTestId('promo-volume-amount'), '10');
-    await click(hold);
-    check('(1) and ON after', byTestId('promo-hold-toggle').getAttribute('aria-pressed') === 'true');
 
     const rampBtn = btnByText(i18n.t('whatif_ramp_volume_over_multiple_months'));
     check('(1) the ramp control is reachable', !!rampBtn);
@@ -238,6 +248,9 @@ async function main() {
     const mi = rampMonthsInput();
     check('(1) the ramp duration input is reachable', !!mi);
     if (mi) await type(mi, '3');
+
+    await click(hold);
+    check('(1) and ON after', byTestId('promo-hold-toggle').getAttribute('aria-pressed') === 'true');
 
     const add = byTestId('promo-add');
     check('(1) the Add control is reachable', !!add);
@@ -304,12 +317,13 @@ async function main() {
   {
     await mount();
     if (!(await openPromo())) { report(); return; }
+    // Jon's order here too — hold LAST. See case 1.
     await click(byTestId('promo-amount-pct'));
     await type(byTestId('promo-volume-amount'), '10');
-    await click(byTestId('promo-hold-toggle'));
     await click(btnByText(i18n.t('whatif_ramp_volume_over_multiple_months')));
     const mi = rampMonthsInput();
     if (mi) await type(mi, '3');
+    await click(byTestId('promo-hold-toggle'));
     await click(byTestId('promo-add'));
     const emitted = captured.slice();
     check('(3) 24 rows to round-trip', emitted.length === 24, String(emitted.length));
@@ -361,11 +375,12 @@ async function main() {
   {
     await mount();
     if (!(await openPromo())) { report(); return; }
+    // Jon's order here too — hold LAST. See case 1.
     await type(byTestId('promo-volume-amount'), '3000');
-    await click(byTestId('promo-hold-toggle'));
     await click(btnByText(i18n.t('whatif_ramp_volume_over_multiple_months')));
     const mi = rampMonthsInput();
     if (mi) await type(mi, '3');
+    await click(byTestId('promo-hold-toggle'));
     // BY PLACEHOLDER, because this input carries no testid and adding one cost
     // session 2 a gate run (a duplicate `data-testid` tsc refused). The
     // placeholder is a locale key resolved through the same i18n instance the

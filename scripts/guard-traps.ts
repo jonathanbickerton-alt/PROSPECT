@@ -80,6 +80,7 @@ const HOLDSHAPE = 'scripts/hold-shape-spec.ts';
 const CHURNHOLD = 'scripts/churn-hold-mounted-spec.tsx';
 const PROMOHOLD = 'scripts/promo-hold-mounted-spec.tsx';
 const INGESTSPEC = 'scripts/ingest-spec.tsx';
+const RESTOREBANNER = 'scripts/restore-banner-spec.ts';
 const INGEST = 'src/utils/ingest.ts';
 const SCENARPU = 'scripts/scenario-arpu-spec.ts';
 const AMTCTRL = 'scripts/amount-control-spec.ts';
@@ -2877,9 +2878,15 @@ const TRAPS: Trap[] = [
     why: 'a held promotion silently reverts to a terminating ramp with the'
        + ' toggle still lit and the target still showing',
     file: WHATIF, spec: PROMOHOLD,
+    // RE-ANCHORED at B8, 2026-09-10, and `spec:trap-anchors` is what said so:
+    //   FAIL trap 209 …: anchor 1 still matches WhatIfTab.tsx
+    //        [ZERO — the anchor has aged out; the trap plants nothing]
+    // The `?? 0` it quoted is gone: `horizonMonths` became REQUIRED because a
+    // 0 default silently disables the tail. The trap is unchanged in what it
+    // plants — `hold` forced false — only in the text it matches.
     mutate: s => s.replace(
-      '    hold: !!p.hold,\n    horizonMonths: p.horizonMonths ?? 0,',
-      '    hold: false, // planted\n    horizonMonths: p.horizonMonths ?? 0,') },
+      '    hold: !!p.hold,\n    horizonMonths: p.horizonMonths,',
+      '    hold: false, // planted\n    horizonMonths: p.horizonMonths,') },
   // 210 DROPS `hold` FROM THE EMITTED ROW while the shape still holds. The
   // rows are right, the chart is right, and the campaign is UNREOPENABLE as
   // what it is: the restore reads the column, finds nothing, and reverse-
@@ -2973,6 +2980,50 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "  return sheetNames.includes('Metadata') && sheetNames.includes('Market_Events');",
       "  return sheetNames.includes('Metadata');") },
+  // ══ WALK B8 — THE PROMOTION ADD PATH'S READ-SET ══════════════════════════
+  //
+  // 217 DROPS `promoHold` FROM THE ADD HANDLER'S DEPENDENCY LIST — the defect
+  // Jon found on the walk, exactly. React then hands back a callback closed
+  // over the OLD `promoHold`, and a user who clicks Hold LAST gets the
+  // three-row share split.
+  //
+  // WHY A TRAP AND NOT A LINT RULE. Every row it emits is correct, the toggle
+  // stays lit, no error appears anywhere, and the feature simply does nothing.
+  // It survived a whole session because `spec:promo-hold-mounted` happened to
+  // touch the ramp switch AFTER the toggle — and `promoSpreadEnabled` IS in
+  // the list, so that rebuilt the callback and hid it. The spec now drives the
+  // order a person fills a form in, and this trap is what keeps it honest.
+  { id: '217 the promotion Add handler drops promoHold from its read-set',
+    why: 'a user who clicks Hold last gets the 3-row share split, with the'
+       + ' toggle still lit and nothing red anywhere',
+    file: WHATIF, spec: PROMOHOLD,
+    // ANCHORED ON THE ADD HANDLER'S OWN PREFIX. The tail alone occurs TWICE —
+    // both campaign paths gained the same two deps — and `spec:trap-anchors`
+    // said so before this ever ran:
+    //   [2 occurrences — replace() takes the first, so the trap plants at the
+    //    wrong one]
+    // `[newPromo, promoTarget,` is the ADD path; the save path opens with
+    // `[editingPromoCampaign,`. Trap 102's lesson, applied before the gate.
+    mutate: s => s.replace(
+      '  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, promoHold, horizonMonthsFrom, marketEvents, setMarketEvents, resetPromoDraft]);',
+      '  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, horizonMonthsFrom, marketEvents, setMarketEvents, resetPromoDraft]);') },
+  // ══ WALK B10 — THE STICKY FALLBACK BANNER ════════════════════════════════
+  //
+  // 218 REMOVES THE PER-IMPORT CLEAR. The banner then behaves as it did when
+  // Jon met it: raised by one file, and still on screen after a later import
+  // that read its recorded cohort and honoured it.
+  //
+  // THE DEFECT IS THE APP LYING ABOUT ITSELF, not a missing feature: it says
+  // "this save did not record which one was active" about a save that did.
+  // Nothing is wrong with the restore, which is exactly why nothing else in
+  // the suite would notice it.
+  { id: '218 the fallback banner is never cleared between imports',
+    why: 'a banner raised by one file survives a later, correct restore and'
+       + ' tells the user the app guessed when it did not',
+    file: APP, spec: RESTOREBANNER,
+    mutate: s => s.replace(
+      '      setRestoreFellBack(false);' + nl + '      try {',
+      '      try {') },
 ];
 
 
@@ -3117,7 +3168,9 @@ try {
       // without being here, and they could all have caught vacuously.
       || specFails(PROMOHOLD)
       // REQ-D6-04. Registered WITH its first trap, per session 2's finding.
-      || specFails(INGESTSPEC)) {
+      || specFails(INGESTSPEC)
+      // B10. Registered with its first trap, per session 2's finding.
+      || specFails(RESTOREBANNER)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

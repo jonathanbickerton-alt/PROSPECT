@@ -729,6 +729,25 @@ export default function App() {
    * The body below is unchanged from the callback it was lifted out of.
    */
   const applyImportSaveWorkbook = (wb: any) => {
+      // ── WALK B10 — THE BANNER IS CLEARED AT THE START OF EVERY IMPORT ────
+      //
+      // `restoreFellBack` had exactly ONE writer to `true` (the fallback
+      // below) and exactly one to `false` (the user's dismiss button), so a
+      // banner raised by one file STAYED UP through every later import —
+      // including one that read its recorded cohort and honoured it.
+      //
+      // That is what Jon saw. Measured on his own 20:33 save: it records
+      // `Active_Cohort_* = All`, `buildRestoredLeafIndex` puts 72 leaves under
+      // `All|All|All|All|All|All|All`, and `resolveFromStore` RESOLVES it — so
+      // `recordedBf` is non-null and this import never sets the flag. The
+      // banner on screen belonged to an earlier load and was describing a
+      // restore that had already been superseded.
+      //
+      // A stale banner is worse than none: it says the app made an arbitrary
+      // choice when it did not, which is the same class as the silent fallback
+      // 9c31227 replaced — an app stating something about itself that is not
+      // true of what the user is looking at.
+      setRestoreFellBack(false);
       try {
 
         // ── Validate ──────────────────────────────────────────────────────────
