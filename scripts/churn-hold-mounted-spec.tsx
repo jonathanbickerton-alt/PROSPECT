@@ -307,6 +307,14 @@ async function main() {
 
     const holdBox = byTestId('churn-hold-toggle');
     check('case 1: the churn hold toggle exists', !!holdBox);
+    // CLAUSE 10 — still a real checkbox, now through the shared component.
+    check('case 1: CLAUSE 10: it is an <input type=checkbox>',
+      holdBox.tagName === 'INPUT' && holdBox.type === 'checkbox',
+      `${holdBox.tagName}/${holdBox.type}`);
+    check('case 1: CLAUSE 10: the ramp control is one too, and BOTH tick',
+      byTestId('churn-ramp-toggle').type === 'checkbox'
+      && byTestId('churn-ramp-toggle').checked === true,
+      String(byTestId('churn-ramp-toggle').checked));
     if (!holdBox) { report(); return; }
     check('case 1: it is OFF before it is clicked', holdBox.checked === false);
     await click(holdBox);

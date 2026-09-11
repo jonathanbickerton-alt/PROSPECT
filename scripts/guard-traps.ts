@@ -3070,6 +3070,26 @@ const TRAPS: Trap[] = [
       '                            {false && (' + nl
       + '                              <p className="mt-2 text-[10px] text-slate-500 font-medium"' + nl
       + '                                 data-testid="promo-hold-tail">') },
+  // ══ REQ-D6-03 CLAUSE 10 — SIX CONTROLS, ONE COMPONENT ════════════════════
+  //
+  // 222 SWAPS ONE CARD BACK to a hand-rolled control. Five uses remain and the
+  // sixth is an inline button again — which is how the three idioms arose in
+  // the first place, and how the round-dot glyph that reads as a radio group
+  // came back on one card while the other two were checkboxes.
+  //
+  // A COUNT, not a name search: grepping for "RampHoldCheckbox" would still
+  // find five and pass.
+  { id: '222 one ramp/hold control reverts to a hand-rolled inline copy',
+    why: 'five cards use the shared checkbox and one draws its own round dot'
+       + ' again — the radio look returning to a single card',
+    file: WHATIF, spec: HOLDSHAPE,
+    mutate: s => s.replace(
+      '                <RampHoldCheckbox' + nl
+      + '                  checked={holdAfterRamp}',
+      '                <input type="checkbox" data-testid="volume-hold-toggle"' + nl
+      + '                  checked={holdAfterRamp} onChange={e => setHoldAfterRamp(e.target.checked)} />' + nl
+      + '                <RampHoldCheckboxPLANTED' + nl
+      + '                  checked={holdAfterRamp}') },
 ];
 
 

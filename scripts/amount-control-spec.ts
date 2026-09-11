@@ -261,8 +261,15 @@ const SCENARIOS = ['Inflow', 'Outflow', 'Retention', 'ARPU', undefined];
       && (tab.match(/clearChurnDraft\(\);/g) ?? []).length === 5,
     `${(tab.match(/clearChurnDraft\(\);/g) ?? []).length} call sites, expected 5`);
 
+  // CLAUSE 10 re-aim (2026-09-11): this read `data-testid=` in WhatIfTab. The
+  // attribute now lives in RampHoldCheckbox, so the same claim — a
+  // testid-addressable opt-in control that defaults OFF — is made in two
+  // parts. NOT loosened: the testid must still be handed to the SHARED
+  // component, and the component must still emit it as data-testid.
   check('WIRING: the ramp is opt-in and defaults OFF',
-    /useState\(false\);/.test(tab) && /data-testid="churn-ramp-toggle"/.test(raw)
+    /useState\(false\);/.test(tab) && /testId="churn-ramp-toggle"/.test(raw)
+      && /data-testid=\{testId\}/.test(
+           fs.readFileSync('src/components/RampHoldCheckbox.tsx', 'utf8'))
       && /const \[churnRampOn, setChurnRampOn\] = useState\(false\)/.test(tab));
   check('WIRING: unchecked states a single month through the same fold',
     /churnRampOn \? churnStated\.slice\(0, churnMonths\) : \[churnTargetPct\]/.test(tab),

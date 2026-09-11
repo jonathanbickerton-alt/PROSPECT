@@ -222,6 +222,11 @@ async function main() {
     await mount();
     const holdBtn = byTestId('volume-hold-toggle');
     check('(a) the hold toggle is on the Volume card', !!holdBtn);
+    // CLAUSE 10 — a real checkbox, asserted on .checked which only a checkbox
+    // has. A button would report undefined here.
+    check('(a) CLAUSE 10: the hold control is an <input type=checkbox>',
+      holdBtn.tagName === 'INPUT' && holdBtn.type === 'checkbox',
+      `${holdBtn.tagName}/${holdBtn.type}`);
     if (!holdBtn) { report(); return; }
     await click(holdBtn);
 
@@ -230,7 +235,7 @@ async function main() {
     // next check is what proves the card follows the settlement.
     await setDraft({ scenario: 'Inflow', amountType: 'percentage', percentageBasis: 'baseline',
       subscriberVolume: 10, date: MONTHS[0] });
-    const spreadBtn = btnByText(i18n.t('whatif_spread_volume_over_multiple_months'));
+    const spreadBtn = byTestId('volume-spread-toggle');
     check('(a) the spread control opens for a percentage draft once hold is on',
       !!spreadBtn);
     if (!spreadBtn) { report(); return; }
@@ -299,7 +304,7 @@ async function main() {
     await click(byTestId('volume-hold-toggle'));
     await setDraft({ scenario: 'Retention', amountType: 'absolute',
       subscriberVolume: 300, date: MONTHS[0], retentionLinked: true });
-    await click(btnByText(i18n.t('whatif_spread_volume_over_multiple_months')));
+    await click(byTestId('volume-spread-toggle'));
     await click(byTestId('volume-add'));
 
     check('(b) 24 rows emitted', captured.length === 24, String(captured.length));
@@ -332,7 +337,7 @@ async function main() {
     await mount();
     await setDraft({ scenario: 'Retention', amountType: 'absolute',
       subscriberVolume: 300, date: MONTHS[0], retentionLinked: true });
-    await click(btnByText(i18n.t('whatif_spread_volume_over_multiple_months')));
+    await click(byTestId('volume-spread-toggle'));
     await click(byTestId('volume-add'));
     const run2 = (await import('../src/components/WhatIfTab')).computeAdjustedForecast({
       baseForecast, marketEvents: captured, yieldEvents: [], pricingEvents: [],
@@ -358,7 +363,7 @@ async function main() {
     await mount();
     await setDraft({ scenario: 'Retention', amountType: 'absolute',
       subscriberVolume: 300, date: MONTHS[0], retentionLinked: true });
-    await click(btnByText(i18n.t('whatif_spread_volume_over_multiple_months')));
+    await click(byTestId('volume-spread-toggle'));
     const add = byTestId('volume-add');
     check('(c) with hold off the button still reports 3',
       /3/.test(add.textContent || ''), norm(add.textContent || ''));
@@ -376,7 +381,7 @@ async function main() {
     await click(byTestId('volume-hold-toggle'));
     await setDraft({ scenario: 'Inflow', amountType: 'percentage', percentageBasis: 'baseline',
       subscriberVolume: 10, date: MONTHS[0], campaignName: 'Ramp' });
-    await click(btnByText(i18n.t('whatif_spread_volume_over_multiple_months')));
+    await click(byTestId('volume-spread-toggle'));
     await click(byTestId('volume-add'));
     const emitted = captured.slice();
     check('(d) 24 rows to round-trip', emitted.length === 24, String(emitted.length));

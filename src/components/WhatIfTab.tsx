@@ -21,6 +21,7 @@ import { foldChurnRamp, linearChurnRamp, type ChurnFoldMonth } from '../utils/ch
 import { canShowBaseForecast, resolveEventScopeForecast, tariffScopeFor, monthsCarryingActuals } from '../utils/forecasting';
 import { applyDelta, scenarioAdjustedArpu } from '../utils/scenarioArpu';
 import { MixSliderRow } from './MixSliderRow';
+import { RampHoldCheckbox } from './RampHoldCheckbox';
 import { MixTargetPanel } from './MixTargetPanel';
 import type { ScenarioKey, ScenarioPricing } from '../utils/scenarioArpu';
 import { nextAmountControlState, effectiveAmountControl, churnAvailableFor,
@@ -6744,23 +6745,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         inconsistent with the control one card-section away.
                         Unchecked states a single month, through the SAME fold
                         as a one-month ramp. */}
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <input
-                        type="checkbox"
-                        data-testid="churn-ramp-toggle"
-                        checked={churnRampOn}
-                        onChange={e => {
-                          const on = e.target.checked;
-                          setChurnRampOn(on);
-                          // Re-prefill for the length now in play, so the grid
-                          // never shows a distribution belonging to the other
-                          // shape.
-                          setChurnStated(linearChurnRamp(churnTargetPct, on ? churnMonths : 1));
-                        }}
-                        className="rounded border-slate-300 text-[#e60000] focus:ring-[#e60000]"
-                      />
-                      <span className="text-[11px] font-medium text-slate-600">{t('whatif_churn_ramp')}</span>
-                    </label>
+                    <RampHoldCheckbox
+                      checked={churnRampOn}
+                      onChange={(on) => {
+                        setChurnRampOn(on);
+                        // Re-prefill for the length now in play, so the grid
+                        // never shows a distribution belonging to the other
+                        // shape.
+                        setChurnStated(linearChurnRamp(churnTargetPct, on ? churnMonths : 1));
+                      }}
+                      label={t('whatif_churn_ramp')}
+                      testId="churn-ramp-toggle"
+                    />
 
                     {/* REQ-D6-03 session 2 — HOLD, beside the ramp switch and
                         OUTSIDE it, on the volume card's independence rule:
@@ -6773,17 +6769,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         target, the ramp builds to it, later months hold it —
                         and a second pair saying the same thing in six
                         languages is two things to keep in step. */}
-                    <label className="flex items-center gap-2 cursor-pointer select-none"
-                           title={t('whatif_hold_after_ramp_help')}>
-                      <input
-                        type="checkbox"
-                        data-testid="churn-hold-toggle"
-                        checked={churnHold}
-                        onChange={e => setChurnHold(e.target.checked)}
-                        className="rounded border-slate-300 text-[#e60000] focus:ring-[#e60000]"
-                      />
-                      <span className="text-[11px] font-medium text-slate-600">{t('whatif_hold_after_ramp_label')}</span>
-                    </label>
+                    <RampHoldCheckbox
+                      checked={churnHold}
+                      onChange={setChurnHold}
+                      label={t('whatif_hold_after_ramp_label')}
+                      title={t('whatif_hold_after_ramp_help')}
+                      testId="churn-hold-toggle"
+                    />
                     {churnHold && (
                       <p className="text-[10px] text-slate-400 leading-snug"
                          data-testid="churn-hold-tail">
@@ -7141,38 +7133,24 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 {/* Toggle */}
                 <div className="flex flex-wrap items-center gap-2">
                 {(!isPercentageDraft || holdAfterRamp) && (
-                <button
-                  type="button"
-                  onClick={() => setSpreadEnabled(v => !v)}
-                  className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
-                    spreadEnabled
-                      ? 'bg-[#e60000] text-white border-[#e60000]'
-                      : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors ${spreadEnabled ? 'border-white' : 'border-slate-400'}`}>
-                    {spreadEnabled && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
-                  </span>{t('whatif_spread_volume_over_multiple_months')}</button>
+                <RampHoldCheckbox
+                  checked={spreadEnabled}
+                  onChange={setSpreadEnabled}
+                  label={t('whatif_spread_volume_over_multiple_months')}
+                  testId="volume-spread-toggle"
+                />
                 )}
                 {/* REQ-D6-03 decision 4 — BESIDE the spread control and OUTSIDE
                     its panel, because the two are independent: spread off with
                     hold on is a ramp of length 1 plus a tail, and a toggle
                     nested inside `spreadEnabled &&` could not express it. */}
-                <button
-                  type="button"
-                  data-testid="volume-hold-toggle"
+                <RampHoldCheckbox
+                  checked={holdAfterRamp}
+                  onChange={setHoldAfterRamp}
+                  label={t('whatif_hold_after_ramp_label')}
                   title={t('whatif_hold_after_ramp_help')}
-                  aria-pressed={holdAfterRamp}
-                  onClick={() => setHoldAfterRamp(v => !v)}
-                  className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
-                    holdAfterRamp
-                      ? 'bg-[#e60000] text-white border-[#e60000]'
-                      : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors ${holdAfterRamp ? 'border-white' : 'border-slate-400'}`}>
-                    {holdAfterRamp && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
-                  </span>{t('whatif_hold_after_ramp_label')}</button>
+                  testId="volume-hold-toggle"
+                />
                 </div>
                 {holdAfterRamp && (
                   <p className="text-[10px] text-slate-400 mt-1.5 leading-snug">
@@ -8850,38 +8828,24 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 {/* Ramp / decay — reuses the same spread mechanism as Volume events */}
                 <div className="mt-4">
                   <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPromoSpreadEnabled(v => !v)}
-                    className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
-                      promoSpreadEnabled
-                        ? 'bg-[#e60000] text-white border-[#e60000]'
-                        : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors ${promoSpreadEnabled ? 'border-white' : 'border-slate-400'}`}>
-                      {promoSpreadEnabled && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
-                    </span>{t('whatif_ramp_volume_over_multiple_months')}</button>
+                  <RampHoldCheckbox
+                    checked={promoSpreadEnabled}
+                    onChange={setPromoSpreadEnabled}
+                    label={t('whatif_ramp_volume_over_multiple_months')}
+                    testId="promo-spread-toggle"
+                  />
                   {/* REQ-D6-03 s3 — BESIDE the ramp control and OUTSIDE its
                       panel, the third carrier to follow the same rule: the two
                       are independent, and a toggle nested inside
                       `promoSpreadEnabled &&` could not say "this figure, every
                       month". The SAME two keys as the other two cards. */}
-                  <button
-                    type="button"
-                    data-testid="promo-hold-toggle"
+                  <RampHoldCheckbox
+                    checked={promoHold}
+                    onChange={setPromoHold}
+                    label={t('whatif_hold_after_ramp_label')}
                     title={t('whatif_hold_after_ramp_help')}
-                    aria-pressed={promoHold}
-                    onClick={() => setPromoHold(v => !v)}
-                    className={`flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
-                      promoHold
-                        ? 'bg-[#e60000] text-white border-[#e60000]'
-                        : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors ${promoHold ? 'border-white' : 'border-slate-400'}`}>
-                      {promoHold && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
-                    </span>{t('whatif_hold_after_ramp_label')}</button>
+                    testId="promo-hold-toggle"
+                  />
                   </div>
                   {promoHold && (
                     <p className="text-[10px] text-slate-400 mt-1.5 leading-snug">

@@ -224,7 +224,7 @@ async function main() {
     const hold = byTestId('promo-hold-toggle');
     check('(1) the hold toggle is on the Promotion card', !!hold);
     if (!hold) { report(); return; }
-    check('(1) it is OFF before it is clicked', hold.getAttribute('aria-pressed') === 'false');
+    check('(1) it is OFF before it is clicked', hold.checked === false);
 
     // ── HOLD IS CLICKED LAST, AND THAT ORDER IS THE TEST ──────────────────
     //
@@ -241,7 +241,7 @@ async function main() {
     await click(byTestId('promo-amount-pct'));
     await type(byTestId('promo-volume-amount'), '10');
 
-    const rampBtn = btnByText(i18n.t('whatif_ramp_volume_over_multiple_months'));
+    const rampBtn = byTestId('promo-spread-toggle');
     check('(1) the ramp control is reachable', !!rampBtn);
     if (!rampBtn) { report(); return; }
     await click(rampBtn);
@@ -250,7 +250,7 @@ async function main() {
     if (mi) await type(mi, '3');
 
     await click(hold);
-    check('(1) and ON after', byTestId('promo-hold-toggle').getAttribute('aria-pressed') === 'true');
+    check('(1) and ON after', byTestId('promo-hold-toggle').checked === true);
 
     // ── NOT A RADIO GROUP: BOTH STAY ON ───────────────────────────────────
     //
@@ -260,9 +260,21 @@ async function main() {
     // hold are independent — ramp PLUS hold is the feature, not a choice
     // between them. Asserted three ways, because "the toggle is still lit" is
     // a weaker claim than "the ramp section is still on screen".
-    const rampStillOn = btnByText(i18n.t('whatif_ramp_volume_over_multiple_months'));
+    const rampStillOn = byTestId('promo-spread-toggle');
     check('(1) EXCLUSIVITY: the ramp control is still present after Hold',
       !!rampStillOn);
+    // CLAUSE 10 — BOTH ARE REAL CHECKBOXES AND BOTH ARE TICKED. The pair used
+    // to be round-dot buttons that READ as a radio group while behaving as
+    // independent toggles; the markup now says what clause 4 means. Asserted
+    // on `.checked`, which only a checkbox has — a button would report
+    // undefined and this would go red.
+    check('(1) CLAUSE 10: the ramp control is an <input type=checkbox>',
+      rampStillOn && rampStillOn.tagName === 'INPUT' && rampStillOn.type === 'checkbox',
+      `${rampStillOn && rampStillOn.tagName}/${rampStillOn && rampStillOn.type}`);
+    check('(1) CLAUSE 10: BOTH are checked at once — not a radio pair',
+      rampStillOn && rampStillOn.checked === true
+      && byTestId('promo-hold-toggle').checked === true,
+      `ramp=${rampStillOn && rampStillOn.checked} hold=${byTestId('promo-hold-toggle').checked}`);
     check('(1) EXCLUSIVITY: the ramp DURATION input is still in the DOM',
       !!rampMonthsInput(), 'the ramp panel would be gone if the two were exclusive');
     check('(1) EXCLUSIVITY: the ramp months value survived the Hold click',
@@ -315,7 +327,7 @@ async function main() {
     await mount();
     if (!(await openPromo())) { report(); return; }
     await type(byTestId('promo-volume-amount'), '3000');
-    await click(btnByText(i18n.t('whatif_ramp_volume_over_multiple_months')));
+    await click(byTestId('promo-spread-toggle'));
     const mi = rampMonthsInput();
     if (mi) await type(mi, '3');
     await click(byTestId('promo-add'));
@@ -336,7 +348,7 @@ async function main() {
     // Jon's order here too — hold LAST. See case 1.
     await click(byTestId('promo-amount-pct'));
     await type(byTestId('promo-volume-amount'), '10');
-    await click(btnByText(i18n.t('whatif_ramp_volume_over_multiple_months')));
+    await click(byTestId('promo-spread-toggle'));
     const mi = rampMonthsInput();
     if (mi) await type(mi, '3');
     await click(byTestId('promo-hold-toggle'));
@@ -393,7 +405,7 @@ async function main() {
     if (!(await openPromo())) { report(); return; }
     // Jon's order here too — hold LAST. See case 1.
     await type(byTestId('promo-volume-amount'), '3000');
-    await click(btnByText(i18n.t('whatif_ramp_volume_over_multiple_months')));
+    await click(byTestId('promo-spread-toggle'));
     const mi = rampMonthsInput();
     if (mi) await type(mi, '3');
     await click(byTestId('promo-hold-toggle'));
@@ -461,8 +473,8 @@ async function main() {
     await click(pill);
 
     check('(4) the hold toggle comes back ON, from the COLUMN',
-      byTestId('promo-hold-toggle')?.getAttribute('aria-pressed') === 'true',
-      String(byTestId('promo-hold-toggle')?.getAttribute('aria-pressed')));
+      byTestId('promo-hold-toggle')?.checked === true,
+      String(byTestId('promo-hold-toggle')?.checked));
     const mi2 = rampMonthsInput();
     check('(4) the ramp duration is 3 — the PLATEAU START, not 24',
       Number(mi2?.value) === 3, String(mi2?.value));

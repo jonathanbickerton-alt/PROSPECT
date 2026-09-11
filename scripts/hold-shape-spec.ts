@@ -244,6 +244,42 @@ const volumes = (shape: { fraction: number }[], amount: number, round = true) =>
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// 4b. CLAUSE 10 — SIX RAMP/HOLD CONTROLS, ONE COMPONENT
+//
+// Structural, and deliberately a COUNT rather than a search for a name: the
+// failure this guards is one card drifting back to its own inline control,
+// which leaves five uses and one hand-rolled button. A count catches that; a
+// grep for "RampHoldCheckbox" would still pass with five.
+// ═══════════════════════════════════════════════════════════════════════════
+{
+  const wi = fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8');
+  const uses = (wi.match(/<RampHoldCheckbox[\s\/>]/g) ?? []).length;
+  check('CLAUSE 10: EXACTLY six RampHoldCheckbox uses in WhatIfTab',
+    uses === 6, String(uses));
+  // THE DISCRIMINATOR, added after trap 222 planted GREEN on its first run.
+  // The count above was a PREFIX match, so a mutation that renamed one use to
+  // <RampHoldCheckboxPLANTED and added a hand-rolled <input> beside it still
+  // counted six. Two corrections: the tag must END at the name (the character
+  // class on the regex above), and each of the six testids must appear
+  // EXACTLY ONCE in WhatIfTab — an inline copy carrying the same testid makes
+  // it two, and a testid is what every mounted spec reaches the control by.
+  for (const id of ['volume-spread-toggle', 'volume-hold-toggle',
+                    'promo-spread-toggle', 'promo-hold-toggle',
+                    'churn-ramp-toggle', 'churn-hold-toggle']) {
+    const n = wi.split(id).length - 1;
+    check('CLAUSE 10: testid ' + id + ' appears exactly once in WhatIfTab',
+      n === 1, String(n));
+  }
+  const comp = fs.readFileSync('src/components/RampHoldCheckbox.tsx', 'utf8');
+  check('CLAUSE 10: the component renders a real <input type="checkbox">',
+    comp.includes('type="checkbox"'));
+  // THE GLYPH IS THE WHOLE POINT of clause 10 — a round dot in a checkbox
+  // component would be the radio look returning by the back door.
+  check('CLAUSE 10: and no round-dot glyph survives in it',
+    !comp.includes('rounded-full'), 'a radio dot in the checkbox component');
+}
+
 // 5. THE KEYS — six locales, never English in five of them
 // ═══════════════════════════════════════════════════════════════════════════
 {
