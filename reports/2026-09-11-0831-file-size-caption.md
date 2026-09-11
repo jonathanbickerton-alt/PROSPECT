@@ -2,17 +2,28 @@
 
 ```
 FOR ADVISOR
-Generated: 2026-09-11 09:31 +0100 (UTC 2026-09-11 08:31)
-Certifies: __ PENDING
-BASE __ PENDING
-1 __ PENDING
-2 __ PENDING
-3 __ PENDING
-4 __ PENDING
-SHED: __ PENDING
-guard-traps: __/__ PENDING
-full suite:  __/__ PENDING
-Repo: __ PENDING
+Generated: 2026-09-11 10:25 +0100 (UTC 2026-09-11 09:25)
+Certifies: 17b52d5   (skeleton laid 09:31 local; filled at close)
+BASE 6fd13f8; status --short EMPTY, diff to HEAD -- src scripts test-data
+  EMPTY. Both quoted in the body.
+1 THE CAPTION READS MAX_UPLOAD_MB. `up_to_50mb` was typed into all SIX
+  locales; FRENCH said "50 Mo", which a grep for "50MB" also missed.
+2 ZERO-OCCURRENCE CHECK: no locale string may carry digit+MB/Mo/MiB.
+  Proved non-vacuous on the old en AND fr captions. Trap 224 RED.
+3 NOTICE: "usually under 15 seconds", six locales, de/it the session's.
+  15 = your 197.3 MB in 9.6 s with a third of margin.
+4 ROUTING LINE WAS SET, THEN WIPED — not by the restore banner, but by
+  runIngest's own finally: showNotice IS setIngestNotice. Own state now.
+5 ROUTING PROVED AS MECHANISM + 7 PINS, NOT PIXELS: App can't mount
+  headlessly. Needs one Chrome drop of the 16:50 save to close.
+6 GUARD-TRAPS RESTORE: per-trap try/finally, bounded retry on the lock,
+  run continues. Proved: spec throw + harness throw CRASHED, md5 equal.
+7 NOT EXERCISED: a real errno -4094 lock and the FATAL path — reasoned.
+8 CORRECTION TO 0742: spec:d5-05-held was never in the positive control,
+  so trap 223's catch was unguarded. Not red then (39/39); registered.
+SHED: nothing. Items 0, 1 and 2 complete.
+guard-traps 220/220 caught; full suite 69/69 green.
+Repo: committed 17b52d5, pushed (origin in sync)
 ```
 
 ## 0. The base check
@@ -309,23 +320,57 @@ saying so.
 
 | check | figure |
 |---|---|
-| `npm run suite` | __ PENDING |
-| guard-traps | __ PENDING |
-| `spec:trap-anchors` | __ PENDING |
-| `spec:i18n-parity` | __ PENDING |
-| `spec:survival` | __ PENDING |
-| `tsc --noEmit` / `lint` | __ PENDING |
-| `npm run build` | __ PENDING |
+| `npm run suite` | **69/69 green** — `spec:size-copy` new |
+| guard-traps | **220/220 caught**, 0 missed / inconclusive / crashed; no FATAL |
+| `spec:trap-anchors` | **232/232** — 220 traps, 227 anchors; next free id 225 |
+| `spec:i18n-parity` | **200/200** — 892 keys in each of de/en/es/fr/it/pt |
+| `spec:survival` | **27/27** — 104 first-row dereferences across 26 files |
+| `tsc --noEmit` / `lint` | **clean**, exit 0 |
+| `npm run build` | **built in 5.44s**; the >2000 kB chunk notice is pre-existing |
+
+Run serially. guard-traps to a file, `scratchpad/gt224.out`, 225 lines, one per
+trap, **unfiltered**: no `[FILTERED]` line appears in it. The positive control
+passed with `D505HELD` and `SIZECOPY` newly registered. Had either been red on
+the unmutated tree, the run would have aborted rather than reported 220.
+The remaining steps ran after it, one at a time, in a single sequential command
+writing to `scratchpad/gate-rest.out`, so nothing read a file while the harness
+was mutating it.
 
 ### Exact counts the brief named
 
 | pin | required | measured |
 |---|---|---|
-| `runIngest` sites | 3 | __ PENDING |
-| apply sites | 12 | __ PENDING |
-| display markers | 6 | __ PENDING |
-| `type="checkbox"` ramp/hold controls | 6 | __ PENDING |
-| last-column pins, Market / Yield / Pricing | 3 / 2 / 3 trailing positions | __ PENDING |
+| `runIngest` sites | 3 | **3** — `ingest-spec.tsx:254`, green (53/53) |
+| apply sites | 12 | **12** — `event-toggle-spec.tsx:110`, green (155/155) |
+| display markers | 6 | **6** — `event-toggle-spec.tsx:399`, same file |
+| `type="checkbox"` ramp/hold controls | 6 | **6** — `hold-shape-spec.ts`, green (60/60); direct grep also 6 |
+| last-column pins, Market / Yield / Pricing | 3 / 2 / 3 trailing positions | **3 / 2 / 3**, all green — sourced below |
+
+**3 / 2 / 3, in the form the brief gives it, read from source rather than
+restated.** Every one of the eight positions is pinned in ONE block,
+`event-toggle-spec.tsx` from `:502`:
+
+| sheet | positions | pinned, from the end |
+|---|---|---|
+| Market_Events | **3** | `Enabled` third-from-last · `Tariff_Scope` second-to-last · `Hold` last |
+| Yield_Events | **2** | `Enabled` second-to-last · `Tariff_Scope` last |
+| Pricing_Events | **3** | `Enabled` third-from-last · `Tariff_Scope` second-to-last · `Contract_Length_Months` last |
+
+**One small correction to the brief's parenthetical, stated once.** It pairs one
+file with each sheet: Market → `hold-shape-spec:214`, Yield →
+`event-toggle-spec:502`, Pricing → `pricing-roundtrip-spec:709`. The three lines
+exist and are green, but the count does not split that way.
+`event-toggle-spec:502` carries all 3 / 2 / 3. The other two are **corroborating
+pins on the same columns**: `hold-shape:214` names one Market position (`Hold`
+last) and `pricing-roundtrip:709` names two Pricing positions. This changes no
+figure. It means a change to the export's column order reddens event-toggle
+first, and one of the other two as well.
+
+**Why the Yield count is 2 and not 3**, since it is the odd one out: decision 5
+puts `Hold` on Market_Events alone, and D5-14's `Contract_Length_Months` is
+Pricing's alone, so Yield gained neither trailing column. The event-toggle block
+says this in a comment, and pins it, so a column appended to Yield by mistake
+would go red.
 
 ## What was shed
 
