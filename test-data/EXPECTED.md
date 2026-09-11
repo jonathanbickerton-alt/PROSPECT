@@ -10407,3 +10407,7 @@ Jon's answers to the inventory's questions, 2026-09-11:
     reads '— one month'.
 16. The ramp/hold checkbox pin is FOUR (three Hold boxes and churn's ramp
     checkbox); churn keeps its ramp on/off, having no Spread.
+17. (Jon, 2026-09-11) A stored percentage is exact (clause 7); its DISPLAY
+    is 2dp on every surface (+3.33%).
+18. An absolute Ramp at duration 1 reads '— one month', as the percentage
+    does.
