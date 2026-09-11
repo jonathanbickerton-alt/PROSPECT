@@ -8074,6 +8074,13 @@ disabled span with `group?.reason` undefined) and named it a defect of its own.
 and from the Volume table's routed pencil. A row edit **preserves the campaign
 name and leaves the other rows untouched**.
 
+**AMENDED 2026-09-11 — HELD percentage campaigns are lifted out of the bar.**
+
+(Jon, 2026-09-11) A held percentage campaign — every row `hold` — is
+group-editable: its restore reads the Hold column, the target from the last row
+and the ramp length from the plateau start, never a sum of volumes. An unheld
+percentage campaign stays barred, its reason rendered as before.
+
 ##### D5-06 — the dilution effect line distinguishes its two refusals
 
 `promoDilutionBlockReason` already returns **two different keys** —
