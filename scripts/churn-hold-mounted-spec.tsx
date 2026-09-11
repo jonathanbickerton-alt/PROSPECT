@@ -497,6 +497,76 @@ async function main() {
       siblings.length === 23, String(siblings.length));
   }
 
+
+  // ══ REQ-D6-05 Item 3 — CLAUSE 11 AND 12 ON THE CHURN CARD ═════════════════
+  //
+  // Churn is already the Ramp model; Item 3 adds only the order rule, the label
+  // and the Mode column. FILL-IN ORDER, as everywhere in this build: the churn
+  // arm and target (openChurnRamp: 2 points, ramp on, 3 months), then the typed
+  // values, then Hold LAST. `openChurnRamp` starts at MONTHS[1] for the reason
+  // it records — month 0 has no prior month.
+  const orderReason = i18n.t('whatif_ramp_block_order');
+
+  // ── (i3-block) 0.5 / 2 / 1 → Add BLOCKED, the reason rendered as TEXT ────
+  {
+    await mount();
+    if (!(await openChurnRamp())) { report(); return; }
+    const pts = allTestId('churn-stated-');
+    if (pts.length !== 3) { check('(i3-block) three point inputs', false, String(pts.length)); report(); return; }
+    await type(pts[0], '0.5');
+    await type(pts[1], '2');
+    await type(pts[2], '1');
+    check('(i3-block) CLAUSE 11: the reason is rendered as TEXT',
+      norm(byTestId('churn-add-block-reason')?.textContent || '') === orderReason,
+      norm(byTestId('churn-add-block-reason')?.textContent || '') || 'no reason rendered');
+    check('(i3-block) and Add is disabled', byTestId('volume-add')?.disabled === true);
+    await click(byTestId('volume-add'));
+    check('(i3-block) and a click emits nothing', captured.length === 0, String(captured.length));
+  }
+
+  // ── (i3-ok) 0.5 / 1 / 2 → ADDS, every row a Ramp ────────────────────────
+  {
+    await mount();
+    if (!(await openChurnRamp())) { report(); return; }
+    const pts = allTestId('churn-stated-');
+    if (pts.length !== 3) { check('(i3-ok) three point inputs', false, String(pts.length)); report(); return; }
+    await type(pts[0], '0.5');
+    await type(pts[1], '1');
+    await type(pts[2], '2');
+    check('(i3-ok) a non-decreasing ramp ending on its target is NOT blocked',
+      byTestId('volume-add')?.disabled === false
+        && norm(byTestId('churn-add-block-reason')?.textContent || '') !== orderReason);
+    check('(i3-label) CLAUSE 12: "Target reduction — reached at month 3"',
+      norm(byTestId('churn-amount-label')?.textContent || '') === i18n.t('whatif_churn_label_ramp', { p0: 3 }),
+      norm(byTestId('churn-amount-label')?.textContent || ''));
+    // Hold LAST — left off here; the held label is asserted below.
+    await click(byTestId('volume-add'));
+    check('(i3-ok) THREE churn rows', captured.length === 3, String(captured.length));
+    check('(i3-ok) every churn row states mode Ramp',
+      captured.every((e: any) => e.churnMode === 'churn' && e.mode === 'ramp'),
+      captured.map((e: any) => e.mode).join(','));
+    const sheet = captured.map((e: any) => fc.marketEventExportRow(e));
+    check('(i3-ok) and every churn row EXPORTS Mode Ramp — unheld, so not by the Hold rule',
+      sheet.every((r: any) => r.Mode === 'Ramp' && r.Hold === 'No'),
+      sheet.map((r: any) => `${r.Mode}/${r.Hold}`).join(','));
+    // THE WRITER GUARANTEE. A churn row read from a save with no Mode column
+    // resolves to Spread (unheld, absent rule) — and must still export as Ramp.
+    const fromOldSave = { ...captured[0], mode: 'spread' };
+    check('(i3-writer) a churn row carrying mode Spread still exports Mode Ramp',
+      fc.marketEventExportRow(fromOldSave).Mode === 'Ramp',
+      String(fc.marketEventExportRow(fromOldSave).Mode));
+  }
+
+  // ── (i3-label-held) ", then held" joins the churn label with Hold on ─────
+  {
+    await mount();
+    if (!(await openChurnRamp())) { report(); return; }
+    await click(byTestId('churn-hold-toggle'));
+    check('(i3-label-held) CLAUSE 12: ", then held" with Hold on',
+      norm(byTestId('churn-amount-label')?.textContent || '')
+        === norm(i18n.t('whatif_churn_label_ramp', { p0: 3 }) + i18n.t('whatif_amount_label_then_held')),
+      norm(byTestId('churn-amount-label')?.textContent || ''));
+  }
   report();
 }
 

@@ -890,5 +890,20 @@
   "whatif_promo_volume_pct_help": "Ein Anteil der Prognose dieser Ansicht für den Monat — Neukunden bei einer Inflow-Promotion, Bestandskunden bei einer Retention-Promotion. Keine Preisänderung; der Promo-Preis wird weiter unten festgelegt.",
   "whatif_event_on": "Ein",
   "whatif_event_off": "Aus",
-  "whatif_event_mixed": "Teils ein, teils aus"
+  "whatif_event_mixed": "Teils ein, teils aus",
+  "whatif_mode_label": "Modus",
+  "whatif_mode_spread": "Verteilen",
+  "whatif_mode_ramp": "Hochlauf",
+  "whatif_mode_locked_pct": "Ein Prozentwert ist immer ein Hochlauf.",
+  "whatif_duration_months": "Dauer (Monate)",
+  "whatif_custom_values": "Eigene Werte",
+  "whatif_value_col": "Wert",
+  "whatif_amount_label_spread": "Gesamtvolumen — verteilt auf {{p0}} Monate",
+  "whatif_amount_label_spread_one": "Gesamtvolumen — ein Monat",
+  "whatif_amount_label_ramp": "Zielvolumen — erreicht in Monat {{p0}}",
+  "whatif_amount_label_then_held": ", dann gehalten",
+  "whatif_amount_label_pct": "Änderung an {{p0}}",
+  "whatif_values_total_derived": "Summe der Monatswerte",
+  "whatif_ramp_block_order": "Jeder Monat muss höchstens so hoch sein wie der nächste; der letzte Monat ist das Ziel.",
+  "whatif_churn_label_ramp": "Zielreduktion — erreicht in Monat {{p0}}"
 }

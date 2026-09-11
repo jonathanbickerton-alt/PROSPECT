@@ -890,5 +890,20 @@
   "whatif_promo_volume_pct_help": "Una quota della previsione di questa vista per il mese: acquisizione per una promozione Inflow, retention per una Retention. Non è una variazione di prezzo; il prezzo promozionale si imposta più in basso.",
   "whatif_event_on": "Attivo",
   "whatif_event_off": "Disattivo",
-  "whatif_event_mixed": "Alcuni attivi, altri no"
+  "whatif_event_mixed": "Alcuni attivi, altri no",
+  "whatif_mode_label": "Modalità",
+  "whatif_mode_spread": "Distribuire",
+  "whatif_mode_ramp": "Rampa",
+  "whatif_mode_locked_pct": "Una percentuale è sempre una rampa.",
+  "whatif_duration_months": "Durata (mesi)",
+  "whatif_custom_values": "Valori personalizzati",
+  "whatif_value_col": "Valore",
+  "whatif_amount_label_spread": "Volume totale — distribuito su {{p0}} mesi",
+  "whatif_amount_label_spread_one": "Volume totale — un mese",
+  "whatif_amount_label_ramp": "Volume obiettivo — raggiunto al mese {{p0}}",
+  "whatif_amount_label_then_held": ", poi mantenuto",
+  "whatif_amount_label_pct": "Variazione di {{p0}}",
+  "whatif_values_total_derived": "Somma dei valori mensili",
+  "whatif_ramp_block_order": "Ogni mese deve essere uguale o inferiore al successivo; l’ultimo mese è l’obiettivo.",
+  "whatif_churn_label_ramp": "Riduzione obiettivo — raggiunta al mese {{p0}}"
 }

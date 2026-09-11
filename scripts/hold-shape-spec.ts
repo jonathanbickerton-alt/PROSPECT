@@ -18,7 +18,7 @@
  *
  * The rest asserts the new shape, the restore, and the round trip.
  */
-import { spreadShape, holdPlateauStart } from '../src/components/WhatIfTab';
+import { spreadShape, cumulativeShares, holdPlateauStart } from '../src/components/WhatIfTab';
 import { marketEventExportRow, marketEventFromRow, type MarketEvent } from '../src/utils/forecasting';
 import fs from 'fs';
 
@@ -51,8 +51,10 @@ const volumes = (shape: { fraction: number }[], amount: number, round = true) =>
 // arm would fail on the row COUNT before it failed on any figure.
 // ═══════════════════════════════════════════════════════════════════════════
 {
+  // REQ-D6-05 clause 14 — THIS IS NOW THE SPREAD-MODE PIN. The same six drafts, stated
+  // as mode 'spread', must emit exactly the literals below. Only the call's shape changed.
   const off = (amount: number, months: number, dist: number[]) =>
-    volumes(spreadShape({ months, dist, hold: false, horizonMonths: 60 }), amount);
+    volumes(spreadShape({ mode: 'spread', months, distKind: 'pct', dist }), amount);
 
   // 300 over 3 even: 300 * (100/3)/(100/3*3) = 99.99999999999999 -> 100
   check('HOLD OFF: 300 over 3 even is 100 / 100 / 100',
@@ -83,15 +85,15 @@ const volumes = (shape: { fraction: number }[], amount: number, round = true) =>
 
   // THE ROW COUNT IS THE RAMP LENGTH AND NOTHING MORE — "then nothing".
   check('HOLD OFF: exactly N rows, whatever the horizon',
-    spreadShape({ months: 3, dist: even(3), hold: false, horizonMonths: 60 }).length === 3,
-    String(spreadShape({ months: 3, dist: even(3), hold: false, horizonMonths: 60 }).length));
+    spreadShape({ mode: 'spread', months: 3, distKind: 'even', dist: even(3) }).length === 3,
+    String(spreadShape({ mode: 'spread', months: 3, distKind: 'even', dist: even(3) }).length));
   check('HOLD OFF: no row is marked held',
-    spreadShape({ months: 3, dist: even(3), hold: false, horizonMonths: 60 })
+    spreadShape({ mode: 'spread', months: 3, distKind: 'even', dist: even(3) })
       .every(s => !s.held));
   // The fractions are SHARES OF A TOTAL and sum to 1 — the property that
   // distinguishes this arm from the other one, asserted rather than implied.
   check('HOLD OFF: the fractions sum to 1',
-    near(spreadShape({ months: 3, dist: even(3), hold: false, horizonMonths: 60 })
+    near(spreadShape({ mode: 'spread', months: 3, distKind: 'even', dist: even(3) })
       .reduce((s, r) => s + r.fraction, 0), 1));
 }
 
@@ -102,8 +104,11 @@ const volumes = (shape: { fraction: number }[], amount: number, round = true) =>
 // the tail repeats it to the horizon end.
 // ═══════════════════════════════════════════════════════════════════════════
 {
+  // REQ-D6-05 — RE-AIMED to mode 'ramp' through `cumulativeShares`: the shares a caller used
+  // to pass under hold, cumulated, ARE the ramp's values. Every literal below is unchanged,
+  // so this block now also pins the bridge as bit-for-bit identical to the old arm.
   const on = (amount: number, months: number, dist: number[], horizon: number, round = true) =>
-    volumes(spreadShape({ months, dist, hold: true, horizonMonths: horizon }), amount, round);
+    volumes(spreadShape({ mode: 'ramp', months, values: cumulativeShares(dist), hold: true, horizonMonths: horizon }), amount, round);
 
   // THE BRIEF'S OWN EXAMPLE, verbatim: 2,500 over 3 = 833 / 1,667 / 2,500,
   // then 2,500 held.
@@ -124,9 +129,9 @@ const volumes = (shape: { fraction: number }[], amount: number, round = true) =>
   // already pins on the other carrier. Asserted with === and not `near`,
   // because the generator sets a literal 1 rather than summing to it.
   check('HOLD ON: the last ramp month equals the target exactly',
-    spreadShape({ months: 3, dist: even(3), hold: true, horizonMonths: 6 })[2].fraction === 1);
+    spreadShape({ mode: 'ramp', months: 3, values: cumulativeShares(even(3)), hold: true, horizonMonths: 6 })[2].fraction === 1);
   check('HOLD ON: and so does a 7-month even ramp, where 100/7 never sums clean',
-    spreadShape({ months: 7, dist: even(7), hold: true, horizonMonths: 9 })[6].fraction === 1);
+    spreadShape({ mode: 'ramp', months: 7, values: cumulativeShares(even(7)), hold: true, horizonMonths: 9 })[6].fraction === 1);
 
   // Custom under hold CUMULATES to the target — decision 2's last clause.
   check('HOLD ON: custom 50/30/20 of 1000 cumulates 500 / 800 / 1000',
@@ -145,7 +150,7 @@ const volumes = (shape: { fraction: number }[], amount: number, round = true) =>
 
   // THE TAIL IS MARKED, and only the tail — the preview summarises it and
   // must be able to tell the two apart.
-  const s6 = spreadShape({ months: 3, dist: even(3), hold: true, horizonMonths: 6 });
+  const s6 = spreadShape({ mode: 'ramp', months: 3, values: cumulativeShares(even(3)), hold: true, horizonMonths: 6 });
   check('HOLD ON: exactly the ramp months are unheld',
     s6.filter(r => !r.held).length === 3 && s6.filter(r => r.held).length === 3);
   check('HOLD ON: offsets are consecutive from 0',
@@ -154,15 +159,15 @@ const volumes = (shape: { fraction: number }[], amount: number, round = true) =>
   // THE HORIZON IS A CEILING, NOT A FLOOR. A campaign starting at or past the
   // last forecast month has nothing to hold into, and none is invented.
   check('HOLD ON: a horizon shorter than the ramp emits the ramp alone',
-    spreadShape({ months: 3, dist: even(3), hold: true, horizonMonths: 2 }).length === 3,
-    String(spreadShape({ months: 3, dist: even(3), hold: true, horizonMonths: 2 }).length));
+    spreadShape({ mode: 'ramp', months: 3, values: cumulativeShares(even(3)), hold: true, horizonMonths: 2 }).length === 3,
+    String(spreadShape({ mode: 'ramp', months: 3, values: cumulativeShares(even(3)), hold: true, horizonMonths: 2 }).length));
   check('HOLD ON: an unknown start month (horizon 0) emits the ramp alone',
-    spreadShape({ months: 3, dist: even(3), hold: true, horizonMonths: 0 }).length === 3,
-    String(spreadShape({ months: 3, dist: even(3), hold: true, horizonMonths: 0 }).length));
+    spreadShape({ mode: 'ramp', months: 3, values: cumulativeShares(even(3)), hold: true, horizonMonths: 0 }).length === 3,
+    String(spreadShape({ mode: 'ramp', months: 3, values: cumulativeShares(even(3)), hold: true, horizonMonths: 0 }).length));
 
   // A zero or negative distribution has no honest shape — never a divide by 0.
   check('EDGE: an empty distribution yields no rows rather than NaN',
-    spreadShape({ months: 3, dist: [0, 0, 0], hold: true, horizonMonths: 6 }).length === 0);
+    spreadShape({ mode: 'ramp', months: 3, values: cumulativeShares([0, 0, 0]), hold: true, horizonMonths: 6 }).length === 0);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -190,7 +195,7 @@ const volumes = (shape: { fraction: number }[], amount: number, round = true) =>
 
   // ROUND TRIP THROUGH THE GENERATOR: the length that goes in comes back.
   for (const n of [1, 2, 3, 5, 7]) {
-    const figs = volumes(spreadShape({ months: n, dist: even(n), hold: true, horizonMonths: 12 }), 2400);
+    const figs = volumes(spreadShape({ mode: 'ramp', months: n, values: cumulativeShares(even(n)), hold: true, horizonMonths: 12 }), 2400);
     check(`PLATEAU: a ${n}-month even ramp round-trips its length`,
       holdPlateauStart(figs) === n, `${holdPlateauStart(figs)} from ${figs.join(',')}`);
   }
@@ -211,8 +216,17 @@ const volumes = (shape: { fraction: number }[], amount: number, round = true) =>
   const plain = marketEventExportRow(base);
   check('COLUMN: a held row writes Hold Yes', held.Hold === 'Yes', String(held.Hold));
   check('COLUMN: an unheld row writes Hold No', plain.Hold === 'No', String(plain.Hold));
-  check('COLUMN: Hold is the LAST column',
-    Object.keys(held)[Object.keys(held).length - 1] === 'Hold',
+  // RE-AIMED at REQ-D6-05 (Jon, 2026-09-11, clause 7): `Mode` is appended
+  // AFTER `Hold`. Seen RED before this edit, on the build that added the
+  // writer's Mode column:
+  //   FAIL  COLUMN: Hold is the LAST column  [Mode]
+  // TWO positions, not "Hold is somewhere": a column slipped between the two
+  // would still go red, which is the append-only rule this pin exists for.
+  check('COLUMN: Hold is second-to-last (REQ-D6-05)',
+    Object.keys(held)[Object.keys(held).length - 2] === 'Hold',
+    Object.keys(held)[Object.keys(held).length - 2]);
+  check('COLUMN: Mode is LAST (REQ-D6-05)',
+    Object.keys(held)[Object.keys(held).length - 1] === 'Mode',
     Object.keys(held)[Object.keys(held).length - 1]);
 
   // ABSENT MEANS OFF — the whole reason every existing save reloads unchanged.
@@ -255,8 +269,29 @@ const volumes = (shape: { fraction: number }[], amount: number, round = true) =>
 {
   const wi = fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8');
   const uses = (wi.match(/<RampHoldCheckbox[\s\/>]/g) ?? []).length;
-  check('CLAUSE 10: EXACTLY six RampHoldCheckbox uses in WhatIfTab',
-    uses === 6, String(uses));
+  // RE-AIMED at REQ-D6-05 (Jon, 2026-09-11). REQ-D6-03 clause 10's "six" is
+  // superseded (REQ-D6-05 clause 14). Seen RED before this edit, on the build
+  // that retired the Volume switch:
+  //   FAIL  CLAUSE 10: EXACTLY six RampHoldCheckbox uses in WhatIfTab  [5]
+  //   FAIL  CLAUSE 10: testid volume-spread-toggle appears exactly once in WhatIfTab  [0]
+  // FIVE, and deliberately not the brief's "three": REQ-D6-05 clause 10
+  // retires the on-off switch on the VOLUME card (done) and the PROMOTION
+  // card (Item 2), and nothing retires churn's ramp checkbox. The pin states
+  // what is BUILT and is re-aimed again when the Promotion switch goes.
+  // RE-AIMED AGAIN at REQ-D6-05 Item 2 (2026-09-11): the Promotion on-off switch
+  // is retired too. Seen RED before this edit, on the build that retired it:
+  //   FAIL  CLAUSE 10: EXACTLY five RampHoldCheckbox uses in WhatIfTab (REQ-D6-05)  [4]
+  //   FAIL  CLAUSE 10: testid promo-spread-toggle appears exactly once in WhatIfTab  [0]
+  // FOUR: the three Hold boxes plus churn's ramp checkbox, which clause 10 does
+  // not retire. The brief's "three" would need churn's ramp box gone as well.
+  check('CLAUSE 10: EXACTLY four RampHoldCheckbox uses in WhatIfTab (REQ-D6-05 Item 2)',
+    uses === 4, String(uses));
+  check('REQ-D6-05 clause 10: the Promotion on-off switch is RETIRED — its testid appears nowhere',
+    wi.split('promo-spread-toggle').length - 1 === 0,
+    String(wi.split('promo-spread-toggle').length - 1));
+  check('REQ-D6-05 clause 10: the Volume on-off switch is RETIRED — its testid appears nowhere',
+    wi.split('volume-spread-toggle').length - 1 === 0,
+    String(wi.split('volume-spread-toggle').length - 1));
   // THE DISCRIMINATOR, added after trap 222 planted GREEN on its first run.
   // The count above was a PREFIX match, so a mutation that renamed one use to
   // <RampHoldCheckboxPLANTED and added a hand-rolled <input> beside it still
@@ -264,8 +299,9 @@ const volumes = (shape: { fraction: number }[], amount: number, round = true) =>
   // class on the regex above), and each of the six testids must appear
   // EXACTLY ONCE in WhatIfTab — an inline copy carrying the same testid makes
   // it two, and a testid is what every mounted spec reaches the control by.
-  for (const id of ['volume-spread-toggle', 'volume-hold-toggle',
-                    'promo-spread-toggle', 'promo-hold-toggle',
+  // REQ-D6-05: 'volume-spread-toggle' removed — retired, and pinned at ZERO above.
+  for (const id of ['volume-hold-toggle',
+                    'promo-hold-toggle', // REQ-D6-05 Item 2: promo-spread-toggle retired, pinned at ZERO above
                     'churn-ramp-toggle', 'churn-hold-toggle']) {
     const n = wi.split(id).length - 1;
     check('CLAUSE 10: testid ' + id + ' appears exactly once in WhatIfTab',

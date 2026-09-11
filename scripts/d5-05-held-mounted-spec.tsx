@@ -207,16 +207,21 @@ async function main() {
 
   // ── (1) A HELD +10% VOLUME CAMPAIGN REOPENS AT 10 / RAMP 3 / HOLD ON ─────
   //
-  // Jon's click order: hold ON, then the percentage draft, then spread, then
-  // Add — the same order hold-mounted builds case (a) in, so the rows under
-  // test are the ones that path actually emits, not a hand-made fixture.
+  // Built in fill-in order (REQ-D6-05): the percentage draft, the duration,
+  // then Hold LAST — the order hold-mounted case (a) now builds in, so the rows
+  // under test are the ones that path actually emits, not a hand-made fixture.
   {
     await mount();
-    await click(byTestId('volume-hold-toggle'));
+    // RE-AIMED at REQ-D6-05 (2026-09-11). This pressed Hold first and then
+    // `volume-spread-toggle`, which is retired; Hold now renders only in Ramp,
+    // so the old order crashed on a null box. Re-driven in fill-in order —
+    // mode → amount → duration → values → Hold LAST. A percentage draft IS a
+    // Ramp (clause 9), so the mode step is the draft itself.
     await setDraft({ scenario: 'Inflow', amountType: 'percentage',
       percentageBasis: 'baseline', subscriberVolume: 10, date: MONTHS[0],
       campaignName: 'PctHeld' });
-    await click(byTestId('volume-spread-toggle'));
+    await type(byTestId('volume-duration'), '3');
+    await click(byTestId('volume-hold-toggle'));
     await click(byTestId('volume-add'));
 
     check('(1) 24 rows emitted, every one held',
@@ -246,8 +251,10 @@ async function main() {
     // Vodafone red class the card applies to whichever arm is selected.
     const volAmount = () => [...container.querySelectorAll('input[type=number]')]
       .find((i: any) => (i.getAttribute('placeholder') || '').includes('+10%')) as any;
-    const volMonths = () => [...container.querySelectorAll('input[type=number]')]
-      .find((i: any) => i.getAttribute('min') === '2' && i.getAttribute('max') === '24') as any;
+    // RE-AIMED at REQ-D6-05: the Volume duration box is min 1 now (clause 10),
+    // so the min-2 lookup would find nothing — or, worse, the PROMOTION box.
+    // It has a testid; use it.
+    const volMonths = () => byTestId('volume-duration');
     const litUnitArm = () => [...container.querySelectorAll('button')]
       .filter((b: any) => /bg-\[#e60000\] text-white/.test(b.className || ''))
       .map((b: any) => norm(b.textContent || ''))
@@ -304,9 +311,8 @@ async function main() {
     await type(monthInput, MONTHS[0]);
     return true;
   };
-  const rampMonthsInput = () =>
-    [...container.querySelectorAll('input[type=number]')]
-      .find((i: any) => i.getAttribute('max') === '24' && i.getAttribute('min') === '2') as any;
+  // RE-AIMED at REQ-D6-05: the promo duration box is min 1 now; use its testid.
+  const rampMonthsInput = () => byTestId('promo-duration');
   const promoNameInput = () =>
     [...container.querySelectorAll('input')]
       .find((i: any) => i.getAttribute('placeholder') === i18n.t('whatif_e_g_summer_promo_2026')) as any;
@@ -327,7 +333,11 @@ async function main() {
     if (!(await openPromo())) { report(); return; }
     await click(byTestId('promo-amount-pct'));
     await type(byTestId('promo-volume-amount'), '10');
-    await click(byTestId('promo-spread-toggle'));
+    // RE-AIMED at REQ-D6-05 (2026-09-11). This built its unheld +10% campaign
+    // through the Promotion card's UNGATED per-cent share-split — the gap
+    // clause 9 retires. A percentage is now always a Ramp, so the unheld case is
+    // an unheld percentage RAMP. The claim is unchanged and still the point:
+    // D5-05 declines an unheld percentage campaign, reason in the DOM.
     const mi = rampMonthsInput();
     if (mi) await type(mi, '3');
     const nameBox = promoNameInput();
@@ -363,7 +373,7 @@ async function main() {
     if (!(await openPromo())) { report(); return; }
     await click(byTestId('promo-amount-pct'));
     await type(byTestId('promo-volume-amount'), '10');
-    await click(byTestId('promo-spread-toggle'));
+    // RE-AIMED at REQ-D6-05: the switch is retired; a % promotion is a Ramp.
     const mi = rampMonthsInput();
     if (mi) await type(mi, '3');
     await click(byTestId('promo-hold-toggle'));
@@ -414,7 +424,7 @@ async function main() {
     if (!(await openPromo())) { report(); return; }
     await click(byTestId('promo-amount-pct'));
     await type(byTestId('promo-volume-amount'), '10');
-    await click(byTestId('promo-spread-toggle'));
+    // RE-AIMED at REQ-D6-05: the switch is retired; a % promotion is a Ramp.
     const mi = rampMonthsInput();
     if (mi) await type(mi, '3');
     await click(byTestId('promo-hold-toggle'));

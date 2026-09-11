@@ -26,7 +26,7 @@ import { MixTargetPanel } from './MixTargetPanel';
 import type { ScenarioKey, ScenarioPricing } from '../utils/scenarioArpu';
 import { nextAmountControlState, effectiveAmountControl, churnAvailableFor,
          type AmountControl } from '../utils/amountControl';
-import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, forecastCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor, pricingBaselineArpu, eventVolumeLabel, isEventOn, effectStatusOf } from '../utils/forecasting';
+import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, forecastCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor, pricingBaselineArpu, eventVolumeLabel, isEventOn, effectStatusOf, eventMode } from '../utils/forecasting';
 import type { EventSummaryRow } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope, PricingVolumes, ViewScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
@@ -512,6 +512,9 @@ interface BuildPromoEventsParams {
    * as a restore field. See MarketEvent.hold.
    */
   hold?: boolean;
+  /** REQ-D6-05 clause 7 — the mode every row states. Absent for a row edit,
+   *  whose patch must leave the stored mode alone. */
+  mode?: 'spread' | 'ramp';
   /** D5-10. The tariffs in scope and the full L1 set, so the ONE call to
    *  `tariffScopeFor` can live here — the Promotion card's three save paths
    *  all reach an event through this function, so this IS the card's site. */
@@ -734,6 +737,7 @@ export function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
       // whose tail rows lacked it would reopen with a ramp length read off a
       // truncated plateau.
       hold: !!p.hold,
+      ...(p.mode ? { mode: p.mode } : {}),
       amountType: p.amountType,
       // 'baseline' is the untouched forecast, which is decision 6's wording
       // for both arms: the view's fitted inflow, or its fitted retention.
@@ -790,89 +794,151 @@ export interface SpreadShapeMonth {
    * The multiplier every quantity on that row takes — volume, customers and
    * revenue alike, exactly as the hand-rolled arithmetic did.
    *
-   * Hold OFF it is a SHARE OF A TOTAL and the fractions sum to 1.
-   * Hold ON it is a FRACTION OF THE TARGET, rising to 1 and staying there —
-   * so the fractions do not sum to anything in particular, and are not meant
-   * to. That difference IS decision 2.
+   * SPREAD: a SHARE OF THE TOTAL, and the fractions sum to 1.
+   * RAMP:   a FRACTION OF THE TARGET, rising to 1 and staying there through
+   * the held tail — so the fractions do not sum to anything in particular,
+   * and are not meant to. That difference IS REQ-D6-05 decision 1.
    */
   fraction: number;
-  /** True for a month in the held tail (offset >= months). */
+  /** True for a month in the held tail (offset >= months). Ramp only. */
   held: boolean;
 }
 
-export interface SpreadShapeInput {
-  /** Ramp length in months. Clamped to >= 1; 1 is a legal ramp. */
+/**
+ * REQ-D6-05 clause 8 — what a Spread's per-month figures ARE: equal shares,
+ * typed shares, or typed absolute values. ONE expression serves all three
+ * (`dist[i] / total`), because a value divided by the sum of the values IS its
+ * share; the kind is carried so a call site says which the user chose.
+ */
+export type SpreadDistKind = 'even' | 'pct' | 'values';
+
+export interface SpreadShapeSpread {
+  mode: 'spread';
+  /** Months to split across. Clamped to >= 1; 1 is a single event. */
   months: number;
-  /** Per-month shares, un-normalised. Only the first `months` are read. */
+  distKind: SpreadDistKind;
+  /** Shares (`even` / `pct`, un-normalised) or absolute values (`values`).
+   *  Only the first `months` are read. */
   dist: readonly number[];
-  /** REQ-D6-03 decision 4 — independent of the spread switch. */
+}
+
+export interface SpreadShapeRamp {
+  mode: 'ramp';
+  /** Months to reach the target. Clamped to >= 1. */
+  months: number;
+  /** The TYPED per-month figures (REQ-D6-05 clause 3). The LAST is the target. */
+  values: readonly number[];
+  /** REQ-D6-05 clause 2 — Hold exists in Ramp mode and nowhere else. */
   hold: boolean;
   /**
    * How many months the campaign may occupy in total, ramp INCLUDED, counted
-   * from its start month to the LAST FORECAST MONTH inclusive.
-   *
-   * Decision 1 says the tail runs to the horizon end, and the horizon is not
-   * this function's to know — it belongs to the forecast the card is sitting
-   * on. Passing it in is what keeps this function pure and what stops a
-   * second derivation of "the last month" existing.
-   *
-   * A value at or below `months` emits the ramp alone. That is the honest
-   * degradation for a campaign starting at or past the horizon end: there are
-   * no months left to hold into, so none are invented.
+   * from its start month to the LAST FORECAST MONTH inclusive. Passed in so this
+   * function stays pure and no second derivation of "the last month" exists.
+   * A value at or below `months` emits the ramp alone: a campaign starting at or
+   * past the horizon end has no months left to hold into, and none are invented.
    */
   horizonMonths: number;
 }
 
 /**
- * THE ONE GENERATOR (REQ-D6-03, decisions 1-3).
+ * A DISCRIMINATED UNION, so "spread + hold" is a TYPE ERROR rather than a
+ * runtime branch (brief 1.1): a Spread input has no `hold` field to set, and
+ * tsc refuses one. The old single shape let any caller pass `hold: true` with
+ * shares and receive a ramp — the coupling REQ-D6-05 exists to remove.
+ */
+export type SpreadShapeInput = SpreadShapeSpread | SpreadShapeRamp;
+
+/**
+ * Cumulative sums of shares, in the order `reduce` from 0 adds them. The
+ * bridge for a caller still stating a ramp as SHARES (the Promotion card, until
+ * its own mode control lands): `values[i] / values[last]` then equals the old
+ * `cum / total` BIT FOR BIT, because the last cumulative sum is computed by the
+ * same additions in the same order as `total` was.
+ */
+export function cumulativeShares(pcts: readonly number[]): number[] {
+  let cum = 0;
+  return pcts.map(p => (cum += p));
+}
+
+/**
+ * REQ-D6-05 clause 3 / 11 — THE EVEN PREFILL for a typed ramp: month i is
+ * `target·(i+1)/n`, and the LAST month is the target EXACTLY (assigned, not
+ * computed), so a prefilled ramp can never trip its own "last month is the
+ * target" rule on floating point.
+ */
+export function evenRampValues(target: number, months: number): number[] {
+  const n = Math.max(1, Math.floor(months) || 1);
+  const t = Number.isFinite(target) ? target : 0;
+  return Array.from({ length: n }, (_, i) => (i === n - 1 ? t : (t * (i + 1)) / n));
+}
+
+/**
+ * REQ-D6-05 clause 11 — true when a typed ramp may NOT be added: some month
+ * exceeds the next, or the last month is not the target.
  *
- * Both the Volume card's add path and its campaign rebuild call this, and so
- * does the card's own preview — which is the point. The preview used to
- * re-implement `pct / total` inline, and a preview that recomputes what the
- * save computes is a preview that can disagree with it.
+ * "AT OR BELOW THE NEXT" IS READ IN THE TARGET'S DIRECTION. A ramp to −10%
+ * runs −3.33 / −6.67 / −10, which is falling numerically and rising in
+ * magnitude; read literally it would be blocked, and a reduction could never
+ * be ramped. The clause does not speak to sign, so this is stated as the
+ * reading taken rather than presented as the clause.
  *
- * HOLD OFF IS THE OLD ARITHMETIC, DELIBERATELY UNTOUCHED (decision 3). The
- * fraction is `pcts[i] / total` — the same expression, in the same order, on
- * the same un-normalised inputs — because "byte-identical" is a claim about
- * floating point and not about intent. Rewriting it as a running sum would
- * produce the same numbers to within 1e-16 and a different row now and then
- * after `Math.round`. `spec:hold-shape` pins the hold-off list against a
- * HAND-WRITTEN literal recorded before this function existed.
+ * The last-equals-target test uses `holdPlateauStart`'s RELATIVE tolerance,
+ * for the reason given there: an absolute one would pass a sub-unit
+ * percentage ramp whose last month is visibly wrong.
+ */
+export function rampOrderViolation(values: readonly number[], target: number): boolean {
+  if (!values.length) return true;
+  const dir = target < 0 ? -1 : 1;
+  for (let i = 0; i + 1 < values.length; i++) {
+    if (values[i] * dir > values[i + 1] * dir) return true;
+  }
+  const last = values[values.length - 1];
+  return Math.abs(last - target) > Math.abs(target) * 1e-9 + 1e-9;
+}
+
+/**
+ * THE ONE GENERATOR (REQ-D6-03, re-cut by REQ-D6-05).
  *
- * HOLD ON CUMULATES THE SAME SHARES (decision 2). Month i takes the target
- * times the shares up to and including i, so Even gives i/N — 3.33 / 6.67 /
- * 10 over three — and a custom distribution cumulates its own shares to the
- * same destination. Even is the linear case rather than a separate branch.
+ * Every Volume save path, the preview and the Add button's count call this —
+ * which is the point: a preview that recomputes what the save computes is a
+ * preview that can disagree with it.
  *
- * THE LAST RAMP MONTH IS EXACTLY THE TARGET, asserted rather than approached:
- * `fraction` is set to a literal 1 from `months - 1` onward instead of
- * arriving at 0.9999999999999999 through three additions of 100/3. That is
- * the same property `churn-fold-spec:244` already pins on the churn carrier —
- * "the last month always equals the target" — and it is the one thing a user
- * would notice, because it is the number they typed.
+ * SPREAD IS REQ-D6-03's HOLD-OFF ARM, UNTOUCHED (clause 14). The fraction is
+ * `pcts[i] / total` — the same expression, in the same order, on the same
+ * un-normalised inputs — because "byte-identical" is a claim about floating
+ * point and not about intent. `spec:hold-shape` pins the Spread arm against
+ * six HAND-WRITTEN literals recorded before this function existed.
+ *
+ * RAMP TAKES THE TYPED VALUES AS STATED. Month i is `values[i] / target`, so
+ * the rows are the figures the user typed, and Even is simply the prefill
+ * `target·(i+1)/n`. THE LAST RAMP MONTH IS EXACTLY THE TARGET — a literal 1,
+ * not an arrival at 0.9999999999999999 — the property churn-fold-spec:244
+ * pins on the churn carrier, and the one number a user would notice.
  */
 export function spreadShape(input: SpreadShapeInput): SpreadShapeMonth[] {
   const months = Math.max(1, Math.floor(input.months) || 1);
-  const pcts = input.dist.slice(0, months);
-  const total = pcts.reduce((s, p) => s + p, 0);
-  if (!(total > 0)) return [];
-
   const out: SpreadShapeMonth[] = [];
 
-  if (!input.hold) {
-    // UNCHANGED. See the note above before touching this line.
+  if (input.mode === 'spread') {
+    const pcts = input.dist.slice(0, months);
+    const total = pcts.reduce((s, p) => s + p, 0);
+    if (!(total > 0)) return [];
+    // UNCHANGED from REQ-D6-03's Hold-OFF arm. See the note above first.
     for (let i = 0; i < months; i++) {
       out.push({ offset: i, fraction: pcts[i] / total, held: false });
     }
     return out;
   }
 
-  let cum = 0;
+  const vals = input.values.slice(0, months);
+  const target = vals[vals.length - 1] ?? 0;
+  // No honest shape without a value for every month and a non-zero target.
+  if (vals.length < months || !(Math.abs(target) > 0)) return [];
   for (let i = 0; i < months; i++) {
-    cum += pcts[i];
-    // The literal 1, not cum/total — see "THE LAST RAMP MONTH" above.
-    out.push({ offset: i, fraction: i === months - 1 ? 1 : cum / total, held: false });
+    // The literal 1, not vals[i]/target — see "THE LAST RAMP MONTH" above.
+    out.push({ offset: i, fraction: i === months - 1 ? 1 : vals[i] / target, held: false });
   }
+  if (!input.hold) return out;
   const span = Math.max(months, Math.floor(input.horizonMonths) || 0);
   for (let i = months; i < span; i++) {
     out.push({ offset: i, fraction: 1, held: true });
@@ -2458,18 +2524,32 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const [selectedDeltaMonth, setSelectedDeltaMonth] = useState<string>('');
   const [windowOffset, setWindowOffset] = useState(0);
 
-  // ── Volume spread state ────────────────────────────────────────────────────
-  const [spreadEnabled, setSpreadEnabled] = useState(false);
+  // ── Volume spread / ramp state (REQ-D6-05) ──────────────────────────────
   /**
-   * REQ-D6-03 decision 4 — INDEPENDENT OF THE SPREAD SWITCH, and its own
-   * state for exactly that reason. Spread off with hold on is a legal and
-   * useful combination: a ramp of length 1 followed by the tail, i.e. the
-   * figure in every month from the start to the horizon end.
+   * REQ-D6-05 clause 10 — THE ON-OFF SWITCH IS RETIRED. The panel is always
+   * open: a MODE and a DURATION, and duration 1 is today's single event.
+   *
+   * This is the user's CHOICE. The EFFECTIVE mode is `volumeMode`, because a
+   * percentage draft is always a Ramp (clause 9) whatever was last chosen —
+   * and deriving it rather than writing it means no path can leave a
+   * percentage draft sitting in Spread.
+   */
+  const [spreadMode, setSpreadMode] = useState<'spread' | 'ramp'>('spread');
+  /**
+   * REQ-D6-05 clause 2 — HOLD LIVES ONLY IN RAMP MODE. Every reader goes
+   * through `volumeHold`, which is false outside Ramp; the box itself is not
+   * rendered in Spread.
    */
   const [holdAfterRamp, setHoldAfterRamp] = useState(false);
-  const [spreadMonths, setSpreadMonths] = useState(3);
-  const [spreadDistType, setSpreadDistType] = useState<'even' | 'custom'>('even');
+  /** Months, 1–24. 1 is a single event (clause 10). */
+  const [spreadMonths, setSpreadMonths] = useState(1);
+  /** Spread distribution (clause 8): Even, Custom % or Custom values. */
+  const [spreadDistType, setSpreadDistType] = useState<'even' | 'custom' | 'values'>('even');
   const [customDist, setCustomDist] = useState<number[]>([34, 33, 33]);
+  /** Clause 8 — typed ABSOLUTE per-month volumes. The total box is their SUM. */
+  const [spreadValues, setSpreadValues] = useState<number[]>([0]);
+  /** Clause 3 — the ramp's TYPED per-month figures. The last is the target. */
+  const [rampValues, setRampValues] = useState<number[]>([0]);
 
   // Keep customDist length in sync with spreadMonths
   useEffect(() => {
@@ -2778,17 +2858,24 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // the shared body above, and the one that did not exist before D5-10.
   useClearTariffOnDeselect(newPromo, setNewPromo, selectedTariffs);
 
-  const [promoSpreadEnabled, setPromoSpreadEnabled] = useState(false);
+  // ── Promotion spread / ramp state (REQ-D6-05, Item 2) ─────────────────────
   /**
-   * REQ-D6-03 session 3 — "Hold after ramp" on the Promotion card.
-   *
-   * Its own state beside the spread switch, on the rule both other carriers
-   * follow: spread off plus hold on is a ramp of length 1 and a tail.
+   * The Volume card's model on the third carrier, and for the same reasons:
+   * the on-off switch is RETIRED (clause 10), the user CHOOSES Spread or Ramp,
+   * and the EFFECTIVE mode is `promoMode` — Ramp for any percentage (clause 9),
+   * which retires the ungated per-cent share-split this card used to allow.
    */
+  const [promoSpreadMode, setPromoSpreadMode] = useState<'spread' | 'ramp'>('spread');
+  /** Clause 2 — Hold lives only in Ramp. Read through `promoHoldOn`. */
   const [promoHold, setPromoHold] = useState(false);
-  const [promoSpreadMonths, setPromoSpreadMonths] = useState(3);
-  const [promoSpreadDistType, setPromoSpreadDistType] = useState<'even' | 'custom'>('even');
+  /** Months, 1–24. 1 is a single promotion row (clause 10). */
+  const [promoSpreadMonths, setPromoSpreadMonths] = useState(1);
+  const [promoSpreadDistType, setPromoSpreadDistType] = useState<'even' | 'custom' | 'values'>('even');
   const [promoCustomDist, setPromoCustomDist] = useState<number[]>([34, 33, 33]);
+  /** Clause 8 — typed absolute per-month volumes; the total is their SUM. */
+  const [promoSpreadValues, setPromoSpreadValues] = useState<number[]>([0]);
+  /** Clause 3 — the typed ramp; the last value is the target. */
+  const [promoRampValues, setPromoRampValues] = useState<number[]>([0]);
   useEffect(() => {
     setPromoCustomDist(prev => {
       const even = Math.floor(100 / promoSpreadMonths);
@@ -3183,12 +3270,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   const resetPromoDraft = useCallback(() => {
     setNewPromo(blankPromo());
-    setPromoSpreadEnabled(false);
+    setPromoSpreadMonths(1);
     // REQ-D6-03 s3 — a discarded draft must not leave the toggle lit.
     setPromoHold(false);
-    setPromoSpreadMonths(3);
+    setPromoSpreadMonths(1);
     setPromoSpreadDistType('even');
     setPromoCustomDist([34, 33, 33]);
+    setPromoSpreadMode('spread');
+    setPromoSpreadValues([0]);
+    setPromoRampValues([0]);
     setPromoMixEnabled(false);
     // D5-03's other half. With no writer but the toggle, the mode SURVIVED a
     // reset: editing a percentage promotion and then starting a new one left
@@ -3821,13 +3911,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const next = nextAmountControlState(storedAmountControl, action, newEvent.scenario);
     setStoredAmountControl(next.control);
     if (next.clearChurnDraft) clearChurnDraft();
-    if (next.clearSpread) setSpreadEnabled(false);
+    // REQ-D6-05 — `clearSpread` (the engine's, unchanged) now means "back to a
+    // single month". The mode needs no writing: a percentage draft is a Ramp by
+    // derivation, and a churn draft hides the panel.
+    if (next.clearSpread) {
+      setSpreadMonths(1);
+      setHoldAfterRamp(false);
+      setSpreadDistType('even');
+      setRampValues([0]);
+    }
     setNewEvent({
       ...newEvent,
       amountType: next.amountType,
       ...(next.clearAmount ? { subscriberVolume: 0, revenue: 0 } : {}),
     });
-  }, [storedAmountControl, newEvent, setNewEvent, clearChurnDraft, setSpreadEnabled]);
+  }, [storedAmountControl, newEvent, setNewEvent, clearChurnDraft]);
 
   /**
    * LEAVING OUTFLOW. The derived control has already stopped reporting churn,
@@ -3986,22 +4084,38 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
    * the distribution controls are off screen then, so reading them would read
    * whatever the user last left there.
    */
-  const promoShape = useMemo(() => spreadShape({
-    months: promoSpreadEnabled ? promoSpreadMonths : 1,
-    dist: !promoSpreadEnabled
-      ? [100]
-      : promoSpreadDistType === 'even'
-        ? Array.from({ length: promoSpreadMonths }, () => 100 / promoSpreadMonths)
-        : promoCustomDist.slice(0, promoSpreadMonths),
-    hold: promoHold,
-    horizonMonths: horizonMonthsFrom(newPromo.date ?? ''),
-  }), [promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist,
-       promoHold, horizonMonthsFrom, newPromo.date]);
+  // REQ-D6-05 Item 2 — THE PROMOTION SHAPE, FROM THE MODE. The bridge that
+  // stood here (`cumulativeShares` under a Hold box) is retired with the switch:
+  // Spread passes shares or typed values, Ramp passes the typed ramp — the
+  // Volume card's derivation exactly, so the two cards cannot build different
+  // rows from the same statement.
+  const promoMode: 'spread' | 'ramp' = promoAmountMode === 'percentage' ? 'ramp' : promoSpreadMode;
+  const promoHoldOn = promoMode === 'ramp' && promoHold;
+  const promoShape = useMemo(() => spreadShape(promoMode === 'ramp'
+    ? { mode: 'ramp', months: promoSpreadMonths, values: promoRampValues.slice(0, promoSpreadMonths),
+        hold: promoHold, horizonMonths: horizonMonthsFrom(newPromo.date ?? '') }
+    : { mode: 'spread', months: promoSpreadMonths,
+        distKind: promoSpreadDistType === 'even' ? 'even' : promoSpreadDistType === 'values' ? 'values' : 'pct',
+        dist: promoSpreadDistType === 'even'
+          ? Array.from({ length: promoSpreadMonths }, () => 100 / promoSpreadMonths)
+          : promoSpreadDistType === 'values'
+            ? promoSpreadValues.slice(0, promoSpreadMonths)
+            : promoCustomDist.slice(0, promoSpreadMonths) }),
+    [promoMode, promoSpreadMonths, promoRampValues, promoHold, horizonMonthsFrom, newPromo.date,
+     promoSpreadDistType, promoSpreadValues, promoCustomDist]);
+  /** Clause 11 on this card — the reason the button, the line and the guards read. */
+  const promoRampBlockReason = useMemo((): string | null => {
+    // A ROW edit is one month, not a ramp: its typed values are stale and must
+    // not raise the reason or disable Save Changes.
+    if (promoMode !== 'ramp' || editingPromoId) return null;
+    return rampOrderViolation(promoRampValues.slice(0, promoSpreadMonths), newPromo.subscriberVolume || 0)
+      ? t('whatif_ramp_block_order') : null;
+  }, [promoMode, editingPromoId, promoRampValues, promoSpreadMonths, newPromo.subscriberVolume, t]);
 
   /** The single-row shape the ROW EDIT uses: one month, no tail. Named so the
    *  two `hold: false` decisions read as one. */
   const SINGLE_ROW_SHAPE = useMemo(
-    () => spreadShape({ months: 1, dist: [100], hold: false, horizonMonths: 0 }), []);
+    () => spreadShape({ mode: 'spread', months: 1, distKind: 'pct', dist: [100] }), []);
 
   // ── Add Custom Promotion event(s) ────────────────────────────────────────
   //
@@ -4023,6 +4137,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // it on save is the tool stating something on their behalf.
     if (promoMixBlocksSave) return;
     if (promoDilutionBlockReason !== null) return;
+    // REQ-D6-05 clause 11 — the same reason the button reads.
+    if (promoRampBlockReason !== null) return;
 
     const events = buildPromoEvents({
       target: promoTarget,
@@ -4034,7 +4150,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       pricingDilutionCurrentPct: promoDilutionCurrent, pricingDilutionTargetPct: promoDilutionTarget,
       cohortAvgArpu: promoCohortAvgArpu,
       // WALK C — the ONE derivation, read here, by the grid and by the button.
-      shape: promoShape, hold: promoHold,
+      shape: promoShape, hold: promoHoldOn, mode: promoMode,
       startSequence: nextSequence(marketEvents),
       selectedTariffs, fullTariffL1s: [...fullTariffTree.keys()],
     });
@@ -4059,7 +4175,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     //
     // It passed for a year of orders where the ramp switch was touched after
     // the toggle, because promoSpreadEnabled IS listed and recreated it.
-  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, promoHold, horizonMonthsFrom, marketEvents, setMarketEvents, resetPromoDraft]);
+  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoShape, promoHoldOn, promoMode, promoRampBlockReason, marketEvents, setMarketEvents, resetPromoDraft]);
 
   /**
    * REQ-D6-03 session 2 — THE STATED TRAJECTORY, TAIL INCLUDED.
@@ -4147,8 +4263,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const absent = churnFold.find(m => m.absence);
     if (absent) return t(`whatif_churn_absent_${absent.absence!.replace(/-/g, '_')}`);
     if (!churnFold.some(m => m.statedReductionPct !== 0)) return t('whatif_churn_block_no_target');
+    // REQ-D6-05 clause 11, on the churn carrier. HERE, in the one reason the
+    // button, the rendered line (`churn-add-block-reason`) and the handler guard
+    // already read — so a broken ramp is refused, and says so, at all three at
+    // once. Only when ramping: a single-month statement has no order to break.
+    if (churnRampOn && rampOrderViolation(churnStated.slice(0, churnMonths), churnTargetPct)) {
+      return t('whatif_ramp_block_order');
+    }
     return null;
-  }, [isChurnDraft, newEvent.date, churnFold, churnScopeResolution, t]);
+  }, [isChurnDraft, newEvent.date, churnFold, churnScopeResolution, churnRampOn, churnStated, churnMonths, churnTargetPct, t]);
 
   /** The ONE reason the pricing draft cannot be added, or null. Read by the
    *  button, by the message beside it, and by the handler's guard. */
@@ -4289,6 +4412,43 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   // ── Volume spread handler ─────────────────────────────────────────────────
 
+  // ══ REQ-D6-05 — THE ONE VOLUME SHAPE ════════════════════════════════════
+  //
+  // Read by Add, by the campaign save, by the preview and by the button's
+  // count. It used to be derived FOUR times, inline, from the same five
+  // states — which is four chances to disagree, and the preview/save pair is
+  // the one a user sees. One memo, the Promotion card's shape (2146).
+  const volumeMode: 'spread' | 'ramp' = newEvent.amountType === 'percentage' ? 'ramp' : spreadMode;
+  const volumeHold = volumeMode === 'ramp' && holdAfterRamp;
+  const volumeShapeInput: SpreadShapeInput = useMemo(() => (volumeMode === 'ramp'
+    ? { mode: 'ramp' as const, months: spreadMonths, values: rampValues.slice(0, spreadMonths),
+        hold: holdAfterRamp, horizonMonths: horizonMonthsFrom(newEvent.date ?? '') }
+    : { mode: 'spread' as const, months: spreadMonths,
+        distKind: spreadDistType === 'even' ? 'even' as const : spreadDistType === 'values' ? 'values' as const : 'pct' as const,
+        dist: spreadDistType === 'even'
+          ? Array.from({ length: spreadMonths }, () => 100 / spreadMonths)
+          : spreadDistType === 'values'
+            ? spreadValues.slice(0, spreadMonths)
+            : customDist.slice(0, spreadMonths) }),
+    [volumeMode, spreadMonths, rampValues, holdAfterRamp, horizonMonthsFrom, newEvent.date,
+     spreadDistType, spreadValues, customDist]);
+  const volumeShape = useMemo(() => spreadShape(volumeShapeInput), [volumeShapeInput]);
+  /** The single-event route: one month and nothing to hold into (clause 10). */
+  const volumeIsSingle = spreadMonths <= 1 && !volumeHold;
+  /**
+   * REQ-D6-05 clause 11 — THE ONE RAMP REASON, read by the button, the line
+   * beside it and both handlers' guards: `churnBlockReason`'s shape, so a
+   * blocked Add is never a live button that silently does nothing.
+   */
+  const rampBlockReason = useMemo((): string | null => {
+    // A ROW edit is one month, not a ramp: handleEditStart sets the duration to
+    // 1 and leaves the typed ramp values as they were, so reading them here would
+    // raise "each month must be at or below the next" over a single row.
+    if (volumeMode !== 'ramp' || newEvent.scenario === 'ARPU' || editingEventId) return null;
+    return rampOrderViolation(rampValues.slice(0, spreadMonths), newEvent.subscriberVolume || 0)
+      ? t('whatif_ramp_block_order') : null;
+  }, [volumeMode, newEvent.scenario, editingEventId, rampValues, spreadMonths, newEvent.subscriberVolume, t]);
+
   const handleAddMarketEvent = useCallback(() => {
     if (!newEvent.date || newEvent.subscriberVolume === undefined) return;
 
@@ -4350,6 +4510,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         retentionLinked: newEvent.retentionLinked ?? true,
         // REQ-D6-03 s2 — every churn row, the held tail included.
         hold:            churnHold,
+        // REQ-D6-05 Item 3 — churn IS the ramp model, so every churn row is written
+        // as Ramp. Without it an UNHELD churn campaign would write Spread by the
+        // absent rule, which is the one thing a churn statement never is.
+        mode:            'ramp',
         churnMode:       'churn',
         churnTargetPct:  m.statedReductionPct,
         churnCurrentPct: m.currentPct,
@@ -4370,12 +4534,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
 
     // REQ-D6-03 decision 4: HOLD IS ITS OWN ROUTE OUT OF THE SINGLE-EVENT
-    // PATH. `!spreadEnabled && holdAfterRamp` is the "ramp of length 1 plus a
+    // PATH. A HELD ONE-MONTH RAMP (REQ-D6-05: `volumeIsSingle` is false) is the "ramp of length 1 plus a
     // tail" case, and it must reach the generator below rather than
     // `addMarketEvent`, which emits exactly one row and knows nothing of a
     // horizon. ARPU is unchanged and still leaves here: the spread control is
     // hidden for ARPU drafts and so is the hold toggle.
-    if ((!spreadEnabled && !holdAfterRamp) || newEvent.scenario === 'ARPU') {
+    // REQ-D6-05 clause 11 — the SAME reason the button reads.
+    if (rampBlockReason) return;
+    if (volumeIsSingle || newEvent.scenario === 'ARPU') {
       addMarketEvent();
       return;
     }
@@ -4383,22 +4549,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const isOutflow = newEvent.scenario === 'Outflow';
     const neg = (v: number) => isOutflow ? -Math.abs(v) : v;
 
-    // With the spread switch off the ramp is ONE month — see decision 4. The
-    // distribution controls are not on screen in that case, so reading them
-    // would read whatever the user last left there.
-    const rampMonths = spreadEnabled ? spreadMonths : 1;
-    const pcts = !spreadEnabled
-      ? [100]
-      : spreadDistType === 'even'
-        ? Array.from({ length: spreadMonths }, () => 100 / spreadMonths)
-        : customDist.slice(0, spreadMonths);
-
-    const shape = spreadShape({
-      months: rampMonths,
-      dist: pcts,
-      hold: holdAfterRamp,
-      horizonMonths: horizonMonthsFrom(newEvent.date),
-    });
+    // REQ-D6-05 — THE ONE SHAPE. See `volumeShape`.
+    const shape = volumeShape;
     if (!shape.length) return;
 
     // REQ-D6-03 — A PERCENTAGE AMOUNT IS A RATE AND MUST NOT BE ROUNDED.
@@ -4446,7 +4598,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         // REQ-D6-03 decision 5 — EVERY ROW, the held tail included. A campaign
         // whose tail rows lacked it would reopen with a ramp length read off a
         // truncated plateau.
-        hold:             holdAfterRamp,
+        hold:             volumeHold,
+        // REQ-D6-05 clause 7 — every row states the mode it was built in.
+        mode:             volumeMode,
         // Consecutive slots from the end. Omitting these was invisible to
         // tsc and put every spread row at the TOP of the table, because
         // bySequence reads a missing sequence as 0.
@@ -4463,11 +4617,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       channel: 'All', channelL2: 'All', tariffL1: 'All', tariffL2: 'All', date: format(new Date(), 'yyyy-MM'),
       subscriberVolume: 0, customerVolume: 0, revenue: 0, arpu: 0, name: '', campaignName: '', comment: '', contractLength: 24,
     });
-    setSpreadEnabled(false);
+    // REQ-D6-05 — back to a fresh form: Spread, one month, nothing held.
+    setSpreadMode('spread');
     setHoldAfterRamp(false);
-    setSpreadMonths(3);
+    setSpreadMonths(1);
     setSpreadDistType('even');
     setCustomDist([34, 33, 33]);
+    setSpreadValues([0]);
+    setRampValues([0]);
     // THE READ-SET IS THE DEPENDENCY SET. The churn branch READS churnFold,
     // isChurnDraft and churnBlockReason, and omitting them left the handler
     // holding a STALE fold: turning the ramp on and clicking Add emitted the
@@ -4480,8 +4637,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // reproduce the stale-fold defect exactly — a handler emitting the shape
     // as it stood before the toggle, or holding into a horizon from a forecast
     // that has since been regenerated.
-  }, [newEvent, spreadEnabled, holdAfterRamp, horizonMonthsFrom, spreadMonths,
-      spreadDistType, customDist, addMarketEvent,
+  // REQ-D6-05: the handler now READS the one shape and its derived flags, not
+  // the five states behind them, so those are what the read-set names.
+  }, [newEvent, volumeShape, volumeIsSingle, volumeHold, volumeMode, rampBlockReason, addMarketEvent,
       setMarketEvents, marketEvents, setNewEvent, cohortAvgArpu,
       // `churnHold` NAMED BY exhaustive-deps, and listed here — but it was NOT
       // live, and the distinction is the point. B8's promotion twin was live
@@ -4619,7 +4777,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     }
     setEditingEventId(event.id);
     setEditingCampaign(null);
-    setSpreadEnabled(false);
+    // REQ-D6-05 — a row edited on its own is ONE month. Its mode is carried on
+    // the row and the patch leaves it alone, so the panel is not the authority.
+    setSpreadMonths(1);
     // THE READ-SET, and this array was WRONG in a way that made the rule above
     // structurally unreachable.
     //
@@ -4736,7 +4896,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       // the trajectory arrives at — and on a held campaign the ramp's last
       // figure IS the held one, so this reads the same number either way.
       setChurnTargetPct(churnRamp[churnRamp.length - 1] ?? 0);
-      setSpreadEnabled(false);
+      setSpreadMonths(1);
       // The VOLUME toggle, cleared: churn has its own now, and a churn restore
       // must not inherit whatever the previous volume draft left on that one.
       setHoldAfterRamp(false);
@@ -4780,21 +4940,22 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // which is the read that round-trips: shares that CUMULATE to the target
     // are what the generator consumes, so re-saving without touching anything
     // must reproduce the same rows.
+    // ── REQ-D6-05 clause 7 — THE MODE COMES FROM THE COLUMN ────────────────
+    //
+    // Never from the shape: 1,000 / 2,000 / 3,000 is a ramp to 3,000 and a
+    // spread of 6,000, and only the stored mode knows which the user built. The
+    // first row speaks for the campaign — one handler call writes every row.
+    const mode = eventMode(first);
     const isHeld = rows.some(e => e.hold);
-    if (isHeld) {
+
+    if (mode === 'ramp') {
+      // RAMP (brief 1.4): the TARGET is the last ramp month, and the typed
+      // values are the rows up to the plateau (held) or all of them (unheld).
+      // The held tail is not typed — it is the target, repeated.
       const figures = volByOffset.map(v => Math.abs(v));
-      const target = figures[figures.length - 1] ?? 0;
-      const rampLen = holdPlateauStart(figures);
-      // The cumulative fractions the ramp months reached, differenced back
-      // into the per-month shares the generator will re-cumulate. The last
-      // one is 100 by construction, so the shares sum to 100.
-      const cumPct = figures.slice(0, rampLen)
-        .map(v => target > 0 ? (v / target) * 100 : 0);
-      const shares = cumPct.map((c, i) => i === 0 ? c : c - cumPct[i - 1]);
-      const rounded = shares.map(s => Math.round(s));
-      rounded[0] += 100 - rounded.reduce((s, p) => s + p, 0);
-      const evenShare = 100 / rampLen;
-      const heldIsEven = shares.every(s => Math.abs(s - evenShare) <= 1);
+      const rampLen = isHeld ? holdPlateauStart(figures) : figures.length;
+      const typed = figures.slice(0, rampLen);
+      const target = typed[typed.length - 1] ?? 0;
 
       setNewEvent({
         scenario: first.scenario,
@@ -4806,57 +4967,53 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         tariffL1: first.tariffL1 ?? 'All',
         tariffL2: first.tariffL2 ?? 'All',
         date: first.date,
-        // THE TARGET, not the sum — decision 2 and 5 read together.
+        // THE TARGET, not the sum.
         subscriberVolume: target,
-        customerVolume: Math.abs(rows[rows.length - 1].customerVolume),
-        revenue: Math.abs(rows[rows.length - 1].revenue),
+        customerVolume: Math.abs(rows[rampLen - 1]?.customerVolume ?? 0),
+        revenue: Math.abs(rows[rampLen - 1]?.revenue ?? 0),
         arpu: abs(first.arpu),
         arpuOverride: first.arpuOverride,
         name: '',
         campaignName: campaign,
         comment: rows.find(e => e.comment)?.comment ?? '',
         contractLength: first.contractLength,
-        // D5-05 AMENDED — restoring these is NOT OPTIONAL, in the words
-        // handleEditStart already uses for the single-row path. A held
-        // percentage campaign only became reachable here when the bar lifted,
-        // and without these three a +10% campaign would reopen as an absolute
-        // draft and re-save as 10 SUBSCRIBERS — the amount changing meaning
-        // silently, which is the exact class of failure D5-05 existed to
-        // prevent, arriving by a different door.
+        // D5-05 AMENDED — not optional: without these a +10% ramp reopens as
+        // an absolute draft and re-saves as 10 subscribers.
         amountType: first.amountType ?? 'absolute',
         percentageBasis: first.percentageBasis ?? 'baseline',
         retentionLinked: first.retentionLinked ?? true,
       });
-      // ...and the AMOUNT CONTROL follows the row, the other half of carrying
-      // amountType. The draft field alone decides what a save writes; this
-      // decides what the user is shown while editing, and a draft that saves
-      // per-cent behind a lit "Subs" arm is a screen disagreeing with itself.
-      // Set directly, not through the transition writer: a restore is not a
-      // transition — the same lesson the churn branch above records.
       setStoredAmountControl(first.amountType === 'percentage' ? 'pct' : 'subs');
-      // Decision 4's independence, on the way back in as well as out: a
-      // one-month held campaign restores with the SPREAD SWITCH OFF and the
-      // hold toggle on, which is exactly the state that built it.
-      setHoldAfterRamp(true);
-      // ...and the CHURN toggle off, the other half of the one-lit rule.
+      setSpreadMode('ramp');
+      setHoldAfterRamp(isHeld);
       setChurnHold(false);
-      setSpreadEnabled(rampLen > 1);
-      setSpreadMonths(Math.max(2, rampLen));
-      setSpreadDistType(heldIsEven ? 'even' : 'custom');
-      setCustomDist(rounded);
+      setSpreadMonths(Math.max(1, rampLen));
+      setRampValues(typed);
+      setSpreadDistType('even');
       setEditingEventId(null);
       setEditingCampaign(campaign);
       return;
     }
 
-    // Derive percentages summing to exactly 100 (residual goes to month 1,
-    // matching the even-split remainder convention used on creation)
+    // SPREAD (brief 1.4): the amount is the SUM, and the distribution is the
+    // FIRST of these that re-spreads to exactly the stored rows —
+    //   Even        when an even split of the sum reproduces every row;
+    //   Custom %    when the rows' integer shares reproduce every row;
+    //   Custom values otherwise, with the rows themselves as the values.
+    // The test is REPRODUCTION, not resemblance. The old "within 1 of the mean"
+    // test called 1,001 / 1,000 / 1,000 Even and a re-save rewrote it as 1,000
+    // ×3; Custom values is what makes the honest answer always available.
     const pcts = volByOffset.map(v => totalSub > 0 ? Math.round((v / totalSub) * 100) : 0);
     pcts[0] += 100 - pcts.reduce((s, p) => s + p, 0);
-
-    // Even if every month's volume is within rounding distance of the mean
-    const mean = totalSub / span;
-    const isEven = volByOffset.every(v => Math.abs(v - mean) <= 1);
+    const rows0 = volByOffset.map(v => Math.round(Math.abs(v)));
+    const reproduces = (kind: 'even' | 'pct', dist: number[]) => {
+      const sh = spreadShape({ mode: 'spread', months: span, distKind: kind, dist });
+      return sh.length === span && sh.every((m, i) => Math.round(totalSub * m.fraction) === rows0[i]);
+    };
+    const restoredDist: 'even' | 'custom' | 'values' =
+      reproduces('even', Array.from({ length: span }, () => 100 / span)) ? 'even'
+        : reproduces('pct', pcts) ? 'custom'
+        : 'values';
 
     setNewEvent({
       scenario: first.scenario,
@@ -4878,15 +5035,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       comment: rows.find(e => e.comment)?.comment ?? '',
       contractLength: first.contractLength,
     });
-    setSpreadEnabled(true);
-    // REQ-D6-03 — the OFF side of the restore. This is the terminating-spread
-    // branch by construction (`isHeld` returned above), so the toggle is set
-    // false rather than left alone, for the reason handleEditStart gives.
+    setSpreadMode('spread');
+    // Spread has no Hold (clause 2): cleared, never inherited from a draft.
     setHoldAfterRamp(false);
     setChurnHold(false);
     setSpreadMonths(span);
-    setSpreadDistType(isEven ? 'even' : 'custom');
+    setSpreadDistType(restoredDist);
     setCustomDist(pcts);
+    setSpreadValues(rows0);
+    setRampValues(evenRampValues(totalSub, span));
     setEditingEventId(null);
     setEditingCampaign(campaign);
   }, [campaignGroups, handleEditStart, setNewEvent]);
@@ -4936,6 +5093,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         retentionLinked: newEvent.retentionLinked ?? true,
         // REQ-D6-03 s2 — every churn row, the held tail included.
         hold:            churnHold,
+        // REQ-D6-05 Item 3 — churn IS the ramp model, so every churn row is written
+        // as Ramp. Without it an UNHELD churn campaign would write Spread by the
+        // absent rule, which is the one thing a churn statement never is.
+        mode:            'ramp',
         churnMode:       'churn',
         // RE-SNAPSHOT AS A PAIR. A freshly stated target beside a stale
         // prevBase would be a row whose figures came from two moments.
@@ -4955,7 +5116,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       setStoredAmountControl('subs');
       clearChurnDraft();
       setNewEvent(BLANK_EVENT);
-      setSpreadEnabled(false);
+      setSpreadMonths(1);
       return;
     }
 
@@ -4967,7 +5128,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // emits one row would silently drop its tail, which is the "re-saving a
     // held campaign replaces ALL its rows" clause failing in the direction
     // nobody would notice until the chart moved.
-    if ((!spreadEnabled && !holdAfterRamp) || newEvent.scenario === 'ARPU') {
+    // REQ-D6-05 clause 11 — the same reason, the same guard.
+    if (rampBlockReason) return;
+    if (volumeIsSingle || newEvent.scenario === 'ARPU') {
       const resolvedSingle = draftEventRate(newEvent, cohortAvgArpu, newEvent.subscriberVolume || 0, newEvent.revenue);
       newEvents = [{
         id: Math.random().toString(36).substr(2, 9),
@@ -4994,23 +5157,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         // Overwritten by resequenceRebuild below, which restores the slots
         // the replaced rows held.
         sequence: 0,
+        mode: volumeMode,
       }];
     } else {
       // THE SAME GENERATOR the add path calls, with the same three inputs —
       // which is the whole reason it is a function. These two sites drifting
       // apart is the failure mode a shared shape removes rather than guards.
-      const rampMonths = spreadEnabled ? spreadMonths : 1;
-      const pcts = !spreadEnabled
-        ? [100]
-        : spreadDistType === 'even'
-          ? Array.from({ length: spreadMonths }, () => 100 / spreadMonths)
-          : customDist.slice(0, spreadMonths);
-      const shape = spreadShape({
-        months: rampMonths,
-        dist: pcts,
-        hold: holdAfterRamp,
-        horizonMonths: horizonMonthsFrom(newEvent.date),
-      });
+      const shape = volumeShape;
       if (!shape.length) return;
       // The same rate-not-count rule as the add path — see the comment there.
       const isPctAmount = newEvent.amountType === 'percentage';
@@ -5044,7 +5197,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           comment: newEvent.comment || '',
           contractLength: newEvent.contractLength ?? 24,
           // REQ-D6-03 decision 5 — every row, the held tail included.
-          hold: holdAfterRamp,
+          hold: volumeHold,
+          // REQ-D6-05 clause 7.
+          mode: volumeMode,
           sequence: 0,
           // D5-05 AMENDED — the three fields the ADD path has always written
           // (`handleAddMarketEvent`) and this rebuild never did. It was
@@ -5070,17 +5225,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setMarketEvents([...survivors, ...resequenceRebuild(newEvents, replaced, survivors)]);
     setEditingCampaign(null);
     setNewEvent(BLANK_EVENT);
-    setSpreadEnabled(false);
+    // REQ-D6-05 — back to a fresh form: Spread, one month, nothing held.
+    setSpreadMode('spread');
     setHoldAfterRamp(false);
-    setSpreadMonths(3);
+    setSpreadMonths(1);
     setSpreadDistType('even');
     setCustomDist([34, 33, 33]);
+    setSpreadValues([0]);
+    setRampValues([0]);
     // THE READ-SET, not a wish-list. isChurnDraft, churnFold and
     // churnBlockReason are all READ above; omitting churnFold would re-state a
     // campaign against a stale fold, which is the defect this whole branch
     // exists to prevent, arriving through the dependency array instead.
     // REQ-D6-03 adds holdAfterRamp and horizonMonthsFrom on the same rule.
-  }, [editingCampaign, newEvent, spreadEnabled, holdAfterRamp, horizonMonthsFrom, spreadMonths, spreadDistType, customDist, marketEvents, setMarketEvents, setNewEvent, cohortAvgArpu,
+  }, [editingCampaign, newEvent, volumeShape, volumeIsSingle, volumeHold, volumeMode, rampBlockReason, marketEvents, setMarketEvents, setNewEvent, cohortAvgArpu,
       // Same as handleAddMarketEvent: named by the rule, not live today.
       isChurnDraft, churnFold, churnBlockReason, clearChurnDraft, churnHold]);
 
@@ -5201,6 +5359,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         // THE STATEMENT AND THE DELTA MOVE TOGETHER.
         // REQ-D6-03 s2 — every churn row, the held tail included.
         hold:            churnHold,
+        mode: 'ramp',
         churnMode: 'churn',
         churnTargetPct: m.statedReductionPct,
         churnCurrentPct: m.currentPct,
@@ -5267,10 +5426,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setEditingEventId(null);
     setEditingCampaign(null);
     setNewEvent(BLANK_EVENT);
-    setSpreadEnabled(false);
-    setSpreadMonths(3);
+    // REQ-D6-05 — back to a fresh form: Spread, one month, nothing held.
+    setSpreadMode('spread');
+    setHoldAfterRamp(false);
+    setSpreadMonths(1);
     setSpreadDistType('even');
     setCustomDist([34, 33, 33]);
+    setSpreadValues([0]);
+    setRampValues([0]);
   }, [setNewEvent]);
 
   // ── Custom Promotion Card — edit a single promo event ─────────────────────
@@ -5317,7 +5480,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoPricingAmount(event.promoPricingAmount ?? 0);
     setPromoDilutionCurrent(event.promoDilutionCurrentPct);
     setPromoDilutionTarget(event.promoDilutionTargetPct);
-    setPromoSpreadEnabled(false);
+    setPromoSpreadMonths(1);
     // REQ-D6-03 s3 — THE TOGGLE FOLLOWS THE ROW, set unconditionally so that
     // opening a plain promotion after a held one turns it OFF.
     setPromoHold(event.hold ?? false);
@@ -5349,45 +5512,36 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       volByOffset[off] += Math.abs(e.subscriberVolume);
       totalSub += Math.abs(e.subscriberVolume);
     });
-    // ── REQ-D6-03 s3 — A HELD PROMO CAMPAIGN RESTORES FROM ITS ROWS ───────
+    // ── REQ-D6-05 Item 2 — THE MODE COMES FROM THE COLUMN ─────────────────
     //
-    // The reverse-engineering above is right for a terminating ramp and wrong
-    // for a held one in the way that looks like a data change: a held
-    // campaign's rows SUM to far more than the target, so `totalSub` would
-    // seed the amount box with a figure the user never typed and `span` a
-    // 20-month ramp.
-    //
-    // Decision 5's three values, and NO NEW FUNCTION: the toggle from the
-    // COLUMN (never inferred — a flat three-month promo is indistinguishable
-    // from a one-month one held twice), the target from the LAST row, and the
-    // ramp length from `holdPlateauStart`, session 1's, over the same figures.
+    // The Volume card's restore rule on this carrier (see handleEditCampaignStart):
+    // Ramp reopens with the target = the last ramp month and the typed values =
+    // the rows to the plateau (held) or all rows (unheld); Spread reopens with the
+    // SUM and the first distribution that re-spreads to exactly the stored rows.
+    const mode = eventMode(first);
     const isHeld = rows.some(e => e.hold);
     const figures = volByOffset.map(v => Math.abs(v));
-    const heldTarget = figures[figures.length - 1] ?? 0;
-    const heldRampLen = holdPlateauStart(figures);
-    // The cumulative fractions the ramp months reached, differenced back into
-    // the per-month shares the generator re-cumulates — the read that
-    // round-trips, so re-saving untouched reproduces the same rows.
-    const heldCum = figures.slice(0, heldRampLen)
-      .map(v => heldTarget > 0 ? (v / heldTarget) * 100 : 0);
-    const heldShares = heldCum.map((c, i) => i === 0 ? c : c - heldCum[i - 1]);
-    const heldPcts = heldShares.map(s => Math.round(s));
-    heldPcts[0] += 100 - heldPcts.reduce((s, p) => s + p, 0);
-    const heldEvenShare = 100 / heldRampLen;
-    const heldIsEven = heldShares.every(s => Math.abs(s - heldEvenShare) <= 1);
-
+    const rampLen = isHeld ? holdPlateauStart(figures) : figures.length;
+    const typed = figures.slice(0, rampLen);
+    const target = typed[typed.length - 1] ?? 0;
     const pcts = volByOffset.map(v => totalSub > 0 ? Math.round((v / totalSub) * 100) : 0);
     pcts[0] += 100 - pcts.reduce((s, p) => s + p, 0);
-    const mean = totalSub / span;
-    const isEven = volByOffset.every(v => Math.abs(v - mean) <= 1);
+    const rows0 = volByOffset.map(v => Math.round(Math.abs(v)));
+    const reproduces = (kind: 'even' | 'pct', dist: number[]) => {
+      const sh = spreadShape({ mode: 'spread', months: span, distKind: kind, dist });
+      return sh.length === span && sh.every((m, i) => Math.round(totalSub * m.fraction) === rows0[i]);
+    };
+    const restoredDist: 'even' | 'custom' | 'values' =
+      reproduces('even', Array.from({ length: span }, () => 100 / span)) ? 'even'
+        : reproduces('pct', pcts) ? 'custom' : 'values';
 
     setNewPromo({
       segment: first.segment, product: first.product, productL2: first.productL2 ?? 'All',
       channel: first.channel, channelL2: first.channelL2 ?? 'All',
       tariffL1: first.tariffL1 ?? 'All', tariffL2: first.tariffL2 ?? 'All',
       date: first.date,
-      // THE TARGET, not the sum — decisions 2 and 5 read together.
-      subscriberVolume: isHeld ? heldTarget : totalSub,
+      // Ramp: THE TARGET. Spread: THE SUM.
+      subscriberVolume: mode === 'ramp' ? target : totalSub,
       contractLength: first.contractLength,
       campaignName: campaign, comment: rows.find(e => e.comment)?.comment ?? '',
     });
@@ -5395,33 +5549,23 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoMixEnabled(!!first.promoMix);
     setPromoMixAxis(first.promoMixAxis ?? 'value');
     setPromoDraftMix(first.promoMix ? { ...first.promoMix } : {});
-    // R3, from the SAME row the mix comes from. A campaign's rows are one
-    // promotion spread across months, so the first row's stated rates are the
-    // campaign's; taking them from another row could show one month's.
+    // R3, from the SAME row the mix comes from.
     setDraftPromoBandArpu({ ...(first.promoBandArpuOverride ?? {}) });
-    // Locks and target are draft-time only and no saved event carries them,
-    // so opening an edit starts from no holds and no target rather than
-    // inheriting whatever the previous draft had.
     setPromoMixLocked([]);
     setPromoTargetArpu('');
-    // D5-03, the campaign path. Every row of a campaign is built by ONE call
-    // to buildPromoEvents, so they share an amountType by construction and the
-    // first row speaks for the group — the same assumption the mix, the axis
-    // and the pricing arm above already make.
     setPromoAmountMode(first.amountType === 'percentage' ? 'percentage' : 'absolute');
     setPromoPricingEnabled(first.promoPricingAmount !== undefined);
     setPromoPricingMode(first.promoPricingMode ?? 'percentage');
     setPromoPricingAmount(first.promoPricingAmount ?? 0);
     setPromoDilutionCurrent(first.promoDilutionCurrentPct);
     setPromoDilutionTarget(first.promoDilutionTargetPct);
-    // REQ-D6-03 s3 — decision 4's independence on the way back in as well as
-    // out: a one-month held promo restores with the RAMP SWITCH OFF and the
-    // hold toggle on, which is exactly the state that built it.
-    setPromoHold(isHeld);
-    setPromoSpreadEnabled(isHeld ? heldRampLen > 1 : true);
-    setPromoSpreadMonths(isHeld ? Math.max(1, heldRampLen) : span);
-    setPromoSpreadDistType((isHeld ? heldIsEven : isEven) ? 'even' : 'custom');
-    setPromoCustomDist(isHeld ? heldPcts : pcts);
+    setPromoSpreadMode(mode);
+    setPromoHold(mode === 'ramp' && isHeld);
+    setPromoSpreadMonths(Math.max(1, mode === 'ramp' ? rampLen : span));
+    setPromoRampValues(mode === 'ramp' ? typed : evenRampValues(totalSub, span));
+    setPromoSpreadDistType(mode === 'ramp' ? 'even' : restoredDist);
+    setPromoCustomDist(pcts);
+    setPromoSpreadValues(rows0);
     setEditingPromoId(null);
     setEditingPromoCampaign(campaign);
   }, [promoCampaignGroups, handleEditPromoStart]);
@@ -5501,6 +5645,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   const handleSavePromoCampaign = useCallback(() => {
     if (!editingPromoCampaign || !newPromo.date || !newPromo.subscriberVolume) return;
+    if (promoRampBlockReason !== null) return;
     const events = buildPromoEvents({
       target: promoTarget,
       amountType: promoAmountMode, draft: newPromo,
@@ -5511,7 +5656,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       pricingDilutionCurrentPct: promoDilutionCurrent, pricingDilutionTargetPct: promoDilutionTarget,
       cohortAvgArpu: promoCohortAvgArpu,
       // WALK C — the ONE derivation, read here, by the grid and by the button.
-      shape: promoShape, hold: promoHold,
+      shape: promoShape, hold: promoHoldOn, mode: promoMode,
       startSequence: nextSequence(marketEvents),
       selectedTariffs, fullTariffL1s: [...fullTariffTree.keys()],
     });
@@ -5533,7 +5678,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // newPromo is listed and every restore also sets it - which is the shape
   // this codebase has stopped relying on twice already.
     // B8, the same omission on the campaign-save path — it reads the same two.
-  }, [editingPromoCampaign, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, promoHold, horizonMonthsFrom, marketEvents, setMarketEvents, resetPromoDraft]);
+  }, [editingPromoCampaign, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoShape, promoHoldOn, promoMode, promoRampBlockReason, marketEvents, setMarketEvents, resetPromoDraft]);
 
   const handleCancelPromoEdit = useCallback(() => {
     setEditingPromoId(null);
@@ -6603,9 +6748,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-4 items-start mt-4">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">
-                  {isPercentageDraft
-                    ? `Change to ${String(newEvent.scenario ?? 'Inflow')}`
-                    : t('whatif_subscriber_volume')}
+                  {/* REQ-D6-05 clause 12 — THE LABEL FOLLOWS THE MODE. The percentage
+                      label was English in a template literal and exempted from
+                      the i18n scan; it is keyed now and the exemption retired. */}
+                  <span data-testid="volume-amount-label">
+                  {isChurnDraft || newEvent.scenario === 'ARPU'
+                    ? t('whatif_subscriber_volume')
+                    : isPercentageDraft
+                      ? t('whatif_amount_label_pct', { p0: String(newEvent.scenario ?? 'Inflow') })
+                      : volumeMode === 'ramp'
+                        ? t('whatif_amount_label_ramp', { p0: spreadMonths }) + (volumeHold ? t('whatif_amount_label_then_held') : '')
+                        : spreadMonths <= 1
+                          ? t('whatif_amount_label_spread_one')
+                          : t('whatif_amount_label_spread', { p0: spreadMonths })}
+                  </span>
                 </label>
                 {/* Toggle and input share one bordered container, as Pricing does. */}
                 <div className="flex rounded-lg border border-slate-200 overflow-hidden bg-white">
@@ -6662,10 +6818,17 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                   <input
                     type="number"
+                    data-testid="volume-amount"
                     step={isPercentageDraft ? 0.1 : 1}
                     placeholder={isPercentageDraft ? 'e.g. 10 for +10%' : ''}
                     value={newEvent.subscriberVolume || ''}
+                    // REQ-D6-05 clause 8 — with Custom values the total is the
+                    // DERIVED sum of the monthly values: shown, never typed.
+                    readOnly={volumeMode === 'spread' && spreadDistType === 'values'}
+                    aria-readonly={(volumeMode === 'spread' && spreadDistType === 'values') || undefined}
+                    title={volumeMode === 'spread' && spreadDistType === 'values' ? t('whatif_values_total_derived') : undefined}
                     onChange={e => {
+                      if (volumeMode === 'spread' && spreadDistType === 'values') return;
                       const vol = Number(e.target.value);
                       setNewEvent({
                         ...newEvent,
@@ -6673,6 +6836,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         // A percentage carries no per-subscriber revenue.
                         revenue: isPercentageDraft ? 0 : vol * (newEvent.arpu || 0),
                       });
+                      // REQ-D6-05 clause 11 — editing the TARGET re-prefills the
+                      // typed ramp (Even), and the grid shows the replacement.
+                      if (volumeMode === 'ramp') setRampValues(evenRampValues(vol, spreadMonths));
                     }}
                     className="flex-1 min-w-0 text-sm p-2 bg-white outline-none focus:border-[#e60000]"
                   />
@@ -6741,8 +6907,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                     <div className="grid grid-cols-2 gap-3">
                       <div className="flex flex-col gap-1">
-                        <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                          {t('whatif_churn_target')}
+                        <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider"
+                               data-testid="churn-amount-label">
+                          {/* REQ-D6-05 clause 12 — churn is already a ramp; the label says what the
+                              figure is: the reduction reached at month n, and ", then held" with
+                              Hold on. Unramped, the statement is reached in its one month. */}
+                          {t('whatif_churn_label_ramp', { p0: churnRampOn ? churnMonths : 1 })
+                            + (churnHold ? t('whatif_amount_label_then_held') : '')}
                         </label>
                         <input
                           type="number" step={0.1} min={0}
@@ -7164,161 +7335,246 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 without clearing it, or clearing without hiding, each leave one
                 half of the question visible. */}
             {newEvent.scenario !== 'ARPU' && !isChurnDraft && (
-              <div className="mt-4">
-                {/* Toggle */}
-                <div className="flex flex-wrap items-center gap-2">
-                {(!isPercentageDraft || holdAfterRamp) && (
-                <RampHoldCheckbox
-                  checked={spreadEnabled}
-                  onChange={setSpreadEnabled}
-                  label={t('whatif_spread_volume_over_multiple_months')}
-                  testId="volume-spread-toggle"
-                />
-                )}
-                {/* REQ-D6-03 decision 4 — BESIDE the spread control and OUTSIDE
-                    its panel, because the two are independent: spread off with
-                    hold on is a ramp of length 1 plus a tail, and a toggle
-                    nested inside `spreadEnabled &&` could not express it. */}
-                <RampHoldCheckbox
-                  checked={holdAfterRamp}
-                  onChange={setHoldAfterRamp}
-                  label={t('whatif_hold_after_ramp_label')}
-                  title={t('whatif_hold_after_ramp_help')}
-                  testId="volume-hold-toggle"
-                />
+              <div className="mt-4 p-4 bg-white border border-slate-200 rounded-xl" data-testid="volume-shape-panel">
+                {/* REQ-D6-05 clause 10 — ALWAYS OPEN. No on-off switch: Mode,
+                    Duration, the distribution (Spread) or Hold (Ramp), and then
+                    the rows — every campaign is built with its rows in view. */}
+                <div className="flex flex-wrap items-end gap-6 mb-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_mode_label')}</label>
+                    <div className="flex rounded-lg overflow-hidden border border-slate-200">
+                      {/* Clause 9 — a percentage is ALWAYS a ramp. Disabled AND
+                          aria-disabled, and the click is refused as well: the
+                          derivation already forces Ramp, so this is the screen
+                          saying so rather than the only thing enforcing it. */}
+                      <button
+                        type="button"
+                        data-testid="volume-mode-spread"
+                        aria-pressed={volumeMode === 'spread'}
+                        aria-disabled={isPercentageDraft || undefined}
+                        disabled={isPercentageDraft}
+                        title={isPercentageDraft ? t('whatif_mode_locked_pct') : undefined}
+                        onClick={() => {
+                          if (isPercentageDraft) return;
+                          setSpreadMode('spread');
+                          // Clause 2 — Spread has no Hold.
+                          setHoldAfterRamp(false);
+                        }}
+                        className={`px-4 py-2 text-xs font-semibold border-r border-slate-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                          volumeMode === 'spread' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                        }`}
+                      >{t('whatif_mode_spread')}</button>
+                      <button
+                        type="button"
+                        data-testid="volume-mode-ramp"
+                        aria-pressed={volumeMode === 'ramp'}
+                        onClick={() => {
+                          if (spreadMode === 'ramp') return;
+                          setSpreadMode('ramp');
+                          setRampValues(evenRampValues(newEvent.subscriberVolume || 0, spreadMonths));
+                        }}
+                        className={`px-4 py-2 text-xs font-semibold transition-colors ${
+                          volumeMode === 'ramp' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                        }`}
+                      >{t('whatif_mode_ramp')}</button>
+                    </div>
+                    {isPercentageDraft && (
+                      <p className="text-[10px] text-slate-400 mt-1" data-testid="volume-mode-locked">
+                        {t('whatif_mode_locked_pct')}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_duration_months')}</label>
+                    <input
+                      type="number"
+                      data-testid="volume-duration"
+                      min={1}
+                      max={24}
+                      step={1}
+                      value={spreadMonths}
+                      onChange={e => {
+                        const n = Math.min(24, Math.max(1, Math.round(Number(e.target.value)) || 1));
+                        setSpreadMonths(n);
+                        // Clause 11 — the typed ramp is re-prefilled (Even), visibly.
+                        setRampValues(evenRampValues(newEvent.subscriberVolume || 0, n));
+                        // Clause 8 — Custom values keep what was typed; new months
+                        // start at 0, and the total stays the SUM.
+                        const nextValues = Array.from({ length: n }, (_, i) => spreadValues[i] ?? 0);
+                        setSpreadValues(nextValues);
+                        if (volumeMode === 'spread' && spreadDistType === 'values') {
+                          const sum = nextValues.reduce((acc, v) => acc + v, 0);
+                          setNewEvent({ ...newEvent, subscriberVolume: sum, revenue: sum * (newEvent.arpu || 0) });
+                        }
+                      }}
+                      className="w-24 text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
+                    />
+                  </div>
+                  {volumeMode === 'spread' && (
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_distribution')}</label>
+                      <div className="flex rounded-lg overflow-hidden border border-slate-200">
+                        <button
+                          type="button"
+                          data-testid="volume-dist-even"
+                          onClick={() => setSpreadDistType('even')}
+                          className={`px-4 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
+                            spreadDistType === 'even' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >{t('whatif_even')}</button>
+                        <button
+                          type="button"
+                          data-testid="volume-dist-pct"
+                          onClick={() => setSpreadDistType('custom')}
+                          className={`px-4 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
+                            spreadDistType === 'custom' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >{t('whatif_custom_pct')}</button>
+                        <button
+                          type="button"
+                          data-testid="volume-dist-values"
+                          onClick={() => {
+                            setSpreadDistType('values');
+                            // The total becomes DERIVED at once, so the box and the
+                            // rows cannot show two different totals for a frame.
+                            const nextValues = Array.from({ length: spreadMonths }, (_, i) => spreadValues[i] ?? 0);
+                            const sum = nextValues.reduce((acc, v) => acc + v, 0);
+                            setSpreadValues(nextValues);
+                            setNewEvent({ ...newEvent, subscriberVolume: sum, revenue: sum * (newEvent.arpu || 0) });
+                          }}
+                          className={`px-4 py-2 text-xs font-semibold transition-colors ${
+                            spreadDistType === 'values' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >{t('whatif_custom_values')}</button>
+                      </div>
+                    </div>
+                  )}
+                  {/* Clause 2 — HOLD IS RENDERED ONLY IN RAMP MODE. */}
+                  {volumeMode === 'ramp' && (
+                    <RampHoldCheckbox
+                      checked={holdAfterRamp}
+                      onChange={setHoldAfterRamp}
+                      label={t('whatif_hold_after_ramp_label')}
+                      title={t('whatif_hold_after_ramp_help')}
+                      testId="volume-hold-toggle"
+                    />
+                  )}
                 </div>
-                {holdAfterRamp && (
-                  <p className="text-[10px] text-slate-400 mt-1.5 leading-snug">
+                {volumeHold && (
+                  <p className="text-[10px] text-slate-400 -mt-2 mb-3 leading-snug">
                     {t('whatif_hold_after_ramp_help')}
                   </p>
                 )}
 
-                {spreadEnabled && (!isPercentageDraft || holdAfterRamp) && (
-                  <div className="mt-3 p-4 bg-white border border-slate-200 rounded-xl">
-                    {/* Step 1: Duration */}
-                    <div className="flex flex-wrap items-end gap-6 mb-4">
-                      <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_spread_duration_months')}</label>
-                        <input
-                          type="number"
-                          min={2}
-                          max={24}
-                          step={1}
-                          value={spreadMonths}
-                          onChange={e => setSpreadMonths(Math.min(24, Math.max(2, Math.round(Number(e.target.value)))))}
-                          className="w-24 text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
-                        />
+                {/* THE ROWS — always rendered (clause 10), by MONTH INDEX rather
+                    than from the shape: an all-zero Custom values draft has an
+                    empty shape, and a user must still be able to type into it. */}
+                {(() => {
+                  const baseDate = newEvent.date ? parse(newEvent.date, 'yyyy-MM', new Date()) : null;
+                  const totalVol = newEvent.subscriberVolume || 0;
+                  const ramp = volumeMode === 'ramp';
+                  const inputCol = ramp || spreadDistType !== 'even';
+                  const pctTotal = customDist.slice(0, spreadMonths).reduce((acc, p) => acc + p, 0);
+                  const pctOk = spreadDistType !== 'custom' || ramp || Math.abs(pctTotal - 100) < 0.5;
+                  const heldRows = volumeShape.filter(m => m.held);
+                  const heldVol = isPercentageDraft ? totalVol : Math.round(totalVol);
+                  const heldLast = heldRows.length && baseDate && isValid(baseDate)
+                    ? formatMonthDate(addMonths(baseDate, heldRows[heldRows.length - 1].offset), i18n.language)
+                    : '';
+                  return (
+                    <div>
+                      <div className="grid gap-1.5" style={{ gridTemplateColumns: `140px 1fr${inputCol ? ' 96px' : ''}` }}>
+                        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_month')}</span>
+                        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_volume')}</span>
+                        {inputCol && (
+                          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                            {!ramp && spreadDistType === 'custom' ? '%' : t('whatif_value_col')}
+                          </span>
+                        )}
+                        {Array.from({ length: spreadMonths }, (_, i) => {
+                          const label = baseDate && isValid(baseDate)
+                            ? formatMonthDate(addMonths(baseDate, i), i18n.language)
+                            : t('whatif_month', { p0: i + 1 });
+                          const fraction = volumeShape[i]?.fraction ?? 0;
+                          const raw = totalVol * fraction;
+                          const vol = isPercentageDraft ? Math.round(raw * 100) / 100 : Math.round(raw);
+                          return (
+                            <React.Fragment key={i}>
+                              <span className="text-xs text-slate-600 py-1">{label}</span>
+                              <span className={`text-xs font-semibold py-1 ${vol >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}
+                                    data-testid={`volume-row-${i}`}>
+                                {vol >= 0 ? '+' : ''}{vol.toLocaleString()}
+                              </span>
+                              {ramp ? (
+                                <input
+                                  type="number"
+                                  data-testid={`volume-ramp-value-${i}`}
+                                  step={isPercentageDraft ? 0.1 : 1}
+                                  value={Math.round((rampValues[i] ?? 0) * 100) / 100}
+                                  onChange={e => {
+                                    const next = Array.from({ length: spreadMonths }, (_, k) => rampValues[k] ?? 0);
+                                    next[i] = Number(e.target.value) || 0;
+                                    setRampValues(next);
+                                  }}
+                                  className="text-xs border border-slate-200 rounded px-2 py-1 w-20 outline-none focus:border-[#e60000]"
+                                />
+                              ) : spreadDistType === 'values' ? (
+                                <input
+                                  type="number"
+                                  data-testid={`volume-spread-value-${i}`}
+                                  min={0}
+                                  step={1}
+                                  value={spreadValues[i] ?? 0}
+                                  onChange={e => {
+                                    const next = Array.from({ length: spreadMonths }, (_, k) => spreadValues[k] ?? 0);
+                                    next[i] = Math.max(0, Number(e.target.value) || 0);
+                                    const sum = next.reduce((acc, v) => acc + v, 0);
+                                    setSpreadValues(next);
+                                    setNewEvent({ ...newEvent, subscriberVolume: sum, revenue: sum * (newEvent.arpu || 0) });
+                                  }}
+                                  className="text-xs border border-slate-200 rounded px-2 py-1 w-20 outline-none focus:border-[#e60000]"
+                                />
+                              ) : spreadDistType === 'custom' ? (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  step={1}
+                                  value={customDist[i] ?? 0}
+                                  onChange={e => {
+                                    const next = [...customDist];
+                                    next[i] = Math.max(0, Number(e.target.value));
+                                    setCustomDist(next);
+                                  }}
+                                  className="text-xs border border-slate-200 rounded px-2 py-1 w-16 outline-none focus:border-[#e60000]"
+                                />
+                              ) : null}
+                            </React.Fragment>
+                          );
+                        })}
                       </div>
-                      {/* Step 2: Distribution type */}
-                      <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_distribution')}</label>
-                        <div className="flex rounded-lg overflow-hidden border border-slate-200">
-                          <button
-                            onClick={() => setSpreadDistType('even')}
-                            className={`px-4 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
-                              spreadDistType === 'even' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
-                            }`}
-                          >{t('whatif_even')}</button>
-                          <button
-                            onClick={() => setSpreadDistType('custom')}
-                            className={`px-4 py-2 text-xs font-semibold transition-colors ${
-                              spreadDistType === 'custom' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
-                            }`}
-                          >{t('whatif_custom_pct')}</button>
-                        </div>
-                      </div>
+                      {heldRows.length > 0 && (
+                        <p className="mt-2 text-[10px] text-slate-500 font-medium"
+                           data-testid="volume-hold-tail">
+                          {t('whatif_hold_then_held_through', {
+                            p0: `${heldVol >= 0 ? '+' : ''}${heldVol.toLocaleString()}`,
+                            p1: heldLast,
+                          })}
+                        </p>
+                      )}
+                      {!pctOk && (
+                        <p className="mt-2 text-[10px] text-amber-600 font-medium">
+                          {t('whatif_percentages_sum_to')}{pctTotal.toFixed(1)}{t('whatif_pct_they_will_be_normalised_to_100pct_on_add')}
+                        </p>
+                      )}
+                      {rampBlockReason && (
+                        <p className="mt-2 text-[11px] text-amber-700" data-testid="volume-ramp-block-reason">
+                          {rampBlockReason}
+                        </p>
+                      )}
                     </div>
-
-                    {/* Step 3: Per-month breakdown */}
-                    {(() => {
-                      const baseDate = newEvent.date ? parse(newEvent.date, 'yyyy-MM', new Date()) : null;
-                      const totalVol  = newEvent.subscriberVolume || 0;
-                      const pcts = spreadDistType === 'even'
-                        ? Array.from({ length: spreadMonths }, () => 100 / spreadMonths)
-                        : customDist.slice(0, spreadMonths);
-                      const pctTotal = pcts.reduce((s, p) => s + p, 0);
-                      const pctOk = Math.abs(pctTotal - 100) < 0.5;
-                      // REQ-D6-03 — THE PREVIEW READS THE SAME GENERATOR THE
-                      // SAVE DOES. It used to compute `pcts[i] / pctTotal`
-                      // inline, which was a second implementation of the
-                      // spread and would now be a WRONG one: with hold on it
-                      // would show 833/833/833 under a button that saves
-                      // 833/1667/2500. A preview that can disagree with the
-                      // save is worse than no preview.
-                      const shape = spreadShape({
-                        months: spreadMonths, dist: pcts, hold: holdAfterRamp,
-                        horizonMonths: horizonMonthsFrom(newEvent.date ?? ''),
-                      });
-                      const rampRows = shape.filter(s => !s.held);
-                      const heldRows = shape.filter(s => s.held);
-                      // The tail is summarised, never listed: a 40-row preview
-                      // of one repeated figure is not information.
-                      // The same rate-not-count rule the save uses.
-                      const heldVol = isPercentageDraft ? totalVol : Math.round(totalVol);
-                      const heldLast = heldRows.length && baseDate && isValid(baseDate)
-                        ? formatMonthDate(
-                            addMonths(baseDate, heldRows[heldRows.length - 1].offset),
-                            i18n.language)
-                        : '';
-
-                      return (
-                        <div>
-                          <div className="grid gap-1.5" style={{ gridTemplateColumns: `140px 1fr${spreadDistType === 'custom' ? ' 80px' : ''}` }}>
-                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_month')}</span>
-                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_volume')}</span>
-                            {spreadDistType === 'custom' && <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">%</span>}
-                            {rampRows.map(({ offset: i, fraction }) => {
-                              const spreadLabel = baseDate && isValid(baseDate)
-                                ? formatMonthDate(addMonths(baseDate, i), i18n.language)
-                                : t('whatif_month', { p0: i + 1 });
-                              const raw       = totalVol * fraction;
-                              const vol       = isPercentageDraft
-                                ? Math.round(raw * 100) / 100 : Math.round(raw);
-                              return (
-                                <React.Fragment key={i}>
-                                  <span className="text-xs text-slate-600 py-1">{spreadLabel}</span>
-                                  <span className={`text-xs font-semibold py-1 ${vol >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                    {vol >= 0 ? '+' : ''}{vol.toLocaleString()}
-                                  </span>
-                                  {spreadDistType === 'custom' && (
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      max={100}
-                                      step={1}
-                                      value={customDist[i] ?? 0}
-                                      onChange={e => {
-                                        const next = [...customDist];
-                                        next[i] = Math.max(0, Number(e.target.value));
-                                        setCustomDist(next);
-                                      }}
-                                      className="text-xs border border-slate-200 rounded px-2 py-1 w-16 outline-none focus:border-[#e60000]"
-                                    />
-                                  )}
-                                </React.Fragment>
-                              );
-                            })}
-                          </div>
-                          {heldRows.length > 0 && (
-                            <p className="mt-2 text-[10px] text-slate-500 font-medium"
-                               data-testid="volume-hold-tail">
-                              {t('whatif_hold_then_held_through', {
-                                p0: `${heldVol >= 0 ? '+' : ''}${heldVol.toLocaleString()}`,
-                                p1: heldLast,
-                              })}
-                            </p>
-                          )}
-                          {spreadDistType === 'custom' && !pctOk && (
-                            <p className="mt-2 text-[10px] text-amber-600 font-medium">
-                              
-                              {t('whatif_percentages_sum_to')}{pctTotal.toFixed(1)}{t('whatif_pct_they_will_be_normalised_to_100pct_on_add')}
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             )}
 
@@ -7364,7 +7620,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                 <div className="flex gap-2 shrink-0">
                   <button
                     onClick={editingCampaign ? handleSaveCampaign : handleSaveEdit}
-                    disabled={!newEvent.date}
+                    // REQ-D6-05 clause 11 — a CAMPAIGN save refuses a broken ramp, so the
+                    // button says so rather than swallowing the click (the class trap
+                    // 110 names). A row save is one month and is not gated.
+                    disabled={!newEvent.date || (editingCampaign !== null && rampBlockReason !== null)}
                     className="bg-[#e60000] text-white text-sm font-semibold py-2 px-5 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {editingCampaign ? t('whatif_save_campaign') : t('whatif_save_changes')}
@@ -7393,8 +7652,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   <button
                     data-testid="volume-add"
                     onClick={handleAddMarketEvent}
-                    disabled={!newEvent.date || newEvent.subscriberVolume === undefined || churnBlockReason !== null}
-                    title={churnBlockReason ?? undefined}
+                    disabled={!newEvent.date || newEvent.subscriberVolume === undefined || churnBlockReason !== null
+                      || rampBlockReason !== null}
+                    title={churnBlockReason ?? rampBlockReason ?? undefined}
                     className="bg-[#e60000] text-white text-sm font-semibold py-2 px-6 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {/* REQ-D6-03 — THE COUNT IS THE COUNT. This read
@@ -7409,8 +7669,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         // REQ-D6-03 s2 — THE HELD CASE ONLY, and deliberately
                         // narrow.
                         //
-                        // This reads `spreadEnabled ? spreadMonths : 1`, and
-                        // `spreadEnabled` is force-cleared for churn — so the
+                        // This READ `spreadEnabled ? spreadMonths : 1` (retired at REQ-D6-05), and
+                        // `spreadEnabled` was force-cleared for churn — so the
                         // button has said "Add Event" for a three-month ramp
                         // since R7. That is a PRE-EXISTING inaccuracy and it is
                         // NOT this session's to fix: correcting it changed the
@@ -7426,25 +7686,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         // only when hold is on, so the unheld label is
                         // byte-identical to what it was.
                         if (!churnHold) {
-                          return spreadEnabled
-                            ? t('whatif_add_events', { p0: spreadMonths })
-                            : t('whatif_add_event');
+                          // REQ-D6-05: `spreadEnabled` is retired. It was ALWAYS false
+                          // for a churn draft (the arm force-cleared it), so this was
+                          // always "Add Event" — kept byte-identical, which is what
+                          // `spec:mix-card` finds the button by.
+                          return t('whatif_add_event');
                         }
                         const n = churnFold.filter(m => !m.absence && m.delta !== 0).length;
                         return n > 1 ? t('whatif_add_events', { p0: n }) : t('whatif_add_event');
                       }
-                      const n = (!spreadEnabled && !holdAfterRamp)
-                        || newEvent.scenario === 'ARPU'
-                        ? 1
-                        : spreadShape({
-                          months: spreadEnabled ? spreadMonths : 1,
-                          dist: !spreadEnabled ? [100]
-                            : spreadDistType === 'even'
-                              ? Array.from({ length: spreadMonths }, () => 100 / spreadMonths)
-                              : customDist.slice(0, spreadMonths),
-                          hold: holdAfterRamp,
-                          horizonMonths: horizonMonthsFrom(newEvent.date ?? ''),
-                        }).length;
+                      const n = volumeIsSingle || newEvent.scenario === 'ARPU' ? 1 : volumeShape.length;
                       return n > 1 ? t('whatif_add_events', { p0: n }) : t('whatif_add_event');
                     })()}
                   </button>
@@ -8799,9 +9050,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         user who has found the wrong one is told where the
                         right one is. */}
                     <label className="block text-xs font-medium text-slate-500 mb-1">
+                      {/* REQ-D6-05 clause 12 — the label follows the mode. A percentage
+                          keeps this card's own per-cent label (it names the forecast
+                          the share is of); volume states total or target. */}
+                      <span data-testid="promo-amount-label">
                       {promoAmountMode === 'percentage'
                         ? t('whatif_promo_volume_pct_label')
-                        : (promoTarget === 'Inflow' ? t('whatif_acquisition_volume') : t('whatif_retained_volume'))}
+                        : promoMode === 'ramp'
+                          ? t('whatif_amount_label_ramp', { p0: promoSpreadMonths }) + (promoHoldOn ? t('whatif_amount_label_then_held') : '')
+                          : promoSpreadMonths <= 1
+                            ? t('whatif_amount_label_spread_one')
+                            : t('whatif_amount_label_spread', { p0: promoSpreadMonths })}
+                      </span>
                     </label>
                     <div className="flex items-stretch gap-2">
                       <input
@@ -8810,7 +9070,16 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         step={promoAmountMode === 'percentage' ? 0.1 : 1}
                         data-testid="promo-volume-amount"
                         value={newPromo.subscriberVolume || ''}
-                        onChange={e => setNewPromo({ ...newPromo, subscriberVolume: Math.max(0, Number(e.target.value)) })}
+                        readOnly={promoMode === 'spread' && promoSpreadDistType === 'values'}
+                        aria-readonly={(promoMode === 'spread' && promoSpreadDistType === 'values') || undefined}
+                        onChange={e => {
+                          // Clause 8 — with Custom values the total is DERIVED.
+                          if (promoMode === 'spread' && promoSpreadDistType === 'values') return;
+                          const vol = Math.max(0, Number(e.target.value));
+                          setNewPromo({ ...newPromo, subscriberVolume: vol });
+                          // Clause 11 — editing the target re-prefills the typed ramp.
+                          if (promoMode === 'ramp') setPromoRampValues(evenRampValues(vol, promoSpreadMonths));
+                        }}
                         className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
                       />
                       <div className="flex border border-slate-200 rounded-lg overflow-hidden shrink-0">
@@ -8826,6 +9095,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               if (mode !== promoAmountMode) {
                                 setPromoAmountMode(mode);
                                 setNewPromo({ ...newPromo, subscriberVolume: 0 });
+                                // The amount is zeroed, so the typed ramp is re-prefilled
+                                // from zero; a percentage is a Ramp from here (clause 9).
+                                setPromoRampValues(evenRampValues(0, promoSpreadMonths));
                               }
                             }}
                             className={`px-3 py-2 text-xs font-semibold transition-colors ${
@@ -8860,153 +9132,228 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   </div>
                 </div>
 
-                {/* Ramp / decay — reuses the same spread mechanism as Volume events */}
-                <div className="mt-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                  <RampHoldCheckbox
-                    checked={promoSpreadEnabled}
-                    onChange={setPromoSpreadEnabled}
-                    label={t('whatif_ramp_volume_over_multiple_months')}
-                    testId="promo-spread-toggle"
-                  />
-                  {/* REQ-D6-03 s3 — BESIDE the ramp control and OUTSIDE its
-                      panel, the third carrier to follow the same rule: the two
-                      are independent, and a toggle nested inside
-                      `promoSpreadEnabled &&` could not say "this figure, every
-                      month". The SAME two keys as the other two cards. */}
-                  <RampHoldCheckbox
-                    checked={promoHold}
-                    onChange={setPromoHold}
-                    label={t('whatif_hold_after_ramp_label')}
-                    title={t('whatif_hold_after_ramp_help')}
-                    testId="promo-hold-toggle"
-                  />
+                {/* REQ-D6-05 Item 2 — ALWAYS OPEN (clause 10). The spread/ramp switch and its
+                    "Ramp volume over multiple months" label are RETIRED; Mode, Duration,
+                    then the distribution (Spread) or Hold (Ramp), then the rows. */}
+                <div className="mt-4 p-4 bg-white border border-slate-200 rounded-xl" data-testid="promo-shape-panel">
+                  <div className="flex flex-wrap items-end gap-6 mb-4">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_mode_label')}</label>
+                      <div className="flex rounded-lg overflow-hidden border border-slate-200">
+                        <button
+                          type="button"
+                          data-testid="promo-mode-spread"
+                          aria-pressed={promoMode === 'spread'}
+                          aria-disabled={promoAmountMode === 'percentage' || undefined}
+                          disabled={promoAmountMode === 'percentage'}
+                          title={promoAmountMode === 'percentage' ? t('whatif_mode_locked_pct') : undefined}
+                          onClick={() => {
+                            if (promoAmountMode === 'percentage') return;
+                            setPromoSpreadMode('spread');
+                            setPromoHold(false);
+                          }}
+                          className={`px-4 py-2 text-xs font-semibold border-r border-slate-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                            promoMode === 'spread' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >{t('whatif_mode_spread')}</button>
+                        <button
+                          type="button"
+                          data-testid="promo-mode-ramp"
+                          aria-pressed={promoMode === 'ramp'}
+                          onClick={() => {
+                            if (promoSpreadMode === 'ramp') return;
+                            setPromoSpreadMode('ramp');
+                            setPromoRampValues(evenRampValues(newPromo.subscriberVolume || 0, promoSpreadMonths));
+                          }}
+                          className={`px-4 py-2 text-xs font-semibold transition-colors ${
+                            promoMode === 'ramp' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >{t('whatif_mode_ramp')}</button>
+                      </div>
+                      {promoAmountMode === 'percentage' && (
+                        <p className="text-[10px] text-slate-400 mt-1" data-testid="promo-mode-locked">
+                          {t('whatif_mode_locked_pct')}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_duration_months')}</label>
+                      <input
+                        type="number"
+                        data-testid="promo-duration"
+                        min={1}
+                        max={24}
+                        step={1}
+                        value={promoSpreadMonths}
+                        onChange={e => {
+                          const n = Math.min(24, Math.max(1, Math.round(Number(e.target.value)) || 1));
+                          setPromoSpreadMonths(n);
+                          setPromoRampValues(evenRampValues(newPromo.subscriberVolume || 0, n));
+                          const nextValues = Array.from({ length: n }, (_, i) => promoSpreadValues[i] ?? 0);
+                          setPromoSpreadValues(nextValues);
+                          if (promoMode === 'spread' && promoSpreadDistType === 'values') {
+                            setNewPromo({ ...newPromo, subscriberVolume: nextValues.reduce((acc, v) => acc + v, 0) });
+                          }
+                        }}
+                        className="w-24 text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
+                      />
+                    </div>
+                    {promoMode === 'spread' && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_distribution')}</label>
+                        <div className="flex rounded-lg overflow-hidden border border-slate-200">
+                          <button
+                            type="button"
+                            data-testid="promo-dist-even"
+                            onClick={() => setPromoSpreadDistType('even')}
+                            className={`px-4 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
+                              promoSpreadDistType === 'even' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                            }`}
+                          >{t('whatif_even')}</button>
+                          <button
+                            type="button"
+                            data-testid="promo-dist-pct"
+                            onClick={() => setPromoSpreadDistType('custom')}
+                            className={`px-4 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
+                              promoSpreadDistType === 'custom' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                            }`}
+                          >{t('whatif_custom_pct')}</button>
+                          <button
+                            type="button"
+                            data-testid="promo-dist-values"
+                            onClick={() => {
+                              setPromoSpreadDistType('values');
+                              const nextValues = Array.from({ length: promoSpreadMonths }, (_, i) => promoSpreadValues[i] ?? 0);
+                              setPromoSpreadValues(nextValues);
+                              setNewPromo({ ...newPromo, subscriberVolume: nextValues.reduce((acc, v) => acc + v, 0) });
+                            }}
+                            className={`px-4 py-2 text-xs font-semibold transition-colors ${
+                              promoSpreadDistType === 'values' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
+                            }`}
+                          >{t('whatif_custom_values')}</button>
+                        </div>
+                      </div>
+                    )}
+                    {promoMode === 'ramp' && (
+                      <RampHoldCheckbox
+                        checked={promoHold}
+                        onChange={setPromoHold}
+                        label={t('whatif_hold_after_ramp_label')}
+                        title={t('whatif_hold_after_ramp_help')}
+                        testId="promo-hold-toggle"
+                      />
+                    )}
                   </div>
-                  {promoHold && (
-                    <p className="text-[10px] text-slate-400 mt-1.5 leading-snug">
+                  {promoHoldOn && (
+                    <p className="text-[10px] text-slate-400 -mt-2 mb-3 leading-snug">
                       {t('whatif_hold_after_ramp_help')}
                     </p>
                   )}
-
-                  {promoSpreadEnabled && (
-                    <div className="mt-3 p-4 bg-white border border-slate-200 rounded-xl">
-                      <div className="flex flex-wrap items-end gap-6 mb-4">
-                        <div>
-                          <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_ramp_duration_months')}</label>
-                          <input
-                            type="number"
-                            min={2}
-                            max={24}
-                            step={1}
-                            value={promoSpreadMonths}
-                            onChange={e => setPromoSpreadMonths(Math.min(24, Math.max(2, Math.round(Number(e.target.value)))))}
-                            className="w-24 text-sm border border-slate-200 rounded-lg p-2 bg-white outline-none focus:border-[#e60000]"
-                          />
+                  {(() => {
+                    const baseDate = newPromo.date ? parse(newPromo.date, 'yyyy-MM', new Date()) : null;
+                    const totalVol = newPromo.subscriberVolume || 0;
+                    const isPromoPctAmt = promoAmountMode === 'percentage';
+                    const ramp = promoMode === 'ramp';
+                    const inputCol = ramp || promoSpreadDistType !== 'even';
+                    const pctTotal = promoCustomDist.slice(0, promoSpreadMonths).reduce((acc, p) => acc + p, 0);
+                    const pctOk = ramp || promoSpreadDistType !== 'custom' || Math.abs(pctTotal - 100) < 0.5;
+                    const heldRows = promoShape.filter(m => m.held);
+                    const heldVol = isPromoPctAmt ? totalVol : Math.round(totalVol);
+                    const heldLast = heldRows.length && baseDate && isValid(baseDate)
+                      ? formatMonthDate(addMonths(baseDate, heldRows[heldRows.length - 1].offset), i18n.language)
+                      : '';
+                    return (
+                      <div>
+                        <div className="grid gap-1.5" style={{ gridTemplateColumns: `140px 1fr${inputCol ? ' 96px' : ''}` }}>
+                          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_month')}</span>
+                          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_volume')}</span>
+                          {inputCol && (
+                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                              {!ramp && promoSpreadDistType === 'custom' ? '%' : t('whatif_value_col')}
+                            </span>
+                          )}
+                          {Array.from({ length: promoSpreadMonths }, (_, i) => {
+                            const label = baseDate && isValid(baseDate)
+                              ? formatMonthDate(addMonths(baseDate, i), i18n.language)
+                              : t('whatif_month', { p0: i + 1 });
+                            const raw = totalVol * (promoShape[i]?.fraction ?? 0);
+                            const vol = isPromoPctAmt ? Math.round(raw * 100) / 100 : Math.round(raw);
+                            return (
+                              <React.Fragment key={i}>
+                                <span className="text-xs text-slate-600 py-1">{label}</span>
+                                {/* The emerald `+n` form is what promo-hold-mounted (C) reads. */}
+                                <span className="text-xs font-semibold text-emerald-600 py-1" data-testid={`promo-row-${i}`}>+{vol.toLocaleString()}</span>
+                                {ramp ? (
+                                  <input
+                                    type="number"
+                                    data-testid={`promo-ramp-value-${i}`}
+                                    step={isPromoPctAmt ? 0.1 : 1}
+                                    value={Math.round((promoRampValues[i] ?? 0) * 100) / 100}
+                                    onChange={e => {
+                                      const next = Array.from({ length: promoSpreadMonths }, (_, k) => promoRampValues[k] ?? 0);
+                                      next[i] = Number(e.target.value) || 0;
+                                      setPromoRampValues(next);
+                                    }}
+                                    className="text-xs border border-slate-200 rounded px-2 py-1 w-20 outline-none focus:border-[#e60000]"
+                                  />
+                                ) : promoSpreadDistType === 'values' ? (
+                                  <input
+                                    type="number"
+                                    data-testid={`promo-spread-value-${i}`}
+                                    min={0}
+                                    step={1}
+                                    value={promoSpreadValues[i] ?? 0}
+                                    onChange={e => {
+                                      const next = Array.from({ length: promoSpreadMonths }, (_, k) => promoSpreadValues[k] ?? 0);
+                                      next[i] = Math.max(0, Number(e.target.value) || 0);
+                                      setPromoSpreadValues(next);
+                                      setNewPromo({ ...newPromo, subscriberVolume: next.reduce((acc, v) => acc + v, 0) });
+                                    }}
+                                    className="text-xs border border-slate-200 rounded px-2 py-1 w-20 outline-none focus:border-[#e60000]"
+                                  />
+                                ) : promoSpreadDistType === 'custom' ? (
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    step={1}
+                                    value={promoCustomDist[i] ?? 0}
+                                    onChange={e => {
+                                      const next = [...promoCustomDist];
+                                      next[i] = Math.max(0, Number(e.target.value));
+                                      setPromoCustomDist(next);
+                                    }}
+                                    className="text-xs border border-slate-200 rounded px-2 py-1 w-16 outline-none focus:border-[#e60000]"
+                                  />
+                                ) : null}
+                              </React.Fragment>
+                            );
+                          })}
                         </div>
-                        <div>
-                          <label className="block text-xs font-medium text-slate-500 mb-1">{t('whatif_distribution')}</label>
-                          <div className="flex rounded-lg overflow-hidden border border-slate-200">
-                            <button
-                              onClick={() => setPromoSpreadDistType('even')}
-                              className={`px-4 py-2 text-xs font-semibold border-r border-slate-200 transition-colors ${
-                                promoSpreadDistType === 'even' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
-                              }`}
-                            >{t('whatif_even')}</button>
-                            <button
-                              onClick={() => setPromoSpreadDistType('custom')}
-                              className={`px-4 py-2 text-xs font-semibold transition-colors ${
-                                promoSpreadDistType === 'custom' ? 'bg-[#e60000] text-white' : 'bg-white text-slate-500 hover:bg-slate-50'
-                              }`}
-                            >{t('whatif_custom_pct')}</button>
-                          </div>
-                        </div>
+                        {heldRows.length > 0 && (
+                          <p className="mt-2 text-[10px] text-slate-500 font-medium"
+                             data-testid="promo-hold-tail">
+                            {t('whatif_hold_then_held_through', {
+                              p0: `+${heldVol.toLocaleString()}${isPromoPctAmt ? '%' : ''}`,
+                              p1: heldLast,
+                            })}
+                            {' · '}
+                            {t('whatif_hold_tail_months', { p0: heldRows.length })}
+                          </p>
+                        )}
+                        {!pctOk && (
+                          <p className="mt-2 text-[10px] text-amber-600 font-medium">
+                            {t('whatif_percentages_sum_to')}{pctTotal.toFixed(1)}{t('whatif_pct_they_will_be_normalised_to_100pct_on_add')}
+                          </p>
+                        )}
+                        {promoRampBlockReason && (
+                          <p className="mt-2 text-[11px] text-amber-700" data-testid="promo-ramp-block-reason">
+                            {promoRampBlockReason}
+                          </p>
+                        )}
                       </div>
-                      {(() => {
-                        const baseDate = newPromo.date ? parse(newPromo.date, 'yyyy-MM', new Date()) : null;
-                        const totalVol = newPromo.subscriberVolume || 0;
-                        const pcts = promoSpreadDistType === 'even'
-                          ? Array.from({ length: promoSpreadMonths }, () => 100 / promoSpreadMonths)
-                          : promoCustomDist.slice(0, promoSpreadMonths);
-                        const pctTotal = pcts.reduce((s, p) => s + p, 0);
-                        const pctOk = Math.abs(pctTotal - 100) < 0.5;
-                        // WALK C — THE GRID READS THE SHAPE THE SAVE READS.
-                        // It computed `pcts[i] / pctTotal` here, which is the
-                        // hold-OFF split and knows nothing of promoHold — so
-                        // under Hold it showed +1,000 x3 while Add emitted
-                        // 1,000 / 2,000 / 3,000 and nineteen more.
-                        const isPromoPctAmt = promoAmountMode === 'percentage';
-                        const rampRows = promoShape.filter(s => !s.held);
-                        const heldRows = promoShape.filter(s => s.held);
-                        // The tail is summarised, never listed: nineteen rows
-                        // of one repeated figure is not information.
-                        const heldVol = isPromoPctAmt ? totalVol : Math.round(totalVol);
-                        const heldLast = heldRows.length && baseDate && isValid(baseDate)
-                          ? formatMonthDate(addMonths(baseDate, heldRows[heldRows.length - 1].offset), i18n.language)
-                          : '';
-                        return (
-                          <div>
-                            <div className="grid gap-1.5" style={{ gridTemplateColumns: `140px 1fr${promoSpreadDistType === 'custom' ? ' 80px' : ''}` }}>
-                              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_month')}</span>
-                              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{t('common_volume')}</span>
-                              {promoSpreadDistType === 'custom' && <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">%</span>}
-                              {rampRows.map(({ offset: i, fraction }) => {
-                                const spreadLabel = baseDate && isValid(baseDate)
-                                  ? formatMonthDate(addMonths(baseDate, i), i18n.language)
-                                  : t('whatif_month', { p0: i + 1 });
-                                // A percentage amount is a RATE — clause 7 — so
-                                // it is shown to 2dp rather than rounded to a
-                                // whole "3%" the user never typed.
-                                const raw = totalVol * fraction;
-                                const vol = isPromoPctAmt ? Math.round(raw * 100) / 100 : Math.round(raw);
-                                return (
-                                  <React.Fragment key={i}>
-                                    <span className="text-xs text-slate-600 py-1">{spreadLabel}</span>
-                                    <span className="text-xs font-semibold text-emerald-600 py-1">+{vol.toLocaleString()}</span>
-                                    {promoSpreadDistType === 'custom' && (
-                                      <input
-                                        type="number"
-                                        min={0}
-                                        max={100}
-                                        step={1}
-                                        value={promoCustomDist[i] ?? 0}
-                                        onChange={e => {
-                                          const next = [...promoCustomDist];
-                                          next[i] = Math.max(0, Number(e.target.value));
-                                          setPromoCustomDist(next);
-                                        }}
-                                        className="text-xs border border-slate-200 rounded px-2 py-1 w-16 outline-none focus:border-[#e60000]"
-                                      />
-                                    )}
-                                  </React.Fragment>
-                                );
-                              })}
-                            </div>
-                            {/* WALK C — THE TAIL, SUMMARISED. The Volume card's
-                                form exactly: one line naming the held figure
-                                and the month it runs to, rather than nineteen
-                                identical rows. */}
-                            {heldRows.length > 0 && (
-                              <p className="mt-2 text-[10px] text-slate-500 font-medium"
-                                 data-testid="promo-hold-tail">
-                                {t('whatif_hold_then_held_through', {
-                                  p0: `+${heldVol.toLocaleString()}${isPromoPctAmt ? '%' : ''}`,
-                                  p1: heldLast,
-                                })}
-                                {' · '}
-                                {t('whatif_hold_tail_months', { p0: heldRows.length })}
-                              </p>
-                            )}
-                            {promoSpreadDistType === 'custom' && !pctOk && (
-                              <p className="mt-2 text-[10px] text-amber-600 font-medium">
-
-                                {t('whatif_percentages_sum_to')}{pctTotal.toFixed(1)}{t('whatif_pct_they_will_be_normalised_to_100pct_on_add')}
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
 
                 {/* Value-mix arm — independent checkbox, available for both volume targets */}
@@ -9439,7 +9786,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     <div className="flex gap-2 shrink-0">
                       <button
                         onClick={editingPromoCampaign ? handleSavePromoCampaign : handleSavePromoEdit}
-                        disabled={!newPromo.date || !newPromo.subscriberVolume || (promoMixEnabled && promoTierData.length === 0) || promoMixBlocksSave || promoDilutionBlockReason !== null}
+                        disabled={!newPromo.date || !newPromo.subscriberVolume || (promoMixEnabled && promoTierData.length === 0) || promoMixBlocksSave || promoDilutionBlockReason !== null
+                          // A campaign save refuses a broken ramp; a ROW save is one month.
+                          || (editingPromoCampaign !== null && promoRampBlockReason !== null)}
                         className="bg-[#e60000] text-white text-sm font-semibold py-2 px-5 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         {editingPromoCampaign ? t('whatif_save_campaign') : t('whatif_save_changes')}
@@ -9453,7 +9802,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                     <button
                       onClick={handleAddPromotionEvent}
                       data-testid="promo-add"
-                      disabled={!newPromo.date || !newPromo.subscriberVolume || (promoMixEnabled && promoTierData.length === 0) || promoMixBlocksSave || promoDilutionBlockReason !== null}
+                      disabled={!newPromo.date || !newPromo.subscriberVolume || (promoMixEnabled && promoTierData.length === 0) || promoMixBlocksSave || promoDilutionBlockReason !== null
+                        || promoRampBlockReason !== null}
                       className="bg-[#e60000] text-white text-sm font-semibold py-2 px-5 rounded-lg hover:bg-[#cc0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
                     >{/* WALK C — THE COUNT IS THE COUNT, from the SAME shape
                          the grid and the handler read. It said "Add Promotion"

@@ -521,12 +521,24 @@ async function main() {
   // Yield_Events is deliberately untouched and still ends at Tariff_Scope:
   // decision 5 puts Hold on Market_Events alone, and the pin below proves it
   // did not leak.
-  check('export: Enabled is third-from-last on Market_Events (REQ-D6-03)',
-    antepenult(mkt) === 'Enabled', antepenult(mkt));
-  check('export: Tariff_Scope is second-to-last on Market_Events (REQ-D6-03)',
-    penultKey(mkt) === 'Tariff_Scope', penultKey(mkt));
-  check('export: Hold is LAST on Market_Events (REQ-D6-03)',
-    lastKey(mkt) === 'Hold', lastKey(mkt));
+  //
+  // RE-AIMED A THIRD TIME at REQ-D6-05, 2026-09-11 (clause 7): `Mode` is
+  // appended AFTER `Hold`, so Market_Events now ends Enabled / Tariff_Scope /
+  // Hold / Mode. Seen RED before the re-aim, all three lines, on the build that
+  // added the writer's Mode column and before this block was touched:
+  //   FAIL  export: Enabled is third-from-last on Market_Events (REQ-D6-03)  [Tariff_Scope]
+  //   FAIL  export: Tariff_Scope is second-to-last on Market_Events (REQ-D6-03)  [Hold]
+  //   FAIL  export: Hold is LAST on Market_Events (REQ-D6-03)  [Mode]
+  // FOUR positions, not "Mode is last" — the same not-loosened rule as above.
+  const fourthFromEnd = (o: Record<string, unknown>) => Object.keys(o)[Object.keys(o).length - 4];
+  check('export: Enabled is fourth-from-last on Market_Events (REQ-D6-05)',
+    fourthFromEnd(mkt) === 'Enabled', fourthFromEnd(mkt));
+  check('export: Tariff_Scope is third-from-last on Market_Events (REQ-D6-05)',
+    antepenult(mkt) === 'Tariff_Scope', antepenult(mkt));
+  check('export: Hold is second-to-last on Market_Events (REQ-D6-05)',
+    penultKey(mkt) === 'Hold', penultKey(mkt));
+  check('export: Mode is LAST on Market_Events (REQ-D6-05)',
+    lastKey(mkt) === 'Mode', lastKey(mkt));
   const yr = fc.yieldEventExportRow({ id: 'y1', ibro: 'Inflow', segment: 'All', product: 'All',
     channelL1: 'All', channelL2: 'All', month: MONTHS[0], rollForward: false,
     tariffMix: {}, tariffBaseArpu: {}, enabled: false } as any);

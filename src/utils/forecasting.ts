@@ -118,6 +118,17 @@ export interface MarketEvent extends EventToggle {
    * campaign saved before this existed was a plain terminating spread.
    */
   hold?: boolean;
+  /**
+   * REQ-D6-05 clause 7 (Jon, 2026-09-11): THE MODE THE USER CHOSE.
+   *
+   * PERSISTED because the rows alone cannot say it: 1,000 / 2,000 / 3,000 is
+   * a ramp to 3,000 AND a spread of 6,000, and the two reopen with different
+   * figures in the amount box. Like `hold`, a RESTORE field — no apply site
+   * reads it, and the engine never sees it.
+   *
+   * ABSENT IS RESOLVED IN ONE PLACE, `modeFromRow`, never at a call site.
+   */
+  mode?: 'spread' | 'ramp';
   /** Phase 4 — Custom Promotion Card: marks events created via the combined promo
    *  card. Used only for the card's own event list/table — no effect on calculation. */
   isPromotion?: boolean;
@@ -252,6 +263,8 @@ export interface StoredEventModifiers extends EventToggle {
   /** REQ-D6-03 — "ramp then hold" was on when this campaign was built. A
    *  RESTORE field: the tail is already materialised as rows. See MarketEvent. */
   hold: boolean;
+  /** REQ-D6-05 clause 7 — see MarketEvent.mode. Always RESOLVED here, never absent. */
+  mode: 'spread' | 'ramp';
   amountType: 'absolute' | 'percentage';
   percentageBasis: 'baseline' | 'adjusted';
   retentionLinked: boolean;
@@ -443,6 +456,17 @@ export function marketEventExportRow(e: MarketEvent): Record<string, unknown> {
     // this column existed was a terminating spread, so absence must reload as
     // one. EVERY ROW of a held campaign carries it, including the tail.
     Hold: e.hold ? 'Yes' : 'No',
+    // REQ-D6-05 clause 7 (Jon, 2026-09-11). APPENDED LAST, after Hold — the
+    // fourth time this sheet has followed trap 119's rule: Enabled, then
+    // Tariff_Scope, then Hold, now Mode. ALWAYS WRITTEN, never blank: the
+    // writer resolves an event with no stated mode by the same rule the reader
+    // applies to an absent column, so a save and its reload cannot disagree.
+    // REQ-D6-05 Item 3 — A CHURN ROW IS ALWAYS A RAMP, guaranteed HERE rather than
+    // only where churn rows are built. An unheld churn campaign loaded from a save
+    // written before this column existed resolves to Spread by the absent rule
+    // (rightly — the reader cannot know it was churn by Hold alone), and would
+    // re-export as Spread without this. The reader stays the one absent rule.
+    Mode: e.churnMode === 'churn' || eventMode(e) === 'ramp' ? 'Ramp' : 'Spread',
   };
 }
 
@@ -1401,6 +1425,38 @@ export function pricingEventFromRow(r: Record<string, unknown>): PricingEvent {
   };
 }
 
+/**
+ * REQ-D6-05 clause 7 — THE ONE MODE READER, and the one statement of the
+ * absent rule.
+ *
+ * Only the two literals are read as themselves. Anything else — an absent
+ * column, an empty cell, a stray value — resolves to RAMP IF THE ROW IS HELD,
+ * OTHERWISE SPREAD. That is what every save written before the column
+ * existed meant: REQ-D6-03 put hold only on a ramp, and an unheld campaign
+ * was a terminating spread. So an old save reloads as what it was.
+ *
+ * NOT `Hold === "Yes" ? ramp : spread` for every row: once the column exists
+ * it is the user's statement, and an UNHELD RAMP is a real campaign the rows
+ * cannot distinguish from a spread.
+ */
+export function modeFromRow(row: Record<string, unknown>): 'spread' | 'ramp' {
+  if (row.Mode === 'Ramp') return 'ramp';
+  if (row.Mode === 'Spread') return 'spread';
+  return row.Hold === 'Yes' ? 'ramp' : 'spread';
+}
+
+/**
+ * The mode an IN-MEMORY event carries, for the writer. It does not restate
+ * the absent rule: it hands the event to `modeFromRow` in the row's own
+ * vocabulary, so there is one rule and a second copy cannot drift from it.
+ */
+export function eventMode(e: Pick<MarketEvent, 'mode' | 'hold'>): 'spread' | 'ramp' {
+  return modeFromRow({
+    Mode: e.mode === 'ramp' ? 'Ramp' : e.mode === 'spread' ? 'Spread' : undefined,
+    Hold: e.hold ? 'Yes' : 'No',
+  });
+}
+
 export function readStoredEventModifiers(row: Record<string, unknown>): StoredEventModifiers {
   const axis = String(row.Promo_Mix_Axis ?? '');
   const mode = String(row.Promo_Pricing_Mode ?? '');
@@ -1445,6 +1501,9 @@ export function readStoredEventModifiers(row: Record<string, unknown>): StoredEv
     // per route is exactly how the promo fields came to round-trip on one
     // path only.
     hold: row.Hold === 'Yes',
+    // REQ-D6-05 clause 7 — through the ONE reader. Rides here for the reason
+    // `hold` does: both market import routes spread this function.
+    mode: modeFromRow(row),
     isPromotion:     row.Is_Promotion === 'Yes',
     promoRebanded:   row.Promo_Rebanded === 'Yes',
     promoMixAxis:    axis === 'tariff' ? 'tariff' : axis === 'value' ? 'value' : undefined,

@@ -76,6 +76,8 @@
     "spec:churn-hold-mounted": "tsx scripts/churn-hold-mounted-spec.tsx",
     "spec:promo-hold-mounted": "tsx scripts/promo-hold-mounted-spec.tsx",
     "spec:d5-05-held": "tsx scripts/d5-05-held-mounted-spec.tsx",
+    "spec:spread-ramp-volume": "tsx scripts/spread-ramp-volume-mounted-spec.tsx",
+    "spec:spread-ramp-promo": "tsx scripts/spread-ramp-promo-mounted-spec.tsx",
     "spec:size-copy": "tsx scripts/size-copy-spec.tsx",
     "spec:ingest": "tsx scripts/ingest-spec.tsx",
     "spec:restore-banner": "tsx scripts/restore-banner-spec.ts",

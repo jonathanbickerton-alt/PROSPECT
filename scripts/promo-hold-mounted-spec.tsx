@@ -207,9 +207,9 @@ async function main() {
     return true;
   };
 
-  const rampMonthsInput = () =>
-    [...container.querySelectorAll('input[type=number]')]
-      .find((i: any) => i.getAttribute('max') === '24' && i.getAttribute('min') === '2') as any;
+  // RE-AIMED at REQ-D6-05 (2026-09-11): the duration box is min 1 now (clause
+  // 10), so the min-2 lookup finds nothing. It carries a testid; use it.
+  const rampMonthsInput = () => byTestId('promo-duration');
 
   // ── Case 1 — +10% Inflow, ramp 3, Hold ON ────────────────────────────────
   //
@@ -221,11 +221,13 @@ async function main() {
     await mount();
     if (!(await openPromo())) { report(); return; }
 
-    const hold = byTestId('promo-hold-toggle');
-    check('(1) the hold toggle is on the Promotion card', !!hold);
-    if (!hold) { report(); return; }
-    check('(1) it is OFF before it is clicked', hold.checked === false);
-
+    // RE-AIMED at REQ-D6-05 (2026-09-11). This looked Hold up FIRST, on a fresh
+    // Subs draft — and Hold now renders only in Ramp mode, so `!hold` would have
+    // hit `report(); return;` and SKIPPED THE CASE rather than failed it. Re-
+    // ordered to fill-in order: amount (the % arm, which locks Ramp — clause 9)
+    // → duration → Hold LAST. The retired `promo-spread-toggle` is gone from the
+    // drive; the always-open panel replaces it.
+    //
     // ── HOLD IS CLICKED LAST, AND THAT ORDER IS THE TEST ──────────────────
     //
     // This file drove amount -> HOLD -> ramp, and passed at 24 rows while the
@@ -234,21 +236,17 @@ async function main() {
     // touching the ramp switch after the toggle rebuilt the callback and
     // hid the stale closure. Jon drove amount -> ramp -> HOLD, which is the
     // order a form is actually filled in, and nothing rebuilt it.
-    //
-    // So the drive below is Jon's, deliberately, and it is the LAST control
-    // touched that matters. A harness that passes what the card passes can
-    // still lie if it does not press the buttons in the order a person does.
     await click(byTestId('promo-amount-pct'));
     await type(byTestId('promo-volume-amount'), '10');
-
-    const rampBtn = byTestId('promo-spread-toggle');
-    check('(1) the ramp control is reachable', !!rampBtn);
-    if (!rampBtn) { report(); return; }
-    await click(rampBtn);
+    check('(1) REQ-D6-05 clause 9: a percentage promotion is a Ramp',
+      byTestId('promo-mode-ramp')?.getAttribute('aria-pressed') === 'true');
     const mi = rampMonthsInput();
-    check('(1) the ramp duration input is reachable', !!mi);
+    check('(1) the duration input is reachable', !!mi);
     if (mi) await type(mi, '3');
-
+    const hold = byTestId('promo-hold-toggle');
+    check('(1) the hold toggle is on the Promotion card', !!hold);
+    if (!hold) { report(); return; }
+    check('(1) it is OFF before it is clicked', hold.checked === false);
     await click(hold);
     check('(1) and ON after', byTestId('promo-hold-toggle').checked === true);
 
@@ -260,24 +258,19 @@ async function main() {
     // hold are independent — ramp PLUS hold is the feature, not a choice
     // between them. Asserted three ways, because "the toggle is still lit" is
     // a weaker claim than "the ramp section is still on screen".
-    const rampStillOn = byTestId('promo-spread-toggle');
-    check('(1) EXCLUSIVITY: the ramp control is still present after Hold',
-      !!rampStillOn);
-    // CLAUSE 10 — BOTH ARE REAL CHECKBOXES AND BOTH ARE TICKED. The pair used
-    // to be round-dot buttons that READ as a radio group while behaving as
-    // independent toggles; the markup now says what clause 4 means. Asserted
-    // on `.checked`, which only a checkbox has — a button would report
-    // undefined and this would go red.
-    check('(1) CLAUSE 10: the ramp control is an <input type=checkbox>',
-      rampStillOn && rampStillOn.tagName === 'INPUT' && rampStillOn.type === 'checkbox',
-      `${rampStillOn && rampStillOn.tagName}/${rampStillOn && rampStillOn.type}`);
-    check('(1) CLAUSE 10: BOTH are checked at once — not a radio pair',
-      rampStillOn && rampStillOn.checked === true
-      && byTestId('promo-hold-toggle').checked === true,
-      `ramp=${rampStillOn && rampStillOn.checked} hold=${byTestId('promo-hold-toggle').checked}`);
-    check('(1) EXCLUSIVITY: the ramp DURATION input is still in the DOM',
-      !!rampMonthsInput(), 'the ramp panel would be gone if the two were exclusive');
-    check('(1) EXCLUSIVITY: the ramp months value survived the Hold click',
+    // RE-AIMED at REQ-D6-05: this block proved the RAMP SWITCH and Hold were not
+    // a radio pair. The switch is RETIRED (clause 10), so the claim that survives
+    // is the one it was protecting: clicking Hold does not close the ramp, and
+    // Hold is a real, ticked checkbox.
+    check('(1) REQ-D6-05 clause 10: the promo on-off switch is retired',
+      !byTestId('promo-spread-toggle'));
+    check('(1) the mode is still Ramp after Hold',
+      byTestId('promo-mode-ramp')?.getAttribute('aria-pressed') === 'true');
+    check('(1) CLAUSE 10: Hold is an <input type=checkbox>, and ticked',
+      byTestId('promo-hold-toggle')?.tagName === 'INPUT' && byTestId('promo-hold-toggle')?.checked === true);
+    check('(1) the duration input is still in the DOM — the panel is always open',
+      !!rampMonthsInput(), 'the panel would be gone');
+    check('(1) the ramp months value survived the Hold click',
       Number(rampMonthsInput()?.value) === 3, String(rampMonthsInput()?.value));
 
     const add = byTestId('promo-add');
@@ -326,10 +319,13 @@ async function main() {
   {
     await mount();
     if (!(await openPromo())) { report(); return; }
+    // RE-AIMED at REQ-D6-05: the retired switch becomes Spread mode, in fill-in
+    // order. The c11151e literal below is unchanged — clause 14.
+    await click(byTestId('promo-mode-spread'));
     await type(byTestId('promo-volume-amount'), '3000');
-    await click(byTestId('promo-spread-toggle'));
     const mi = rampMonthsInput();
     if (mi) await type(mi, '3');
+    await click(byTestId('promo-dist-even'));
     await click(byTestId('promo-add'));
 
     check('(2) EXACTLY 3 rows, then nothing', captured.length === 3, String(captured.length));
@@ -348,7 +344,7 @@ async function main() {
     // Jon's order here too — hold LAST. See case 1.
     await click(byTestId('promo-amount-pct'));
     await type(byTestId('promo-volume-amount'), '10');
-    await click(byTestId('promo-spread-toggle'));
+    // RE-AIMED at REQ-D6-05: no switch — a % promotion is a Ramp.
     const mi = rampMonthsInput();
     if (mi) await type(mi, '3');
     await click(byTestId('promo-hold-toggle'));
@@ -360,6 +356,8 @@ async function main() {
     const back = sheet.map((r: any) => fc.marketEventFromRow(r, 'session'));
     check('(3) Hold is restored on every row', back.every((e: any) => e.hold === true));
     check('(3) Is_Promotion survives too', back.every((e: any) => e.isPromotion === true));
+    check('(3) REQ-D6-05 clause 7: Mode is written and read back as Ramp',
+      sheet.every((r: any) => r.Mode === 'Ramp') && back.every((e: any) => e.mode === 'ramp'));
     check('(3) the figures survive',
       near(back[0]?.subscriberVolume, 10 / 3) && back[23]?.subscriberVolume === 10,
       `${back[0]?.subscriberVolume} .. ${back[23]?.subscriberVolume}`);
@@ -404,8 +402,9 @@ async function main() {
     await mount();
     if (!(await openPromo())) { report(); return; }
     // Jon's order here too — hold LAST. See case 1.
+    // RE-AIMED at REQ-D6-05: mode → amount → duration → Hold LAST.
+    await click(byTestId('promo-mode-ramp'));
     await type(byTestId('promo-volume-amount'), '3000');
-    await click(byTestId('promo-spread-toggle'));
     const mi = rampMonthsInput();
     if (mi) await type(mi, '3');
     await click(byTestId('promo-hold-toggle'));

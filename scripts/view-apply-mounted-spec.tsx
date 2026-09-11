@@ -414,7 +414,8 @@ async function main() {
       // shape is stated rather than implied by five spread parameters.
       // The old params were passed through `as any`, which is why tsc did not
       // name this call when they were removed — the crash did, at the gate.
-      shape: spreadShape({ months: 1, dist: [100], hold: false, horizonMonths: 0 }),
+      // REQ-D6-05: spreadShape is a union now; a Hold-OFF call is stated as a Spread. Signature only — the rows are unchanged.
+      shape: spreadShape({ mode: 'spread', months: 1, distKind: 'pct', dist: [100] }),
       startSequence: 1,
     } as any);
 
@@ -484,7 +485,7 @@ async function main() {
       tierData: [], pricingEnabled: false, pricingMode: 'percentage',
       pricingAmount: 0, cohortAvgArpu: 20,
       // WALK C — the builder is handed its shape; see the first call site.
-      shape: spreadShape({ months: 1, dist: [100], hold: false, horizonMonths: 0 }),
+      shape: spreadShape({ mode: 'spread', months: 1, distKind: 'pct', dist: [100] }),
       startSequence: 2,
     } as any)[0];
     const absRead = await readAt(keyA, [absPromoRow], undefined, undefined, undefined, true);
@@ -529,7 +530,7 @@ async function main() {
       pricingEnabled: false, pricingMode: 'percentage', pricingAmount: 0,
       cohortAvgArpu: 20,
       // WALK C — the builder is handed its shape; see the first call site.
-      shape: spreadShape({ months: 1, dist: [100], hold: false, horizonMonths: 0 }),
+      shape: spreadShape({ mode: 'spread', months: 1, distKind: 'pct', dist: [100] }),
       startSequence: 1,
     } as any)[0] as any;
 
@@ -668,7 +669,7 @@ async function main() {
       pricingEnabled: false, pricingMode: 'percentage', pricingAmount: 0,
       cohortAvgArpu: 20,
       // WALK C — the builder is handed its shape; see the first call site.
-      shape: spreadShape({ months: 1, dist: [100], hold: false, horizonMonths: 0 }),
+      shape: spreadShape({ mode: 'spread', months: 1, distKind: 'pct', dist: [100] }),
       startSequence: 1,
     } as any)[0] as any;
 
@@ -716,7 +717,7 @@ async function main() {
       mixEnabled: false, mixAxis: 'value', draftMix: {}, mixLocked: [],
       tierData: [], cohortAvgArpu: 20,
       // WALK C — the builder is handed its shape; see the first call site.
-      shape: spreadShape({ months: 1, dist: [100], hold: false, horizonMonths: 0 }),
+      shape: spreadShape({ mode: 'spread', months: 1, distKind: 'pct', dist: [100] }),
       startSequence: 1,
     };
 
@@ -1053,7 +1054,7 @@ async function main() {
         tierData: [], pricingEnabled: false, pricingMode: 'percentage',
         pricingAmount: 0, cohortAvgArpu: 20,
         // WALK C — the builder is handed its shape; see the first call site.
-      shape: spreadShape({ months: 1, dist: [100], hold: false, horizonMonths: 0 }),
+      shape: spreadShape({ mode: 'spread', months: 1, distKind: 'pct', dist: [100] }),
         startSequence: 1,
       } as any)[0] as any;
 
@@ -1192,7 +1193,7 @@ async function main() {
       pricingEnabled: false, pricingMode: 'percentage', pricingAmount: 0,
       cohortAvgArpu: 20,
       // WALK C — the builder is handed its shape; see the first call site.
-      shape: spreadShape({ months: 1, dist: [100], hold: false, horizonMonths: 0 }),
+      shape: spreadShape({ mode: 'spread', months: 1, distKind: 'pct', dist: [100] }),
       startSequence: 1,
     } as any)[0] as any;
 
@@ -1576,7 +1577,7 @@ async function main() {
       pricingDilutionCurrentPct: 25, pricingDilutionTargetPct: 20,
       cohortAvgArpu: 25,
       // WALK C — a two-month EVEN ramp, stated as a shape.
-      shape: spreadShape({ months: 2, dist: [50, 50], hold: false, horizonMonths: 0 }),
+      shape: spreadShape({ mode: 'spread', months: 2, distKind: 'pct', dist: [50, 50] }),
       startSequence: 1,
     } as any) as any[];
 
@@ -1725,7 +1726,7 @@ async function main() {
       tierData: [], pricingEnabled: false, pricingMode: 'percentage',
       pricingAmount: 0, cohortAvgArpu: 25,
       // WALK C — a two-month 60/40 CUSTOM ramp, stated as a shape.
-      shape: spreadShape({ months: 2, dist: [60, 40], hold: false, horizonMonths: 0 }),
+      shape: spreadShape({ mode: 'spread', months: 2, distKind: 'pct', dist: [60, 40] }),
       startSequence: 1,
     } as any) as any[];
 

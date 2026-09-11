@@ -464,7 +464,6 @@ const I18N_PHASE2 = new Set<string>([
   "EventChangeConfirmModal.tsx::Clear all",
   "EventChangeConfirmModal.tsx::Delete",
   "EventChangeConfirmModal.tsx::Save",
-  "WhatIfTab.tsx::Change to {}",
   "WhatIfTab.tsx::Subs",
   "WhatIfTab.tsx::Applied to each cohort's own {}. Negative reduces it.",
   "WhatIfTab.tsx::Subscribers added or removed this month.",

@@ -203,6 +203,18 @@ async function main() {
   const btnByText = (txt: string) =>
     [...container.querySelectorAll('button')].find((b: any) => norm(b.textContent || '') === txt) as any;
   const click = async (el: any) => { await (act as any)(async () => { el.click(); }); };
+  /** Type into a controlled React input, the way the user does. Added at
+   *  REQ-D6-05: the re-aimed cases type the duration, and this harness had
+   *  no typing helper — copied from churn-hold-mounted, not re-invented. */
+  const type = async (el: any, value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(
+      dom.window.HTMLInputElement.prototype, 'value')!.set!;
+    await (act as any)(async () => {
+      setter.call(el, value);
+      el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+      el.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    });
+  };
   const setDraft = async (patch: any) => {
     await (act as any)(async () => { draftSetter!((d: any) => ({ ...d, ...patch })); });
   };
@@ -220,26 +232,32 @@ async function main() {
   // 10 subscribers.
   {
     await mount();
+    // RE-AIMED at REQ-D6-05 (2026-09-11). This case clicked Hold FIRST, then
+    // pressed `volume-spread-toggle` — which is retired, and Hold now renders
+    // only in Ramp mode, so the old order crashed on a null Hold box. Re-driven
+    // in FILL-IN ORDER: mode → amount → duration → values → Hold LAST.
+    //
+    // 1+2. mode and amount: a PERCENTAGE draft, which is always a Ramp (clause 9).
+    await setDraft({ scenario: 'Inflow', amountType: 'percentage', percentageBasis: 'baseline',
+      subscriberVolume: 10, date: MONTHS[0] });
+    // RE-AIMED: this asserted "the spread control opens for a percentage draft
+    // once hold is on" (REQ-D6-03 clause 7). Clause 7's coupling is superseded;
+    // the claim that replaces it is that a percentage IS a ramp.
+    check('(a) REQ-D6-05 clause 9: a percentage draft is a Ramp',
+      byTestId('volume-mode-ramp')?.getAttribute('aria-pressed') === 'true');
+    // 3. duration — this re-prefills the typed ramp Even (clause 11).
+    await type(byTestId('volume-duration'), '3');
+    // 4. values — the Even prefill, accepted.
+    // 5. Hold LAST.
     const holdBtn = byTestId('volume-hold-toggle');
     check('(a) the hold toggle is on the Volume card', !!holdBtn);
     // CLAUSE 10 — a real checkbox, asserted on .checked which only a checkbox
     // has. A button would report undefined here.
     check('(a) CLAUSE 10: the hold control is an <input type=checkbox>',
-      holdBtn.tagName === 'INPUT' && holdBtn.type === 'checkbox',
-      `${holdBtn.tagName}/${holdBtn.type}`);
+      holdBtn?.tagName === 'INPUT' && holdBtn?.type === 'checkbox',
+      `${holdBtn?.tagName}/${holdBtn?.type}`);
     if (!holdBtn) { report(); return; }
     await click(holdBtn);
-
-    // A percentage draft. The spread control is hidden for percentages with
-    // hold OFF and open with it on — REQ-D6-03 settles that ambiguity and the
-    // next check is what proves the card follows the settlement.
-    await setDraft({ scenario: 'Inflow', amountType: 'percentage', percentageBasis: 'baseline',
-      subscriberVolume: 10, date: MONTHS[0] });
-    const spreadBtn = byTestId('volume-spread-toggle');
-    check('(a) the spread control opens for a percentage draft once hold is on',
-      !!spreadBtn);
-    if (!spreadBtn) { report(); return; }
-    await click(spreadBtn);
 
     const add = byTestId('volume-add');
     check('(a) the Add button is reachable', !!add);
@@ -301,10 +319,16 @@ async function main() {
   let noHoldBaseDelta = 0;
   {
     await mount();
-    await click(byTestId('volume-hold-toggle'));
+    // RE-AIMED at REQ-D6-05: fill-in order, and the retired switch replaced by
+    // the mode control. 1. mode
+    await click(byTestId('volume-mode-ramp'));
+    // 2. amount
     await setDraft({ scenario: 'Retention', amountType: 'absolute',
       subscriberVolume: 300, date: MONTHS[0], retentionLinked: true });
-    await click(byTestId('volume-spread-toggle'));
+    // 3. duration — re-prefills 100 / 200 / 300. 4. values — accepted.
+    await type(byTestId('volume-duration'), '3');
+    // 5. Hold LAST.
+    await click(byTestId('volume-hold-toggle'));
     await click(byTestId('volume-add'));
 
     check('(b) 24 rows emitted', captured.length === 24, String(captured.length));
@@ -334,10 +358,14 @@ async function main() {
       near(heldDelta, 6600, 1e-6), String(heldDelta));
 
     // The same draft, hold OFF, for the comparison the case names.
+    // RE-AIMED at REQ-D6-05: "hold OFF" of the same 300 is now a SPREAD, which
+    // is what it always meant — a terminating split, 100 / 100 / 100.
     await mount();
+    await click(byTestId('volume-mode-spread'));
     await setDraft({ scenario: 'Retention', amountType: 'absolute',
       subscriberVolume: 300, date: MONTHS[0], retentionLinked: true });
-    await click(byTestId('volume-spread-toggle'));
+    await type(byTestId('volume-duration'), '3');
+    await click(byTestId('volume-dist-even'));
     await click(byTestId('volume-add'));
     const run2 = (await import('../src/components/WhatIfTab')).computeAdjustedForecast({
       baseForecast, marketEvents: captured, yieldEvents: [], pricingEvents: [],
@@ -361,9 +389,14 @@ async function main() {
   // literal: 300 over 3 even is 100 / 100 / 100, and there is no fourth row.
   {
     await mount();
+    // RE-AIMED at REQ-D6-05: the retired switch becomes Spread mode, in
+    // fill-in order. The expected rows are unchanged — clause 14 says Spread
+    // emits exactly the Hold-OFF rows.
+    await click(byTestId('volume-mode-spread'));
     await setDraft({ scenario: 'Retention', amountType: 'absolute',
       subscriberVolume: 300, date: MONTHS[0], retentionLinked: true });
-    await click(byTestId('volume-spread-toggle'));
+    await type(byTestId('volume-duration'), '3');
+    await click(byTestId('volume-dist-even'));
     const add = byTestId('volume-add');
     check('(c) with hold off the button still reports 3',
       /3/.test(add.textContent || ''), norm(add.textContent || ''));
@@ -378,10 +411,12 @@ async function main() {
   // ── Case (d) — the round trip, and an old save ───────────────────────────
   {
     await mount();
-    await click(byTestId('volume-hold-toggle'));
+    // RE-AIMED at REQ-D6-05: fill-in order; a percentage draft is a Ramp.
     await setDraft({ scenario: 'Inflow', amountType: 'percentage', percentageBasis: 'baseline',
       subscriberVolume: 10, date: MONTHS[0], campaignName: 'Ramp' });
-    await click(byTestId('volume-spread-toggle'));
+    await type(byTestId('volume-duration'), '3');
+    // Hold LAST.
+    await click(byTestId('volume-hold-toggle'));
     await click(byTestId('volume-add'));
     const emitted = captured.slice();
     check('(d) 24 rows to round-trip', emitted.length === 24, String(emitted.length));

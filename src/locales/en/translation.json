@@ -890,5 +890,20 @@
   "whatif_promo_volume_pct_help": "A share of this view’s forecast for the month — acquisition for an Inflow promotion, retention for a Retention one. Not a price change; the promo price is set further down.",
   "whatif_event_on": "On",
   "whatif_event_off": "Off",
-  "whatif_event_mixed": "Some on, some off"
+  "whatif_event_mixed": "Some on, some off",
+  "whatif_mode_label": "Mode",
+  "whatif_mode_spread": "Spread",
+  "whatif_mode_ramp": "Ramp",
+  "whatif_mode_locked_pct": "A percentage is always a ramp.",
+  "whatif_duration_months": "Duration (months)",
+  "whatif_custom_values": "Custom values",
+  "whatif_value_col": "Value",
+  "whatif_amount_label_spread": "Total volume — split across {{p0}} months",
+  "whatif_amount_label_spread_one": "Total volume — one month",
+  "whatif_amount_label_ramp": "Target volume — reached at month {{p0}}",
+  "whatif_amount_label_then_held": ", then held",
+  "whatif_amount_label_pct": "Change to {{p0}}",
+  "whatif_values_total_derived": "The sum of the monthly values",
+  "whatif_ramp_block_order": "Each month must be at or below the next; the last month is the target.",
+  "whatif_churn_label_ramp": "Target reduction — reached at month {{p0}}"
 }

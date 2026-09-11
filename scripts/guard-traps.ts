@@ -82,6 +82,8 @@ const PROMOHOLD = 'scripts/promo-hold-mounted-spec.tsx';
 const D505HELD = 'scripts/d5-05-held-mounted-spec.tsx';
 const INGESTSPEC = 'scripts/ingest-spec.tsx';
 const SIZECOPY = 'scripts/size-copy-spec.tsx';
+const SPREADRAMPVOL = 'scripts/spread-ramp-volume-mounted-spec.tsx';
+const SPREADRAMPPROMO = 'scripts/spread-ramp-promo-mounted-spec.tsx';
 const ENLOCALE = 'src/locales/en/translation.json';
 const RESTOREBANNER = 'scripts/restore-banner-spec.ts';
 const INGEST = 'src/utils/ingest.ts';
@@ -1780,9 +1782,13 @@ const TRAPS: Trap[] = [
   { id: '110 the churn Add is enabled on a draft the handler will refuse',
     why: 'a live button that silently discards a click reads as a bug, whatever the form prints elsewhere',
     file: WHATIF, spec: MIXCARD,
+    // RE-AIMED at REQ-D6-05 (2026-09-11): the Add button's `disabled` now also
+    // reads `rampBlockReason` on a second line, so the one-line anchor aged
+    // out (spec:trap-anchors: ZERO). SAME CLAIM, new text: strip the churn
+    // reason from the first line and the refused churn draft gets a live Add.
     mutate: s => s.replace(
-      'disabled={!newEvent.date || newEvent.subscriberVolume === undefined || churnBlockReason !== null}',
-      'disabled={!newEvent.date || newEvent.subscriberVolume === undefined}') },
+      'disabled={!newEvent.date || newEvent.subscriberVolume === undefined || churnBlockReason !== null',
+      'disabled={!newEvent.date || newEvent.subscriberVolume === undefined') },
   // 111 restores the stale dependency array on handleEditStart — the exact
   // defect found this session. The callback reads `marketEvents` but would be
   // memoised on `[setNewEvent]` alone, and App's setNewEvent is a raw useState
@@ -2835,9 +2841,14 @@ const TRAPS: Trap[] = [
     why: 'the entered figure stops being the target and becomes a total again,'
        + ' with the right row count and the wrong ramp',
     file: WHATIF, spec: HOLDSHAPE,
+    // RE-AIMED at REQ-D6-05 (2026-09-11): the Hold-ON arm is now the RAMP arm,
+    // and it takes typed values rather than cumulating shares, so `cum / total`
+    // no longer exists (spec:trap-anchors: ZERO). SAME CLAIM on the new arm: the
+    // ramp emits each value's SHARE of the sum instead of reaching the target.
+    // hold-shape's 833 / 1,667 / 2,500 literal is what still names it.
     mutate: s => s.replace(
-      '    out.push({ offset: i, fraction: i === months - 1 ? 1 : cum / total, held: false });',
-      '    out.push({ offset: i, fraction: pcts[i] / total, held: false });') },
+      '    out.push({ offset: i, fraction: i === months - 1 ? 1 : vals[i] / target, held: false });',
+      '    out.push({ offset: i, fraction: vals[i] / vals.reduce((a, v) => a + v, 0), held: false });') },
   // 204 INVERTS THE ABSENCE RULE. Decision 5 is explicit that absent means OFF,
   // and this is the direction that breaks every save ever written: a workbook
   // with no Hold column reopens as a held campaign, so the amount box shows the
@@ -2950,9 +2961,12 @@ const TRAPS: Trap[] = [
     why: 'the shape is right and the campaign cannot be reopened as held —'
        + ' it reverse-engineers a 24-month ramp from a 69,000 sum',
     file: WHATIF, spec: PROMOHOLD,
+    // RE-AIMED at REQ-D6-05 Item 2 (2026-09-11): `buildPromoEvents` now writes
+    // the row's mode between Hold and Amount_Type, so the two-line anchor aged
+    // out (trap-anchors: ZERO). Same plant, same claim: the Hold line is dropped.
     mutate: s => s.replace(
-      '      hold: !!p.hold,\n      amountType: p.amountType,',
-      '      amountType: p.amountType,') },
+      '      hold: !!p.hold,' + nl + '      ...(p.mode ? { mode: p.mode } : {}),',
+      '      ...(p.mode ? { mode: p.mode } : {}),') },
   // 211 MAKES THE PROMO RESTORE IGNORE THE COLUMN — the promotion half of
   // 208. The campaign reopens with its whole trajectory as the ramp and its
   // amount box showing the sum, and re-saving writes that back.
@@ -3056,9 +3070,16 @@ const TRAPS: Trap[] = [
     //    wrong one]
     // `[newPromo, promoTarget,` is the ADD path; the save path opens with
     // `[editingPromoCampaign,`. Trap 102's lesson, applied before the gate.
+    // RE-AIMED at REQ-D6-05 Item 2 (2026-09-11). The read-set now names the
+    // DERIVED values the handler reads — promoShape, promoHoldOn, promoMode,
+    // promoRampBlockReason — so the old line aged out. THE MUTATION IS NOT "drop
+    // promoHoldOn" alone, and that is deliberate: promoShape recomputes whenever
+    // Hold toggles, so with it still listed the callback is rebuilt and the
+    // closure is FRESH — that plant would stay green and prove nothing. The live
+    // stale closure this trap names needs BOTH entries gone.
     mutate: s => s.replace(
-      '  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, promoHold, horizonMonthsFrom, marketEvents, setMarketEvents, resetPromoDraft]);',
-      '  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoSpreadEnabled, promoSpreadMonths, promoSpreadDistType, promoCustomDist, horizonMonthsFrom, marketEvents, setMarketEvents, resetPromoDraft]);') },
+      '  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoShape, promoHoldOn, promoMode, promoRampBlockReason, marketEvents, setMarketEvents, resetPromoDraft]);',
+      '  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoMode, promoRampBlockReason, marketEvents, setMarketEvents, resetPromoDraft]);') },
   // ══ WALK B10 — THE STICKY FALLBACK BANNER ════════════════════════════════
   //
   // 218 REMOVES THE PER-IMPORT CLEAR. The banner then behaves as it did when
@@ -3086,9 +3107,12 @@ const TRAPS: Trap[] = [
     why: 'the card shows +1,000 x3 while Add emits 1,000 / 2,000 / 3,000 and'
        + ' nineteen more — the chart is right and the preview is not',
     file: WHATIF, spec: PROMOHOLD,
+    // RE-AIMED at REQ-D6-05 Item 2 (2026-09-11): the grid reads each month's
+    // fraction straight off `promoShape` now; `rampRows` is gone. Same claim on
+    // the new line: the preview shows an EVEN split while Add emits the ramp.
     mutate: s => s.replace(
-      '                        const rampRows = promoShape.filter(s => !s.held);',
-      '                        const rampRows = spreadShape({ months: promoSpreadMonths, dist: pcts, hold: false, horizonMonths: 0 });') },
+      '                            const raw = totalVol * (promoShape[i]?.fraction ?? 0);',
+      '                            const raw = totalVol * (1 / promoSpreadMonths);') },
   // 220 DROPS THE BUTTON'S COUNT. It reads "Add Promotion" while adding
   // twenty-two — the label that let this ship, since a user with no row count
   // in front of them has nothing to compare the three-row grid against.
@@ -3108,13 +3132,15 @@ const TRAPS: Trap[] = [
     why: 'the grid shows three correct ramp rows and nothing about the'
        + ' nineteen held months, so it still reads as a three-month campaign',
     file: WHATIF, spec: PROMOHOLD,
+    // RE-AIMED at REQ-D6-05 Item 2 (2026-09-11): the panel is always open now, so
+    // the tail line sits four spaces shallower (trap-anchors: ZERO). Same plant.
     mutate: s => s.replace(
-      '                            {heldRows.length > 0 && (' + nl
-      + '                              <p className="mt-2 text-[10px] text-slate-500 font-medium"' + nl
-      + '                                 data-testid="promo-hold-tail">',
-      '                            {false && (' + nl
-      + '                              <p className="mt-2 text-[10px] text-slate-500 font-medium"' + nl
-      + '                                 data-testid="promo-hold-tail">') },
+      '                        {heldRows.length > 0 && (' + nl
+      + '                          <p className="mt-2 text-[10px] text-slate-500 font-medium"' + nl
+      + '                             data-testid="promo-hold-tail">',
+      '                        {false && (' + nl
+      + '                          <p className="mt-2 text-[10px] text-slate-500 font-medium"' + nl
+      + '                             data-testid="promo-hold-tail">') },
   // ══ REQ-D6-03 CLAUSE 10 — SIX CONTROLS, ONE COMPONENT ════════════════════
   //
   // 222 SWAPS ONE CARD BACK to a hand-rolled control. Five uses remain and the
@@ -3129,12 +3155,25 @@ const TRAPS: Trap[] = [
        + ' again — the radio look returning to a single card',
     file: WHATIF, spec: HOLDSHAPE,
     mutate: s => s.replace(
-      '                <RampHoldCheckbox' + nl
-      + '                  checked={holdAfterRamp}',
-      '                <input type="checkbox" data-testid="volume-hold-toggle"' + nl
-      + '                  checked={holdAfterRamp} onChange={e => setHoldAfterRamp(e.target.checked)} />' + nl
-      + '                <RampHoldCheckboxPLANTED' + nl
-      + '                  checked={holdAfterRamp}') },
+      // RE-AIMED at REQ-D6-05 (2026-09-11): the Volume Hold box moved inside the
+      // always-open panel and gained four spaces of indentation (trap-anchors:
+      // ZERO). Same plant, same claim; the pin now counts FIVE (hold-shape).
+      // DISCRIMINATOR, 2026-09-11: the first re-aim planted the inline copy BESIDE
+      // the box, which was valid when the box had siblings. At its new site it is
+      // the SOLE child of `{volumeMode === 'ramp' && ( … )}`, so two adjacent
+      // elements were a SYNTAX ERROR — hold-shape died at import with no report
+      // line, which scores CRASHED, never CAUGHT. The plant now wraps both in a
+      // fragment, so it is valid JSX and only the two pins can name it.
+      '                    <RampHoldCheckbox' + nl
+      + '                      checked={holdAfterRamp}' + nl
+      + '                      onChange={setHoldAfterRamp}',
+      '                    <><input type="checkbox" data-testid="volume-hold-toggle"' + nl
+      + '                      checked={holdAfterRamp} onChange={e => setHoldAfterRamp(e.target.checked)} />' + nl
+      + '                    <RampHoldCheckboxPLANTED' + nl
+      + '                      checked={holdAfterRamp}' + nl
+      + '                      onChange={setHoldAfterRamp}')
+      .replace('                      testId="volume-hold-toggle"' + nl + '                    />',
+        '                      testId="volume-hold-toggle"' + nl + '                    /></>') },
   // ── 223 ── D5-05's bar re-applied to HELD percentage campaigns.
   //
   // THE MUTATION IS THE OLD CODE, EXACTLY. `anyPercentage` alone is what stood
@@ -3171,6 +3210,105 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '"up_to_max_mb": "Up to {{p0}}MB (.xlsx, .xls, .csv)"',
       '"up_to_max_mb": "Up to 50MB (.xlsx, .xls, .csv)"') },
+  // ══ REQ-D6-05 SPREAD vs RAMP — the Volume card (225–230) ══════════════════
+  //
+  // 225 INVERTS THE ABSENT-MODE RULE toward Ramp. Every save written before the
+  // Mode column existed would reopen its unheld campaigns as ramps: the amount
+  // box would show the last row instead of the total, and a re-save would
+  // rebuild a ramp from what was a split.
+  { id: '225 the reader treats an absent Mode as Ramp regardless of Hold',
+    why: 'every unheld campaign in every old save reopens as a ramp and re-saves'
+       + ' as one — the rows cannot say which it was, only the rule can',
+    file: ENGINE, spec: SPREADRAMPVOL,
+    mutate: s => s.replace(
+      "  return row.Hold === 'Yes' ? 'ramp' : 'spread';",
+      "  return 'ramp';") },
+  // 226 THE SPREAD ARM CUMULATES. A total becomes a target: 3,000 over 3 emits
+  // 1,000 / 2,000 / 3,000 — right row count, plausible figures, twice the total.
+  { id: '226 Spread mode emits the ramp shape',
+    why: 'a stated total of 3,000 books 6,000 across three rows that each look'
+       + ' reasonable — REQ-D6-05 decision 1 inverted with nothing on screen to show it',
+    file: WHATIF, spec: SPREADRAMPVOL,
+    mutate: s => s.replace(
+      '      out.push({ offset: i, fraction: pcts[i] / total, held: false });',
+      '      out.push({ offset: i, fraction: pcts.slice(0, i + 1).reduce((a, p) => a + p, 0) / total, held: false });') },
+  // 227 HOLD SURVIVES INTO SPREAD. TWO SITES, because the defect needs both: the
+  // derivation that confines Hold to Ramp, and the Spread click that clears it.
+  // Either alone leaves Spread rows unheld, so a one-site plant would stay green
+  // and prove nothing — spread-ramp-volume (a2) is the case built for this.
+  { id: '227 Hold is honoured in Spread mode',
+    why: 'a Hold left on in Ramp rides into a Spread campaign, and its rows carry'
+       + ' a flag that says they were built as a held ramp',
+    file: WHATIF, spec: SPREADRAMPVOL,
+    mutate: s => s
+      .replace("  const volumeHold = volumeMode === 'ramp' && holdAfterRamp;", '  const volumeHold = holdAfterRamp;')
+      .replace('                          // Clause 2 — Spread has no Hold.' + nl + '                          setHoldAfterRamp(false);',
+        '                          // PLANTED: Hold survives into Spread') },
+  // 228 THE ORDER CHECK REMOVED. The last-month half still blocks the brief's own
+  // 1,000 / 3,000 / 2,000 case, so this trap is caught only by (e-order):
+  // 2,000 / 1,000 / 3,000, where the last month IS the target.
+  { id: '228 the non-decreasing ramp block is removed',
+    why: 'a ramp that falls and rises again is added as if it were a ramp,'
+       + ' with the last month matching the target and no reason shown',
+    file: WHATIF, spec: SPREADRAMPVOL,
+    mutate: s => s.replace(
+      '    if (values[i] * dir > values[i + 1] * dir) return true;',
+      '    // PLANTED: order check removed') },
+  // 229 A PERCENTAGE INTO SPREAD. The Spread button stays disabled, so nothing
+  // looks wrong — but the derived mode now follows the stored choice, and a
+  // percentage draft is built as a per-cent TOTAL split across months.
+  { id: '229 a percentage draft is allowed into Spread mode',
+    why: 'a +10% campaign is split into 3.33% per month instead of reaching 10%'
+       + ' — REQ-D6-05 clause 9 undone behind a control that still looks locked',
+    file: WHATIF, spec: SPREADRAMPVOL,
+    mutate: s => s.replace(
+      "  const volumeMode: 'spread' | 'ramp' = newEvent.amountType === 'percentage' ? 'ramp' : spreadMode;",
+      "  const volumeMode: 'spread' | 'ramp' = spreadMode;") },
+  // 230 THE DERIVED TOTAL ACCEPTS TYPING. `readOnly` stays on the element, so a
+  // browser user could not type into it — but the handler no longer refuses, and
+  // any path that sets the value (autofill, a paste, a test) breaks the sum.
+  { id: '230 the Custom values total box is editable and stops being the sum',
+    why: 'the total box shows a figure that is not the sum of the months it'
+       + ' claims to total, and the rows emitted disagree with it',
+    file: WHATIF, spec: SPREADRAMPVOL,
+    mutate: s => s.replace(
+      "                      if (volumeMode === 'spread' && spreadDistType === 'values') return;",
+      '                      // PLANTED: the derived total accepts typing') },
+  // ══ REQ-D6-05 Item 2 — the Promotion card (231–232) ═════════════════════
+  //
+  // 231 THE PROMOTION SPREAD BUILT AS A RAMP. The memo's mode test becomes
+  // `true`, so a Spread draft is built from the typed-ramp values — which the
+  // duration box prefills Even in every mode. 3,000 over 3 then emits
+  // 1,000 / 2,000 / 3,000: twice the stated total, every row plausible.
+  { id: '231 the Promotion card builds a Spread as a ramp',
+    why: 'a promotion stated as a total of 3,000 books 6,000, with the rows and'
+       + ' the row count both looking like a working campaign',
+    file: WHATIF, spec: SPREADRAMPPROMO,
+    mutate: s => s.replace(
+      "  const promoShape = useMemo(() => spreadShape(promoMode === 'ramp'",
+      '  const promoShape = useMemo(() => spreadShape(true') },
+  // 232 A PROMOTION PERCENTAGE INTO SPREAD — the ungated share-split REQ-D6-05
+  // clause 9 retired, back behind a Spread button that still looks locked.
+  { id: '232 a Promotion percentage draft is allowed into Spread mode',
+    why: 'a +10% promotion is split into 3.33% per month instead of reaching 10%'
+       + ' — the gap d5-05-held case (2) used to build its unheld campaign through',
+    file: WHATIF, spec: SPREADRAMPPROMO,
+    mutate: s => s.replace(
+      "  const promoMode: 'spread' | 'ramp' = promoAmountMode === 'percentage' ? 'ramp' : promoSpreadMode;",
+      "  const promoMode: 'spread' | 'ramp' = promoSpreadMode;") },
+  // ══ REQ-D6-05 Item 3 — churn (233) ═══════════════════════════════════════
+  //
+  // 233 THE CHURN ORDER CHECK REMOVED. Churn was already a typed ramp, and
+  // nothing refused a reduction that rose and fell back. Clause 11 put the rule
+  // in churnBlockReason, which the button, the rendered line and the handler all
+  // read — so this one mutation reopens all three at once.
+  { id: '233 the churn ramp non-decreasing block is removed',
+    why: 'a churn reduction typed 0.5 / 2 / 1 is added as a ramp that rises and'
+       + ' falls back, with Add live and no reason shown',
+    file: WHATIF, spec: CHURNHOLD,
+    mutate: s => s.replace(
+      '    if (churnRampOn && rampOrderViolation(churnStated.slice(0, churnMonths), churnTargetPct)) {',
+      '    if (false) {') },
 ];
 
 
@@ -3327,7 +3465,12 @@ try {
       // prove it — the exact lapse the HOLDSHAPE note above records.
       || specFails(D505HELD)
       // REQ-D6-04 decision 4. Registered WITH its first trap, 224.
-      || specFails(SIZECOPY)) {
+      || specFails(SIZECOPY)
+      // REQ-D6-05. Registered WITH its first trap, 225 — the lesson D505HELD
+      // was registered late for.
+      || specFails(SPREADRAMPVOL)
+      // REQ-D6-05 Item 2. Registered WITH its first trap, 231.
+      || specFails(SPREADRAMPPROMO)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');
