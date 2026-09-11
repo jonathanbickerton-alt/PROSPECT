@@ -10400,3 +10400,10 @@ Jon's answers to the inventory's questions, 2026-09-11:
     the rows its Hold-ON arm emits; the `Hold` column keeps its
     meaning; clause 10 of REQ-D6-03 (six checkboxes) is superseded —
     the three Hold checkboxes remain real checkboxes.
+15. (Jon, 2026-09-11) A percentage draft's label carries the
+    Ramp wording too: Volume — 'Change to {scenario} — reached at month
+    {n}' and ', then held' with Hold on; Promotion — 'Volume change (% of
+    the forecast) — reached at month {n}' and ', then held'. Duration 1
+    reads '— one month'.
+16. The ramp/hold checkbox pin is FOUR (three Hold boxes and churn's ramp
+    checkbox); churn keeps its ramp on/off, having no Spread.
