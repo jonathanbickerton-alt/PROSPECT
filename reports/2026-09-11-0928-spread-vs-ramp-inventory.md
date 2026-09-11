@@ -2,16 +2,29 @@
 
 ```
 FOR ADVISOR
-Generated: 2026-09-11 10:28 +0100 (UTC 2026-09-11 09:28)
-Certifies: __ PENDING
-BASE __ PENDING
-1 __ PENDING
-2 __ PENDING
-3 __ PENDING
-4 __ PENDING
-QUESTIONS FOR JON: __ PENDING
-suite: __/__ PENDING
-Repo: __ PENDING
+Generated: 2026-09-11 10:38 +0100 (UTC 2026-09-11 09:38)
+Certifies: 17b52d5   (last gated hash; docs session, no src change)
+BASE 6fd13f8 (the D5-05-held Repo line). status --short EMPTY; log -3 quoted.
+1 REQ-D6-05 RECORDED verbatim, EXPECTED.md alone (f664299). Supersession
+  sentence placed BEFORE clause 2 and BEFORE clause 7, where readers stop.
+2 TODAY ONE EDITOR, TWO MEANINGS: the share boxes are SPLIT with Hold OFF
+  and CUMULATED with Hold ON — exactly the coupling REQ-D6-05 removes.
+3 DECISION 5 NAMES A CAPABILITY NEITHER CARD HAS: both spreads' boxes edit
+  share % only. The only typed per-month editor is churn's, in points.
+4 AN UNHELD RAMP AND A SPREAD CAN STORE IDENTICAL ROWS: 1k/2k/3k is a ramp
+  to 3k and a spread of 6k. Rows alone cannot restore the chosen mode.
+5 PROMO SWITCH ALREADY SAYS "Ramp" for the share split and is NOT gated on
+  percentage; clause 7's gate was only built on the Volume card.
+6 SPREAD OFF + HOLD ON builds a 24-row campaign with NO row preview on
+  either card: the held-tail line sits inside the hidden panel.
+7 DILUTION: no month control; converted once, stamped on every row's ARPU,
+  never read back by the engine. A ramp: cheap in the engine, costly in
+  persistence, restore, its non-linear definition, Pricing-card parity.
+8 CHURN (already a typed-values ramp): editing target or months DISCARDS
+  typed months; no non-decreasing check exists on any card.
+QUESTIONS FOR JON: 8, in docs/REQ-D6-05-spread-vs-ramp-design-note.md.
+suite 69/69 green. No guard-traps: docs session, per the brief.
+Repo: committed f664299 + 14d9442, pushed (origin in sync)
 ```
 
 ## 0. Base
@@ -298,7 +311,17 @@ checkbox beside the switch. guard-traps 205–223 anchor on several of these sit
 
 ## 9. Suite
 
-PENDING
+**`npm run suite`: 69/69 green.** The only gate this session, per the brief: a
+docs/inventory session, so no guard-traps run. It ran after Item 0 was committed
+(`f664299`), on a `src/` and `scripts/` tree unchanged since `1c72489` —
+`git diff 1c72489 HEAD --stat -- src scripts` is empty. Capture:
+`scratchpad/suite-d605.out`.
+
+**What the suite certifies here is narrow, and that is correct.** No code
+changed, so a green suite says the recorded decisions and the new design note did
+not disturb anything a spec reads — `EXPECTED.md` is prose, not an input to any
+spec. It does not, and cannot, say anything about REQ-D6-05's behaviour, which
+does not exist yet.
 
 ## Limits
 
