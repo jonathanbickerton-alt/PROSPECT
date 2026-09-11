@@ -414,9 +414,40 @@ async function main() {
     if (spreadBtn) await click(spreadBtn);
     check('(f) a click on Spread changes nothing', byTestId('promo-mode-ramp')?.getAttribute('aria-pressed') === 'true');
     check('(f) the lock says why, in the DOM', !!byTestId('promo-mode-locked'));
-    check("(f) the percentage keeps this card's own per-cent label",
-      norm(byTestId('promo-amount-label')?.textContent || '') === i18n.t('whatif_promo_volume_pct_label'),
+    // RE-AIMED at REQ-D6-05 clause 15 (2026-09-11): this card's own per-cent stem now
+    // carries the Ramp suffix; the draft is at the default duration of 1. Literal.
+    check("(f) CLAUSE 15: this card's own per-cent label at duration 1 reads \"— one month\"",
+      norm(byTestId('promo-amount-label')?.textContent || '') === 'Volume change (% of the forecast) — one month',
       norm(byTestId('promo-amount-label')?.textContent || ''));
+  }
+
+  // ── (f2) REQ-D6-05 clause 15 — the promo % label carries the Ramp suffix ─
+  //
+  // FILL-IN ORDER: the amount (% unit, then 10) → duration → Hold LAST. Literals.
+  {
+    const lbl = () => norm(byTestId('promo-amount-label')?.textContent || '');
+    check('(f2) the Promotion card opens', await openPromo('PPctLabel3'));
+    await click(byTestId('promo-amount-pct'));
+    await type(byTestId('promo-volume-amount'), '10');
+    await type(byTestId('promo-duration'), '3');
+    check('(f2) CLAUSE 15: % 10 over 3 reads "Volume change (% of the forecast) — reached at month 3"',
+      lbl() === 'Volume change (% of the forecast) — reached at month 3', lbl());
+    // Guarded: with a % draft wrongly let into Spread (trap 232) the Hold box is absent,
+    // and an unguarded click threw — killing the spec before its FAIL lines printed.
+    const holdBox = byTestId('promo-hold-toggle');
+    check('(f2) the Hold box is on the % draft (it is always a Ramp)', !!holdBox);
+    if (holdBox) await click(holdBox);
+    check('(f2) CLAUSE 15: Hold on adds ", then held"',
+      lbl() === 'Volume change (% of the forecast) — reached at month 3, then held', lbl());
+  }
+  {
+    const lbl = () => norm(byTestId('promo-amount-label')?.textContent || '');
+    check('(f2) the Promotion card opens again', await openPromo('PPctLabel1'));
+    await click(byTestId('promo-amount-pct'));
+    await type(byTestId('promo-volume-amount'), '10');
+    await type(byTestId('promo-duration'), '1');
+    check('(f2) CLAUSE 15: duration 1 reads "Volume change (% of the forecast) — one month"',
+      lbl() === 'Volume change (% of the forecast) — one month', lbl());
   }
 
   // ── (g) ROUND TRIP of (b), (c), (d) through the REAL writer and reader ──

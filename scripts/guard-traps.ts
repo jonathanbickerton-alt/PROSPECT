@@ -3309,6 +3309,19 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '    if (churnRampOn && rampOrderViolation(churnStated.slice(0, churnMonths), churnTargetPct)) {',
       '    if (false) {') },
+  // ══ REQ-D6-05 clause 15 — the percentage label suffix (234) ══════════════
+  //
+  // 234 THE % ARM FALLS BACK TO THE MONTH-LESS LABEL. A percentage is always a
+  // Ramp, so its label must say when the target is reached. Forcing the
+  // one-month branch leaves a +10% three-month ramp reading "— one month": a
+  // label that looks finished and states the wrong campaign.
+  { id: '234 the Volume percentage label falls back to the month-less form in Ramp mode',
+    why: 'a +10% ramp over three months is labelled "one month" — the label and'
+       + ' the rows describe two different campaigns, and only the rows are right',
+    file: WHATIF, spec: SPREADRAMPVOL,
+    mutate: s => s.replace(
+      '                      ? (spreadMonths <= 1',
+      '                      ? (true') },
 ];
 
 

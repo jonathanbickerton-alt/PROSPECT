@@ -6755,7 +6755,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                   {isChurnDraft || newEvent.scenario === 'ARPU'
                     ? t('whatif_subscriber_volume')
                     : isPercentageDraft
-                      ? t('whatif_amount_label_pct', { p0: String(newEvent.scenario ?? 'Inflow') })
+                      // REQ-D6-05 clause 15 — a percentage is always a Ramp, so its label carries the
+                      // Ramp suffix exactly as the absolute Ramp label does: INSIDE the keyed sentence,
+                      // with `, then held` from the one shared key. Duration 1 reads "— one month".
+                      ? (spreadMonths <= 1
+                          ? t('whatif_amount_label_pct_one', { p0: String(newEvent.scenario ?? 'Inflow') })
+                          : t('whatif_amount_label_pct', { p0: String(newEvent.scenario ?? 'Inflow'), p1: spreadMonths }))
+                        + (volumeHold ? t('whatif_amount_label_then_held') : '')
                       : volumeMode === 'ramp'
                         ? t('whatif_amount_label_ramp', { p0: spreadMonths }) + (volumeHold ? t('whatif_amount_label_then_held') : '')
                         : spreadMonths <= 1
@@ -9055,7 +9061,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           the share is of); volume states total or target. */}
                       <span data-testid="promo-amount-label">
                       {promoAmountMode === 'percentage'
-                        ? t('whatif_promo_volume_pct_label')
+                        // REQ-D6-05 clause 15 — this card's own per-cent stem, with the same Ramp suffix.
+                        ? (promoSpreadMonths <= 1
+                            ? t('whatif_promo_volume_pct_label_one')
+                            : t('whatif_promo_volume_pct_label', { p0: promoSpreadMonths }))
+                          + (promoHoldOn ? t('whatif_amount_label_then_held') : '')
                         : promoMode === 'ramp'
                           ? t('whatif_amount_label_ramp', { p0: promoSpreadMonths }) + (promoHoldOn ? t('whatif_amount_label_then_held') : '')
                           : promoSpreadMonths <= 1

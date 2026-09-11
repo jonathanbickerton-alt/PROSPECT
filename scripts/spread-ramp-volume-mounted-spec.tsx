@@ -508,9 +508,47 @@ async function main() {
       byTestId('volume-mode-ramp')?.getAttribute('aria-pressed') === 'true'
         && spreadBtn?.getAttribute('aria-pressed') === 'false');
     check('(f) the lock says why, in the DOM', !!byTestId('volume-mode-locked'));
-    check('(f) CLAUSE 12: the percentage label is the KEYED "Change to" string',
-      norm(byTestId('volume-amount-label')?.textContent || '') === i18n.t('whatif_amount_label_pct', { p0: 'Inflow' }),
+    // RE-AIMED at REQ-D6-05 clause 15 (2026-09-11): the percentage label now carries the
+    // Ramp suffix, and this draft is at the default duration of 1 — so it reads
+    // "— one month". A HAND-WRITTEN literal, not the key read back, so a wrong key fails.
+    check('(f) CLAUSE 15: the percentage label at duration 1 reads "Change to Inflow — one month"',
+      norm(byTestId('volume-amount-label')?.textContent || '') === 'Change to Inflow — one month',
       norm(byTestId('volume-amount-label')?.textContent || ''));
+  }
+
+  // ── (f2) REQ-D6-05 clause 15 — the % label carries the Ramp suffix ───────
+  //
+  // FILL-IN ORDER: the amount (the % unit, then 10) → duration → Hold LAST, and the
+  // label read after each. Every expected label is a HAND-WRITTEN English literal.
+  {
+    const lbl = () => norm(byTestId('volume-amount-label')?.textContent || '');
+    await mount();
+    await freshInflow('PctLabel3');
+    const pctArm = btnByText(i18n.t('whatif_amount_unit_pct'));
+    check('(f2) the % arm is reachable', !!pctArm);
+    if (pctArm) await click(pctArm);
+    await type(byTestId('volume-amount'), '10');
+    await type(byTestId('volume-duration'), '3');
+    check('(f2) CLAUSE 15: % 10 over 3 reads "Change to Inflow — reached at month 3"',
+      lbl() === 'Change to Inflow — reached at month 3', lbl());
+    // Guarded: with a % draft wrongly let into Spread (trap 229) the Hold box is absent,
+    // and an unguarded click threw — killing the spec before its FAIL lines printed.
+    const holdBox = byTestId('volume-hold-toggle');
+    check('(f2) the Hold box is on the % draft (it is always a Ramp)', !!holdBox);
+    if (holdBox) await click(holdBox);
+    check('(f2) CLAUSE 15: Hold on adds ", then held"',
+      lbl() === 'Change to Inflow — reached at month 3, then held', lbl());
+  }
+  {
+    const lbl = () => norm(byTestId('volume-amount-label')?.textContent || '');
+    await mount();
+    await freshInflow('PctLabel1');
+    const pctArm = btnByText(i18n.t('whatif_amount_unit_pct'));
+    if (pctArm) await click(pctArm);
+    await type(byTestId('volume-amount'), '10');
+    await type(byTestId('volume-duration'), '1');
+    check('(f2) CLAUSE 15: duration 1 reads "Change to Inflow — one month"',
+      lbl() === 'Change to Inflow — one month', lbl());
   }
 
   // ── (g) ROUND TRIP of (b), (c), (d) through the REAL writer and reader ──

@@ -886,7 +886,7 @@
   "whatif_campaign_decline_invalid_month": "Die Kampagne enthält einen ungültigen Monat — bearbeiten Sie die Zeilen einzeln",
   "whatif_event_not_in_current_view": "Dieses Ereignis gilt nicht in der aktuellen Ansicht.",
   "whatif_event_no_coverage_in_view": "Dieses Ereignis gilt für die aktuelle Ansicht, aber die Ansicht enthält nichts, worauf es abzielt – es ändert hier also nichts.",
-  "whatif_promo_volume_pct_label": "Volumenänderung (% der Prognose)",
+  "whatif_promo_volume_pct_label": "Volumenänderung (% der Prognose) — erreicht in Monat {{p0}}",
   "whatif_promo_volume_pct_help": "Ein Anteil der Prognose dieser Ansicht für den Monat — Neukunden bei einer Inflow-Promotion, Bestandskunden bei einer Retention-Promotion. Keine Preisänderung; der Promo-Preis wird weiter unten festgelegt.",
   "whatif_event_on": "Ein",
   "whatif_event_off": "Aus",
@@ -902,8 +902,10 @@
   "whatif_amount_label_spread_one": "Gesamtvolumen — ein Monat",
   "whatif_amount_label_ramp": "Zielvolumen — erreicht in Monat {{p0}}",
   "whatif_amount_label_then_held": ", dann gehalten",
-  "whatif_amount_label_pct": "Änderung an {{p0}}",
+  "whatif_amount_label_pct": "Änderung an {{p0}} — erreicht in Monat {{p1}}",
   "whatif_values_total_derived": "Summe der Monatswerte",
   "whatif_ramp_block_order": "Jeder Monat muss höchstens so hoch sein wie der nächste; der letzte Monat ist das Ziel.",
-  "whatif_churn_label_ramp": "Zielreduktion — erreicht in Monat {{p0}}"
+  "whatif_churn_label_ramp": "Zielreduktion — erreicht in Monat {{p0}}",
+  "whatif_amount_label_pct_one": "Änderung an {{p0}} — ein Monat",
+  "whatif_promo_volume_pct_label_one": "Volumenänderung (% der Prognose) — ein Monat"
 }

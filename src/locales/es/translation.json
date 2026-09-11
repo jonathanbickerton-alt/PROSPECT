@@ -886,7 +886,7 @@
   "whatif_campaign_decline_invalid_month": "La campaña tiene un mes no válido: edite las filas individualmente",
   "whatif_event_not_in_current_view": "Este evento no se aplica en la vista actual.",
   "whatif_event_no_coverage_in_view": "Este evento se aplica a la vista actual, pero la vista no contiene nada a lo que se dirija, por lo que no cambia nada aquí.",
-  "whatif_promo_volume_pct_label": "Cambio de volumen (% de la previsión)",
+  "whatif_promo_volume_pct_label": "Cambio de volumen (% de la previsión) — alcanzado en el mes {{p0}}",
   "whatif_promo_volume_pct_help": "Una parte de la previsión de esta vista para el mes: captación en una promoción de Inflow, retención en una de Retention. No es un cambio de precio; el precio promocional se define más abajo.",
   "whatif_event_on": "Activado",
   "whatif_event_off": "Desactivado",
@@ -902,8 +902,10 @@
   "whatif_amount_label_spread_one": "Volumen total — un mes",
   "whatif_amount_label_ramp": "Volumen objetivo — alcanzado en el mes {{p0}}",
   "whatif_amount_label_then_held": ", luego mantenido",
-  "whatif_amount_label_pct": "Cambio en {{p0}}",
+  "whatif_amount_label_pct": "Cambio en {{p0}} — alcanzado en el mes {{p1}}",
   "whatif_values_total_derived": "Suma de los valores mensuales",
   "whatif_ramp_block_order": "Cada mes debe ser igual o inferior al siguiente; el último mes es el objetivo.",
-  "whatif_churn_label_ramp": "Reducción objetivo — alcanzada en el mes {{p0}}"
+  "whatif_churn_label_ramp": "Reducción objetivo — alcanzada en el mes {{p0}}",
+  "whatif_amount_label_pct_one": "Cambio en {{p0}} — un mes",
+  "whatif_promo_volume_pct_label_one": "Cambio de volumen (% de la previsión) — un mes"
 }
