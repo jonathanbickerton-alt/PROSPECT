@@ -127,6 +127,7 @@ export default function App() {
   const [error, setError] = useState('');
   /** REQ-D6-04 decision 2 — the pre-parse notice, painted before any parse. */
   const [ingestNotice, setIngestNotice] = useState<string | null>(null);
+  const [routedLine, setRoutedLine] = useState<string | null>(null);
   /** REQ-D6-04 decision 2 — "Loaded N rows in S s", the measured figure. */
   const [loadedLine, setLoadedLine] = useState<string | null>(null);
   const [logoError, setLogoError] = useState(false);
@@ -325,6 +326,8 @@ export default function App() {
 
     // REQ-D6-04 decision 1 and 2 — INGEST PATH 3 of 3, Import Actuals. This
     // path had NO SIZE CHECK either; it reads the one constant now.
+    // A NEW ingest clears the previous routing line: it explains THIS file.
+    setRoutedLine(null);
     void runIngest<any>({
       file, t,
       showNotice: setIngestNotice,
@@ -1173,6 +1176,8 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
+    // A NEW ingest clears the previous routing line: it explains THIS file.
+    setRoutedLine(null);
     void runIngest<any>({
       file, t,
       showNotice: setIngestNotice,
@@ -1958,6 +1963,8 @@ export default function App() {
     setWiBaseVal('');
     setWiRetentionVal('');
 
+    // A NEW ingest clears the previous routing line: it explains THIS file.
+    setRoutedLine(null);
     void runIngest<any>({
       file, t,
       showNotice: setIngestNotice,
@@ -1990,7 +1997,9 @@ export default function App() {
           setError('');
           setIsLoading(false);
           setImportSaveResult(null);
-          setIngestNotice(t('app_routed_to_import_save'));
+          // Its OWN state — see the render site. Set through setIngestNotice
+          // this line was cleared by runIngest's finally before it painted.
+          setRoutedLine(t('app_routed_to_import_save'));
           applyImportSaveWorkbook(wb);
           return;
         }
@@ -4516,6 +4525,28 @@ export default function App() {
             on screen for whichever of the three ingest controls was used, and
             because the thread is about to freeze: a notice rendered inside a
             panel that the parse then blocks from mounting is no notice. */}
+        {/* REQ-D6-04 decision 3 — THE ROUTING LINE, IN ITS OWN STATE.
+            MEASURED 2026-09-11 before changing anything: the line WAS being
+            set (`setIngestNotice(t('app_routed_to_import_save'))`) and was
+            then wiped, not by the restore banner as the screenshot suggested,
+            but by `runIngest`'s own `finally { showNotice(null) }` — because
+            `showNotice` IS `setIngestNotice`. The branch sets it inside
+            `onResult`, which runs BEFORE that finally, so the line existed for
+            less than a task and never painted.
+
+            So it gets a state the teardown does not own. Decision 3 asks for
+            "one line saying so", and a line that is cleared by the machinery
+            that displayed it is not one. It sits BESIDE the restore banner
+            rather than in place of it: the two say different things — why the
+            file went to Import Save, and that the save then restored. */}
+        {routedLine && (
+          <div
+            data-testid="ingest-routed"
+            role="status"
+            aria-live="polite"
+            className="mb-4 px-4 py-3 rounded-xl border border-sky-200 bg-sky-50 text-sky-800 text-sm"
+          >{routedLine}</div>
+        )}
         {ingestNotice && (
           <div
             data-testid="ingest-notice"

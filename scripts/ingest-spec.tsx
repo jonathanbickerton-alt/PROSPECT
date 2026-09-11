@@ -299,7 +299,139 @@ async function orderSection() {
   check('i18n: every placeholder survives translation', ph.length === 0, ph.join(', '));
 }
 
+
+// ── DECISION 3 — THE ROUTING LINE SURVIVES THE NOTICE TEARDOWN ────────────
+//
+// MEASURED 2026-09-11, before the fix. The line WAS being set — App.tsx's
+// session branch called `setIngestNotice(t('app_routed_to_import_save'))` —
+// and it was wiped immediately. Not by the restore banner, which is what the
+// screenshot suggested, but by `runIngest`'s own
+// `finally { showNotice(null) }`: `showNotice` IS `setIngestNotice`, and the
+// branch runs inside `onResult`, which the finally follows. The line existed
+// for less than a task and never painted.
+//
+// WHAT IS REAL HERE AND WHAT IS A STAND-IN, stated rather than implied.
+// `runIngest` and `isSessionWorkbook` are the app's own modules and the
+// ORDERING under test is theirs. The two <div>s are this harness's, because
+// App.tsx cannot be mounted headlessly — `nav-target-spec` records the same
+// limit for the same reason. So this proves the mechanism that broke, not the
+// pixels; the render sites are pinned structurally below instead.
+async function routingSection() {
+  const React = await import('react');
+  const { createRoot } = await import('react-dom/client');
+  const { act } = await import('react');
+  let startRouting: ((f: any) => void) = () => {};
+  const events: string[] = [];
+  let noticeAfter: string | null = 'unset';
+  let routedAfter: string | null = 'unset';
+
+  const RoutingHarness: React.FC<any> = ({ onDone }) => {
+    const [notice, setNotice] = (React as any).useState(null);
+    const [routed, setRouted] = (React as any).useState(null);
+    startRouting = (f: any) => {
+      void runIngest<string[]>({
+        file: f, t,
+        showNotice: (s: string | null) => {
+          events.push(s === null ? 'notice:clear' : 'notice:show');
+          setNotice(s);
+        },
+        onRefuse: () => { events.push('refuse'); },
+        // A session workbook's sheet NAMES, which is all the sniff reads.
+        read: () => ['Metadata', 'Market_Events', 'Yield_Events'],
+        onResult: (names: string[]) => {
+          events.push('result');
+          // The app's own predicate, not a re-implementation of it.
+          if (isSessionWorkbook(names)) {
+            events.push('routed');
+            setRouted(t('app_routed_to_import_save'));
+          }
+          onDone?.();
+        },
+      });
+    };
+    return React.createElement('div', null,
+      notice ? React.createElement('div', { 'data-testid': 'ingest-notice' }, notice) : null,
+      routed ? React.createElement('div', { 'data-testid': 'ingest-routed' }, routed) : null,
+    );
+  };
+
+  await (async () => {
+    const host = document.getElementById('root')!;
+    host.replaceChildren();
+    const c = document.createElement('div');
+    host.appendChild(c);
+    const root = createRoot(c);
+    await (act as any)(async () => { root.render(React.createElement(RoutingHarness, {})); });
+    await (act as any)(async () => {
+      startRouting({ name: 'PROSPECT Forecast Save.xlsx', size: 1024 });
+      await new Promise(r => setTimeout(r, 30));
+    });
+
+    noticeAfter = c.querySelector('[data-testid="ingest-notice"]')?.textContent ?? null;
+    routedAfter = c.querySelector('[data-testid="ingest-routed"]')?.textContent ?? null;
+
+    check('ROUTING: the sniff fired on a session workbook',
+      events.includes('routed'), events.join(','));
+    // THE ORDER IS THE MEASUREMENT: the routing line is set at `result`, and
+    // the notice is cleared AFTER it. That is the sequence that used to wipe
+    // it, reproduced here against the real runIngest.
+    check('ROUTING: the notice is cleared AFTER the line is set — the old wipe',
+      events.indexOf('routed') < events.lastIndexOf('notice:clear'),
+      events.join(','));
+    check('ROUTING: and the notice is gone at the end, as it should be',
+      noticeAfter === null, String(noticeAfter));
+    // ...AND THE LINE IS STILL THERE. This is the whole fix: a separate state
+    // the teardown does not own.
+    check('ROUTING: the routing line SURVIVES that clear',
+      routedAfter === t('app_routed_to_import_save'), String(routedAfter));
+  })();
+}
+
+// ── DECISION 3 — BOTH LINES RENDER, AND NEITHER GATES THE OTHER ───────────
+//
+// Structural, and structural ON PURPOSE: the claim is that the routing line
+// and the restore banner are BOTH on screen after a routed restore, and only
+// App's JSX can say that. The pins below are the three facts that make it
+// true, each of which was false before this session.
+function routingRenderSection() {
+  // COMMENTS STRIPPED FIRST. These pins assert what the CODE does, and the
+  // comment beside the fix quotes the old call verbatim to explain it — so a
+  // raw read made the "no longer routes through setIngestNotice" pin fire on
+  // its own documentation. `amount-control-spec` strips comments for the same
+  // reason; a pin that cannot tell code from prose is a pin on prose.
+  const app = fs.readFileSync('src/App.tsx', 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  const home = fs.readFileSync('src/components/HomeTab.tsx', 'utf8');
+
+  check('DECISION 3: the routing line has its OWN state, not the notice\'s',
+    /const \[routedLine, setRoutedLine\] = useState/.test(app));
+  check('DECISION 3: the session branch sets THAT state',
+    /setRoutedLine\(t\('app_routed_to_import_save'\)\)/.test(app));
+  check('DECISION 3: and no longer routes the line through setIngestNotice',
+    !/setIngestNotice\(t\('app_routed_to_import_save'\)\)/.test(app),
+    'the old wipe would be back');
+  check('DECISION 3: it has a render site of its own',
+    /data-testid="ingest-routed"/.test(app));
+  // NOT GATED ON THE NOTICE. `ingest-loaded` renders `{loadedLine && !ingestNotice`
+  // — deliberately, since those two say the same thing at different times. The
+  // routing line must NOT copy that shape: it says something the banner does
+  // not, so it stands beside it.
+  check('DECISION 3: the routing line is NOT gated on the notice being absent',
+    /\{routedLine && \(/.test(app),
+    'a `&& !ingestNotice` here would reintroduce the replacement');
+  // EVERY INGEST CLEARS IT, so a line explaining one file cannot survive onto
+  // the next. Exactly three sites, matching the three ingest paths.
+  const clears = (app.match(/setRoutedLine\(null\);/g) ?? []).length;
+  check('DECISION 3: all THREE ingest paths clear the previous routing line',
+    clears === 3, String(clears));
+  // The restore banner is untouched and still rendered by HomeTab, so "both
+  // lines" is two components' work and neither knows about the other.
+  check('DECISION 3: the restore banner is still HomeTab\'s and unchanged',
+    home.includes("t('session_restored')"));
+}
 orderSection()
+  .then(() => routingSection())
+  .then(() => { routingRenderSection(); })
   .then(() => {
     console.log(`\ningest spec: ${pass} passed, ${fails.length} failed`);
     fails.forEach(f => console.log('  FAIL  ' + f));

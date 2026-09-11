@@ -81,6 +81,8 @@ const CHURNHOLD = 'scripts/churn-hold-mounted-spec.tsx';
 const PROMOHOLD = 'scripts/promo-hold-mounted-spec.tsx';
 const D505HELD = 'scripts/d5-05-held-mounted-spec.tsx';
 const INGESTSPEC = 'scripts/ingest-spec.tsx';
+const SIZECOPY = 'scripts/size-copy-spec.tsx';
+const ENLOCALE = 'src/locales/en/translation.json';
 const RESTOREBANNER = 'scripts/restore-banner-spec.ts';
 const INGEST = 'src/utils/ingest.ts';
 const SCENARPU = 'scripts/scenario-arpu-spec.ts';
@@ -110,7 +112,7 @@ const DEBUNDLE = 'src/locales/de/translation.json';
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const APP_COMPARE = 'src/components/ScenarioCompareTab.tsx';
 const SCENARPUENGINE = 'src/utils/scenarioArpu.ts';
-const TARGETS = [FILE, ENGINE, WHATIF, APP, INGEST, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE, SLIDERROW, TARGETPANEL, SUMMARYBAR, PKGJSON, ENVEXAMPLE, SUMMARYTABLE];
+const TARGETS = [FILE, ENGINE, WHATIF, APP, INGEST, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE, SLIDERROW, TARGETPANEL, SUMMARYBAR, PKGJSON, ENVEXAMPLE, SUMMARYTABLE, ENLOCALE];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -138,6 +140,48 @@ const orig = originals.get(FILE)!;
  */
 const nl = '\n';
 const toLF = (s: string) => s.replace(/\r\n/g, '\n');
+
+/** An error's message, however it arrives — including the errno/syscall that
+ *  made the 0225 failure diagnosable in one line. */
+function errText(err: unknown): string {
+  const e = err as any;
+  if (!e) return String(err);
+  const bits = [e.code, e.syscall, e.message ?? String(e)].filter(Boolean);
+  return bits.join(' ');
+}
+
+/**
+ * A write that survives a transient Windows lock.
+ *
+ * WHY: the 2026-09-11 0225 guard-traps run died at `writeFileSync` with
+ * `UNKNOWN` / errno -4094 on `src/components/WhatIfTab.tsx`. That is Windows
+ * refusing open-for-write because something else held the handle for a moment
+ * — the dev server's watcher re-reading the file it had just been told
+ * changed, or a scanner. It is transient by nature: the same write succeeds
+ * milliseconds later, which is exactly why one attempt is the wrong number.
+ *
+ * FOUR ATTEMPTS, NOT INFINITE. A lock that outlives ~350ms is not transient
+ * and retrying forever would hang the run instead of failing it — and the
+ * caller's `finally` needs this to RETURN, success or throw, so it can decide
+ * what to say. The last failure is rethrown with its errno intact.
+ *
+ * The sleep is `Atomics.wait`, because this harness is synchronous throughout
+ * and an async pause here would let the next trap start against a planted file.
+ */
+function writeResilient(file: string, contents: string): void {
+  const DELAYS = [0, 25, 100, 225];
+  let last: unknown;
+  for (const ms of DELAYS) {
+    if (ms) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    try {
+      fs.writeFileSync(file, contents);
+      return;
+    } catch (err) {
+      last = err;
+    }
+  }
+  throw last;
+}
 void orig;
 
 /** The line the row body builds its mix on — every trap plants relative to it. */
@@ -3111,6 +3155,22 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       'if (anyPercentage && !allHeld) {',
       'if (anyPercentage) {') },
+  // ── 224 ── a megabyte figure typed back into the copy.
+  //
+  // THE MUTATION IS THE DEFECT AS IT ACTUALLY SHIPPED — "Up to 50MB" in a
+  // locale file, which is what the drop zone said through the entire 200MB
+  // build. It survived because the 1907 session pinned MAX_UPLOAD_BYTES, and a
+  // byte literal in code cannot see a figure typed into a translated sentence.
+  //
+  // THE TARGET IS A LOCALE FILE, not source. That is the point: the class of
+  // defect lives in the copy, so the trap must be able to break the copy.
+  { id: '224 a locale string carries a typed megabyte figure again',
+    why: 'the drop zone tells the user 50MB while the app accepts 200 — the'
+       + ' shape that shipped once already, invisible to every code pin',
+    file: ENLOCALE, spec: SIZECOPY,
+    mutate: s => s.replace(
+      '"up_to_max_mb": "Up to {{p0}}MB (.xlsx, .xls, .csv)"',
+      '"up_to_max_mb": "Up to 50MB (.xlsx, .xls, .csv)"') },
 ];
 
 
@@ -3257,14 +3317,36 @@ try {
       // REQ-D6-04. Registered WITH its first trap, per session 2's finding.
       || specFails(INGESTSPEC)
       // B10. Registered with its first trap, per session 2's finding.
-      || specFails(RESTOREBANNER)) {
+      || specFails(RESTOREBANNER)
+      // D5-05 held. REGISTERED LATE — one session after its first trap. Trap
+      // 223 (0742 session) targeted D505HELD and the spec was never added
+      // here, so a red spec:d5-05-held would have let 223 "catch" vacuously
+      // and the 0742 report's 219/219 would have looked clean regardless.
+      // Found 2026-09-11 while registering SIZECOPY. It did not in fact go
+      // red (39/39 in that session's suite), but the control was not there to
+      // prove it — the exact lapse the HOLDSHAPE note above records.
+      || specFails(D505HELD)
+      // REQ-D6-04 decision 4. Registered WITH its first trap, 224.
+      || specFails(SIZECOPY)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');
     process.exit(1);
   }
 
-  for (const t of TRAPS) {
+  // `--only=<substring>` runs a subset, by id. Added 2026-09-11 so the
+  // crash-restore behaviour below could be PROVED in seconds rather than by a
+  // second fifteen-minute full run. It narrows what is executed and changes
+  // nothing about how a trap is judged; the gate always runs unfiltered, and a
+  // filtered run says so on its own line so a report cannot quote one as if it
+  // were the gate.
+  const ONLY = (process.argv.find(a => a.startsWith('--only=')) ?? '').slice(7);
+  const SELECTED = ONLY ? TRAPS.filter(t => t.id.includes(ONLY)) : TRAPS;
+  if (ONLY) {
+    console.log(`\n[FILTERED] --only=${ONLY} selected ${SELECTED.length} of ${TRAPS.length} traps.`
+      + ' This is NOT a gate run.');
+  }
+  for (const t of SELECTED) {
     const target = t.file ?? FILE;
     // A TRAP ON AN UNREGISTERED FILE IS A SETUP ERROR, AND MUST SAY SO.
     // TARGETS is what gets snapshotted and, at the end, RESTORED — so a trap
@@ -3280,30 +3362,79 @@ try {
     // Matched in LF so an anchor cannot miss on line endings alone; the pristine
     // snapshot is what gets restored, so the file's real endings are untouched.
     const base = toLF(pristine);
-    const mutated = t.mutate(base);
+    let mutated: string;
+    try {
+      mutated = t.mutate(base);
+    } catch (err) {
+      // A mutate() that throws used to take the whole run with it. It is this
+      // trap's problem, not the run's.
+      results.push({ id: t.id, state: 'CRASHED',
+        detail: `mutate() threw before anything was planted — ${errText(err)}` });
+      continue;
+    }
     if (mutated === base) {
       // The anchor moved. Silently planting nothing would report a clean catch
       // for a trap that never ran.
       results.push({ id: t.id, state: 'INCONCLUSIVE', detail: 'anchor did not match — nothing was planted' });
       continue;
     }
-    fs.writeFileSync(target, mutated);
-    // THREE OUTCOMES, NOT TWO. A spec that dies is not a spec that caught
-    // something: the mutation landed and nothing named it.
-    const v = specVerdict(t.spec);
-    results.push(
-      v === 'failed'
-        ? { id: t.id, state: 'CAUGHT', detail: t.why }
-        : v === 'crashed'
-          ? { id: t.id, state: 'CRASHED',
-              detail: `${t.spec} exited non-zero with NO FAIL line — the mutation landed and nothing asserted it` }
-          : { id: t.id, state: 'MISSED', detail: 'planted and the spec stayed GREEN — ' + t.why });
-    fs.writeFileSync(target, pristine);   // one trap at a time, never compounded
+    // ── PLANT / RUN / RESTORE, AND THE RESTORE IS IN A `finally` ───────────
+    //
+    // WHY THIS EXISTS: the 2026-09-11 0225 run died at `writeFileSync` with
+    // `UNKNOWN` / errno -4094 — a Windows lock on open-for-write, the file
+    // being watched by the dev server — and left `WhatIfTab.tsx` MUTATED for
+    // the next command to trip over. The outer finally below was already
+    // there, and did not save it: that loop throws on the SAME lock, and
+    // everything after the throwing file stays planted.
+    //
+    // So the restore moves in here, per trap, and the run keeps going. A trap
+    // whose plant or spec throws is CRASHED — a state, never a catch — which
+    // is the same three-outcome rule the verdict already follows: a spec that
+    // dies is not a spec that asserted anything.
+    try {
+      writeResilient(target, mutated);
+      const v = specVerdict(t.spec);
+      results.push(
+        v === 'failed'
+          ? { id: t.id, state: 'CAUGHT', detail: t.why }
+          : v === 'crashed'
+            ? { id: t.id, state: 'CRASHED',
+                detail: `${t.spec} exited non-zero with NO FAIL line — the mutation landed and nothing asserted it` }
+            : { id: t.id, state: 'MISSED', detail: 'planted and the spec stayed GREEN — ' + t.why });
+    } catch (err) {
+      results.push({ id: t.id, state: 'CRASHED',
+        detail: `the HARNESS threw while planting or running — ${errText(err)}` });
+    } finally {
+      // UNCONDITIONAL, and attempted even if the plant itself threw: a partial
+      // write is exactly the state that must not survive to the next trap.
+      // one trap at a time, never compounded.
+      try {
+        writeResilient(target, pristine);
+      } catch (err) {
+        // The tree is now dirty and nothing later can fix it, so say so loudly
+        // and stop rather than running 200 more traps against a corrupt file.
+        console.error(`\nFATAL: could not restore ${target} after trap ${t.id}.`);
+        console.error(`  ${errText(err)}`);
+        console.error('  The working tree is MUTATED. Restore it from a backup'
+          + ' or from git before trusting anything.');
+        process.exit(2);
+      }
+    }
   }
 } finally {
-  // Unconditional. This harness mutates tracked source; dying mid-run without
-  // restoring leaves a corrupted tree that looks like a hand edit.
-  for (const [f, s] of originals) fs.writeFileSync(f, s);
+  // STILL UNCONDITIONAL, and now per-file. This harness mutates tracked
+  // source; dying mid-run without restoring leaves a corrupted tree that looks
+  // like a hand edit. Each restore is its own try, because this loop THREW on
+  // 2026-09-11 and everything after the throwing file stayed planted — the
+  // failure the per-trap finally above exists to make unreachable.
+  for (const [f, s] of originals) {
+    try {
+      writeResilient(f, s);
+    } catch (err) {
+      console.error(`FATAL: could not restore ${f} — ${errText(err)}`);
+      console.error('  The working tree is MUTATED. Restore from a backup.');
+    }
+  }
 }
 
 console.log('\nGUARD TRAPS\n' + '='.repeat(72));
@@ -3317,8 +3448,8 @@ if (bad.length) {
   // Each state names a DIFFERENT repair, so the summary says which.
   const crashed = results.filter(r => r.state === 'CRASHED');
   if (crashed.length) {
-    console.log(`${crashed.length} CRASHED — the mutation landed and the spec DIED instead of asserting.`);
-    console.log('  The repair is an assertion in the spec, not a new anchor in the registry:');
+    console.log(`${crashed.length} CRASHED — a spec DIED, or the HARNESS itself threw. Each line above says which.`);
+    console.log('  A spec that died needs an assertion; a harness throw needs the harness or the trap fixed:');
     for (const c of crashed) console.log(`    ${c.id}`);
   }
 }

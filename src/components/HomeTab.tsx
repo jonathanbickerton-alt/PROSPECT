@@ -2,6 +2,7 @@ import React from 'react';
 import type { ActiveView } from '../types/forecast';
 import { Upload, FileSpreadsheet, Info, ArrowRight, FilePlus, FolderOpen, CheckCircle2, X, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { MAX_UPLOAD_MB } from '../utils/ingest';
 
 interface HomeTabProps {
   data: any[];
@@ -87,7 +88,16 @@ export default function HomeTab({ data, isLoading, error, handleFileUpload, hand
             <div className="flex flex-col items-center gap-3 text-slate-500">
               <FileSpreadsheet size={32} className={isLoading ? "text-[#e60000]/70 animate-pulse" : "text-[#e60000]/70"} />
               <span className="text-base font-medium">{isLoading ? t('processing') : t('drag_and_drop')}</span>
-              <span className="text-sm text-slate-400">{t('up_to_50mb')}</span>
+              {/* REQ-D6-04 decision 4 — THE CAPTION READS THE CONSTANT.
+                  It was a locale string with "50MB" typed into all six files,
+                  and it stayed wrong through the whole 200MB build because the
+                  1907 session pinned the BYTE LITERAL in code and a translated
+                  sentence is invisible to that. The French copy said "50 Mo",
+                  which a grep for "50MB" would also have missed — so the fix is
+                  not a better grep but removing the figure from the copy. */}
+              <span className="text-sm text-slate-400">
+                {t('up_to_max_mb', { p0: String(MAX_UPLOAD_MB) })}
+              </span>
             </div>
           </div>
           <div className="flex items-center justify-between pt-1">
