@@ -10361,3 +10361,42 @@ the clauses below.
 
 This supersedes REQ-D6-03 clauses 2–4 and clause 7's coupling of
 shape to the Hold box.
+
+Jon's answers to the inventory's questions, 2026-09-11:
+
+7. The mode is PERSISTED: a `Mode` column (`Spread` / `Ramp`) appended
+   LAST on Market_Events after `Hold`. Reader: absent → `Ramp` if
+   `Hold` is Yes, otherwise `Spread`, so every existing save reloads
+   as what it was. Rows alone cannot decide the mode (1,000/2,000/
+   3,000 is a ramp to 3,000 and a spread of 6,000).
+8. Spread mode gains a third distribution, "Custom values": the
+   per-month boxes take absolute volumes and the total box is the
+   DERIVED sum, read-only while that option is on. Even and Custom %
+   stay as they are.
+9. A percentage draft is ALWAYS Ramp: the mode control locks to Ramp
+   when % is selected, on both cards. Spread of a percentage does not
+   exist (the Promotion card's ungated share-split of a percentage
+   is retired).
+10. The spread/ramp on-off switch is RETIRED on Volume and Promotion.
+    The panel is always open: Mode (Spread | Ramp) and Duration (min
+    1, max 24); duration 1 is today's single event. Hold is a checkbox
+    shown ONLY in Ramp mode. The row preview and the held-tail line
+    always render — no campaign is built without its rows in view.
+11. Ramp validation on all three cards: Add is blocked with a rendered
+    reason when any month's figure exceeds the next or the last does
+    not equal the target ("each month must be at or below the next;
+    the last month is the target"). Editing the target or the
+    duration re-prefills the typed values (Even); the replacement is
+    visible, as on churn today.
+12. Labels: Spread — "Total volume — split across {n} months"; Ramp —
+    "Target volume — reached at month {n}" plus ", then held" with
+    Hold on. The percentage label `Change to {scenario}` is rewritten
+    as a keyed string in six locales and its i18n-scan allowlist entry
+    (scan-i18n.ts:467) retired with it.
+13. A dilution ramp is NOT built (after UAT, if at all).
+14. Built in one session, Volume first, Promotion, churn last; walked
+    by Jon before Alessandro sees it. Spread mode emits the rows
+    REQ-D6-03's Hold-OFF arm emits, byte-identical; Ramp mode emits
+    the rows its Hold-ON arm emits; the `Hold` column keeps its
+    meaning; clause 10 of REQ-D6-03 (six checkboxes) is superseded —
+    the three Hold checkboxes remain real checkboxes.
