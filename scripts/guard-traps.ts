@@ -2040,12 +2040,18 @@ const TRAPS: Trap[] = [
   // helper is a compile error and would be caught by anything; silently
   // calling the neighbouring formatter is the mistake that actually happened
   // and the one nothing else would notice.
+  //
+  // RE-AIMED 2026-09-11 (REQ-D6-05 clause 17): `fmtDelta` is retired into
+  // eventVolumeLabel, so the old mutation named an identifier that no longer
+  // exists — a compile error, the very thing this trap says it is not. The
+  // neighbouring formatter is now the shared volume rule the three volume cells
+  // call, and that call on the ARPU cell is the mistake planted.
   { id: '125 the ARPU cell formats a rate with the volume formatter',
     why: 'a rate is not a percentage — the companion means the same thing in both volume modes',
     file: WHATIF, spec: ARPUCOMP,
     mutate: s => s.replace(
       "{arpuDelta !== null ? fmtArpu(arpuDelta) : '—'}",
-      "{arpuDelta !== null ? fmtDelta(arpuDelta) : '—'}") },
+      "{arpuDelta !== null ? eventVolumeLabel({ amountType: event.amountType, subscriberVolume: arpuDelta }, fmtSigned) : '—'}") },
 
   // ---------------------------------------------------------------------
   // 126 — the "N events applied" caption back to counting the raw array
@@ -3320,8 +3326,35 @@ const TRAPS: Trap[] = [
        + ' the rows describe two different campaigns, and only the rows are right',
     file: WHATIF, spec: SPREADRAMPVOL,
     mutate: s => s.replace(
-      '                      ? (spreadMonths <= 1',
-      '                      ? (true') },
+      // RE-AIMED 2026-09-11: two lines. The first alone is a substring of the absolute
+      // Ramp's `_one` line (clause 18), so it occurred twice.
+      '                      ? (spreadMonths <= 1' + nl
+        + "                          ? t('whatif_amount_label_pct_one'",
+      '                      ? (true' + nl
+        + "                          ? t('whatif_amount_label_pct_one'") },
+  // ══ Pre-release tidy (2026-09-11) — 235, 236 ══════════════════════════════
+  //
+  // 235 THE ROUNDING DROPPED. eventVolumeLabel is the ONE place a stored
+  // percentage is formatted; without its 2dp step every surface prints the raw
+  // double again — Jon's release-walk defect, on the summary and everywhere else.
+  { id: '235 the percentage formatter drops the 2dp rounding',
+    why: 'a +10% ramp over three months reads "+3.3333333333333334%" in the Events'
+       + ' summary — a figure to sixteen places that the user never typed',
+    file: ENGINE, spec: SPREADRAMPVOL,
+    mutate: s => s.replace(
+      '  const shown = Math.sign(v) * Math.round(Math.abs(v) * 100) / 100;',
+      '  const shown = v;') },
+  // 236 THE ABSOLUTE RAMP LOSES ITS `_one` FORM. Two-line anchor on purpose: the
+  // first line alone contains trap 234's anchor as a substring.
+  { id: '236 the absolute Ramp label at duration 1 loses its one-month form',
+    why: 'a one-month target reads "reached at month 1" beside a percentage that'
+       + ' reads "one month" — clause 18 undone on the card that has no percentage',
+    file: WHATIF, spec: SPREADRAMPVOL,
+    mutate: s => s.replace(
+      "                        ? (spreadMonths <= 1" + nl
+        + "                            ? t('whatif_amount_label_ramp_one')",
+      "                        ? (false" + nl
+        + "                            ? t('whatif_amount_label_ramp_one')") },
 ];
 
 

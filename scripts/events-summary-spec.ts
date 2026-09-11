@@ -25,6 +25,7 @@
 import fs from 'fs';
 import {
   buildEventsSummaryRows, volumeEventSummary, promoEventSummary, eventVolumeLabel,
+  marketEventExportRow, marketEventFromRow,
   yieldEventSummary, pricingEventSummary,
 } from '../src/utils/forecasting';
 import type { MarketEvent, YieldEventLike } from '../src/utils/forecasting';
@@ -350,6 +351,36 @@ check('wiring: the pricing and yield lists still sort by month (+ apply pass + p
   check('D5-01: eventVolumeLabel leaves the ABSOLUTE form to its caller',
     eventVolumeLabel({ amountType: 'absolute', subscriberVolume: 8000 },
       n => `<${n}>`) === '<8000>');
+}
+
+// ── REQ-D6-05 clause 17: A STORED PERCENTAGE DISPLAYS AT 2dp ───────────────
+//
+// The values are the ones Jon's release walk printed. Every expectation is a
+// hand-written literal; the stored value is asserted IDENTICAL after the real
+// writer and reader, so the rounding is proven to be display-only.
+{
+  const abs = (n: number) => `<${n}>`;
+  const pct = (v: number) => eventVolumeLabel({ amountType: 'percentage', subscriberVolume: v }, abs);
+  check('CLAUSE 17: 3.333333333333334 displays "+3.33%"', pct(3.333333333333334) === '+3.33%', pct(3.333333333333334));
+  check('CLAUSE 17: 6.666666666666668 displays "+6.67%"', pct(6.666666666666668) === '+6.67%', pct(6.666666666666668));
+  check('CLAUSE 17: 10 displays "+10%" — trailing zeros trimmed', pct(10) === '+10%', pct(10));
+  check('CLAUSE 17: 2.5 displays "+2.5%" — not "+2.50%"', pct(2.5) === '+2.5%', pct(2.5));
+  check('CLAUSE 17: a negative rounds symmetrically — -3.335 displays "-3.34%"', pct(-3.335) === '-3.34%', pct(-3.335));
+  check('CLAUSE 17: a figure that rounds to zero carries no sign — "0%"', pct(0.004) === '0%', pct(0.004));
+  const ev: any = {
+    id: 'r17', sequence: 1, scenario: 'Inflow', date: '2026-09',
+    segment: 'All', product: 'All', productL2: 'All', channel: 'All',
+    channelL2: 'All', tariffL1: 'All', tariffL2: 'All',
+    customerVolume: 0, revenue: 0, arpu: 20, amountType: 'percentage',
+    subscriberVolume: 3.333333333333334,
+  };
+  check('CLAUSE 17: the summary sentence reads "Inflow +3.33%"',
+    volumeEventSummary(ev, t) === 'Inflow +3.33%', volumeEventSummary(ev, t));
+  const back = marketEventFromRow(marketEventExportRow(ev), 'session');
+  check('CLAUSE 17: SAVE/RELOAD — 3.333333333333334 comes back IDENTICAL',
+    back.subscriberVolume === 3.333333333333334, String(back.subscriberVolume));
+  check('CLAUSE 17: and the event object itself was not rounded by displaying it',
+    ev.subscriberVolume === 3.333333333333334, String(ev.subscriberVolume));
 }
 
 console.log(`\nevents-summary spec: ${pass} passed, ${fails.length} failed`);

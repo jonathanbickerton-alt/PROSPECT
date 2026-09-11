@@ -450,6 +450,20 @@ async function main() {
       lbl() === 'Volume change (% of the forecast) — one month', lbl());
   }
 
+  // ── (r) REQ-D6-05 clause 18 — the ABSOLUTE Ramp at duration 1 ───────────
+  {
+    const lbl = () => norm(byTestId('promo-amount-label')?.textContent || '');
+    check('(r) the Promotion card opens', await openPromo('PRampOne'));
+    await click(byTestId('promo-mode-ramp'));                 // 1. mode
+    await type(byTestId('promo-volume-amount'), '3000');      // 2. amount — the TARGET
+    await type(byTestId('promo-duration'), '1');              // 3. duration
+    check('(r) CLAUSE 18: an absolute Ramp at duration 1 reads "Target volume — one month"',
+      lbl() === 'Target volume — one month', lbl());
+    await type(byTestId('promo-duration'), '3');
+    check('(r) CLAUSE 18: at duration 3 it still reads "Target volume — reached at month 3"',
+      lbl() === 'Target volume — reached at month 3', lbl());
+  }
+
   // ── (g) ROUND TRIP of (b), (c), (d) through the REAL writer and reader ──
   for (const [tag, rows, mode, held] of [
     ['b', rowsB, 'spread', false], ['c', rowsC, 'ramp', false], ['d', rowsD, 'ramp', true],

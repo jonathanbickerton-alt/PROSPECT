@@ -907,5 +907,6 @@
   "whatif_ramp_block_order": "Ogni mese deve essere uguale o inferiore al successivo; l’ultimo mese è l’obiettivo.",
   "whatif_churn_label_ramp": "Riduzione obiettivo — raggiunta al mese {{p0}}",
   "whatif_amount_label_pct_one": "Variazione di {{p0}} — un mese",
-  "whatif_promo_volume_pct_label_one": "Variazione di volume (% della previsione) — un mese"
+  "whatif_promo_volume_pct_label_one": "Variazione di volume (% della previsione) — un mese",
+  "whatif_amount_label_ramp_one": "Volume obiettivo — un mese"
 }

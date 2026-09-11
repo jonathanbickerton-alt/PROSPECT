@@ -925,8 +925,15 @@ export function eventVolumeLabel(
   fmtAbsolute: (n: number) => string,
 ): string {
   if (e.amountType !== 'percentage') return fmtAbsolute(e.subscriberVolume);
-  const sign = e.subscriberVolume > 0 ? '+' : '';
-  return `${sign}${e.subscriberVolume}%`;
+  // REQ-D6-05 clause 17 — THE DISPLAY IS 2dp; THE STORED VALUE IS EXACT (clause 7).
+  // A +10% ramp over three months stores 3.333…4 and 6.666…8, and printing the
+  // double put "+3.3333333333333334%" in the summary. Rounded symmetrically about
+  // zero, and left a Number so trailing zeros go ("+10%", never "+10.00%"). Only
+  // the string is rounded; nothing is written back to the event.
+  const v = e.subscriberVolume;
+  const shown = Math.sign(v) * Math.round(Math.abs(v) * 100) / 100;
+  const sign = shown > 0 ? '+' : '';
+  return `${sign}${shown === 0 ? 0 : shown}%`;
 }
 
 export function volumeEventSummary(e: MarketEvent, t: SummaryT): string {

@@ -551,6 +551,64 @@ async function main() {
       lbl() === 'Change to Inflow — one month', lbl());
   }
 
+  // ── (p) REQ-D6-05 clause 17 — a stored percentage DISPLAYS at 2dp ───────
+  //
+  // Jon's release walk: a % 10 three-month ramp read "+3.3333333333333334%" in the
+  // Events summary. FILL-IN ORDER: the % unit → 10 → duration 3 → the Even prefill
+  // accepted → Hold LAST, left off → Add. Every expected string is a HAND-WRITTEN
+  // literal. The stored figures are read off the emitted rows, never off the DOM.
+  {
+    await mount();
+    await freshInflow('Pct2dp');
+    const pctArm = btnByText(i18n.t('whatif_amount_unit_pct'));
+    check('(p) the % arm is reachable', !!pctArm);
+    if (pctArm) await click(pctArm);
+    await type(byTestId('volume-amount'), '10');
+    await type(byTestId('volume-duration'), '3');
+    check('(p) Hold is left OFF', byTestId('volume-hold-toggle')?.checked === false);
+    await click(byTestId('volume-add'));
+    const stored = captured.map((e: any) => e.subscriberVolume);
+    console.log('  (p) stored: ' + stored.map((v: number) => String(v)).join(' / '));
+    check('(p) three rows emitted', stored.length === 3, String(stored.length));
+    check('(p) CLAUSE 7: month 1 is stored EXACT — a full-precision third of 10, not 3.33',
+      Math.abs(stored[0] - 10 / 3) < 1e-12 && stored[0] !== 3.33, String(stored[0]));
+    const toggle = byTestId('events-summary-toggle');
+    if (toggle && toggle.getAttribute('aria-expanded') !== 'true') await click(toggle);
+    const sumRows = allTestId('events-summary-row-').map((r: any) => norm(r.textContent || ''));
+    check('(p) CLAUSE 17: the summary row for month 1 reads "Inflow +3.33%"',
+      sumRows.some((s: string) => s.includes('Inflow +3.33%')), sumRows.join(' | '));
+    check('(p) CLAUSE 17: month 2 reads "Inflow +6.67%"',
+      sumRows.some((s: string) => s.includes('Inflow +6.67%')), sumRows.join(' | '));
+    check('(p) CLAUSE 17: month 3 reads "Inflow +10%" — trailing zeros trimmed',
+      sumRows.some((s: string) => s.includes('Inflow +10%')), sumRows.join(' | '));
+    // EVERY SURFACE: no text anywhere in the mounted tab prints a percentage with
+    // three or more decimals — the summary, the Volume events table, the promotions
+    // table, the preview and the held-tail line all go through the one rule now.
+    const longForm = (norm(container.textContent || '').match(/[+-]?\d+\.\d{3,}%/g) ?? []);
+    check('(p) CLAUSE 17: NO surface in the tab shows a long-form percentage',
+      longForm.length === 0, longForm.slice(0, 3).join(' '));
+    // SAVE / RELOAD through the REAL writer and reader.
+    const rt = captured.map((e: any) => fc.marketEventFromRow(fc.marketEventExportRow(e), 'session'));
+    check('(p) SAVE/RELOAD: the stored figures come back IDENTICAL — the display rounded, the data did not',
+      rt.length === 3 && rt.every((e: any, i: number) => e.subscriberVolume === stored[i]),
+      rt.map((e: any) => String(e.subscriberVolume)).join(' / '));
+  }
+
+  // ── (r) REQ-D6-05 clause 18 — the ABSOLUTE Ramp at duration 1 ───────────
+  {
+    const lbl = () => norm(byTestId('volume-amount-label')?.textContent || '');
+    await mount();
+    await freshInflow('RampOne');
+    await click(byTestId('volume-mode-ramp'));          // 1. mode
+    await type(byTestId('volume-amount'), '3000');      // 2. amount — the TARGET
+    await type(byTestId('volume-duration'), '1');       // 3. duration
+    check('(r) CLAUSE 18: an absolute Ramp at duration 1 reads "Target volume — one month"',
+      lbl() === 'Target volume — one month', lbl());
+    await type(byTestId('volume-duration'), '3');
+    check('(r) CLAUSE 18: at duration 3 it still reads "Target volume — reached at month 3"',
+      lbl() === 'Target volume — reached at month 3', lbl());
+  }
+
   // ── (g) ROUND TRIP of (b), (c), (d) through the REAL writer and reader ──
   {
     const trip = (rows: any[]) => rows.map((e: any) => fc.marketEventExportRow(e));

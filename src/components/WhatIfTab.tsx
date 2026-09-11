@@ -6763,7 +6763,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           : t('whatif_amount_label_pct', { p0: String(newEvent.scenario ?? 'Inflow'), p1: spreadMonths }))
                         + (volumeHold ? t('whatif_amount_label_then_held') : '')
                       : volumeMode === 'ramp'
-                        ? t('whatif_amount_label_ramp', { p0: spreadMonths }) + (volumeHold ? t('whatif_amount_label_then_held') : '')
+                        // REQ-D6-05 clause 18 — the absolute Ramp reads "— one month" at duration 1, as the % does.
+                        ? (spreadMonths <= 1
+                            ? t('whatif_amount_label_ramp_one')
+                            : t('whatif_amount_label_ramp', { p0: spreadMonths }))
+                          + (volumeHold ? t('whatif_amount_label_then_held') : '')
                         : spreadMonths <= 1
                           ? t('whatif_amount_label_spread_one')
                           : t('whatif_amount_label_spread', { p0: spreadMonths })}
@@ -7503,13 +7507,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             : t('whatif_month', { p0: i + 1 });
                           const fraction = volumeShape[i]?.fraction ?? 0;
                           const raw = totalVol * fraction;
-                          const vol = isPercentageDraft ? Math.round(raw * 100) / 100 : Math.round(raw);
+                          // clause 17: the % figure is rounded for DISPLAY by eventVolumeLabel, not here.
+                          const vol = isPercentageDraft ? raw : Math.round(raw);
                           return (
                             <React.Fragment key={i}>
                               <span className="text-xs text-slate-600 py-1">{label}</span>
                               <span className={`text-xs font-semibold py-1 ${vol >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}
                                     data-testid={`volume-row-${i}`}>
-                                {vol >= 0 ? '+' : ''}{vol.toLocaleString()}
+                                {eventVolumeLabel({ amountType: isPercentageDraft ? 'percentage' : 'absolute', subscriberVolume: vol },
+                                  n => `${n >= 0 ? '+' : ''}${n.toLocaleString()}`)}
                               </span>
                               {ramp ? (
                                 <input
@@ -7563,7 +7569,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         <p className="mt-2 text-[10px] text-slate-500 font-medium"
                            data-testid="volume-hold-tail">
                           {t('whatif_hold_then_held_through', {
-                            p0: `${heldVol >= 0 ? '+' : ''}${heldVol.toLocaleString()}`,
+                            p0: eventVolumeLabel({ amountType: isPercentageDraft ? 'percentage' : 'absolute', subscriberVolume: heldVol },
+                              n => `${n >= 0 ? '+' : ''}${n.toLocaleString()}`),
                             p1: heldLast,
                           })}
                         </p>
@@ -7806,17 +7813,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       // ARPU Δ — see eventArpuDelta for why percentage rows dash.
                       const arpuDelta       = eventArpuDelta(event);
 
-                      // Helper: render a signed numeric delta cell
+                      // THE THREE VOLUME CELLS format through eventVolumeLabel.
                       // A percentage row stores a PERCENT in subscriberVolume, not a
                       // quantity, so it must never be run through formatNumber as if
                       // it were subscribers — "+10" for a 10% uplift reads as ten
-                      // people. The unit is what distinguishes them.
-                      const fmtDelta = (v: number) => isPercentage
-                        ? (v > 0 ? '+' : '') + v.toFixed(1) + '%'
-                        : (v > 0 ? '+' : '') + formatNumber(v);
+                      // people. REQ-D6-05 clause 17: `fmtDelta` carried its own
+                      // `toFixed(1)` percent branch — the recorded duplication — and is
+                      // RETIRED into the one shared rule. Only the signed ABSOLUTE half
+                      // is local: the half eventVolumeLabel leaves to its callers.
+                      const fmtSigned = (v: number) => (v > 0 ? '+' : '') + formatNumber(v);
                       // ARPU IS A RATE, AND `isPercentage` DESCRIBES THE VOLUME.
                       //
-                      // fmtDelta keys off the amount type of subscriberVolume, which
+                      // The volume cells key off the amount type of subscriberVolume, which
                       // is right for the three volume cells and wrong for this one:
                       // the ARPU companion is money per subscriber whatever mode the
                       // volume is in. A stated 25 on a percentage row rendered as
@@ -7978,7 +7986,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                             {/* Inflow Δ — blue; only Inflow events */}
                             <td className={`px-5 py-3 text-right font-semibold text-xs ${inflowDelta !== null ? 'text-blue-600' : 'text-slate-300'}`}>
-                              {inflowDelta !== null ? fmtDelta(inflowDelta) : '—'}
+                              {inflowDelta !== null ? eventVolumeLabel({ amountType: event.amountType, subscriberVolume: inflowDelta }, fmtSigned) : '—'}
                             </td>
 
                             {/* Base Δ — derived (T+1); always dash */}
@@ -7986,7 +7994,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                             {/* Retention Δ — pink; only Retention events (positive = subscribers saved) */}
                             <td className={`px-5 py-3 text-right font-semibold text-xs ${retentionDelta !== null ? 'text-pink-600' : 'text-slate-300'}`}>
-                              {retentionDelta !== null ? fmtDelta(retentionDelta) : '—'}
+                              {retentionDelta !== null ? eventVolumeLabel({ amountType: event.amountType, subscriberVolume: retentionDelta }, fmtSigned) : '—'}
                             </td>
 
                             {/* Outflow Δ — Outflow events (rose, value is negative) and
@@ -7997,7 +8005,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               isRetention  ? 'text-emerald-600' :
                               'text-slate-600'
                             }`}>
-                              {outflowDelta !== null ? fmtDelta(outflowDelta) : '—'}
+                              {outflowDelta !== null ? eventVolumeLabel({ amountType: event.amountType, subscriberVolume: outflowDelta }, fmtSigned) : '—'}
                             </td>
 
                             {/* ARPU Δ — directional colour for all event types */}
@@ -8116,7 +8124,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               <td colSpan={wiTariffL1Col ? 14 : 13} className="px-5 py-2 text-xs text-amber-700 flex items-center gap-2">
                                 <AlertTriangle size={12} className="text-amber-500 shrink-0 inline mr-1" />
                                 
-                                {t('whatif_retention_volume')}{isPercentage ? `${event.subscriberVolume.toFixed(1)}%` : formatNumber(event.subscriberVolume)}{t('whatif_exceeds_forecast_outflow_for')}{fmtMonth(event.date)}{t('whatif_the_retained_volume_will_be_clamped_to_the_av')}
+                                {t('whatif_retention_volume')}{eventVolumeLabel(event, n => formatNumber(n))}{t('whatif_exceeds_forecast_outflow_for')}{fmtMonth(event.date)}{t('whatif_the_retained_volume_will_be_clamped_to_the_av')}
                               </td>
                             </tr>
                           )}
@@ -9067,7 +9075,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             : t('whatif_promo_volume_pct_label', { p0: promoSpreadMonths }))
                           + (promoHoldOn ? t('whatif_amount_label_then_held') : '')
                         : promoMode === 'ramp'
-                          ? t('whatif_amount_label_ramp', { p0: promoSpreadMonths }) + (promoHoldOn ? t('whatif_amount_label_then_held') : '')
+                          // REQ-D6-05 clause 18 — the same `_one` form on this card.
+                          ? (promoSpreadMonths <= 1
+                              ? t('whatif_amount_label_ramp_one')
+                              : t('whatif_amount_label_ramp', { p0: promoSpreadMonths }))
+                            + (promoHoldOn ? t('whatif_amount_label_then_held') : '')
                           : promoSpreadMonths <= 1
                             ? t('whatif_amount_label_spread_one')
                             : t('whatif_amount_label_spread', { p0: promoSpreadMonths })}
@@ -9287,12 +9299,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               ? formatMonthDate(addMonths(baseDate, i), i18n.language)
                               : t('whatif_month', { p0: i + 1 });
                             const raw = totalVol * (promoShape[i]?.fraction ?? 0);
-                            const vol = isPromoPctAmt ? Math.round(raw * 100) / 100 : Math.round(raw);
+                            // clause 17: the % figure is rounded for DISPLAY by eventVolumeLabel, not here.
+                            const vol = isPromoPctAmt ? raw : Math.round(raw);
                             return (
                               <React.Fragment key={i}>
                                 <span className="text-xs text-slate-600 py-1">{label}</span>
                                 {/* The emerald `+n` form is what promo-hold-mounted (C) reads. */}
-                                <span className="text-xs font-semibold text-emerald-600 py-1" data-testid={`promo-row-${i}`}>+{vol.toLocaleString()}</span>
+                                <span className="text-xs font-semibold text-emerald-600 py-1" data-testid={`promo-row-${i}`}>{eventVolumeLabel({ amountType: isPromoPctAmt ? 'percentage' : 'absolute', subscriberVolume: vol }, n => `+${n.toLocaleString()}`)}</span>
                                 {ramp ? (
                                   <input
                                     type="number"
@@ -9344,7 +9357,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                           <p className="mt-2 text-[10px] text-slate-500 font-medium"
                              data-testid="promo-hold-tail">
                             {t('whatif_hold_then_held_through', {
-                              p0: `+${heldVol.toLocaleString()}${isPromoPctAmt ? '%' : ''}`,
+                              p0: eventVolumeLabel({ amountType: isPromoPctAmt ? 'percentage' : 'absolute', subscriberVolume: heldVol }, n => `+${n.toLocaleString()}`),
                               p1: heldLast,
                             })}
                             {' · '}

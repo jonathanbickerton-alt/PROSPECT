@@ -119,18 +119,22 @@ check('DELTA: an unstated companion still dashes on a percentage row',
     /const fmtArpu = \(v: number\) => \(v > 0 \? '\+' : ''\) \+ formatNumber\(v\);/.test(src),
     'if this grows an isPercentage branch the defect is back');
   check('ROW: the ARPU cell uses it', src.includes("{arpuDelta !== null ? fmtArpu(arpuDelta) : '—'}"));
-  check('ROW: and no longer uses the volume formatter',
-    !src.includes("{arpuDelta !== null ? fmtDelta(arpuDelta) : '—'}"),
-    'fmtDelta keys off the VOLUME amount type — that is UAT-D2-02');
+  // RE-AIMED 2026-09-11 (REQ-D6-05 clause 17). `fmtDelta` — the volume formatter
+  // this section was written against — is RETIRED into the shared rule
+  // eventVolumeLabel. So: the ARPU cell must call neither; the three volume cells
+  // must call the shared rule; and no local percent branch may come back.
+  check('ROW: and never uses the volume formatter',
+    !src.includes("{arpuDelta !== null ? eventVolumeLabel(") && !src.includes("{arpuDelta !== null ? fmtDelta("),
+    'the volume rule keys off the VOLUME amount type — that is UAT-D2-02');
 
-  // The three volume cells MUST still use fmtDelta: they are the cells for
-  // which the percent branch is correct, and a fix that changed them too would
+  // The three volume cells MUST use the percentage-aware rule: they are the cells
+  // for which the percent branch is correct, and a fix that changed them too would
   // have swapped one wrong unit for another.
-  const volumeCells = (src.match(/\? fmtDelta\((?:inflow|retention|outflow)Delta\)/g) ?? []).length;
-  check('ROW: the three VOLUME cells still use the percentage-aware formatter',
+  const volumeCells = (src.match(/\? eventVolumeLabel\(\{ amountType: event\.amountType, subscriberVolume: (?:inflow|retention|outflow)Delta \}, fmtSigned\)/g) ?? []).length;
+  check('ROW: the three VOLUME cells use the shared percentage-aware rule',
     volumeCells === 3, `${volumeCells} — inflow, retention and outflow`);
-  check('ROW: fmtDelta still carries its percent branch for those cells',
-    /const fmtDelta = \(v: number\) => isPercentage/.test(src));
+  check('ROW: fmtDelta is retired — no local percent branch formats a volume cell',
+    !/const fmtDelta\b/.test(src) && !src.includes("v.toFixed(1) + '%'"));
 }
 
 console.log(`arpu-companion spec: ${pass} passed, ${fails.length} failed`);
