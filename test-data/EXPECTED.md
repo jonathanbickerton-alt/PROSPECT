@@ -10315,3 +10315,8 @@ rule could not sanction.
    automatically, with one line saying so. Detection reads sheet
    NAMES only, before the full parse where the reader allows;
    otherwise it is stated that the sniff costs a parse.
+4. (2026-09-11) Measured in Chrome on the target laptop: 106.7 MB in
+   4.7 s, 197.3 MB in 9.6 s, no unresponsive-page prompt. The notice
+   says "usually under 15 seconds". No user-facing string carries a
+   megabyte figure typed in: every mention reads MAX_UPLOAD_MB through
+   a placeholder.
