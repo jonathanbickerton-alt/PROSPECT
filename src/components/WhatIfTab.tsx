@@ -954,6 +954,13 @@ export function groupByCampaign(events: MarketEvent[]): Map<string, { rows: Mark
     const dN = parse(g.rows[g.rows.length - 1].date, 'yyyy-MM', new Date());
     const span = isValid(d0) && isValid(dN) ? differenceInCalendarMonths(dN, d0) + 1 : 0;
     const anyPercentage = g.rows.some(e => e.amountType === 'percentage');
+    // D5-05 AMENDED (Jon, 2026-09-11) — A HELD percentage campaign is lifted
+    // out of the bar. EVERY row must be held, not some: the restore reads the
+    // target off the LAST row and the ramp length off the plateau start, and
+    // both of those are statements about a series that plateaus. A campaign
+    // with a held head and an unheld tail is neither shape, so it stays barred
+    // rather than being restored as a shape it is not.
+    const allHeld = g.rows.length > 0 && g.rows.every(e => e.hold);
     // R7 — CHURN ROWS JOIN THE BARRED CLASS (Jon, 2026-08-20), and they join it
     // HERE, at the rule, for the reason the comment below already gives: this
     // is the branch that fires, and a guard placed anywhere downstream would
@@ -972,7 +979,7 @@ export function groupByCampaign(events: MarketEvent[]): Map<string, { rows: Mark
     // hazard the bar existed for (reverse-engineering a ramp from summed
     // volumes) has not lapsed; it is avoided by never reaching that path, not
     // by refusing the edit.
-    if (anyPercentage) {
+    if (anyPercentage && !allHeld) {
       // Barred by RULE, and checked before homogeneity so it is the reason the
       // user sees. Campaign group edit reverse-engineers a ramp by summing
       // Math.abs(subscriberVolume) across the rows (handleEditCampaignStart) —
@@ -4809,7 +4816,24 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         campaignName: campaign,
         comment: rows.find(e => e.comment)?.comment ?? '',
         contractLength: first.contractLength,
+        // D5-05 AMENDED — restoring these is NOT OPTIONAL, in the words
+        // handleEditStart already uses for the single-row path. A held
+        // percentage campaign only became reachable here when the bar lifted,
+        // and without these three a +10% campaign would reopen as an absolute
+        // draft and re-save as 10 SUBSCRIBERS — the amount changing meaning
+        // silently, which is the exact class of failure D5-05 existed to
+        // prevent, arriving by a different door.
+        amountType: first.amountType ?? 'absolute',
+        percentageBasis: first.percentageBasis ?? 'baseline',
+        retentionLinked: first.retentionLinked ?? true,
       });
+      // ...and the AMOUNT CONTROL follows the row, the other half of carrying
+      // amountType. The draft field alone decides what a save writes; this
+      // decides what the user is shown while editing, and a draft that saves
+      // per-cent behind a lit "Subs" arm is a screen disagreeing with itself.
+      // Set directly, not through the transition writer: a restore is not a
+      // transition — the same lesson the churn branch above records.
+      setStoredAmountControl(first.amountType === 'percentage' ? 'pct' : 'subs');
       // Decision 4's independence, on the way back in as well as out: a
       // one-month held campaign restores with the SPREAD SWITCH OFF and the
       // hold toggle on, which is exactly the state that built it.
@@ -5022,6 +5046,17 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           // REQ-D6-03 decision 5 — every row, the held tail included.
           hold: holdAfterRamp,
           sequence: 0,
+          // D5-05 AMENDED — the three fields the ADD path has always written
+          // (`handleAddMarketEvent`) and this rebuild never did. It was
+          // unobservable while every percentage campaign was barred from group
+          // edit: the branch could not be reached. Lifting the bar reached it,
+          // and without these a re-saved +10% campaign comes back ABSOLUTE —
+          // the rows' arithmetic already respects `isPctAmount` above, so the
+          // figures would stay per-cent while the TYPE said subscribers, which
+          // is worse than either being wrong on its own.
+          amountType:      newEvent.amountType ?? 'absolute',
+          percentageBasis: newEvent.percentageBasis ?? 'baseline',
+          retentionLinked: newEvent.retentionLinked ?? true,
         };
       });
     }

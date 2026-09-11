@@ -79,6 +79,7 @@ const CHURNENGINE = 'src/utils/churnFold.ts';
 const HOLDSHAPE = 'scripts/hold-shape-spec.ts';
 const CHURNHOLD = 'scripts/churn-hold-mounted-spec.tsx';
 const PROMOHOLD = 'scripts/promo-hold-mounted-spec.tsx';
+const D505HELD = 'scripts/d5-05-held-mounted-spec.tsx';
 const INGESTSPEC = 'scripts/ingest-spec.tsx';
 const RESTOREBANNER = 'scripts/restore-banner-spec.ts';
 const INGEST = 'src/utils/ingest.ts';
@@ -3090,6 +3091,26 @@ const TRAPS: Trap[] = [
       + '                  checked={holdAfterRamp} onChange={e => setHoldAfterRamp(e.target.checked)} />' + nl
       + '                <RampHoldCheckboxPLANTED' + nl
       + '                  checked={holdAfterRamp}') },
+  // ── 223 ── D5-05's bar re-applied to HELD percentage campaigns.
+  //
+  // THE MUTATION IS THE OLD CODE, EXACTLY. `anyPercentage` alone is what stood
+  // before the 2026-09-11 amendment, so this trap plants the PREVIOUS RELEASE
+  // rather than an invented break — the strongest form available here, because
+  // a regression on this rule IS a revert.
+  //
+  // IT REDDENS A MOUNTED DRIVE, NOT A SOURCE PIN, and that is deliberate. The
+  // amendment's claim is about what a USER can open: with the bar back the
+  // campaign pill renders as the disabled span, the spec's click finds no
+  // button, and the reopen assertions fall. A source pin on the predicate
+  // would restate the mutation rather than test its consequence.
+  { id: '223 D5-05 bars held percentage campaigns again',
+    why: 'a held +10% campaign cannot be reopened from either pill — the'
+       + ' amendment silently reverted, and the only symptom on screen is a'
+       + ' pill that stopped being pressable',
+    file: WHATIF, spec: D505HELD,
+    mutate: s => s.replace(
+      'if (anyPercentage && !allHeld) {',
+      'if (anyPercentage) {') },
 ];
 
 
