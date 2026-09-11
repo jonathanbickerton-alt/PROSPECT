@@ -10282,6 +10282,13 @@ rule could not sanction.
    trend; measured 0.9724% over months 3–20 on the two-leaf fixture,
    pinned at 1.0% with the direction (rising, never falling) asserted
    separately. A falling ratio is compounding and a defect.
+10. (Jon, 2026-09-11) ALL SIX ramp/hold controls are real checkboxes —
+    Volume spread + hold, Promotion spread + hold, churn ramp + hold —
+    rendered by ONE component, not six inline copies. `<input
+    type="checkbox">` with a label; the existing testids are kept.
+    The round-dot button read as a radio group and the two controls
+    are independent (clause 4), so the glyph was stating the opposite
+    of the rule.
 
 ---
 
