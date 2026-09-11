@@ -10253,6 +10253,13 @@ rule could not sanction.
 1. Hold is MATERIALISED AS ROWS at build, one row per month, through the
    existing ramp generators, to the LAST FORECAST HORIZON MONTH. No
    carrier field. Apply sites, Compare and pools UNCHANGED.
+
+**SUPERSEDED IN PART by REQ-D6-05 (Jon, 2026-09-11):** This supersedes
+REQ-D6-03 clauses 2–4 and clause 7's coupling of shape to the Hold box.
+See "REQ-D6-05 — SPREAD vs RAMP" at the end of this file. Recorded
+before any code; the build has not happened, so the code still follows
+the clauses below.
+
 2. With Hold ON the entered figure is the TARGET and the ramp is
    linear-cumulative to it: 10% over 3 = +3.33% / +6.67% / +10%, then
    +10% held; 2,500 over 3 = 833 / 1,667 / 2,500, then 2,500 held.
@@ -10275,6 +10282,13 @@ rule could not sanction.
    figure equals the last row's (the plateau start).
 6. A held campaign is ONE campaign: one pill, one switch, D5-05's bar,
    Show all — nothing new.
+
+**SUPERSEDED IN PART by REQ-D6-05 (Jon, 2026-09-11):** This supersedes
+REQ-D6-03 clauses 2–4 and clause 7's coupling of shape to the Hold box.
+See "REQ-D6-05 — SPREAD vs RAMP" at the end of this file. Recorded
+before any code; the build has not happened, so the code still follows
+the clauses below.
+
 7. (ratified 2026-09-10) A percentage draft may be spread ONLY under
    Hold ON — the entered percentage is the target reached at month N
    and held. With Hold OFF the spread section stays hidden for a
@@ -10320,3 +10334,30 @@ rule could not sanction.
    says "usually under 15 seconds". No user-facing string carries a
    megabyte figure typed in: every mention reads MAX_UPLOAD_MB through
    a placeholder.
+
+## REQ-D6-05 — SPREAD vs RAMP (Jon, 2026-09-11)
+
+1. Spreading a volume and ramping are two different things and the
+   user chooses explicitly. SPREAD: the entered figure is a TOTAL;
+   custom shares must sum to 100%; rows end after N months (the
+   REQ-D6-03 Hold-OFF behaviour, byte-identical). RAMP: the entered
+   figure is the TARGET reached at month N; each month's figure ≤
+   the next.
+2. Hold lives ONLY in Ramp mode ("Ramp then hold"); a permanent
+   monthly figure is Ramp with duration 1 + Hold. Spread has no Hold.
+3. Ramp mode's per-month entry is TYPED VALUES (1,000 / 2,000 /
+   3,000, as the churn card's boxes), Even as the prefill; shares
+   belong to Spread.
+4. Default mode: Spread for an absolute amount, Ramp for a
+   percentage. Churn is already a ramp. Whether the dilution arm
+   should ramp is OPEN pending the inventory below (it is applied
+   once at build today — decision 3, 90e2162).
+5. The Promotion card's spread accepts typed absolute per-month
+   values as well as shares, matching the Volume card.
+6. The amount label follows the mode: "total, split across the
+   spread" / "target reached, then held". Emitted rows and the
+   `Hold` column keep their meaning; a Spread campaign's rows sum to
+   the stated total, a Ramp campaign's last row is its target.
+
+This supersedes REQ-D6-03 clauses 2–4 and clause 7's coupling of
+shape to the Hold box.
