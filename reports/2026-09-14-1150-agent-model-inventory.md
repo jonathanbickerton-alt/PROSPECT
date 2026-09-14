@@ -5,7 +5,7 @@
 ```
 Generated: 2026-09-14 11:50 +0100 (UTC 2026-09-14 10:50)
 Verified against: HEAD ee41f23, branch main, tree CLEAN (last gated: 6fd13f8 per d5-05-held Repo line; ee41f23 is a later gated fill, 71/71 + 232/232)
-Repo: committed <filled below>, pushed (origin in sync)
+Repo: committed bdf2603 (report), pushed (origin in sync); Repo-line fill commit follows
 Session model: Fable 5.1 (claude-fable-5-1), effortLevel "medium" from ~/.claude/settings.json — NO RECORDED RATIONALE
 debugger — reproduce/isolate/propose fix — sonnet — .claude/agents/debugger.md
 dependency-mapper — map dependents before shared-logic change — sonnet — .claude/agents/dependency-mapper.md
