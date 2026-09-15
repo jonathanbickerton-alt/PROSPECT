@@ -10457,3 +10457,8 @@ Jon's answers to the inventory's questions, 2026-09-11:
 4. A FULL unfiltered run before any hash is called "last gated state" in
    the working agreement, and before a release.
 5. Batching is not built (masking; the 1206 crash pair).
+6. (Jon, 2026-09-15) `npm run guard-traps` with no flag is the FULL run;
+   `-- --targeted` selects against the ledger's lastFullRun, `-- --base
+   <rev>` against a named base. A build session's gate runs targeted; a
+   release, a docs 'last gated state', and the session-close skill run
+   full.
