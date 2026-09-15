@@ -33,6 +33,8 @@ import { spawnSync } from 'child_process';
 import os from 'os';
 import path from 'path';
 import { performance } from 'perf_hooks';
+// Targeted runs: the selector, ledger and control hash (EXPECTED "GUARD-TRAPS TARGETED RUNS").
+import * as GT from './guard-traps-select';
 
 // TIMING (2026-09-15). MEASUREMENT ONLY: wall-clock from here, printed after the
 // summary. Nothing below reads these numbers to decide anything.
@@ -3545,6 +3547,79 @@ const results: { id: string; state: string; detail: string }[] = [];
 const stepMs = new Map<string, { plantMs: number | null; runMs: number | null; restoreMs: number | null }>();
 let controlMs: number | null = null;
 
+// ══ TARGETED RUNS — EXPECTED.md "GUARD-TRAPS TARGETED RUNS" (Jon 2026-09-10; built 2026-09-15) ══
+//
+//   npm run guard-traps -- --full           today's run, unchanged in output; records lastFullRun
+//   npm run guard-traps                     TARGETED against the ledger's lastFullRun
+//   npm run guard-traps -- --base <rev>     TARGETED against another BASE
+//   ... --select-only                       print the selection and the control decision; plant nothing
+//   ... --rotation <n> (default 20)   --ledger <path>   --scratch <target>=<file> (select-only)
+//   --only=<substring>                      unchanged: a FILTERED full-mode subset, never a gate run
+//
+// A FULL unfiltered run is what may stand behind "last gated state" and a release
+// (clause 4). A targeted run never prints the "N/N caught" line other scripts parse.
+const ARGV = process.argv.slice(2);
+const argVal = (name: string): string | undefined => { const i = ARGV.indexOf(name); return i >= 0 ? ARGV[i + 1] : undefined; };
+const ONLY_ARG = ARGV.some(a => a.startsWith('--only='));
+const FULL = ARGV.includes('--full') || ONLY_ARG;
+const SELECT_ONLY = ARGV.includes('--select-only');
+const LEDGER_PATH = argVal('--ledger') ?? 'scripts/guard-traps-ledger.json';
+const ROTATION_N = Number(argVal('--rotation') ?? 20);
+const SCRATCH = new Map<string, string>();
+ARGV.forEach((a, i) => {
+  if (a === '--scratch' && ARGV[i + 1]) { const [k, ...v] = ARGV[i + 1].split('='); SCRATCH.set(k, v.join('=')); }
+});
+if (SELECT_ONLY && FULL) { console.error('--select-only is a TARGETED option; it cannot be combined with --full or --only.'); process.exit(1); }
+if (SCRATCH.size && !SELECT_ONLY) { console.error('--scratch substitutes content for SELECTION only and never plants against it: add --select-only.'); process.exit(1); }
+const trapNum = (t: Trap) => t.id.trim().split(/\s/)[0];
+const ledger = GT.readLedger(LEDGER_PATH);
+const HEAD_HASH = GT.headHash(LEDGER_PATH);
+/**
+ * THE POSITIVE CONTROL'S SPECS, in the order they run. ONE list: the control runs
+ * it and the control cache hashes it, so the two cannot drift. Generated from the
+ * `||` expression it replaced, order and comments kept.
+ */
+const CONTROL_SPEC_MAP: Record<string, string> = {
+  SPEC, NULLSPEC, UNSCORED, LEAFGRAIN, RETIRE, IMPORTSEAM, GENMISSING, CHARTSCOPE, COVCOPY, WALKFIX, PANEL, STEP3, BULKDONE, NAVSPEC, STEP1SEL, STEP2UNLOCK, BASESEED, RESTOREBASE, EVTROUND, MIXSPEC, MIXCARD, OVERRIDESPEC, YIELDROUND, PRICEROUND, SUMMARYSPEC, ACTIVECOHORT, SCENPRICE, CMPFILTER, CMPPANEL, CMPWINDOW, CMPRENDER, CHURNFOLD, AMTCTRL, SCENARPU, I18NPARITY, FTSPLIT, ARPUCOMP, APPLIEDCOUNT, AGGRECON, VIEWAPPLY, LOCKRT, TRAPANCHORS, VALUEPAD, EVTOGGLE, AIHOLD,
+  // REQ-D6-03. ADDED 2026-09-10, session 2, and it is a real gap closed:
+  // session 1 registered four traps against HOLDSHAPE and never added it
+  // here, so a red hold-shape spec would have let all four "catch"
+  // vacuously — precisely what this control exists to prevent. CHURNHOLD
+  // joins it with 206-208.
+  HOLDSHAPE, CHURNHOLD,
+  // REQ-D6-03 s3. REGISTERED WITH ITS FIRST TRAP, which is the lesson
+  // session 2 paid for: HOLDSHAPE carried four traps for a session
+  // without being here, and they could all have caught vacuously.
+  PROMOHOLD,
+  // REQ-D6-04. Registered WITH its first trap, per session 2's finding.
+  INGESTSPEC,
+  // B10. Registered with its first trap, per session 2's finding.
+  RESTOREBANNER,
+  // D5-05 held. REGISTERED LATE — one session after its first trap. Trap
+  // 223 (0742 session) targeted D505HELD and the spec was never added
+  // here, so a red spec:d5-05-held would have let 223 "catch" vacuously
+  // and the 0742 report's 219/219 would have looked clean regardless.
+  // Found 2026-09-11 while registering SIZECOPY. It did not in fact go
+  // red (39/39 in that session's suite), but the control was not there to
+  // prove it — the exact lapse the HOLDSHAPE note above records.
+  D505HELD,
+  // REQ-D6-04 decision 4. Registered WITH its first trap, 224.
+  SIZECOPY,
+  // REQ-D6-05. Registered WITH its first trap, 225 — the lesson D505HELD
+  // was registered late for.
+  SPREADRAMPVOL,
+  // REQ-D6-05 Item 2. Registered WITH its first trap, 231.
+  SPREADRAMPPROMO,
+  // REQ-D6-06. Registered WITH its first trap, 237.
+  CAMPDEL,
+};
+const controlHashNow = () => GT.controlHash(
+  [...Object.values(CONTROL_SPEC_MAP), ...TARGETS, 'scripts/guard-traps.ts', 'scripts/guard-traps-select.ts'],
+  TRAPS.map(t => t.id + '\u0000' + t.mutate.toString()).join('\u0001'), SCRATCH);
+let selection: GT.Selection | null = null;
+let controlSkipped = false;
+let controlGreenHash: string | null = null;
+
 try {
   // ── THE CLASSIFIER IS ITSELF CONTROLLED ─────────────────────────────────
   // A CRASHED/CAUGHT distinction that silently degraded to "everything is
@@ -3573,48 +3648,54 @@ try {
     }
   }
 
+  // ── TARGETED: the selection is computed and printed IN FULL before the control
+  //    and before the first plant (EXPECTED clause 1). ──
+  if (!FULL) {
+    const baseArg = argVal('--base');
+    const baseRaw = baseArg ?? ledger.lastFullRun?.hash?.replace(/\+dirty$/, '');
+    if (!baseRaw) {
+      console.log('\n[select] no --base given and the ledger records no lastFullRun: run with --full first.');
+      process.exit(1);
+    }
+    const base = GT.verifyRev(baseRaw);
+    selection = GT.select({
+      traps: TRAPS.map(t => ({ num: trapNum(t), id: t.id, file: t.file ?? FILE, spec: t.spec ?? SPEC, mutate: t.mutate })),
+      base, ledger, rotation: ROTATION_N, scratch: SCRATCH,
+      headText: f => SCRATCH.has(f) ? fs.readFileSync(SCRATCH.get(f)!, 'utf8') : (originals.get(f) ?? fs.readFileSync(f, 'utf8')),
+      harnessPath: 'scripts/guard-traps.ts', harnessText: fs.readFileSync('scripts/guard-traps.ts', 'utf8'),
+    });
+    GT.printSelection(selection, base, baseArg ? '--base' : 'ledger lastFullRun', HEAD_HASH, ledger);
+    // CLAUSE 3: skipped ONLY on an exact hash match with the last GREEN control, and it says so.
+    const h = controlHashNow();
+    const cached = !!ledger.control && ledger.control.hash === h;
+    if (SELECT_ONLY) {
+      console.log(cached
+        ? `[control] cached green ${h.slice(0, 12)} ${ledger.control!.date} — would be skipped`
+        : `[control] would RUN — hash ${h.slice(0, 12)} differs from the last green ${ledger.control ? ledger.control.hash.slice(0, 12) + ' ' + ledger.control.date : '(none recorded)'}`);
+      process.exit(0);
+    }
+    if (cached) {
+      console.log(`[control] cached green ${h.slice(0, 12)} ${ledger.control!.date} — skipped`);
+      controlSkipped = true;
+    }
+  }
+
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  // TIMING: the positive control is measured as one block; its logic is unchanged.
-  const controlT0 = performance.now();
-  const controlRed = specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT) || specFails(AGGRECON) || specFails(VIEWAPPLY) || specFails(LOCKRT) || specFails(TRAPANCHORS) || specFails(VALUEPAD) || specFails(EVTOGGLE) || specFails(AIHOLD)
-      // REQ-D6-03. ADDED 2026-09-10, session 2, and it is a real gap closed:
-      // session 1 registered four traps against HOLDSHAPE and never added it
-      // here, so a red hold-shape spec would have let all four "catch"
-      // vacuously — precisely what this control exists to prevent. CHURNHOLD
-      // joins it with 206-208.
-      || specFails(HOLDSHAPE) || specFails(CHURNHOLD)
-      // REQ-D6-03 s3. REGISTERED WITH ITS FIRST TRAP, which is the lesson
-      // session 2 paid for: HOLDSHAPE carried four traps for a session
-      // without being here, and they could all have caught vacuously.
-      || specFails(PROMOHOLD)
-      // REQ-D6-04. Registered WITH its first trap, per session 2's finding.
-      || specFails(INGESTSPEC)
-      // B10. Registered with its first trap, per session 2's finding.
-      || specFails(RESTOREBANNER)
-      // D5-05 held. REGISTERED LATE — one session after its first trap. Trap
-      // 223 (0742 session) targeted D505HELD and the spec was never added
-      // here, so a red spec:d5-05-held would have let 223 "catch" vacuously
-      // and the 0742 report's 219/219 would have looked clean regardless.
-      // Found 2026-09-11 while registering SIZECOPY. It did not in fact go
-      // red (39/39 in that session's suite), but the control was not there to
-      // prove it — the exact lapse the HOLDSHAPE note above records.
-      || specFails(D505HELD)
-      // REQ-D6-04 decision 4. Registered WITH its first trap, 224.
-      || specFails(SIZECOPY)
-      // REQ-D6-05. Registered WITH its first trap, 225 — the lesson D505HELD
-      // was registered late for.
-      || specFails(SPREADRAMPVOL)
-      // REQ-D6-05 Item 2. Registered WITH its first trap, 231.
-      || specFails(SPREADRAMPPROMO)
-      // REQ-D6-06. Registered WITH its first trap, 237.
-      || specFails(CAMPDEL);
-  controlMs = performance.now() - controlT0;
-  if (controlRed) {
-    console.log('\nGUARD TRAPS\n' + '='.repeat(72));
-    console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
-    console.log('               Every trap would catch vacuously. Fix the spec first.');
-    process.exit(1);
+  if (!controlSkipped) {
+    // The hash is taken BEFORE the control runs, so a green run records the tree it judged.
+    const controlHashBefore = controlHashNow();
+    // TIMING: the positive control is measured as one block; its logic is unchanged.
+    const controlT0 = performance.now();
+    const controlRed = Object.values(CONTROL_SPEC_MAP).some(spec => specFails(spec));
+    controlMs = performance.now() - controlT0;
+    if (controlRed) {
+      console.log('\nGUARD TRAPS\n' + '='.repeat(72));
+      console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
+      console.log('               Every trap would catch vacuously. Fix the spec first.');
+      process.exit(1);
+    }
+    controlGreenHash = controlHashBefore;
   }
 
   // `--only=<substring>` runs a subset, by id. Added 2026-09-11 so the
@@ -3624,7 +3705,8 @@ try {
   // filtered run says so on its own line so a report cannot quote one as if it
   // were the gate.
   const ONLY = (process.argv.find(a => a.startsWith('--only=')) ?? '').slice(7);
-  const SELECTED = ONLY ? TRAPS.filter(t => t.id.includes(ONLY)) : TRAPS;
+  const SELECTED = ONLY ? TRAPS.filter(t => t.id.includes(ONLY))
+    : selection ? TRAPS.filter(t => selection!.run.has(trapNum(t))) : TRAPS;
   if (ONLY) {
     console.log(`\n[FILTERED] --only=${ONLY} selected ${SELECTED.length} of ${TRAPS.length} traps.`
       + ' This is NOT a gate run.');
@@ -3728,12 +3810,26 @@ try {
   }
 }
 
-console.log('\nGUARD TRAPS\n' + '='.repeat(72));
-for (const r of results) console.log(`[${r.state.padEnd(12)}] ${r.id}${r.detail ? '  —  ' + r.detail : ''}`);
-console.log('='.repeat(72));
 const caught = results.filter(r => r.state === 'CAUGHT').length;
 const bad = results.filter(r => r.state !== 'CAUGHT');
-console.log(`${caught}/${results.length} caught`);
+if (!selection) {
+  console.log('\nGUARD TRAPS\n' + '='.repeat(72));
+  for (const r of results) console.log(`[${r.state.padEnd(12)}] ${r.id}${r.detail ? '  —  ' + r.detail : ''}`);
+  console.log('='.repeat(72));
+  console.log(`${caught}/${results.length} caught`);
+} else {
+  // TARGETED (EXPECTED clause 2): NOT RUN is its own per-trap state and never enters the ratio.
+  const ranIds = new Set(results.map(r => r.id));
+  const notRun = TRAPS.filter(t => !ranIds.has(t.id));
+  console.log('\nGUARD TRAPS — TARGETED\n' + '='.repeat(72));
+  for (const r of results) console.log(`[${r.state.padEnd(12)}] ${r.id}${r.detail ? '  —  ' + r.detail : ''}`);
+  for (const t of notRun) console.log(`[${'NOT RUN'.padEnd(12)}] ${t.id}`);
+  console.log('='.repeat(72));
+  const lf = ledger.lastFullRun;
+  console.log(`guard-traps targeted ${caught}/${results.length} CAUGHT (ids ${[...selection.targeted.keys()].join(' ') || '-'}),`
+    + ` rotation ${selection.rotation.length} (ids ${selection.rotation.join(' ') || '-'}),`
+    + ` NOT RUN ${notRun.length}, last FULL run ${lf ? lf.hash + ' ' + lf.date : '(none recorded)'}`);
+}
 if (bad.length) {
   console.log('A MISSED, INCONCLUSIVE or CRASHED trap means the guard does not protect what it claims to.');
   // Each state names a DIFFERENT repair, so the summary says which.
@@ -3772,5 +3868,20 @@ if (bad.length) {
   console.log(`[timing-total] total_wall_ms=${Math.round(total)} control_ms=${f(controlMs)}`
     + ` trap_runs_ms=${Math.round(rows.reduce((a, r) => a + r.prod, 0))} plants_ms=${Math.round(plantSum)}`
     + ` restores_ms=${Math.round(restoreSum)} traps_timed=${rows.reduce((a, r) => a + r.n, 0)} traps_total=${TRAPS.length}`);
+}
+// ── LEDGER (EXPECTED clause 1): advanced ONLY for traps that RAN, whatever their state ──
+// A FULL unfiltered run also records lastFullRun; a green control records its hash.
+if (!SELECT_ONLY) {
+  const now = new Date().toISOString();
+  const byId = new Map(TRAPS.map(t => [t.id, t]));
+  for (const r of results) {
+    const t = byId.get(r.id);
+    if (!t) continue;
+    const sp = GT.spanOf(t.mutate, toLF(originals.get(t.file ?? FILE) ?? ''));
+    ledger.traps[trapNum(t)] = { lastRunHash: HEAD_HASH, lastRunDate: now, lastState: r.state, anchorSpan: typeof sp === 'string' ? null : sp };
+  }
+  if (controlGreenHash) ledger.control = { hash: controlGreenHash, date: now };
+  if (FULL && !ONLY_ARG) ledger.lastFullRun = { hash: HEAD_HASH, date: now, caught, total: results.length };
+  GT.writeLedger(LEDGER_PATH, ledger);
 }
 process.exit(bad.length ? 1 : 0);
