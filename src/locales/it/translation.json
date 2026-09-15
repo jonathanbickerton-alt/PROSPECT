@@ -908,5 +908,11 @@
   "whatif_churn_label_ramp": "Riduzione obiettivo — raggiunta al mese {{p0}}",
   "whatif_amount_label_pct_one": "Variazione di {{p0}} — un mese",
   "whatif_promo_volume_pct_label_one": "Variazione di volume (% della previsione) — un mese",
-  "whatif_amount_label_ramp_one": "Volume obiettivo — un mese"
+  "whatif_amount_label_ramp_one": "Volume obiettivo — un mese",
+  "whatif_delete_campaign_title": "Eliminare '{{name}}' — tutti i {{n}} eventi?",
+  "whatif_delete_campaign_blurb": "Tutti gli eventi della campagna vengono rimossi e la previsione ricalcolata. L'operazione non può essere annullata.",
+  "whatif_delete_campaign_confirm": "Elimina campagna",
+  "whatif_delete_campaign_cancel": "Annulla",
+  "whatif_delete_campaign_bin": "Elimina la campagna '{{name}}' ({{n}} eventi)",
+  "whatif_row_delete_barred": "Elimina l'intera campagna con il suo cestino"
 }

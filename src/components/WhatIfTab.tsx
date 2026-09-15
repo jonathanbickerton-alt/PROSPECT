@@ -987,6 +987,29 @@ export function holdPlateauStart(figures: readonly number[]): number {
 }
 
 /**
+ * REQ-D6-06 decision 3 — THE ONE MEMBER PREDICATE. Is this row one STEP of a
+ * multi-row campaign whose shape its siblings carry: a ramp, a held ramp, or a
+ * churn ramp? Such a row means nothing alone — removing (or editing) it on its
+ * own leaves the campaign describing a shape it no longer has.
+ *
+ * Extracted from handleEditStart's churn sibling rule (Jon, 2026-08-20; trap
+ * 107), which keeps its churn-only scope; the per-row delete bins are the second
+ * caller. "Step-shaped" is the writer's own Mode rule (`marketEventExportRow`:
+ * churn, or eventMode ramp). A SPREAD member is not a step: removing one month of
+ * a split leaves a shape the restore still names (Custom values).
+ *
+ * Siblings are counted on the row's own carrier (promotion or not) under the
+ * same campaign name, the empty name included — the grouping the churn rule used.
+ */
+export function isCampaignStepMember(event: MarketEvent, all: readonly MarketEvent[]): boolean {
+  const stepShaped = (e: MarketEvent) => e.churnMode === 'churn' || eventMode(e) === 'ramp';
+  if (!stepShaped(event)) return false;
+  const key = event.campaignName ?? '';
+  return all.filter(e => !!e.isPromotion === !!event.isPromotion
+    && (e.campaignName ?? '') === key && stepShaped(e)).length > 1;
+}
+
+/**
  * `reason` is a LOCALE KEY, not a sentence — empty string when editable.
  *
  * It is rendered as the `title` of the disabled campaign pill, which is the
@@ -3131,6 +3154,29 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     rows.forEach(r => handleSetEventEnabled({ id: r.id, pass: 0 }, next));
   }, [handleSetEventEnabled]);
 
+  /**
+   * REQ-D6-06 decision 4 — THE ONE PLACE A CAMPAIGN IS DELETED. Every campaign bin
+   * calls this: the Volume table pill, the Promotion table pill and the Events
+   * summary panel.
+   *
+   * It takes the campaign's ROWS from the caller's pill group — the grouping the
+   * campaign switch above already reads (`handleSetCampaignEnabled(group.rows)`) —
+   * so there is no second "which rows are this campaign" derivation. It commits
+   * nothing itself: it stages the EXACT array the confirm previews (decision 2),
+   * and confirmPendingChange removes every row in ONE setMarketEvents call and
+   * closes an editor left open on the campaign. Deleting is not editing: no
+   * campaign editor and no D5-05 bar is consulted (decision 4).
+   */
+  const handleDeleteCampaign = useCallback((campaignName: string, rows: { id: string; isPromotion?: boolean }[]) => {
+    if (!campaignName || rows.length === 0) return;
+    const ids = new Set(rows.map(r => r.id));
+    setPendingChange({
+      kind: 'campaign',
+      nextEvents: marketEvents.filter(e => !ids.has(e.id)),
+      campaign: { name: campaignName, n: rows.length, isPromotion: !!rows[0].isPromotion },
+    });
+  }, [marketEvents]);
+
   const summaryRows = useMemo(
     () => buildEventsSummaryRows({ marketEvents, yieldEvents, pricingEvents }, t),
     [marketEvents, yieldEvents, pricingEvents, t]);
@@ -4682,10 +4728,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // a single row can be opened, so it is the only place the refusal can fire.
     // The :512 campaign bar answers a different question — it refuses to
     // reverse-engineer a ramp from summed volumes.
+    // REQ-D6-06: the sibling rule now lives in isCampaignStepMember, THE ONE member
+    // predicate the per-row delete bins also read. Row-EDIT keeps its churn scope.
     if (event.churnMode === 'churn') {
-      const siblings = marketEvents.filter(
-        e => e.churnMode === 'churn' && (e.campaignName ?? '') === (event.campaignName ?? ''));
-      if (siblings.length > 1) {
+      if (isCampaignStepMember(event, marketEvents)) {
         setEditDeclineReason(t('whatif_churn_member_no_edit'));
         return;
       }
@@ -5253,7 +5299,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
 
   const [pendingChange, setPendingChange] = useState<
-    { kind: 'delete' | 'edit' | 'clear'; nextEvents: MarketEvent[] } | null
+    { kind: 'delete' | 'edit' | 'clear' | 'campaign'; nextEvents: MarketEvent[];
+      /** REQ-D6-06: which campaign a `campaign` change deletes — named in the dialog. */
+      campaign?: { name: string; n: number; isPromotion: boolean } } | null
   >(null);
 
   const changeSummary = useMemo(() => {
@@ -5304,14 +5352,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiValueCol,
       wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal]);
 
-  /** Commits exactly the array that was previewed. */
-  const confirmPendingChange = useCallback(() => {
-    if (!pendingChange) return;
-    setMarketEvents(pendingChange.nextEvents);
-    setPendingChange(null);
-    setEditingEventId(null);
-    setNewEvent(BLANK_EVENT);
-  }, [pendingChange, setMarketEvents, setNewEvent]);
+  // confirmPendingChange — "commits exactly the array that was previewed" — is
+  // defined below handleCancelPromoEdit (REQ-D6-06), so it can close an editor.
 
   const handleSaveEdit = useCallback(() => {
     if (!editingEventId || !newEvent.date) return;
@@ -5685,6 +5727,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setEditingPromoCampaign(null);
     resetPromoDraft();
   }, [resetPromoDraft]);
+
+  /** Commits exactly the array that was previewed. */
+  const confirmPendingChange = useCallback(() => {
+    if (!pendingChange) return;
+    setMarketEvents(pendingChange.nextEvents);
+    setPendingChange(null);
+    setEditingEventId(null);
+    setNewEvent(BLANK_EVENT);
+    // REQ-D6-06 1.2 — A CAMPAIGN DELETED WHILE ITS EDITOR IS OPEN leaves no stale
+    // draft: that campaign's editor closes through its own card's cancel.
+    const gone = pendingChange.campaign;
+    if (gone && !gone.isPromotion && editingCampaign === gone.name) handleCancelEdit();
+    if (gone && gone.isPromotion && editingPromoCampaign === gone.name) handleCancelPromoEdit();
+  }, [pendingChange, setMarketEvents, setNewEvent, editingCampaign, editingPromoCampaign, handleCancelEdit, handleCancelPromoEdit]);
 
   // -------------------------------------------------------------------------
   // Write MarketEventAdjustedForecast back to context whenever inputs change
@@ -6107,7 +6163,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       {pendingChange && (
         <EventChangeConfirmModal
           kind={pendingChange.kind}
-          affectedCount={pendingChange.kind === 'clear' ? marketEvents.length : 1}
+          affectedCount={pendingChange.kind === 'clear' ? marketEvents.length : pendingChange.campaign?.n ?? 1}
+          // REQ-D6-06 decision 2 — ONE dialog names the campaign and its row count.
+          text={pendingChange.campaign ? {
+            title: t('whatif_delete_campaign_title', { name: pendingChange.campaign.name, n: pendingChange.campaign.n }),
+            blurb: t('whatif_delete_campaign_blurb'),
+            confirm: t('whatif_delete_campaign_confirm'),
+            cancel: t('whatif_delete_campaign_cancel'),
+          } : undefined}
           summary={changeSummary}
           formatNumber={formatNumber}
           onConfirm={confirmPendingChange}
@@ -6544,6 +6607,18 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           onToggle={() => setSummaryOpen(o => !o)}
           title={t('whatif_summary_title')}
           onSetEnabled={handleSetEventEnabled}
+          // REQ-D6-06 Item 2 — OPT-IN campaign bin, on the group's FIRST row only (the
+          // same lead the table pills use). The rows come from the pill's group and the
+          // action is the one function. Compare passes nothing and shows nothing.
+          onDeleteCampaign={(row) => {
+            if (row.pass !== 0) return null;
+            const ev = marketEvents.find(x => x.id === row.id);
+            const name = ev?.campaignName;
+            if (!ev || !name) return null;
+            const group = (ev.isPromotion ? promoCampaignGroups : campaignGroups).get(name);
+            if (!group || group.rows[0]?.id !== ev.id) return null;
+            return { name, n: group.rows.length, run: () => handleDeleteCampaign(name, group.rows) };
+          }}
           // D5-08 (Jon, UAT 2026-09-07). THE ONLY caller that opts in. Compare
           // mounts the same component once per loaded file and is deliberately
           // left alone — the decision is summary-panel-only.
@@ -7967,6 +8042,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               ) : (
                                 <span className="text-slate-300">—</span>
                               )}
+                              {/* REQ-D6-06 — THE CAMPAIGN BIN (Volume), on the group's first row
+                                  beside its switch and pill. The rows come from the pill's group. */}
+                              {isCampaignLead && group && campaignLabel && (
+                                <button
+                                  type="button"
+                                  data-testid="volume-campaign-delete"
+                                  data-campaign={campaignLabel}
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteCampaign(campaignLabel, group.rows); }}
+                                  className="align-middle ml-1 p-0.5 rounded text-rose-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                  title={t('whatif_delete_campaign_bin', { name: campaignLabel, n: group.rows.length })}
+                                  aria-label={t('whatif_delete_campaign_bin', { name: campaignLabel, n: group.rows.length })}
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              )}
                             </td>
                             <td className="px-5 py-3 font-medium text-slate-700 whitespace-nowrap">{fmtMonth(event.date)}</td>
                             <td className="px-5 py-3 text-slate-600 text-xs">{event.segment}</td>
@@ -8033,13 +8123,30 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               </button>
                             </td>
                             <td className="px-5 py-3 text-center">
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); setPendingChange({ kind: 'delete', nextEvents: marketEvents.filter(x => x.id !== event.id) }); }}
-                                className="text-rose-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition-colors"
-                              >
-                                <Trash2 size={14} />
-                              </button>
+                              {(() => {
+                                // REQ-D6-06 decision 3 — a ramp, held or churn MEMBER is not deleted on its
+                                // own. Disabled, and it SAYS why in text, as the edit bar does (D5-05).
+                                const rowDeleteBarred = !!campaignLabel && isCampaignStepMember(event, marketEvents);
+                                return (
+                                  <>
+                                    <button
+                                      type="button"
+                                      data-testid={`volume-row-delete-${event.id}`}
+                                      disabled={rowDeleteBarred}
+                                      aria-disabled={rowDeleteBarred}
+                                      onClick={(e) => { e.stopPropagation(); if (rowDeleteBarred) return; setPendingChange({ kind: 'delete', nextEvents: marketEvents.filter(x => x.id !== event.id) }); }}
+                                      className={`p-1 rounded transition-colors ${rowDeleteBarred ? 'text-slate-300 cursor-not-allowed' : 'text-rose-400 hover:text-rose-600 hover:bg-rose-50'}`}
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                    {rowDeleteBarred && (
+                                      <span data-testid={`volume-row-delete-reason-${event.id}`} className="block text-[10px] text-slate-400 mt-0.5 whitespace-normal">
+                                        {t('whatif_row_delete_barred')}
+                                      </span>
+                                    )}
+                                  </>
+                                );
+                              })()}
                             </td>
                           </tr>
                           {isPercentage && expandedEventId === event.id && (
@@ -9945,6 +10052,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               ) : (
                                 <span className="text-slate-300">—</span>
                               )}
+                              {/* REQ-D6-06 — THE CAMPAIGN BIN (Promotion), the same control as the
+                                  Volume table's, on this card's own pill group. */}
+                              {isCampaignLead && group && campaignLabel && (
+                                <button
+                                  type="button"
+                                  data-testid="promo-campaign-delete"
+                                  data-campaign={campaignLabel}
+                                  onClick={(ev) => { ev.stopPropagation(); handleDeleteCampaign(campaignLabel, group.rows); }}
+                                  className="align-middle ml-1 p-0.5 rounded text-rose-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                  title={t('whatif_delete_campaign_bin', { name: campaignLabel, n: group.rows.length })}
+                                  aria-label={t('whatif_delete_campaign_bin', { name: campaignLabel, n: group.rows.length })}
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              )}
                             </td>
                             <td className="px-5 py-3 text-xs text-slate-600">{e.scenario}</td>
                             <td className="px-5 py-3 text-xs text-slate-600">{fmtMonth(e.date)}</td>
@@ -9972,9 +10094,29 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               </button>
                             </td>
                             <td className="px-5 py-3 text-right">
-                              <button onClick={() => removeMarketEvent(e.id)} className="text-slate-400 hover:text-rose-600 transition-colors">
-                                <Trash2 size={14} />
-                              </button>
+                              {(() => {
+                                // REQ-D6-06 decision 3 — the same member predicate as the Volume table.
+                                const rowDeleteBarred = !!campaignLabel && isCampaignStepMember(e, marketEvents);
+                                return (
+                                  <>
+                                    <button
+                                      type="button"
+                                      data-testid={`promo-row-delete-${e.id}`}
+                                      disabled={rowDeleteBarred}
+                                      aria-disabled={rowDeleteBarred}
+                                      onClick={() => { if (rowDeleteBarred) return; removeMarketEvent(e.id); }}
+                                      className={`transition-colors ${rowDeleteBarred ? 'text-slate-300 cursor-not-allowed' : 'text-slate-400 hover:text-rose-600'}`}
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                    {rowDeleteBarred && (
+                                      <span data-testid={`promo-row-delete-reason-${e.id}`} className="block text-[10px] text-slate-400 mt-0.5 whitespace-normal">
+                                        {t('whatif_row_delete_barred')}
+                                      </span>
+                                    )}
+                                  </>
+                                );
+                              })()}
                             </td>
                           </tr>
                         );

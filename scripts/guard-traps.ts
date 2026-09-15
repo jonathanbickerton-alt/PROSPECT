@@ -84,6 +84,7 @@ const INGESTSPEC = 'scripts/ingest-spec.tsx';
 const SIZECOPY = 'scripts/size-copy-spec.tsx';
 const SPREADRAMPVOL = 'scripts/spread-ramp-volume-mounted-spec.tsx';
 const SPREADRAMPPROMO = 'scripts/spread-ramp-promo-mounted-spec.tsx';
+const CAMPDEL = 'scripts/campaign-delete-mounted-spec.tsx';
 const ENLOCALE = 'src/locales/en/translation.json';
 const RESTOREBANNER = 'scripts/restore-banner-spec.ts';
 const INGEST = 'src/utils/ingest.ts';
@@ -1735,8 +1736,10 @@ const TRAPS: Trap[] = [
   // siblings and the ramp stops describing the rate it was stated as.
   { id: '107 a churn ramp member can be row-edited', why: 'one member desyncs and the ramp stops meaning its stated rate',
     file: WHATIF, spec: MIXCARD,
+    // RE-ANCHORED 2026-09-15 (REQ-D6-06): the sibling rule is now the one member
+    // predicate, isCampaignStepMember; the churn edit bar calls it. Same plant.
     mutate: s => s.replace(
-      '      if (siblings.length > 1) {',
+      '      if (isCampaignStepMember(event, marketEvents)) {',
       '      if (false) {') },
   // 108 feeds the LOADED COHORT back into the pricing series, which is exactly
   // what the code did before this session. Both weighting volumes and the
@@ -3355,6 +3358,59 @@ const TRAPS: Trap[] = [
         + "                            ? t('whatif_amount_label_ramp_one')",
       "                        ? (false" + nl
         + "                            ? t('whatif_amount_label_ramp_one')") },
+  // ══ REQ-D6-06 — campaign-level delete (2026-09-15) — 237–242 ═════════════════
+  //
+  // 237 THE BIN DELETES ONE ROW. The dialog still names the campaign and its 22,
+  // and the one function removes only the first — the confirmation describing a
+  // change that is not the one made.
+  { id: '237 the campaign bin deletes one row instead of the campaign',
+    why: "the dialog says 'all 22 events' and 21 of them stay in the forecast",
+    file: WHATIF, spec: CAMPDEL,
+    mutate: s => s.replace(
+      '    const ids = new Set(rows.map(r => r.id));',
+      '    const ids = new Set(rows.slice(0, 1).map(r => r.id));') },
+  // 238 THE DIALOG IS SKIPPED. The one function commits straight away: a campaign
+  // of 22 rows gone on a single click with no undo (decision 2).
+  { id: '238 the campaign delete skips its confirmation',
+    why: 'one mis-click removes a whole campaign, and there is no undo',
+    file: WHATIF, spec: CAMPDEL,
+    mutate: s => s.replace(
+      '    setPendingChange({' + nl + "      kind: 'campaign',",
+      '    setMarketEvents(marketEvents.filter(e => !ids.has(e.id)));' + nl
+        + '    if (false) setPendingChange({' + nl + "      kind: 'campaign',") },
+  // 239 A CALLER BYPASSES THE ONE FUNCTION. The Promotion bin stages its own
+  // campaign change. Behaviour is identical today, which is exactly why only the
+  // caller pin can see it — and why two derivations would drift later.
+  { id: '239 the Promotion campaign bin bypasses handleDeleteCampaign',
+    why: 'a second place that decides which rows a campaign delete removes (decision 4)',
+    file: WHATIF, spec: CAMPDEL,
+    mutate: s => s.replace(
+      'onClick={(ev) => { ev.stopPropagation(); handleDeleteCampaign(campaignLabel, group.rows); }}',
+      "onClick={(ev) => { ev.stopPropagation(); setPendingChange({ kind: 'campaign', nextEvents: marketEvents.filter(x => !group.rows.some(r => r.id === x.id)), campaign: { name: campaignLabel, n: group.rows.length, isPromotion: true } }); }}") },
+  // 240 THE MEMBER BAR REMOVED. A held member's per-row bin is live again, so
+  // month 6 of a held ramp can be deleted alone (decision 3).
+  { id: '240 a held campaign member can be deleted per row',
+    why: 'one month of a held ramp disappears and the campaign no longer states its shape',
+    file: WHATIF, spec: CAMPDEL,
+    mutate: s => s.replace(
+      'const rowDeleteBarred = !!campaignLabel && isCampaignStepMember(event, marketEvents);',
+      'const rowDeleteBarred = false;') },
+  // 241 DELETE LEAVES A STALE EDITOR OPEN. The campaign is gone and its editor
+  // still offers "Save campaign" over a form describing rows that no longer exist.
+  { id: '241 deleting a campaign leaves its editor open',
+    why: 'Save campaign stays on screen for a campaign that no longer exists',
+    file: WHATIF, spec: CAMPDEL,
+    mutate: s => s.replace(
+      '    if (gone && !gone.isPromotion && editingCampaign === gone.name) handleCancelEdit();',
+      '    if (false) handleCancelEdit();') },
+  // 242 THE SUMMARY BIN RENDERS UNCONDITIONALLY. The opt-in is lost, and Compare
+  // — whose summary is read-only (decision 5) — gains a bin on every row.
+  { id: '242 the summary bin renders without the opt-in (Compare gains one)',
+    why: "Compare's read-only panel offers to delete events it does not own",
+    file: SUMMARYTABLE, spec: CAMPDEL,
+    mutate: s => s.replace(
+      'const bin = onDeleteCampaign ? onDeleteCampaign(r) : null;',
+      'const bin = onDeleteCampaign ? onDeleteCampaign(r) : { name: r.name, n: 1, run: () => {} };') },
 ];
 
 
@@ -3516,7 +3572,9 @@ try {
       // was registered late for.
       || specFails(SPREADRAMPVOL)
       // REQ-D6-05 Item 2. Registered WITH its first trap, 231.
-      || specFails(SPREADRAMPPROMO)) {
+      || specFails(SPREADRAMPPROMO)
+      // REQ-D6-06. Registered WITH its first trap, 237.
+      || specFails(CAMPDEL)) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');

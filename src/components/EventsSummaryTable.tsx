@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Trash2 } from 'lucide-react';
 import type { EventSummaryRow, SummaryT, EffectStatus } from '../utils/forecasting';
 import { EFFECT_LABEL_KEY } from '../utils/forecasting';
 import { EventOnOffSwitch, OFF_ROW } from './EventOnOffSwitch';
@@ -65,6 +65,15 @@ export interface EventsSummaryTableProps {
    * coverage" for every row because the join found nothing.
    */
   effectOf?: (row: EventSummaryRow) => EffectStatus;
+  /**
+   * REQ-D6-06 Item 2. OPT-IN, for the reason `showAllToggle` and `effectOf` are:
+   * Compare mounts this component too, and its summary is read-only (decision
+   * 5). Absent = no bin anywhere. Present, it is asked per row and answers with
+   * the campaign's name, row count and the delete action for a campaign's FIRST
+   * row, or null — so the table never works out for itself which rows form a
+   * campaign, and the action stays the caller's one function.
+   */
+  onDeleteCampaign?: (row: EventSummaryRow) => { name: string; n: number; run: () => void } | null;
 }
 
 /**
@@ -87,7 +96,7 @@ export const SHOW_ALL_THRESHOLD = 9;
 
 export function EventsSummaryTable({
   rows, t, open, onToggle, title, testIdPrefix = 'events-summary', dense = false,
-  onSetEnabled, showAllToggle = false, effectOf,
+  onSetEnabled, showAllToggle = false, effectOf, onDeleteCampaign,
 }: EventsSummaryTableProps) {
   // D5-08. VIEW STATE, local to the panel: not exported, not persisted, and
   // reset on reload — a height preference is not a property of the forecast.
@@ -203,6 +212,24 @@ export function EventsSummaryTable({
                               title={r.enabled ? t('whatif_event_on') : t('whatif_event_off')}
                             />
                           )}
+                          {(() => {
+                            // REQ-D6-06 — beside the switch, on a campaign's first row, and only
+                            // when the caller opted in.
+                            const bin = onDeleteCampaign ? onDeleteCampaign(r) : null;
+                            return bin ? (
+                              <button
+                                type="button"
+                                data-testid={`${testIdPrefix}-campaign-delete-${r.id}`}
+                                data-campaign={bin.name}
+                                onClick={bin.run}
+                                className="align-middle ml-1 p-0.5 rounded text-rose-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                                title={t('whatif_delete_campaign_bin', { name: bin.name, n: bin.n })}
+                                aria-label={t('whatif_delete_campaign_bin', { name: bin.name, n: bin.n })}
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            ) : null;
+                          })()}
                         </td>
                         {/* D5-09. ONE label component, one keyed string per
                             status, both from EFFECT_LABEL_KEY — so the four
