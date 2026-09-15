@@ -10411,3 +10411,23 @@ Jon's answers to the inventory's questions, 2026-09-11:
     is 2dp on every surface (+3.33%).
 18. An absolute Ramp at duration 1 reads '— one month', as the percentage
     does.
+
+## REQ-D6-06 — CAMPAIGN-LEVEL DELETE (Alessandro, 2026-09-15; Jon's decisions 2026-09-15)
+
+1. A campaign (every row sharing a campaign name on the Market
+   carrier — spread, ramp, held, churn, promotion) can be deleted as
+   ONE action from every surface that shows its pill: the Volume
+   events table, the Promotion table, and the Events summary panel
+   on the group's first row beside the campaign switch.
+2. ONE confirmation dialog names the campaign and its row count
+   ("Delete 'B2 test' — all 22 events?"), Confirm / Cancel. No undo.
+3. Per-row delete of a ramp, held or churn campaign MEMBER is barred,
+   with the reason rendered as text pointing at the campaign bin —
+   the same pattern as the per-row edit bar (D5-05 / trap 107). A
+   Spread member (rows end after N, no plateau) keeps its per-row
+   bin: removing one month of a split is a shape the restore can
+   still name (Custom values).
+4. ONE state-layer function deletes a campaign; every bin calls it.
+   Deleting is not editing: D5-05's percentage bar and the campaign
+   editor are not involved.
+5. Compare is unchanged (its summary is read-only).
