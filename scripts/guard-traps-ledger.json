@@ -1,0 +1,2415 @@
+{
+  "version": 1,
+  "lastFullRun": {
+    "hash": "e7c88aa",
+    "date": "2026-09-15T22:19:55.696Z",
+    "caught": 240,
+    "total": 240
+  },
+  "control": {
+    "hash": "77bd4b766a93044825f1a6b50986d3276c2650b59eb38f2f83560a58b3d349aa",
+    "date": "2026-09-15T22:19:55.696Z"
+  },
+  "traps": {
+    "1": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2718,
+        "end": 2718,
+        "textHash": "16b7a74d65aaac1b"
+      }
+    },
+    "2": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2718,
+        "end": 2718,
+        "textHash": "16b7a74d65aaac1b"
+      }
+    },
+    "3": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2718,
+        "end": 2718,
+        "textHash": "16b7a74d65aaac1b"
+      }
+    },
+    "4": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2718,
+        "end": 2718,
+        "textHash": "16b7a74d65aaac1b"
+      }
+    },
+    "5": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2718,
+        "end": 2720,
+        "textHash": "07cc223e950ca0d7"
+      }
+    },
+    "6": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4217,
+        "end": 4219,
+        "textHash": "2768505f55b200f6"
+      }
+    },
+    "7": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 6168,
+        "end": 6168,
+        "textHash": "ba5edd2f7bb6fefe"
+      }
+    },
+    "8": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 6128,
+        "end": 6128,
+        "textHash": "01be01c474266508"
+      }
+    },
+    "9": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2446,
+        "end": 2446,
+        "textHash": "70ff505dc7ffebde"
+      }
+    },
+    "10": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2446,
+        "end": 2447,
+        "textHash": "42596ef622f06ae0"
+      }
+    },
+    "11": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1435,
+        "end": 1450,
+        "textHash": "74156fdd09c16039"
+      }
+    },
+    "12": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 195,
+        "end": 1435,
+        "textHash": "9b1bfb2414457c94"
+      }
+    },
+    "13": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4153,
+        "end": 4153,
+        "textHash": "c781e609f6e3973f"
+      }
+    },
+    "14": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3962,
+        "end": 3962,
+        "textHash": "bdaaeead0c2bf726"
+      }
+    },
+    "15": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 913,
+        "end": 914,
+        "textHash": "02c0ad7fe1dd9589"
+      }
+    },
+    "16": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3290,
+        "end": 3293,
+        "textHash": "3eeb5f993fcd2b00"
+      }
+    },
+    "17": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3291,
+        "end": 3292,
+        "textHash": "4bec6e145b8d7f04"
+      }
+    },
+    "18": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3422,
+        "end": 3425,
+        "textHash": "eff5adc611f1e940"
+      }
+    },
+    "19": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4348,
+        "end": 4348,
+        "textHash": "d95fbf5ddb5d3d33"
+      }
+    },
+    "20": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 379,
+        "end": 379,
+        "textHash": "9d59a475e2b2ece6"
+      }
+    },
+    "21": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 532,
+        "end": 532,
+        "textHash": "e9a517d57df5462f"
+      }
+    },
+    "22": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3142,
+        "end": 3170,
+        "textHash": "8e5df427d5a88a2b"
+      }
+    },
+    "23": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4110,
+        "end": 4111,
+        "textHash": "e1a3c650a61d0f0b"
+      }
+    },
+    "24": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1685,
+        "end": 1685,
+        "textHash": "8f5eba2dfcdc6c1e"
+      }
+    },
+    "25": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2134,
+        "end": 2134,
+        "textHash": "62ef3bc9bc15d72f"
+      }
+    },
+    "26": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1777,
+        "end": 1779,
+        "textHash": "9fd01a874ced03cc"
+      }
+    },
+    "27": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4357,
+        "end": 4360,
+        "textHash": "306bc70988b9c9b2"
+      }
+    },
+    "29": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1663,
+        "end": 1666,
+        "textHash": "7c59de86f7305245"
+      }
+    },
+    "30": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1527,
+        "end": 1527,
+        "textHash": "b889781c026268ff"
+      }
+    },
+    "32": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3543,
+        "end": 3543,
+        "textHash": "68d60acc15a79584"
+      }
+    },
+    "33": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4037,
+        "end": 4037,
+        "textHash": "ea4418f556191802"
+      }
+    },
+    "34": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4070,
+        "end": 4071,
+        "textHash": "92716f44eb8bbf12"
+      }
+    },
+    "35": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3561,
+        "end": 3561,
+        "textHash": "053d57772bcd3103"
+      }
+    },
+    "36": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 447,
+        "end": 447,
+        "textHash": "b4630066d931078d"
+      }
+    },
+    "37": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 353,
+        "end": 353,
+        "textHash": "7cd6cb512b1c7b88"
+      }
+    },
+    "38": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1932,
+        "end": 1932,
+        "textHash": "f3d1a5ff7613031a"
+      }
+    },
+    "39": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2315,
+        "end": 2315,
+        "textHash": "b75723f8f5fe2a11"
+      }
+    },
+    "40": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 510,
+        "end": 510,
+        "textHash": "c5f11fc606515882"
+      }
+    },
+    "41": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4490,
+        "end": 4490,
+        "textHash": "cd0dd510a2058c0b"
+      }
+    },
+    "42": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 127,
+        "end": 127,
+        "textHash": "b582706eec14f72c"
+      }
+    },
+    "43": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4925,
+        "end": 4925,
+        "textHash": "97ad4b31aa33a59c"
+      }
+    },
+    "44": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3885,
+        "end": 3885,
+        "textHash": "46204f5a9823caff"
+      }
+    },
+    "45": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 435,
+        "end": 435,
+        "textHash": "0e6669d1ecd75cd6"
+      }
+    },
+    "46": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 419,
+        "end": 419,
+        "textHash": "ef8f68d259f740ae"
+      }
+    },
+    "47": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3916,
+        "end": 3916,
+        "textHash": "a539dcfcfc087d6c"
+      }
+    },
+    "48": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3060,
+        "end": 3060,
+        "textHash": "26477dc1c27a89db"
+      }
+    },
+    "49": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2342,
+        "end": 2342,
+        "textHash": "b07741c1243b78cf"
+      }
+    },
+    "50": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 949,
+        "end": 949,
+        "textHash": "2d7216789eda50ff"
+      }
+    },
+    "51": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 826,
+        "end": 826,
+        "textHash": "5ea73134311cd4d8"
+      }
+    },
+    "52": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1517,
+        "end": 1517,
+        "textHash": "79608244bf2d31aa"
+      }
+    },
+    "53": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 584,
+        "end": 584,
+        "textHash": "1ba96aacdd64a3ef"
+      }
+    },
+    "54": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 546,
+        "end": 546,
+        "textHash": "c4e535a9da683fae"
+      }
+    },
+    "55": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 310,
+        "end": 310,
+        "textHash": "cbf583aa2601f90c"
+      }
+    },
+    "56": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3066,
+        "end": 3067,
+        "textHash": "f06c0dd4a31d0a4e"
+      }
+    },
+    "57": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3065,
+        "end": 3072,
+        "textHash": "8126ce801a096376"
+      }
+    },
+    "58": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3260,
+        "end": 3260,
+        "textHash": "9a19bf72f084ddfb"
+      }
+    },
+    "59": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1531,
+        "end": 1531,
+        "textHash": "b0db8d5c75d69b42"
+      }
+    },
+    "60": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1840,
+        "end": 1842,
+        "textHash": "43fb8323eef92518"
+      }
+    },
+    "61": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 263,
+        "end": 263,
+        "textHash": "631b02e5fc73cb3a"
+      }
+    },
+    "62": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1841,
+        "end": 1841,
+        "textHash": "2d23b9c4da2c5a41"
+      }
+    },
+    "63": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1748,
+        "end": 1748,
+        "textHash": "f98e98b0d89dd7d4"
+      }
+    },
+    "64": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 10422,
+        "end": 10423,
+        "textHash": "59f0bd38783116bd"
+      }
+    },
+    "65": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2860,
+        "end": 2860,
+        "textHash": "e21a74d57b1dac90"
+      }
+    },
+    "66": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1535,
+        "end": 1535,
+        "textHash": "5bfb17c222f74af5"
+      }
+    },
+    "67": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 406,
+        "end": 406,
+        "textHash": "7411ec333d8614e5"
+      }
+    },
+    "68": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 5499,
+        "end": 5499,
+        "textHash": "df850c90adbd9e90"
+      }
+    },
+    "69": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 437,
+        "end": 437,
+        "textHash": "66fdec8c8af60117"
+      }
+    },
+    "70": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3420,
+        "end": 3420,
+        "textHash": "390544bfc8039300"
+      }
+    },
+    "71": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 503,
+        "end": 503,
+        "textHash": "6132f204a4cdfcf8"
+      }
+    },
+    "72": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1242,
+        "end": 1242,
+        "textHash": "94ea4a2ab1304696"
+      }
+    },
+    "73": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1272,
+        "end": 1272,
+        "textHash": "fbd9b9bd2cebe20a"
+      }
+    },
+    "74": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 751,
+        "end": 751,
+        "textHash": "1f0a9974a62d3be2"
+      }
+    },
+    "75": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 808,
+        "end": 808,
+        "textHash": "3c0b6cba2ae8c25f"
+      }
+    },
+    "76": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4372,
+        "end": 4372,
+        "textHash": "df005e4b20d0ed12"
+      }
+    },
+    "77": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2065,
+        "end": 2065,
+        "textHash": "db1eea836df2f7eb"
+      }
+    },
+    "78": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 8718,
+        "end": 8718,
+        "textHash": "513d9b4cc390acbe"
+      }
+    },
+    "79": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3781,
+        "end": 3781,
+        "textHash": "177b2338c6fbf4a2"
+      }
+    },
+    "80": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4403,
+        "end": 4403,
+        "textHash": "3bf0bbad0db7f3ab"
+      }
+    },
+    "81": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 8922,
+        "end": 8922,
+        "textHash": "7d010d1e70f7d72b"
+      }
+    },
+    "82": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 902,
+        "end": 902,
+        "textHash": "2746b3558cb6fa49"
+      }
+    },
+    "83": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 919,
+        "end": 919,
+        "textHash": "e8583032fd444582"
+      }
+    },
+    "84": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 550,
+        "end": 550,
+        "textHash": "6138070d7fe24910"
+      }
+    },
+    "85": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 655,
+        "end": 655,
+        "textHash": "59aa987c129b4b35"
+      }
+    },
+    "86": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 112,
+        "end": 112,
+        "textHash": "95afeede7f96467c"
+      }
+    },
+    "87": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1599,
+        "end": 1599,
+        "textHash": "66d1aaba94b02643"
+      }
+    },
+    "88": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1737,
+        "end": 1737,
+        "textHash": "d790c543ea83df0d"
+      }
+    },
+    "89": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1314,
+        "end": 1314,
+        "textHash": "1957364c7f880d16"
+      }
+    },
+    "90": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1315,
+        "end": 1315,
+        "textHash": "8a5c04097b5ae86f"
+      }
+    },
+    "91": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 278,
+        "end": 278,
+        "textHash": "ab6de9f979f10e67"
+      }
+    },
+    "92": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 363,
+        "end": 363,
+        "textHash": "465ea2b61feb9bd6"
+      }
+    },
+    "93": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 563,
+        "end": 563,
+        "textHash": "bef47af316aa87a3"
+      }
+    },
+    "94": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 50,
+        "end": 50,
+        "textHash": "00ea03a0fb0480e2"
+      }
+    },
+    "95": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 571,
+        "end": 571,
+        "textHash": "a7241903fc2e2eff"
+      }
+    },
+    "96": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 165,
+        "end": 165,
+        "textHash": "fa6f9594ad84997b"
+      }
+    },
+    "98": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1647,
+        "end": 1647,
+        "textHash": "a3827a33c1036600"
+      }
+    },
+    "99": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 82,
+        "end": 82,
+        "textHash": "19ee482d3ff62b1f"
+      }
+    },
+    "100": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 64,
+        "end": 64,
+        "textHash": "75b862230da53f10"
+      }
+    },
+    "101": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 6997,
+        "end": 6997,
+        "textHash": "9d4d0d2c7dd53449"
+      }
+    },
+    "102": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4526,
+        "end": 4526,
+        "textHash": "b25d13613a06ebec"
+      }
+    },
+    "103": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4053,
+        "end": 4053,
+        "textHash": "2702e9e951e5186b"
+      }
+    },
+    "104": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 7260,
+        "end": 7260,
+        "textHash": "a9c301c3a3c73ba9"
+      }
+    },
+    "105": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4814,
+        "end": 4814,
+        "textHash": "9145118ba86940a7"
+      }
+    },
+    "106": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 5375,
+        "end": 5375,
+        "textHash": "b25d13613a06ebec"
+      }
+    },
+    "107": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4734,
+        "end": 4734,
+        "textHash": "b8b97cc8c5a691a2"
+      }
+    },
+    "108": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3738,
+        "end": 3738,
+        "textHash": "d67d10e1a461a402"
+      }
+    },
+    "109": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3894,
+        "end": 3894,
+        "textHash": "8d9fb397eec8b6f8"
+      }
+    },
+    "110": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 7753,
+        "end": 7753,
+        "textHash": "1ac4dcca3f85c48b"
+      }
+    },
+    "111": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4843,
+        "end": 4843,
+        "textHash": "3e053d82a8b83e9a"
+      }
+    },
+    "112": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4072,
+        "end": 4074,
+        "textHash": "c73d6e1e2a3152d5"
+      }
+    },
+    "113": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 5128,
+        "end": 5128,
+        "textHash": "d62c6f353c703dc7"
+      }
+    },
+    "114": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2300,
+        "end": 2300,
+        "textHash": "ac36bfc121ea6e92"
+      }
+    },
+    "115": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2337,
+        "end": 2337,
+        "textHash": "37086320ac0852c5"
+      }
+    },
+    "116": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2190,
+        "end": 2190,
+        "textHash": "067cc5994b99a4a5"
+      }
+    },
+    "117": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1331,
+        "end": 1331,
+        "textHash": "8060d1bd23bc2ddc"
+      }
+    },
+    "118": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1332,
+        "end": 1332,
+        "textHash": "1d0df1abb500afb8"
+      }
+    },
+    "119": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2368,
+        "end": 2368,
+        "textHash": "73e1fba0967bfce0"
+      }
+    },
+    "120": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 221,
+        "end": 221,
+        "textHash": "bec6f009a0ff9a81"
+      }
+    },
+    "121": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 311,
+        "end": 311,
+        "textHash": "694eb66bc0fe4156"
+      }
+    },
+    "122": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 6888,
+        "end": 9267,
+        "textHash": "556ea597e50b882f"
+      }
+    },
+    "123": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1204,
+        "end": 1204,
+        "textHash": "84ad23352f6fc789"
+      }
+    },
+    "124": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3838,
+        "end": 3838,
+        "textHash": "06b8d7cbbbc21465"
+      }
+    },
+    "125": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 8116,
+        "end": 8116,
+        "textHash": "5d14f2405feeb5b8"
+      }
+    },
+    "126": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 5970,
+        "end": 5970,
+        "textHash": "be16082c8dbd2213"
+      }
+    },
+    "127": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1556,
+        "end": 1557,
+        "textHash": "49b6603bf2296255"
+      }
+    },
+    "128": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1520,
+        "end": 1520,
+        "textHash": "31a51d1ef01aa113"
+      }
+    },
+    "129": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3688,
+        "end": 3688,
+        "textHash": "a0c106722612693d"
+      }
+    },
+    "130": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3394,
+        "end": 3394,
+        "textHash": "36a10ae607a5a0bb"
+      }
+    },
+    "131": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1896,
+        "end": 1900,
+        "textHash": "b13ccd1ee4f75290"
+      }
+    },
+    "132": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1365,
+        "end": 1365,
+        "textHash": "da39a3ee5e6b4b0d"
+      }
+    },
+    "133": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4387,
+        "end": 4387,
+        "textHash": "6cd4ac154f9486d2"
+      }
+    },
+    "134": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 6265,
+        "end": 6265,
+        "textHash": "a1fe7b5832f0457d"
+      }
+    },
+    "135": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2240,
+        "end": 2245,
+        "textHash": "61d66555bdd0cea1"
+      }
+    },
+    "136": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2334,
+        "end": 2334,
+        "textHash": "8f6aa4402f1689af"
+      }
+    },
+    "138": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2836,
+        "end": 2836,
+        "textHash": "22da4f519b68a1d5"
+      }
+    },
+    "139": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 414,
+        "end": 414,
+        "textHash": "eaf76951b2bce2c0"
+      }
+    },
+    "140": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 105,
+        "end": 105,
+        "textHash": "7acc6bb8ad5a6c57"
+      }
+    },
+    "141": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3491,
+        "end": 3491,
+        "textHash": "a94e065faab30ed3"
+      }
+    },
+    "142": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3491,
+        "end": 3492,
+        "textHash": "4800f1fda8f78baf"
+      }
+    },
+    "143": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2788,
+        "end": 2788,
+        "textHash": "a6c853cfe4306659"
+      }
+    },
+    "144": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1732,
+        "end": 1732,
+        "textHash": "8f5eba2dfcdc6c1e"
+      }
+    },
+    "145": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1238,
+        "end": 1238,
+        "textHash": "dd26e5a625ca3369"
+      }
+    },
+    "146": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 783,
+        "end": 783,
+        "textHash": "3e23466de08192cc"
+      }
+    },
+    "147": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 159,
+        "end": 159,
+        "textHash": "ccf376b92c12a994"
+      }
+    },
+    "148": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 912,
+        "end": 912,
+        "textHash": "245e6122e209d80b"
+      }
+    },
+    "149": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 729,
+        "end": 729,
+        "textHash": "8fa0b55e3011f77b"
+      }
+    },
+    "150": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1924,
+        "end": 1929,
+        "textHash": "918064b6b684c54f"
+      }
+    },
+    "151": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1928,
+        "end": 1928,
+        "textHash": "5dcf3d45564a745d"
+      }
+    },
+    "152": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1491,
+        "end": 1491,
+        "textHash": "4760f96c6630671b"
+      }
+    },
+    "153": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 647,
+        "end": 647,
+        "textHash": "0201e768531bb628"
+      }
+    },
+    "154": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 400,
+        "end": 401,
+        "textHash": "4541ab3dea39b69d"
+      }
+    },
+    "155": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 927,
+        "end": 927,
+        "textHash": "eef297c128f98734"
+      }
+    },
+    "156": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1793,
+        "end": 1793,
+        "textHash": "4e924fcde5d54cce"
+      }
+    },
+    "157": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 5898,
+        "end": 5899,
+        "textHash": "7ed37ef652453a04"
+      }
+    },
+    "158": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 5519,
+        "end": 5519,
+        "textHash": "d3216fac29e3e0b7"
+      }
+    },
+    "159": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 8134,
+        "end": 8134,
+        "textHash": "676599cf754ce559"
+      }
+    },
+    "160": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 5646,
+        "end": 5646,
+        "textHash": "9541be99bfb8b7b3"
+      }
+    },
+    "161": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 9840,
+        "end": 9840,
+        "textHash": "8dd356f066bbe49f"
+      }
+    },
+    "162": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 5657,
+        "end": 5657,
+        "textHash": "4c6652a39ed9a9f3"
+      }
+    },
+    "163": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 8042,
+        "end": 8042,
+        "textHash": "7a7a07a1f204bd71"
+      }
+    },
+    "164": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 5688,
+        "end": 5688,
+        "textHash": "44af3f9d8d208888"
+      }
+    },
+    "165": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 9886,
+        "end": 9888,
+        "textHash": "6e076296e8313625"
+      }
+    },
+    "166": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1518,
+        "end": 1519,
+        "textHash": "fa04cf9f13d7669b"
+      }
+    },
+    "167": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 228,
+        "end": 228,
+        "textHash": "0b6b6b0a68fc5e73"
+      }
+    },
+    "168": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1498,
+        "end": 1498,
+        "textHash": "4b0827f4016979bf"
+      }
+    },
+    "169": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 33,
+        "end": 33,
+        "textHash": "b455a82bdd65b9b0"
+      }
+    },
+    "170": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 10020,
+        "end": 10020,
+        "textHash": "ea5bf3b626fb8889"
+      }
+    },
+    "171": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3154,
+        "end": 3154,
+        "textHash": "86914b27e24f458e"
+      }
+    },
+    "172": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 111,
+        "end": 111,
+        "textHash": "4fe395fa5200dece"
+      }
+    },
+    "173": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1,
+        "end": 1,
+        "textHash": "1b70d7c72f98352f"
+      }
+    },
+    "174": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 6516,
+        "end": 6516,
+        "textHash": "3814b1b7f32afd03"
+      }
+    },
+    "175": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 6516,
+        "end": 6516,
+        "textHash": "3814b1b7f32afd03"
+      }
+    },
+    "176": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 169,
+        "end": 169,
+        "textHash": "31a76b229fc6e94d"
+      }
+    },
+    "177": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 5942,
+        "end": 5942,
+        "textHash": "b570e1a04b5d4a8b"
+      }
+    },
+    "178": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1755,
+        "end": 1755,
+        "textHash": "fa7b1ccfa2b8d5ea"
+      }
+    },
+    "179": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1749,
+        "end": 1749,
+        "textHash": "c58014844096e805"
+      }
+    },
+    "180": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 686,
+        "end": 689,
+        "textHash": "c9789c3853a25885"
+      }
+    },
+    "181": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1606,
+        "end": 1607,
+        "textHash": "98d0eac9f19fa807"
+      }
+    },
+    "182": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 718,
+        "end": 718,
+        "textHash": "890f1a3babe5937e"
+      }
+    },
+    "183": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3348,
+        "end": 3348,
+        "textHash": "b25d3ce28a081231"
+      }
+    },
+    "184": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 653,
+        "end": 653,
+        "textHash": "a5ed0f2d7e4446e8"
+      }
+    },
+    "185": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 124,
+        "end": 124,
+        "textHash": "5a27490f735db137"
+      }
+    },
+    "186": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4631,
+        "end": 4631,
+        "textHash": "8a41d599240c6ea7"
+      }
+    },
+    "187": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2504,
+        "end": 2506,
+        "textHash": "ea2c5b8697b61f30"
+      }
+    },
+    "188": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 5840,
+        "end": 5840,
+        "textHash": "cf9db26c3a8017fe"
+      }
+    },
+    "189": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 5798,
+        "end": 5798,
+        "textHash": "56b4d6c695d232a6"
+      }
+    },
+    "190": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3450,
+        "end": 3450,
+        "textHash": "0e7cbb9a50f35c03"
+      }
+    },
+    "191": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 399,
+        "end": 399,
+        "textHash": "c81b0183337bae4d"
+      }
+    },
+    "192": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 2642,
+        "end": 2642,
+        "textHash": "2afb60a4040529c9"
+      }
+    },
+    "193": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3835,
+        "end": 3835,
+        "textHash": "1b24cad797de5e35"
+      }
+    },
+    "194": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3735,
+        "end": 3735,
+        "textHash": "9e1c3bd4fa0b4286"
+      }
+    },
+    "195": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 5965,
+        "end": 5965,
+        "textHash": "df5116c4058159d7"
+      }
+    },
+    "196": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 6300,
+        "end": 6300,
+        "textHash": "9356f8ca29a1ef3f"
+      }
+    },
+    "197": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3752,
+        "end": 3752,
+        "textHash": "8f18fa8ba8c10423"
+      }
+    },
+    "198": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3858,
+        "end": 3858,
+        "textHash": "30460c85999200f6"
+      }
+    },
+    "199": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 584,
+        "end": 584,
+        "textHash": "f5851f477a9e6a08"
+      }
+    },
+    "200": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 633,
+        "end": 633,
+        "textHash": "c559015027a1d578"
+      }
+    },
+    "201": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 617,
+        "end": 617,
+        "textHash": "1825028ffc5aa7dc"
+      }
+    },
+    "202": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 943,
+        "end": 943,
+        "textHash": "b7f962082ae98218"
+      }
+    },
+    "203": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 939,
+        "end": 939,
+        "textHash": "1a5142f5997ce320"
+      }
+    },
+    "204": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1510,
+        "end": 1510,
+        "textHash": "e628c69da7923660"
+      }
+    },
+    "205": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 928,
+        "end": 928,
+        "textHash": "e7bcd4708e3d43c3"
+      }
+    },
+    "206": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4257,
+        "end": 4257,
+        "textHash": "d084f77dcb2e215d"
+      }
+    },
+    "207": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4258,
+        "end": 4258,
+        "textHash": "a6f2ebc138734404"
+      }
+    },
+    "208": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4933,
+        "end": 4933,
+        "textHash": "72a4b21910abdc2a"
+      }
+    },
+    "209": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 670,
+        "end": 670,
+        "textHash": "c5dcd6c44be85280"
+      }
+    },
+    "210": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 739,
+        "end": 739,
+        "textHash": "afdad9a97c20f137"
+      }
+    },
+    "211": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 5564,
+        "end": 5564,
+        "textHash": "8049d492252f5a63"
+      }
+    },
+    "212": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 61,
+        "end": 61,
+        "textHash": "353a2a4440429af4"
+      }
+    },
+    "213": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 175,
+        "end": 175,
+        "textHash": "9e2d33e71fa058c4"
+      }
+    },
+    "214": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 88,
+        "end": 88,
+        "textHash": "a41864cb2ee69f01"
+      }
+    },
+    "215": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 109,
+        "end": 109,
+        "textHash": "f8d34b5dad6e4d64"
+      }
+    },
+    "216": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 109,
+        "end": 109,
+        "textHash": "f8d34b5dad6e4d64"
+      }
+    },
+    "217": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4224,
+        "end": 4224,
+        "textHash": "12d26b0013bcf638"
+      }
+    },
+    "218": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 753,
+        "end": 753,
+        "textHash": "993e9567840b94b6"
+      }
+    },
+    "219": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 9438,
+        "end": 9438,
+        "textHash": "12d5469a518dfa97"
+      }
+    },
+    "220": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 9973,
+        "end": 9975,
+        "textHash": "a5ca5ef6bf84a366"
+      }
+    },
+    "221": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 9493,
+        "end": 9493,
+        "textHash": "181a1756f8e39611"
+      }
+    },
+    "222": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 7549,
+        "end": 7555,
+        "textHash": "fbe8684ed4a7048d"
+      }
+    },
+    "223": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1071,
+        "end": 1071,
+        "textHash": "acd0111ef2fb4c4e"
+      }
+    },
+    "224": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 29,
+        "end": 29,
+        "textHash": "b2a4fbe51be796c5"
+      }
+    },
+    "225": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 1452,
+        "end": 1452,
+        "textHash": "bd1412bcd3182c27"
+      }
+    },
+    "226": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 928,
+        "end": 928,
+        "textHash": "e7bcd4708e3d43c3"
+      }
+    },
+    "227": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4468,
+        "end": 7456,
+        "textHash": "6210715283ae3176"
+      }
+    },
+    "228": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 893,
+        "end": 893,
+        "textHash": "61000f6f3accab0d"
+      }
+    },
+    "229": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4467,
+        "end": 4467,
+        "textHash": "db55065436c3bf4c"
+      }
+    },
+    "230": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 6926,
+        "end": 6926,
+        "textHash": "d7c950b0b55aedca"
+      }
+    },
+    "231": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4140,
+        "end": 4140,
+        "textHash": "07576b580bf0238f"
+      }
+    },
+    "232": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4138,
+        "end": 4138,
+        "textHash": "bfdde9a7422bcb96"
+      }
+    },
+    "233": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 4316,
+        "end": 4316,
+        "textHash": "2f9a201a30a524d2"
+      }
+    },
+    "234": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 6846,
+        "end": 6846,
+        "textHash": "7244e86dca9e4e36"
+      }
+    },
+    "235": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 934,
+        "end": 934,
+        "textHash": "dc90e7fd2cb4b976"
+      }
+    },
+    "236": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 6852,
+        "end": 6852,
+        "textHash": "b2da76a9912fe4dc"
+      }
+    },
+    "237": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3172,
+        "end": 3172,
+        "textHash": "949b4084d5694fdc"
+      }
+    },
+    "238": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3173,
+        "end": 3173,
+        "textHash": "887366efbda4ae71"
+      }
+    },
+    "239": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 10092,
+        "end": 10092,
+        "textHash": "c3fbf0f2b1a02170"
+      }
+    },
+    "240": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 8159,
+        "end": 8159,
+        "textHash": "ddde26d89404abce"
+      }
+    },
+    "241": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 5751,
+        "end": 5751,
+        "textHash": "7c789cbcbc7be377"
+      }
+    },
+    "242": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 218,
+        "end": 218,
+        "textHash": "a7b0c4a2c211973e"
+      }
+    },
+    "243": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 5642,
+        "end": 5642,
+        "textHash": "358999a379288d39"
+      }
+    },
+    "244": {
+      "lastRunHash": "e7c88aa",
+      "lastRunDate": "2026-09-15T22:19:55.696Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 10155,
+        "end": 10155,
+        "textHash": "da6469e1ce7af78a"
+      }
+    }
+  }
+}
