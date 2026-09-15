@@ -914,5 +914,7 @@
   "whatif_delete_campaign_confirm": "Supprimer la campagne",
   "whatif_delete_campaign_cancel": "Annuler",
   "whatif_delete_campaign_bin": "Supprimer la campagne « {{name}} » ({{n}} événements)",
-  "whatif_row_delete_barred": "Supprimez toute la campagne avec sa corbeille"
+  "whatif_row_delete_barred": "Utilisez la corbeille de la campagne",
+  "whatif_row_edit_barred": "Utilisez l'étiquette de la campagne",
+  "whatif_member_no_edit": "Ce mois est une étape d’une rampe de campagne et ne peut donc pas être modifié seul. Modifiez plutôt la campagne depuis son étiquette."
 }

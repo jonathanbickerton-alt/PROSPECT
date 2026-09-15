@@ -1666,11 +1666,15 @@ const TRAPS: Trap[] = [
   { id: '160 the route stops asking whether the row is a promotion',
     why: 'every row takes the Volume path while the pencil still calls the router',
     file: WHATIF, spec: VIEWAPPLY,
+    // RE-ANCHORED 2026-09-15 (REQ-D6-06 clause 6): the member rule now stands first in
+    // the route, so the promotion test is anchored on its own body. Same plant.
     mutate: s => s.replace(
-      `  const editEventFromVolumeTable = useCallback((event: MarketEvent) => {
-    if (event.isPromotion) {`,
-      `  const editEventFromVolumeTable = useCallback((event: MarketEvent) => {
-    if (false) {`) },
+      `    if (event.isPromotion) {
+      setActiveTab('promotion');
+      handleEditPromoStart(event);`,
+      `    if (false) {
+      setActiveTab('promotion');
+      handleEditPromoStart(event);`) },
 
   { id: '158 the promotion edit-restore drops amountType',
     why: 'a reopened +10% promotion saves back as ten subscribers',
@@ -3411,6 +3415,26 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       'const bin = onDeleteCampaign ? onDeleteCampaign(r) : null;',
       'const bin = onDeleteCampaign ? onDeleteCampaign(r) : { name: r.name, n: 1, run: () => {} };') },
+  // ══ REQ-D6-06 follow-up (2026-09-15) — 243, 244 ══════════════════════════════
+  //
+  // 243 THE WIDENED EDIT BAR REMOVED. The row entry no longer refuses a ramp or held
+  // member, so month 5 of a held ramp opens in the row editor and can be saved
+  // alone (clause 6). The pencil still LOOKS barred — which is why the spec
+  // asserts what a click does, not only how the pencil looks.
+  { id: '243 a held campaign member can be row-edited',
+    why: 'one month of a held ramp is edited alone and the campaign no longer states its shape',
+    file: WHATIF, spec: CAMPDEL,
+    mutate: s => s.replace(
+      "    if (event.churnMode !== 'churn' && !!event.campaignName && isCampaignStepMember(event, marketEvents)) {",
+      '    if (false) {') },
+  // 244 THE PROMOTION ROW BIN BYPASSES THE DIALOG. It calls removeMarketEvent
+  // again: a promotion month gone on one click, with no undo (clause 7).
+  { id: '244 the Promotion row bin deletes without the confirm dialog',
+    why: 'a promotion month disappears on a single click and cannot be brought back',
+    file: WHATIF, spec: CAMPDEL,
+    mutate: s => s.replace(
+      "onClick={(ev) => { ev.stopPropagation(); if (rowDeleteBarred) return; setPendingChange({ kind: 'delete', nextEvents: marketEvents.filter(x => x.id !== e.id) }); }}",
+      'onClick={(ev) => { ev.stopPropagation(); if (rowDeleteBarred) return; removeMarketEvent(e.id); }}') },
 ];
 
 

@@ -914,5 +914,7 @@
   "whatif_delete_campaign_confirm": "Kampagne löschen",
   "whatif_delete_campaign_cancel": "Abbrechen",
   "whatif_delete_campaign_bin": "Kampagne '{{name}}' löschen ({{n}} Ereignisse)",
-  "whatif_row_delete_barred": "Löschen Sie die ganze Kampagne mit ihrem Papierkorb"
+  "whatif_row_delete_barred": "Den Kampagnen-Papierkorb verwenden",
+  "whatif_row_edit_barred": "Den Kampagnen-Chip verwenden",
+  "whatif_member_no_edit": "Dieser Monat ist ein Schritt einer Kampagnenrampe und kann daher nicht einzeln bearbeitet werden. Bearbeiten Sie stattdessen die Kampagne über ihren Chip."
 }

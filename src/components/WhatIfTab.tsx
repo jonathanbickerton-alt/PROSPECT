@@ -5633,13 +5633,23 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
    * place. The editor must be visible for the banner to mean anything.
    */
   const editEventFromVolumeTable = useCallback((event: MarketEvent) => {
+    // REQ-D6-06 clause 6 — THE ROW ENTRY refuses a ramp or held campaign MEMBER, by
+    // the one predicate, with a stated reason. At the ROW entry and not inside
+    // handleEditStart / handleEditPromoStart, because the campaign editors call those
+    // to seed their drafts — a bar there would close the pill's route too. CHURN
+    // members are left to handleEditStart's own arm (trap 107): routing them here
+    // first would shadow that rule and its sentence.
+    if (event.churnMode !== 'churn' && !!event.campaignName && isCampaignStepMember(event, marketEvents)) {
+      setEditDeclineReason(t('whatif_member_no_edit'));
+      return;
+    }
     if (event.isPromotion) {
       setActiveTab('promotion');
       handleEditPromoStart(event);
       return;
     }
     handleEditStart(event);
-  }, [handleEditPromoStart, handleEditStart]);
+  }, [handleEditPromoStart, handleEditStart, marketEvents, t]);
 
   /** The campaign pill's route, by the same rule. See the note at its render
    *  site for why a promotion campaign had no pencil to route until now. */
@@ -8108,19 +8118,39 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
                             <td className="px-5 py-3 text-slate-500 text-xs max-w-xs truncate" title={event.comment}>{event.comment || '—'}</td>
                             <td className="px-5 py-3 text-center">
-                              <button
-                                type="button"
-                                data-testid="edit-event"
-                                onClick={(e) => { e.stopPropagation(); editEventFromVolumeTable(event); }}
-                                className={`p-1 rounded transition-colors ${
-                                  isEditing
-                                    ? 'text-amber-600 bg-amber-100'
-                                    : 'text-slate-400 hover:text-[#e60000] hover:bg-[#e60000]/5'
-                                }`}
-                                title={isEditing ? t('whatif_currently_editing') : t('whatif_edit_event')}
-                              >
-                                <Pencil size={14} />
-                              </button>
+                              {(() => {
+                                // REQ-D6-06 clause 6 — a ramp, held or churn MEMBER is not row-EDITED either.
+                                // aria-disabled, and deliberately NOT native `disabled`: the click still
+                                // reaches the row entry, which declines with a STATED reason — trap 107's
+                                // own contract (a refusal is a reason, never a dead click).
+                                const rowEditBarred = !!campaignLabel && isCampaignStepMember(event, marketEvents);
+                                return (
+                                  <>
+                                    <button
+                                      type="button"
+                                      data-testid="edit-event"
+                                      data-row-id={event.id}
+                                      aria-disabled={rowEditBarred}
+                                      onClick={(e) => { e.stopPropagation(); editEventFromVolumeTable(event); }}
+                                      className={`p-1 rounded transition-colors ${
+                                        rowEditBarred
+                                          ? 'text-slate-300 cursor-not-allowed'
+                                          : isEditing
+                                            ? 'text-amber-600 bg-amber-100'
+                                            : 'text-slate-400 hover:text-[#e60000] hover:bg-[#e60000]/5'
+                                      }`}
+                                      title={rowEditBarred ? t('whatif_row_edit_barred') : isEditing ? t('whatif_currently_editing') : t('whatif_edit_event')}
+                                    >
+                                      <Pencil size={14} />
+                                    </button>
+                                    {rowEditBarred && (
+                                      <span data-testid={`volume-row-edit-reason-${event.id}`} className="block text-[10px] text-slate-400 mt-0.5 whitespace-normal">
+                                        {t('whatif_row_edit_barred')}
+                                      </span>
+                                    )}
+                                  </>
+                                );
+                              })()}
                             </td>
                             <td className="px-5 py-3 text-center">
                               {(() => {
@@ -10081,17 +10111,33 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             <td className="px-5 py-3 text-xs text-right text-slate-600">{formatNumber(e.arpu)}</td>
                             <td className="px-5 py-3 text-xs text-slate-500">{arms || '—'}</td>
                             <td className="px-5 py-3 text-center">
-                              <button
-                                type="button"
-                                data-testid={`promo-row-edit-${e.id}`}
-                                onClick={(ev) => { ev.stopPropagation(); handleEditPromoStart(e); }}
-                                className={`p-1 rounded transition-colors ${
-                                  isEditingRow ? 'text-amber-600 bg-amber-100' : 'text-slate-400 hover:text-[#e60000] hover:bg-[#e60000]/5'
-                                }`}
-                                title={isEditingRow ? t('whatif_currently_editing') : t('whatif_edit_promotion')}
-                              >
-                                <Pencil size={14} />
-                              </button>
+                              {(() => {
+                                // REQ-D6-06 clause 6 — the same member bar on this card. This card has no
+                                // decline panel, so the refusal is the reason rendered beside the pencil.
+                                const rowEditBarred = !!campaignLabel && isCampaignStepMember(e, marketEvents);
+                                return (
+                                  <>
+                                    <button
+                                      type="button"
+                                      data-testid={`promo-row-edit-${e.id}`}
+                                      aria-disabled={rowEditBarred}
+                                      onClick={(ev) => { ev.stopPropagation(); if (rowEditBarred) return; handleEditPromoStart(e); }}
+                                      className={`p-1 rounded transition-colors ${
+                                        rowEditBarred ? 'text-slate-300 cursor-not-allowed'
+                                          : isEditingRow ? 'text-amber-600 bg-amber-100' : 'text-slate-400 hover:text-[#e60000] hover:bg-[#e60000]/5'
+                                      }`}
+                                      title={rowEditBarred ? t('whatif_row_edit_barred') : isEditingRow ? t('whatif_currently_editing') : t('whatif_edit_promotion')}
+                                    >
+                                      <Pencil size={14} />
+                                    </button>
+                                    {rowEditBarred && (
+                                      <span data-testid={`promo-row-edit-reason-${e.id}`} className="block text-[10px] text-slate-400 mt-0.5 whitespace-normal">
+                                        {t('whatif_row_edit_barred')}
+                                      </span>
+                                    )}
+                                  </>
+                                );
+                              })()}
                             </td>
                             <td className="px-5 py-3 text-right">
                               {(() => {
@@ -10104,7 +10150,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                                       data-testid={`promo-row-delete-${e.id}`}
                                       disabled={rowDeleteBarred}
                                       aria-disabled={rowDeleteBarred}
-                                      onClick={() => { if (rowDeleteBarred) return; removeMarketEvent(e.id); }}
+                                      // REQ-D6-06 clause 7 — through the confirm, committing through the same
+                                      // setter as every other Market delete; no bin calls removeMarketEvent.
+                                      onClick={(ev) => { ev.stopPropagation(); if (rowDeleteBarred) return; setPendingChange({ kind: 'delete', nextEvents: marketEvents.filter(x => x.id !== e.id) }); }}
                                       className={`transition-colors ${rowDeleteBarred ? 'text-slate-300 cursor-not-allowed' : 'text-slate-400 hover:text-rose-600'}`}
                                     >
                                       <Trash2 size={14} />

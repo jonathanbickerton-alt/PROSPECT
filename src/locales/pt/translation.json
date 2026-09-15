@@ -914,5 +914,7 @@
   "whatif_delete_campaign_confirm": "Eliminar campanha",
   "whatif_delete_campaign_cancel": "Cancelar",
   "whatif_delete_campaign_bin": "Eliminar a campanha '{{name}}' ({{n}} eventos)",
-  "whatif_row_delete_barred": "Elimine toda a campanha com o respetivo caixote"
+  "whatif_row_delete_barred": "Use o caixote da campanha",
+  "whatif_row_edit_barred": "Use a etiqueta da campanha",
+  "whatif_member_no_edit": "Este mês é um passo de uma rampa de campanha, pelo que não pode ser editado isoladamente. Edite antes a campanha a partir da respetiva etiqueta."
 }

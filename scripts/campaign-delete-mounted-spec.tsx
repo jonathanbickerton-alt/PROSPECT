@@ -169,6 +169,10 @@ async function main() {
     return React.createElement(Card, {
       ...props, newEvent, setNewEvent, marketEvents, setMarketEvents,
       addMarketEvent: () => setMarketEvents((e: any[]) => [...e, { ...newEvent, id: 'single' }]),
+      // REQ-D6-06 clause 7 — REAL, not the no-op the other harnesses pass (the 1143
+      // Limits named the gap). A bin that bypassed the dialog to call this would
+      // visibly delete, so its red is the missing dialog, never a silent no-op.
+      removeMarketEvent: (id: string) => setMarketEvents((e: any[]) => e.filter((x: any) => x.id !== id)),
     });
   };
 
@@ -336,8 +340,10 @@ async function main() {
     check('PIN: the shared summary table never deletes for itself',
       !table.includes('handleDeleteCampaign') && !table.includes('setMarketEvents'));
     const preds = src.split('isCampaignStepMember(').length - 1;
-    check('1.4 PIN: ONE member predicate — defined once, read by the edit bar and both row bins (4 occurrences)',
-      src.split('export function isCampaignStepMember(').length - 1 === 1 && preds === 4, String(preds));
+    // RE-AIMED 2026-09-15 (clause 6): the same ONE predicate, now read at seven places —
+    // the definition, the churn edit arm, the row entry, both row pencils, both row bins.
+    check('1.4 PIN: ONE member predicate — defined once, read by the churn edit arm, the row entry, both pencils and both bins (7 occurrences)',
+      src.split('export function isCampaignStepMember(').length - 1 === 1 && preds === 7, String(preds));
   }
 
   // ── (d) (b) (a) (g) (e) — the Volume table ─────────────────────────────────
@@ -362,8 +368,9 @@ async function main() {
       check(`(d) the ${tag} member's per-row bin is rendered`, !!bin);
       check(`(d) DECISION 3: the ${tag} member's per-row bin is disabled`, bin?.disabled === true, String(bin?.disabled));
       check(`(d) and aria-disabled`, bin?.getAttribute('aria-disabled') === 'true', String(bin?.getAttribute('aria-disabled')));
-      check(`(d) the ${tag} member's reason is TEXT in the DOM: "Delete the whole campaign with its bin"`,
-        reason === 'Delete the whole campaign with its bin', reason || 'absent');
+      // RE-AIMED 2026-09-15 (REQ-D6-06 clause 8): the short form.
+      check(`(d) the ${tag} member's reason is TEXT in the DOM: "Use the campaign bin"`,
+        reason === 'Use the campaign bin', reason || 'absent');
       await tap(bin);
       check(`(d) a click on the ${tag} member's bin opens no dialog and removes nothing`,
         !byTestId('event-change-title') && captured.length === total0, `${captured.length}`);
@@ -455,7 +462,8 @@ async function main() {
     const member = captured.filter((e: any) => e.campaignName === PC)[1];
     check("(c) DECISION 3 on this card too: a ramp member's per-row bin is disabled, reason as text",
       byTestId(`promo-row-delete-${member?.id}`)?.disabled === true
-        && norm(byTestId(`promo-row-delete-reason-${member?.id}`)?.textContent || '') === 'Delete the whole campaign with its bin');
+        // RE-AIMED 2026-09-15 (clause 8): the short form.
+        && norm(byTestId(`promo-row-delete-reason-${member?.id}`)?.textContent || '') === 'Use the campaign bin');
     check('(c) ONE Promotion bin per campaign', allTestId('promo-campaign-delete').length === 2,
       String(allTestId('promo-campaign-delete').length));
     await tap(binFor('promo-campaign-delete', PC));
@@ -515,6 +523,136 @@ async function main() {
     const at = cmp.indexOf('<EventsSummaryTable');
     const block = at < 0 ? '' : cmp.slice(at, cmp.indexOf('/>', at));
     check('(i) and Compare passes no onDeleteCampaign', block.length > 0 && !block.includes('onDeleteCampaign'));
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // REQ-D6-06 FOLLOW-UP (clauses 6–8) — the member EDIT bar; the Promotion per-row
+  // bin under the dialog. Fill-in order as above; every string a literal.
+  // ══════════════════════════════════════════════════════════════════════════
+  const pencilFor = (id: string) => [...container.querySelectorAll('[data-testid="edit-event"]')]
+    .find((b: any) => b.getAttribute('data-row-id') === id) as any;
+  const EN_MEMBER_NO_EDIT = 'This month is one step of a campaign ramp, so it cannot be edited on its own. Edit the campaign from its pill instead.';
+  const buildPromoSpread = async (name: string, amount: string, duration: string) => {
+    await tap(btnByText(i18n.t('whatif_promotion')));
+    await fill(byTestId('promo-month'), MONTHS[0]);
+    await fill(nameInput(), name);
+    await tap(byTestId('promo-mode-spread'));                   // 1. mode
+    await fill(byTestId('promo-volume-amount'), amount);        // 2. amount
+    await fill(byTestId('promo-duration'), duration);           // 3. duration
+    await tap(byTestId('promo-dist-even'));                     // 4. values — Even
+    await tap(byTestId('promo-add'));                           // (no Hold in Spread)
+  };
+
+  // ── PINS — clause 7 structural zero; the churn arm untouched (trap 107) ──
+  {
+    const src = fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8').replace(/\r\n/g, '\n');
+    const rme = src.split('removeMarketEvent(').length - 1;
+    check('(M) PIN clause 7: NO bin calls removeMarketEvent — zero occurrences of `removeMarketEvent(` in WhatIfTab',
+      rme === 0, String(rme));
+    // Counted on the STAGING call, not the bare `kind: 'delete'`: the pendingChange type union
+    // also contains that text (measured 3 on the first run — the union, not a third bin).
+    const del = src.split("setPendingChange({ kind: 'delete'").length - 1;
+    check("(M) PIN clause 7: exactly two per-row bins stage `setPendingChange({ kind: 'delete'` — Volume and Promotion", del === 2, String(del));
+    const pb = src.indexOf('data-testid={`promo-row-delete-${e.id}`}');
+    check('(M) PIN clause 7: the Promotion row bin stages the dialog change',
+      pb > 0 && src.slice(pb, src.indexOf('</button>', pb)).includes("setPendingChange({ kind: 'delete', nextEvents: marketEvents.filter(x => x.id !== e.id) })"));
+    check('(M) PIN (d): the churn arm of handleEditStart is untouched — trap 107 plants against it',
+      src.includes("    if (event.churnMode === 'churn') {\n      if (isCampaignStepMember(event, marketEvents)) {\n        setEditDeclineReason(t('whatif_churn_member_no_edit'));"));
+  }
+
+  // ── (M-a) (M-b) — the Volume table ─────────────────────────────────────────
+  {
+    await mount();
+    const HC = 'H camp', SS = 'S split', ONE = 'One off';
+    await buildVolume(HC, 'ramp', '3000', '3', true, 2);
+    await buildVolume(SS, 'spread', '3000', '3', false, 0);
+    await buildVolume(ONE, 'spread', '500', '1', false, 1);
+    check('(M) setup: 22 held rows, 3 Spread rows, 1 single event',
+      countOf(HC) === 22 && countOf(SS) === 3 && countOf(ONE) === 1, `${countOf(HC)} / ${countOf(SS)} / ${countOf(ONE)}`);
+
+    // (M-a) CLAUSE 6 — a held member's pencil: barred, reason as text, a click refused with a reason.
+    const held = captured.filter((e: any) => e.campaignName === HC)[4];
+    const hp = pencilFor(held?.id);
+    check("(M-a) the held member's pencil is rendered", !!hp);
+    check('(M-a) CLAUSE 6: it is aria-disabled', hp?.getAttribute('aria-disabled') === 'true', String(hp?.getAttribute('aria-disabled')));
+    const hr = norm(byTestId(`volume-row-edit-reason-${held?.id}`)?.textContent || '');
+    check('(M-a) CLAUSE 6: the reason is TEXT in the DOM, pointing at the pill: "Use the campaign pill"',
+      hr === 'Use the campaign pill', hr || 'absent');
+    await tap(hp);
+    check('(M-a) a click does NOT open the row editor — no "Save changes"', !btnByText(i18n.t('whatif_save_changes')));
+    check('(M-a) and the draft is not seeded from the member', draftNow?.campaignName !== HC, String(draftNow?.campaignName));
+    const dr = norm(byTestId('edit-decline-reason')?.textContent || '');
+    check('(M-a) the refusal is STATED — the member sentence, verbatim', dr === EN_MEMBER_NO_EDIT, dr || 'absent');
+    const br = norm(byTestId(`volume-row-delete-reason-${held?.id}`)?.textContent || '');
+    check('(M-a) CLAUSE 8: the member\'s BIN reason is the short form "Use the campaign bin"', br === 'Use the campaign bin', br || 'absent');
+
+    // (M-b) CLAUSE 6 — a Spread member and a single event keep a live pencil.
+    const one = captured.find((e: any) => e.campaignName === ONE);
+    const op = pencilFor(one?.id);
+    check("(M-b) a single event's pencil is not barred",
+      !!op && op.getAttribute('aria-disabled') === 'false' && !byTestId(`volume-row-edit-reason-${one?.id}`));
+    const sm = captured.filter((e: any) => e.campaignName === SS)[1];
+    const sp = pencilFor(sm?.id);
+    check("(M-b) a Spread member's pencil is not barred",
+      !!sp && sp.getAttribute('aria-disabled') === 'false' && !byTestId(`volume-row-edit-reason-${sm?.id}`));
+    await tap(sp);
+    check('(M-b) CLAUSE 6: it opens the ROW editor — "Save changes"', !!btnByText(i18n.t('whatif_save_changes')));
+    check('(M-b) seeded from THAT row — its campaign and its month',
+      draftNow?.campaignName === SS && draftNow?.date === sm?.date, `${draftNow?.campaignName} ${draftNow?.date}`);
+  }
+
+  // ── (M-c) the held campaign's PILL still opens the campaign editor ─────────
+  {
+    await mount();
+    const HC = 'H camp';
+    await buildVolume(HC, 'ramp', '3000', '3', true, 2);
+    const pill = pillFor(HC, 22);
+    check("(M-c) the held campaign's pill pencil is a live button", !!pill);
+    await tap(pill);
+    check('(M-c) CLAUSE 6: the pill still opens the CAMPAIGN editor — "Save campaign"', !!btnByText(i18n.t('whatif_save_campaign')));
+    check('(M-c) seeded with the campaign', draftNow?.campaignName === HC, String(draftNow?.campaignName));
+  }
+
+  // ── (M-a2) (M-f) (M-e) — the Promotion table ───────────────────────────────
+  {
+    await mount();
+    const PR = 'P ramp', PS = 'P split';
+    await buildPromo(PR, '3000', '3');
+    await buildPromoSpread(PS, '3000', '3');
+    check('(M) setup: 3 promotion ramp rows and 3 promotion Spread rows',
+      countOf(PR) === 3 && countOf(PS) === 3, `${countOf(PR)} / ${countOf(PS)}`);
+
+    const pm = captured.filter((e: any) => e.campaignName === PR)[1];
+    const pp = byTestId(`promo-row-edit-${pm?.id}`);
+    check("(M-a2) CLAUSE 6 on the Promotion table: a ramp member's pencil is aria-disabled",
+      pp?.getAttribute('aria-disabled') === 'true', String(pp?.getAttribute('aria-disabled')));
+    const ppr = norm(byTestId(`promo-row-edit-reason-${pm?.id}`)?.textContent || '');
+    check('(M-a2) and its reason reads "Use the campaign pill"', ppr === 'Use the campaign pill', ppr || 'absent');
+    await tap(pp);
+    check('(M-a2) a click does not open the promotion row editor — no "Save changes"', !btnByText(i18n.t('whatif_save_changes')));
+    const pbr = norm(byTestId(`promo-row-delete-reason-${pm?.id}`)?.textContent || '');
+    check('(M-a2) CLAUSE 8: its bin reason reads "Use the campaign bin"', pbr === 'Use the campaign bin', pbr || 'absent');
+
+    // (M-f) Cancel → unchanged.
+    const s1 = captured.filter((e: any) => e.campaignName === PS)[0];
+    const b1 = byTestId(`promo-row-delete-${s1?.id}`);
+    check("(M-f) a Spread promotion row's bin is enabled", !!b1 && b1.disabled === false);
+    await tap(b1);
+    check('(M-f) CLAUSE 7: the Promotion row bin asks first — "Delete this event?"',
+      dialogTitle() === 'Delete this event?', dialogTitle() || 'no dialog');
+    check('(M-f) nothing is removed while the dialog is open', countOf(PS) === 3, String(countOf(PS)));
+    await tap(byTestId('event-change-cancel'));
+    check('(M-f) Cancel closes the dialog and changes nothing — 3 / 3',
+      !byTestId('event-change-title') && countOf(PS) === 3 && countOf(PR) === 3, `${countOf(PR)} / ${countOf(PS)}`);
+
+    // (M-e) Confirm → exactly that row gone, DRIVEN through the real setter.
+    const s2 = captured.filter((e: any) => e.campaignName === PS)[1];
+    await tap(byTestId(`promo-row-delete-${s2?.id}`));
+    check('(M-e) the dialog again', dialogTitle() === 'Delete this event?', dialogTitle() || 'no dialog');
+    await tap(byTestId('event-change-confirm'));
+    check('(M-e) CLAUSE 7: after Confirm the Spread promotion drops by ONE — 3 → 2', countOf(PS) === 2, String(countOf(PS)));
+    check('(M-e) and it was that row', !!s2 && !captured.some((e: any) => e.id === s2.id));
+    check('(M-e) the ramp promotion is untouched — 3', countOf(PR) === 3, String(countOf(PR)));
   }
 
   report();

@@ -914,5 +914,7 @@
   "whatif_delete_campaign_confirm": "Delete campaign",
   "whatif_delete_campaign_cancel": "Cancel",
   "whatif_delete_campaign_bin": "Delete campaign '{{name}}' ({{n}} events)",
-  "whatif_row_delete_barred": "Delete the whole campaign with its bin"
+  "whatif_row_delete_barred": "Use the campaign bin",
+  "whatif_row_edit_barred": "Use the campaign pill",
+  "whatif_member_no_edit": "This month is one step of a campaign ramp, so it cannot be edited on its own. Edit the campaign from its pill instead."
 }

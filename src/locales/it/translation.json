@@ -914,5 +914,7 @@
   "whatif_delete_campaign_confirm": "Elimina campagna",
   "whatif_delete_campaign_cancel": "Annulla",
   "whatif_delete_campaign_bin": "Elimina la campagna '{{name}}' ({{n}} eventi)",
-  "whatif_row_delete_barred": "Elimina l'intera campagna con il suo cestino"
+  "whatif_row_delete_barred": "Usa il cestino della campagna",
+  "whatif_row_edit_barred": "Usa l'etichetta della campagna",
+  "whatif_member_no_edit": "Questo mese è un passaggio di una rampa di campagna, quindi non può essere modificato da solo. Modifica invece la campagna dalla sua etichetta."
 }
