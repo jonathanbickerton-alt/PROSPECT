@@ -10441,3 +10441,19 @@ Jon's answers to the inventory's questions, 2026-09-11:
    `removeMarketEvent` directly.
 8. The member-bar reason on the bin reads 'Use the campaign bin' (short
    form; the long sentence wrapped to six lines).
+
+## GUARD-TRAPS TARGETED RUNS (Jon, 2026-09-10; built 2026-09-15)
+
+1. A targeted run selects every trap whose ANCHOR lies in a changed hunk
+   of its target file since BASE, every trap whose target spec changed,
+   every trap added or edited since BASE, and a rotation of the 20
+   oldest-run traps from a tracked ledger.
+2. NOT RUN is a state printed per trap and never folded into the ratio;
+   the summary line reads "guard-traps targeted N/N CAUGHT (ids …),
+   rotation 20 (ids …), NOT RUN M, last FULL run <hash> <date>".
+3. The positive control is skipped only when the content hash of the
+   control specs, the TARGET files and the harness equals the hash of
+   the last GREEN control, and says so.
+4. A FULL unfiltered run before any hash is called "last gated state" in
+   the working agreement, and before a release.
+5. Batching is not built (masking; the 1206 crash pair).
