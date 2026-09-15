@@ -10431,3 +10431,13 @@ Jon's answers to the inventory's questions, 2026-09-11:
    Deleting is not editing: D5-05's percentage bar and the campaign
    editor are not involved.
 5. Compare is unchanged (its summary is read-only).
+6. (Jon, 2026-09-15) A ramp, held or churn campaign MEMBER cannot be
+   row-EDITED either: the per-row pencil is disabled with the reason
+   rendered as text pointing at the campaign pill (the churn edit bar,
+   widened; one predicate, `isCampaignStepMember`). A Spread member
+   keeps its pencil.
+7. Every per-row delete on the Market carrier goes through the confirm
+   dialog — the Promotion table's included; no bin calls
+   `removeMarketEvent` directly.
+8. The member-bar reason on the bin reads 'Use the campaign bin' (short
+   form; the long sentence wrapped to six lines).
