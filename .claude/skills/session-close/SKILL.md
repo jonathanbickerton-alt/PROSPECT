@@ -44,7 +44,9 @@ same step — deciding whether a report was owed. The condition is gone.
 
 **Before the gate below runs, the report file exists.** Full narrative, full FOR
 ADVISOR block, measured numbers as marked placeholders (`guard-traps: __/__
-PENDING`). After the gate, fill the placeholders and add the `Repo:` line.
+PENDING` — this skill's close runs guard-traps FULL; a build session's TARGETED
+gate uses the placeholder form in CLAUDE.md "WHICH GUARD-TRAPS RUN"). After the
+gate, fill the placeholders and add the `Repo:` line.
 
 Then, **immediately before starting guard-traps**, say one line:
 
@@ -112,10 +114,19 @@ in regression-guard.md and qa-tester.md; this file was missed.)
 ```bash
 npx tsc --noEmit          # expect 0
 npm run build             # expect clean
-npm run guard-traps       # ONE instance; background it and wait — expect N/N
+npm run guard-traps       # FULL (no flag = every trap); ONE instance; background it and wait — expect N/N caught
 npm run traps             # expect 3/3, 0 inconclusive
 npx tsx scripts/scan-i18n.ts --check
 ```
+
+**The close runs guard-traps FULL** (EXPECTED.md "GUARD-TRAPS TARGETED RUNS",
+clause 6): a release and a "last gated state" stand only on the `N/N caught`
+line. `-- --targeted` is a build session's gate, never this one.
+
+**The run commits nothing; the session commits the ledger with its report.**
+Every guard-traps run rewrites `scripts/guard-traps-ledger.json`, so the tree
+differs after it. Commit that file in the same push as the session's report, so
+`+dirty` is never left behind between sessions.
 
 ```bash
 npm run suite             # every spec:*, serially — expect N/N green
@@ -228,7 +239,8 @@ Record the Session <X> merge<, and where the walk resumes>
 - [ ] qa-tester green (or findings fixed and re-run)
 - [ ] regression-guard verdict recorded
 - [ ] typecheck 0, build clean
-- [ ] guard-traps score recorded, no MISSED/INCONCLUSIVE
+- [ ] guard-traps FULL score recorded (`N/N caught`), no MISSED/INCONCLUSIVE
+- [ ] `scripts/guard-traps-ledger.json` committed with the report (no `+dirty` left behind)
 - [ ] traps 3/3
 - [ ] every `spec:*` run, enumeration included digits
 - [ ] pinned figures re-measured, not quoted

@@ -14,7 +14,10 @@
  * and assign to globals; two of them running at once would share a document.
  * guard-traps additionally MUTATES TRACKED SOURCE, which is why it is a
  * separate step and is deliberately NOT run from here: a suite that could
- * interleave with it would be reading files mid-plant.
+ * interleave with it would be reading files mid-plant. Run it after this, in
+ * the mode the occasion calls for (EXPECTED.md "GUARD-TRAPS TARGETED RUNS",
+ * clause 6): `npm run guard-traps` is FULL — a release, a "last gated state",
+ * session-close; `npm run guard-traps -- --targeted` is a build session's gate.
  *
  * THREE STATES, NOT TWO — the lesson guard-traps learned as CRASHED. A spec
  * that dies before it reports is not a spec that failed: it is a spec that

@@ -117,6 +117,14 @@ mechanism of anything found, what the gate measured, what was recorded rather
 than fixed, and where the walk stands. Figures are re-measured and stated with
 their instrument, never quoted from an earlier report.
 
+**A guard-traps figure is quoted in the form its mode prints** (EXPECTED.md
+"GUARD-TRAPS TARGETED RUNS", clause 6). A FULL run (`npm run guard-traps`, no
+flag) is quoted by its `N/N caught` line; only it may stand behind a release or
+a "last gated state". A build session's TARGETED run (`-- --targeted` /
+`-- --base <rev>`) is quoted by its certification line verbatim — `guard-traps
+targeted N/N CAUGHT (ids …), rotation 20 (ids …), NOT RUN M, last FULL run <hash>
+<date>` — and is never shortened to "N/N" or presented as the full gate.
+
 ## Checklist
 
 - [ ] Timestamp read from the command, not composed
@@ -124,6 +132,7 @@ their instrument, never quoted from an earlier report.
 - [ ] FOR ADVISOR first, fenced, ≤25 lines
 - [ ] `Generated:` line carries offset **and** UTC
 - [ ] Hash line names what the numbers were measured against
+- [ ] guard-traps quoted in its mode's form: FULL `N/N caught`; TARGETED the whole certification line
 - [ ] `Repo:` line present — committed **and pushed**, or reverted clean
 - [ ] Findings and decisions one line each
 - [ ] Merge/hold state stated

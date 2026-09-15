@@ -1,7 +1,10 @@
 /**
  * GUARD TRAPS — do the spec's source guards still bite?
  *
- *   npm run guard-traps
+ *   npm run guard-traps                   FULL (the default): every trap
+ *   npm run guard-traps -- --targeted     TARGETED against the ledger's lastFullRun
+ *   npm run guard-traps -- --base <rev>   TARGETED against a named base
+ *   (EXPECTED.md "GUARD-TRAPS TARGETED RUNS", clause 6; the mode block below has every flag.)
  *
  * A different species from `npm run traps`. Those drive the real component and
  * assert on rendered DOM: does the APP behave. These plant a defect in the
@@ -3549,10 +3552,15 @@ let controlMs: number | null = null;
 
 // ══ TARGETED RUNS — EXPECTED.md "GUARD-TRAPS TARGETED RUNS" (Jon 2026-09-10; built 2026-09-15) ══
 //
-//   npm run guard-traps -- --full           today's run, unchanged in output; records lastFullRun
-//   npm run guard-traps                     TARGETED against the ledger's lastFullRun
-//   npm run guard-traps -- --base <rev>     TARGETED against another BASE
-//   ... --select-only                       print the selection and the control decision; plant nothing
+// CLAUSE 6 (Jon, 2026-09-15): FULL IS THE DEFAULT, TARGETED IS OPT-IN.
+//   npm run guard-traps                     FULL — the release gate, a docs "last gated state",
+//                                           session-close; records lastFullRun
+//   npm run guard-traps -- --full           accepted as a no-op alias, so older chains keep working
+//   npm run guard-traps -- --targeted       TARGETED against the ledger's lastFullRun (a build
+//                                           session's gate)
+//   npm run guard-traps -- --base <rev>     TARGETED against a named BASE
+//   ... --select-only                       print the selection and the control decision; plant
+//                                           nothing (targeted by nature, as before)
 //   ... --rotation <n> (default 20)   --ledger <path>   --scratch <target>=<file> (select-only)
 //   --only=<substring>                      unchanged: a FILTERED full-mode subset, never a gate run
 //
@@ -3561,15 +3569,19 @@ let controlMs: number | null = null;
 const ARGV = process.argv.slice(2);
 const argVal = (name: string): string | undefined => { const i = ARGV.indexOf(name); return i >= 0 ? ARGV[i + 1] : undefined; };
 const ONLY_ARG = ARGV.some(a => a.startsWith('--only='));
-const FULL = ARGV.includes('--full') || ONLY_ARG;
 const SELECT_ONLY = ARGV.includes('--select-only');
+const TARGETED = ARGV.includes('--targeted') || argVal('--base') !== undefined || SELECT_ONLY;
+if (TARGETED && (ARGV.includes('--full') || ONLY_ARG)) {
+  console.error('--targeted / --base / --select-only select a TARGETED run; they cannot be combined with --full or --only.');
+  process.exit(1);
+}
+const FULL = !TARGETED;
 const LEDGER_PATH = argVal('--ledger') ?? 'scripts/guard-traps-ledger.json';
 const ROTATION_N = Number(argVal('--rotation') ?? 20);
 const SCRATCH = new Map<string, string>();
 ARGV.forEach((a, i) => {
   if (a === '--scratch' && ARGV[i + 1]) { const [k, ...v] = ARGV[i + 1].split('='); SCRATCH.set(k, v.join('=')); }
 });
-if (SELECT_ONLY && FULL) { console.error('--select-only is a TARGETED option; it cannot be combined with --full or --only.'); process.exit(1); }
 if (SCRATCH.size && !SELECT_ONLY) { console.error('--scratch substitutes content for SELECTION only and never plants against it: add --select-only.'); process.exit(1); }
 const trapNum = (t: Trap) => t.id.trim().split(/\s/)[0];
 const ledger = GT.readLedger(LEDGER_PATH);
@@ -3654,7 +3666,7 @@ try {
     const baseArg = argVal('--base');
     const baseRaw = baseArg ?? ledger.lastFullRun?.hash?.replace(/\+dirty$/, '');
     if (!baseRaw) {
-      console.log('\n[select] no --base given and the ledger records no lastFullRun: run with --full first.');
+      console.log('\n[select] no --base given and the ledger records no lastFullRun: run a FULL run first (npm run guard-traps).');
       process.exit(1);
     }
     const base = GT.verifyRev(baseRaw);

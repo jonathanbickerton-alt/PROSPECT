@@ -249,6 +249,14 @@ guard-traps: __/__ PENDING
 full suite:  __/__ PENDING
 ```
 
+— or, for a build session's TARGETED gate (see "WHICH GUARD-TRAPS RUN" below),
+the certification line in the shape the harness prints it:
+
+```
+guard-traps targeted __/__ CAUGHT (ids PENDING), rotation 20 (ids PENDING), NOT RUN __, last FULL run <hash> <date>
+full suite:  __/__ PENDING
+```
+
 After the gate, fill the placeholders and add the `Repo:` line. Nothing else
 should need writing.
 
@@ -271,6 +279,21 @@ strictly better than the alternative it replaces, which was an empty
 
 The pre-commit rider still governs what such a report may claim: a report
 written before the commit says so, and does not imply a hash it cannot contain.
+
+#### WHICH GUARD-TRAPS RUN — Jon, 2026-09-15 (EXPECTED.md "GUARD-TRAPS TARGETED RUNS", clause 6)
+
+- **A build session's gate runs TARGETED:** `npm run guard-traps -- --targeted`
+  (against the ledger's lastFullRun), or `-- --base <rev>` against a named base.
+  It is certified by the line the harness prints, quoted verbatim:
+  `guard-traps targeted N/N CAUGHT (ids …), rotation 20 (ids …), NOT RUN M, last
+  FULL run <hash> <date>`. NOT RUN never enters the ratio.
+- **A release, a docs "last gated state", and the session-close skill run FULL:**
+  `npm run guard-traps` with no flag, certified by its `N/N caught` line.
+- **A targeted figure is never quoted as the release gate**, and a full run is
+  never shortened to a targeted one to save time before a release.
+- **Every run rewrites the tracked ledger** (`scripts/guard-traps-ledger.json`).
+  The run commits nothing; **the session commits the ledger with its report**, so
+  `+dirty` is never left behind between sessions.
 
 #### THE CLOSE CHECKPOINT — one line, immediately before guard-traps
 
