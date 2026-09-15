@@ -15,8 +15,8 @@ BASE 1bc094b; status --short EMPTY, quoted. Read-only for src/.
   mix-card, event-toggle) = 47%. Slowest run: campaign-delete, 20.3 s.
 4 FLOOR: every mounted spec pays ~8 s before its first case - tsx 1.3 s,
   jsdom 1.9 s, forecasting import 1.4 s, WhatIfTab graph 2.5 s. No Worker.
-5 --changed AS BRIEFED selects 117-157 traps/session (51-69%): WhatIfTab,
-  forecasting.ts and en.json change EVERY session. Saves only ~30%.
+5 --changed AS BRIEFED selects 117-157 traps/session (51-69%): WhatIfTab
+  and en.json change EVERY session (forecasting.ts in 2). Saves ~20-30%.
 6 ANCHOR-IN-HUNK + target spec + edited selects 11-78 traps (168-997 s);
   + rotation 20 (181 s) + control: 713-1542 s vs 2537 s today.
 7 BATCHING per spec is NOT sound in general: one mutation can mask another
