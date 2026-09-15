@@ -32,6 +32,11 @@ import * as fs from 'fs';
 import { spawnSync } from 'child_process';
 import os from 'os';
 import path from 'path';
+import { performance } from 'perf_hooks';
+
+// TIMING (2026-09-15). MEASUREMENT ONLY: wall-clock from here, printed after the
+// summary. Nothing below reads these numbers to decide anything.
+const HARNESS_T0 = performance.now();
 
 const FILE = 'src/components/ForecastVsActualsTab.tsx';
 const FVA_TAB = FILE;
@@ -3536,6 +3541,9 @@ const specVerdict = (spec: string = SPEC): SpecVerdict => {
 const specFails = (spec: string = SPEC): boolean => specVerdict(spec) !== 'green';
 
 const results: { id: string; state: string; detail: string }[] = [];
+/** TIMING: per trap, milliseconds; null = that step did not happen (anchor missed, mutate threw). */
+const stepMs = new Map<string, { plantMs: number | null; runMs: number | null; restoreMs: number | null }>();
+let controlMs: number | null = null;
 
 try {
   // ── THE CLASSIFIER IS ITSELF CONTROLLED ─────────────────────────────────
@@ -3567,7 +3575,9 @@ try {
 
   // POSITIVE CONTROL. If the spec is already red, every trap below "catches"
   // vacuously and this harness reports a perfect score while proving nothing.
-  if (specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT) || specFails(AGGRECON) || specFails(VIEWAPPLY) || specFails(LOCKRT) || specFails(TRAPANCHORS) || specFails(VALUEPAD) || specFails(EVTOGGLE) || specFails(AIHOLD)
+  // TIMING: the positive control is measured as one block; its logic is unchanged.
+  const controlT0 = performance.now();
+  const controlRed = specFails() || specFails(NULLSPEC) || specFails(UNSCORED) || specFails(LEAFGRAIN) || specFails(RETIRE) || specFails(IMPORTSEAM) || specFails(GENMISSING) || specFails(CHARTSCOPE) || specFails(COVCOPY) || specFails(WALKFIX) || specFails(PANEL) || specFails(STEP3) || specFails(BULKDONE) || specFails(NAVSPEC) || specFails(STEP1SEL) || specFails(STEP2UNLOCK) || specFails(BASESEED) || specFails(RESTOREBASE) || specFails(EVTROUND) || specFails(MIXSPEC) || specFails(MIXCARD) || specFails(OVERRIDESPEC) || specFails(YIELDROUND) || specFails(PRICEROUND) || specFails(SUMMARYSPEC) || specFails(ACTIVECOHORT) || specFails(SCENPRICE) || specFails(CMPFILTER) || specFails(CMPPANEL) || specFails(CMPWINDOW) || specFails(CMPRENDER) || specFails(CHURNFOLD) || specFails(AMTCTRL) || specFails(SCENARPU) || specFails(I18NPARITY) || specFails(FTSPLIT) || specFails(ARPUCOMP) || specFails(APPLIEDCOUNT) || specFails(AGGRECON) || specFails(VIEWAPPLY) || specFails(LOCKRT) || specFails(TRAPANCHORS) || specFails(VALUEPAD) || specFails(EVTOGGLE) || specFails(AIHOLD)
       // REQ-D6-03. ADDED 2026-09-10, session 2, and it is a real gap closed:
       // session 1 registered four traps against HOLDSHAPE and never added it
       // here, so a red hold-shape spec would have let all four "catch"
@@ -3598,7 +3608,9 @@ try {
       // REQ-D6-05 Item 2. Registered WITH its first trap, 231.
       || specFails(SPREADRAMPPROMO)
       // REQ-D6-06. Registered WITH its first trap, 237.
-      || specFails(CAMPDEL)) {
+      || specFails(CAMPDEL);
+  controlMs = performance.now() - controlT0;
+  if (controlRed) {
     console.log('\nGUARD TRAPS\n' + '='.repeat(72));
     console.log('[INCONCLUSIVE] control. The spec is RED on the unmutated tree.');
     console.log('               Every trap would catch vacuously. Fix the spec first.');
@@ -3662,9 +3674,15 @@ try {
     // whose plant or spec throws is CRASHED — a state, never a catch — which
     // is the same three-outcome rule the verdict already follows: a spec that
     // dies is not a spec that asserted anything.
+    const tm = { plantMs: null as number | null, runMs: null as number | null, restoreMs: null as number | null };
+    stepMs.set(t.id, tm);
     try {
+      let c0 = performance.now();
       writeResilient(target, mutated);
+      tm.plantMs = performance.now() - c0;
+      c0 = performance.now();
       const v = specVerdict(t.spec);
+      tm.runMs = performance.now() - c0;
       results.push(
         v === 'failed'
           ? { id: t.id, state: 'CAUGHT', detail: t.why }
@@ -3680,7 +3698,9 @@ try {
       // write is exactly the state that must not survive to the next trap.
       // one trap at a time, never compounded.
       try {
+        const r0 = performance.now();
         writeResilient(target, pristine);
+        tm.restoreMs = performance.now() - r0;
       } catch (err) {
         // The tree is now dirty and nothing later can fix it, so say so loudly
         // and stop rather than running 200 more traps against a corrupt file.
@@ -3723,5 +3743,34 @@ if (bad.length) {
     console.log('  A spec that died needs an assertion; a harness throw needs the harness or the trap fixed:');
     for (const c of crashed) console.log(`    ${c.id}`);
   }
+}
+// ── TIMING TABLE (2026-09-15) — measurement output only, after the summary above ──
+{
+  const f = (v: number | null | undefined) => (v === null || v === undefined) ? '-' : String(Math.round(v));
+  const specOf = (t: Trap) => t.spec ?? SPEC;
+  const byId = new Map(results.map(r => [r.id, r]));
+  console.log('\nTIMING (wall-clock ms)\n' + '='.repeat(72));
+  console.log('[timing] id | spec | state | plant_ms | run_ms | restore_ms');
+  for (const t of TRAPS) {
+    const r = byId.get(t.id), tm = stepMs.get(t.id);
+    console.log(`[timing] ${t.id.split(' ')[0]} | ${specOf(t)} | ${r ? r.state : 'NOT RUN'} | ${f(tm?.plantMs)} | ${f(tm?.runMs)} | ${f(tm?.restoreMs)}`);
+  }
+  const per = new Map<string, { n: number; run: number }>();
+  for (const t of TRAPS) {
+    const tm = stepMs.get(t.id);
+    if (!tm || tm.runMs === null) continue;
+    const p = per.get(specOf(t)) ?? { n: 0, run: 0 };
+    p.n++; p.run += tm.runMs; per.set(specOf(t), p);
+  }
+  const total = performance.now() - HARNESS_T0;
+  const rows = [...per].map(([spec, p]) => ({ spec, n: p.n, mean: p.run / p.n, prod: p.run }))
+    .sort((a, b) => b.prod - a.prod);
+  console.log('[timing-spec] spec | traps | mean_run_ms | traps_x_mean_ms | share_of_total_%');
+  for (const r of rows) console.log(`[timing-spec] ${r.spec} | ${r.n} | ${Math.round(r.mean)} | ${Math.round(r.prod)} | ${(100 * r.prod / total).toFixed(1)}`);
+  const plantSum = [...stepMs.values()].reduce((a, x) => a + (x.plantMs ?? 0), 0);
+  const restoreSum = [...stepMs.values()].reduce((a, x) => a + (x.restoreMs ?? 0), 0);
+  console.log(`[timing-total] total_wall_ms=${Math.round(total)} control_ms=${f(controlMs)}`
+    + ` trap_runs_ms=${Math.round(rows.reduce((a, r) => a + r.prod, 0))} plants_ms=${Math.round(plantSum)}`
+    + ` restores_ms=${Math.round(restoreSum)} traps_timed=${rows.reduce((a, r) => a + r.n, 0)} traps_total=${TRAPS.length}`);
 }
 process.exit(bad.length ? 1 : 0);
