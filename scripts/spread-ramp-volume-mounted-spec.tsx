@@ -618,7 +618,14 @@ async function main() {
     ] as const) {
       const sheet = trip(rows as any[]);
       const keys = Object.keys(sheet[0] ?? {});
-      check(`(g-${tag}) Mode is the LAST column written`, keys[keys.length - 1] === 'Mode', keys[keys.length - 1]);
+      // RE-AIMED at REQ-D6-07 clause 14 (A). Seen RED first, all three shapes:
+      //   FAIL  (g-b|c|d) Mode is the LAST column written  [Tariff_ARPU_Basis]
+      // A VOLUME row carries the column too, as '' — one header for the sheet.
+      check(`(g-${tag}) Mode is second-to-last, Tariff_ARPU_Basis LAST`,
+        keys[keys.length - 2] === 'Mode' && keys[keys.length - 1] === 'Tariff_ARPU_Basis',
+        keys.slice(-2).join(' / '));
+      check(`(g-${tag}) and a volume row with no mix arm writes it empty`,
+        sheet.every((r: any) => r.Tariff_ARPU_Basis === ''), JSON.stringify(sheet.map((r: any) => r.Tariff_ARPU_Basis)));
       check(`(g-${tag}) Mode is written as ${mode === 'ramp' ? 'Ramp' : 'Spread'} on every row`,
         sheet.every((r: any) => r.Mode === (mode === 'ramp' ? 'Ramp' : 'Spread')));
       const rt = back(sheet);

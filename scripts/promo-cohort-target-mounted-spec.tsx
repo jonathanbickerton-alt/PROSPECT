@@ -305,7 +305,15 @@ async function main() {
   };
   const commitBox = async (el: any, v: string) => { await typeInto(el, v); await pressEnter(el); };
   /** A promotion draft, filled in the order a user fills the card. */
-  const openPromo = async (o: { target?: string; subs: number; months?: number }) => {
+  const basisButton = (c: any, which: 'historical' | 'forecast') =>
+    [...c.querySelectorAll('button')].find((x: any) =>
+      txt(x) === EN[which === 'historical' ? 'common_historical_arpu' : 'whatif_forecast_arpu']) as any;
+  const basisPressed = (c: any): string => {
+    const on = (b: any) => !!b && String(b.className).includes('bg-white text-slate-900');
+    return on(basisButton(c, 'forecast')) ? 'forecast' : on(basisButton(c, 'historical')) ? 'historical' : 'none';
+  };
+  const basisOnOpen: string[] = [];
+  const openPromo = async (o: { target?: string; subs: number; months?: number; basis?: 'forecast' }) => {
     const c = await openWith({}, 'promotion');
     if (o.target && o.target !== 'Inflow') {
       const sel = [...c.querySelectorAll('select')].find((x: any) =>
@@ -318,6 +326,20 @@ async function main() {
     const mixBox = [...c.querySelectorAll('input[type=checkbox]')].find((b: any) =>
       txt(b.closest('label')) === EN['whatif_value_mix_arm']) as any;
     if (mixBox) await clickIt(mixBox);
+    // RE-AIMED at REQ-D6-07 clause 14 (A). A NEW draft now opens on FORECAST, and
+    // the literals below were hand-checked engine-direct on the HISTORICAL basis
+    // (the card's default when they were measured). Seen RED first, on the build
+    // that changed the default and before this line existed:
+    //   FAIL  (a) an even mix on the Historical basis delivers 15.03 (engine 15.0299)  [13.88]
+    //   FAIL  (b) the lead reads 16.91 (engine 16.9057)  [15.11]
+    //   FAIL  (b) and the demoted blend line reads 33.13 (engine 33.1264)  [21.7]
+    //   FAIL  (c) at 300 subscribers the lead reads 14.23 (engine 14.2331)  [14.02]
+    //   FAIL  (e) a -20% dilution lowers the delivered figure to 15.86 (engine 15.8644)  [14.43]
+    //   FAIL  (g) a Retention promotion leads with Retention ARPU at its own month  [... 13.88 -> 13.88 ...]
+    // So the drafts SELECT Historical, which keeps every hand-checked figure, and
+    // the new default is asserted where it belongs — on the draft as opened.
+    basisOnOpen.push(basisPressed(c));
+    if (o.basis !== 'forecast') await clickIt(basisButton(c, 'historical'));
     return c;
   };
   /** 10 / 20 / 70 over the tiers by rate, by typing and padlocking. */
@@ -404,9 +426,7 @@ async function main() {
     P_.hBlend = num(cH, 'promo-blend');
     P_.h1000Blend = num(cH1, 'promo-blend');
     P_.hRates = promoTiers(cH).map(t => promoRate(cH, t));
-    const cFc = await openPromo({ subs: 3000 });
-    const fcBtn = [...cFc.querySelectorAll('button')].find((x: any) => txt(x) === EN['whatif_forecast_arpu']) as any;
-    if (fcBtn) await clickIt(fcBtn);
+    const cFc = await openPromo({ subs: 3000, basis: 'forecast' });
     P_.forecastBasisEven = num(cFc, 'promo-preview-baseline') + ' -> ' + num(cFc, 'promo-preview-adjusted')
       + ' blend ' + num(cFc, 'promo-blend') + ' rates ' + promoTiers(cFc).map(t => promoRate(cFc, t)).join('/');
     await tiltPromo(cFc);
@@ -491,6 +511,10 @@ async function main() {
   check('(i) and its band is unchanged', P_.iBand === 'Reachable: 3.83 – 27.49', P_.iBand);
 
 
+
+  // ── CLAUSE 14 (A): EVERY NEW DRAFT OPENED ON FORECAST ─────────────────────
+  check('(14A) every new promotion draft in this file opened on the Forecast basis',
+    basisOnOpen.length >= 8 && basisOnOpen.every(b => b === 'forecast'), basisOnOpen.join(','));
 
   // ══ SECTION X — ONE SOLVER, ONE ROW BUILDER, ONE ENGINE (clause 15) ═══════
   // Structural, because the failure they guard is BEHAVIOURALLY INVISIBLE the

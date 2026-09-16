@@ -530,21 +530,39 @@ async function main() {
   //   FAIL  export: Tariff_Scope is second-to-last on Market_Events (REQ-D6-03)  [Hold]
   //   FAIL  export: Hold is LAST on Market_Events (REQ-D6-03)  [Mode]
   // FOUR positions, not "Mode is last" — the same not-loosened rule as above.
-  const fourthFromEnd = (o: Record<string, unknown>) => Object.keys(o)[Object.keys(o).length - 4];
-  check('export: Enabled is fourth-from-last on Market_Events (REQ-D6-05)',
-    fourthFromEnd(mkt) === 'Enabled', fourthFromEnd(mkt));
-  check('export: Tariff_Scope is third-from-last on Market_Events (REQ-D6-05)',
-    antepenult(mkt) === 'Tariff_Scope', antepenult(mkt));
-  check('export: Hold is second-to-last on Market_Events (REQ-D6-05)',
-    penultKey(mkt) === 'Hold', penultKey(mkt));
-  check('export: Mode is LAST on Market_Events (REQ-D6-05)',
-    lastKey(mkt) === 'Mode', lastKey(mkt));
+  //
+  // RE-AIMED at REQ-D6-07 clause 14 (A), 2026-09-16: `Tariff_ARPU_Basis` appended
+  // AFTER `Mode`, so Market_Events ends Enabled / Tariff_Scope / Hold / Mode /
+  // Tariff_ARPU_Basis, and Yield_Events Enabled / Tariff_Scope / Tariff_ARPU_Basis.
+  // Seen RED before the re-aim, on the build that added the writers:
+  //   FAIL  export: Enabled is fourth-from-last on Market_Events (REQ-D6-05)  [Tariff_Scope]
+  //   FAIL  export: Tariff_Scope is third-from-last on Market_Events (REQ-D6-05)  [Hold]
+  //   FAIL  export: Hold is second-to-last on Market_Events (REQ-D6-05)  [Mode]
+  //   FAIL  export: Mode is LAST on Market_Events (REQ-D6-05)  [Tariff_ARPU_Basis]
+  //   FAIL  export: and on Yield_Events  [Tariff_Scope]
+  //   FAIL  export: Tariff_Scope is LAST on Yield_Events (D5-10)  [Tariff_ARPU_Basis]
+  // FIVE and THREE positions: every trailing column named, the rule unchanged.
+  const fromEnd = (o: Record<string, unknown>, n: number) => Object.keys(o)[Object.keys(o).length - n];
+  check('export: Enabled is fifth-from-last on Market_Events (D6-07 c14)',
+    fromEnd(mkt, 5) === 'Enabled', fromEnd(mkt, 5));
+  check('export: Tariff_Scope is fourth-from-last on Market_Events (D6-07 c14)',
+    fromEnd(mkt, 4) === 'Tariff_Scope', fromEnd(mkt, 4));
+  check('export: Hold is third-from-last on Market_Events (D6-07 c14)',
+    fromEnd(mkt, 3) === 'Hold', fromEnd(mkt, 3));
+  check('export: Mode is second-to-last on Market_Events (D6-07 c14)',
+    fromEnd(mkt, 2) === 'Mode', fromEnd(mkt, 2));
+  check('export: Tariff_ARPU_Basis is LAST on Market_Events (D6-07 c14)',
+    fromEnd(mkt, 1) === 'Tariff_ARPU_Basis', fromEnd(mkt, 1));
   const yr = fc.yieldEventExportRow({ id: 'y1', ibro: 'Inflow', segment: 'All', product: 'All',
     channelL1: 'All', channelL2: 'All', month: MONTHS[0], rollForward: false,
     tariffMix: {}, tariffBaseArpu: {}, enabled: false } as any);
-  check('export: and on Yield_Events', penultKey(yr) === 'Enabled', penultKey(yr));
-  check('export: Tariff_Scope is LAST on Yield_Events (D5-10)',
-    lastKey(yr) === 'Tariff_Scope', lastKey(yr));
+  check('export: Enabled is third-from-last on Yield_Events (D6-07 c14)',
+    fromEnd(yr, 3) === 'Enabled', fromEnd(yr, 3));
+  check('export: Tariff_Scope is second-to-last on Yield_Events (D6-07 c14)',
+    fromEnd(yr, 2) === 'Tariff_Scope', fromEnd(yr, 2));
+  check('export: Tariff_ARPU_Basis is LAST on Yield_Events (D6-07 c14)',
+    fromEnd(yr, 1) === 'Tariff_ARPU_Basis', fromEnd(yr, 1));
+  void antepenult; void penultKey;
   const pr = fc.pricingEventExportRow({ id: 'p1', segment: 'All', product: 'All', productL2: 'All',
     channelL1: 'All', channelL2: 'All', month: MONTHS[0], inputMode: 'percentage',
     amount: 5, target: 'cohorts', cohortScope: 'both', duration: 'one-off',

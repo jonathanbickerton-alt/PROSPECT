@@ -470,7 +470,11 @@ async function main() {
   ] as const) {
     const sheet = (rows as any[]).map((e: any) => fc.marketEventExportRow(e));
     const keys = Object.keys(sheet[0] ?? {});
-    check(`(g-${tag}) Mode is the LAST column`, keys[keys.length - 1] === 'Mode', keys[keys.length - 1]);
+    // RE-AIMED at REQ-D6-07 clause 14 (A). Seen RED first, all three shapes:
+    //   FAIL  (g-b|c|d) Mode is the LAST column  [Tariff_ARPU_Basis]
+    check(`(g-${tag}) Mode is second-to-last, Tariff_ARPU_Basis LAST`,
+      keys[keys.length - 2] === 'Mode' && keys[keys.length - 1] === 'Tariff_ARPU_Basis',
+      keys.slice(-2).join(' / '));
     const back = sheet.map((r: any) => fc.marketEventFromRow(r, 'session'));
     check(`(g-${tag}) mode reads back as ${mode}, Hold as ${held}`,
       back.every((e: any) => e.mode === mode && e.hold === held));

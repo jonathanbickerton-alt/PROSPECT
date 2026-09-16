@@ -518,6 +518,9 @@ export function promoStatedRatesForMembers(
 }
 
 interface BuildPromoEventsParams {
+  /** REQ-D6-07 clause 14 (A). The mix arm's basis, stamped on every row that
+   *  carries a mix. Absent is Historical, the reader's rule. */
+  arpuBasis?: 'historical' | 'forecast';
   /** R3's per-band stated rates, by presence. The card's draft map; the bands
    *  it names are filtered to the CURRENT members on the way out. */
   bandArpuOverride?: Record<string, number>;
@@ -808,6 +811,8 @@ export function buildPromoEvents(p: BuildPromoEventsParams): MarketEvent[] {
       // LIVE: the card's per-band input writes the draft map this comes from,
       // filtered to the current members so a stale key cannot reach the event.
       promoBandArpuOverride: p.mixEnabled ? statedForMembers : undefined,
+      // Clause 14 (A): the basis the rates above were derived on — mix rows only.
+      arpuBasis: p.mixEnabled ? (p.arpuBasis ?? 'historical') : undefined,
       promoPricingMode: p.pricingEnabled ? p.pricingMode : undefined,
       // THE DERIVED amount, for dilution as for the other two - so every
       // existing reader (the summary string, the edit restore, the export)
@@ -2984,12 +2989,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   const [promoMixEnabled, setPromoMixEnabled] = useState(false);
   const [promoMixAxis, setPromoMixAxis] = useState<'value' | 'tariff'>('value');
-  // REQ-D6-07 clause 14 is HELD, not applied — see the 1019 build report. Opening
-  // on Forecast re-derives the tier rates of a promotion saved under Historical
-  // (the basis is not stored on the event), so a no-change edit-and-save rewrites
-  // its baked rate: measured by view-apply-mounted's D5-04 case, 36 -> 35.6. That
-  // contradicts D5-04's recorded decision, and the conflict is Jon's to settle.
-  const [promoYieldArpuMode, setPromoYieldArpuMode] = useState<'historical' | 'forecast'>('historical');
+  // REQ-D6-07 clause 14 (A) (Jon, 2026-09-16). A NEW draft opens on FORECAST, as
+  // the Value card does (D5-11). What held this back in the 1019 build — a
+  // reopened promotion re-deriving its rates on the new default and rewriting its
+  // baked ARPU (D5-04, 36 -> 35.6) — is closed by STORING the basis on the event
+  // and restoring it on reopen; absent restores Historical. The toggle stays.
+  const [promoYieldArpuMode, setPromoYieldArpuMode] = useState<'historical' | 'forecast'>('forecast');
   const [promoDraftMix, setPromoDraftMix] = useState<Record<string, number>>({});
   /** Padlocked members. MANUAL ONLY — settled 2026-08-11, auto-lock is OFF, so
    *  nothing but a padlock click ever writes to this. Moving a slider does not.
@@ -3413,6 +3418,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoSpreadValues([0]);
     setPromoRampValues([0]);
     setPromoMixEnabled(false);
+    // Clause 14 (A): a new draft opens on Forecast, whatever the last reopen restored.
+    setPromoYieldArpuMode('forecast');
     // D5-03's other half. With no writer but the toggle, the mode SURVIVED a
     // reset: editing a percentage promotion and then starting a new one left
     // the new draft silently in per-cent. A saved event carries this field, so
@@ -3473,6 +3480,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       rollForward: ev.rollForward, name: ev.name ?? '', comment: ev.comment ?? '',
     });
     setMixAxis(ev.mixAxis);
+    // REQ-D6-07 clause 14 (A) — Finding 1 closed. The basis the rates were saved
+    // on; absent (a save before the column) is Historical.
+    setYieldArpuMode(ev.arpuBasis ?? 'historical');
     // Restored AFTER the fields that drive the tier list. seedMixPreserving is
     // what stops the seeding effect wiping this on the next render.
     setDraftMix({ ...ev.tariffMix });
@@ -3490,6 +3500,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const handleCancelYieldEdit = useCallback(() => {
     setEditingYieldId(null);
     setNewYieldEvent({});
+    // Clause 14 (A): leaving an edit returns the card to a NEW draft's basis.
+    setYieldArpuMode('forecast');
   }, [setNewYieldEvent]);
 
   const handleEditPricingStart = useCallback((ev: PricingEvent) => {
@@ -3552,6 +3564,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       // No sign transform: a rate is written verbatim (03a08fe's lesson).
       tariffBaseArpuOverride: Object.keys(draftTierArpuOverride).length > 0
         ? { ...draftTierArpuOverride } : undefined,
+      // REQ-D6-07 clause 14 (A): the basis tariffBaseArpu above was derived on.
+      arpuBasis: yieldArpuMode,
       rollForward: newYieldEvent.rollForward ?? false,
       name:    newYieldEvent.name    ?? '',
       comment: newYieldEvent.comment ?? '',
@@ -3563,6 +3577,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       const { id: _discard, ...patch } = event;
       updateYieldEvent(editingYieldId, patch);
       setEditingYieldId(null);
+      // Clause 14 (A): the next draft is NEW, and opens on Forecast. Only after an
+      // edit: a user adding several events keeps the basis they chose.
+      setYieldArpuMode('forecast');
     } else {
       addYieldEvent(event);
     }
@@ -3576,7 +3593,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // correctly, so every source-level check of it passed while the saved event
   // came out empty.
   }, [newYieldEvent, draftMix, mixAxis, yieldTierData, yieldMixLocked, effectiveTierArpuMap,
-      draftTierArpuOverride, addYieldEvent, editingYieldId, updateYieldEvent, setNewYieldEvent]);
+      draftTierArpuOverride, addYieldEvent, editingYieldId, updateYieldEvent, setNewYieldEvent,
+      yieldArpuMode]);
 
   // ── All unique tiers across saved yield events (for table header) ──────────
   const allYieldTiers = useMemo(() => {
@@ -4393,6 +4411,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       mixEnabled: true, mixAxis: promoMixAxis, draftMix: mix, tierData: promoTierData,
       mixLocked: promoMixLocked,
       bandArpuOverride: draftPromoBandArpu,
+      arpuBasis: promoYieldArpuMode,
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
       pricingDilutionCurrentPct: promoDilutionCurrent, pricingDilutionTargetPct: promoDilutionTarget,
       cohortAvgArpu: promoCohortAvgArpu,
@@ -4403,7 +4422,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   }, [newPromo, promoTarget, promoAmountMode, promoMixAxis, promoTierData, promoMixLocked,
       draftPromoBandArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount,
       promoDilutionCurrent, promoDilutionTarget, promoCohortAvgArpu, promoShape, promoHoldOn,
-      promoMode, selectedTariffs, fullTariffTree]);
+      promoMode, selectedTariffs, fullTariffTree, promoYieldArpuMode]);
 
   /** The saved rows this draft replaces when editing — a campaign is several rows. */
   const promoExcludeIds = useMemo<string[] | null>(() => {
@@ -4537,6 +4556,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
       mixLocked: promoMixLocked,
       bandArpuOverride: draftPromoBandArpu,
+      arpuBasis: promoYieldArpuMode,
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
       pricingDilutionCurrentPct: promoDilutionCurrent, pricingDilutionTargetPct: promoDilutionTarget,
       cohortAvgArpu: promoCohortAvgArpu,
@@ -4566,7 +4586,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     //
     // It passed for a year of orders where the ramp switch was touched after
     // the toggle, because promoSpreadEnabled IS listed and recreated it.
-  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoShape, promoHoldOn, promoMode, promoRampBlockReason, marketEvents, setMarketEvents, resetPromoDraft]);
+  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoYieldArpuMode, promoShape, promoHoldOn, promoMode, promoRampBlockReason, marketEvents, setMarketEvents, resetPromoDraft]);
 
   /**
    * REQ-D6-03 session 2 — THE STATED TRAJECTORY, TAIL INCLUDED.
@@ -5837,6 +5857,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoTarget(event.scenario === 'Retention' ? 'Retention' : 'Inflow');
     setPromoMixEnabled(!!event.promoMix);
     setPromoMixAxis(event.promoMixAxis ?? 'value');
+    // Clause 14 (A): the basis the rates were saved on, BEFORE the tier list is
+    // re-derived from it. Absent is Historical.
+    setPromoYieldArpuMode(event.arpuBasis ?? 'historical');
     setPromoDraftMix(event.promoMix ? { ...event.promoMix } : {});
     // R3: seed the stated rates from the event, override-if-present. Absent on
     // the event means an EMPTY draft, never the previous draft's rates —
@@ -5935,6 +5958,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setPromoTarget(first.scenario === 'Retention' ? 'Retention' : 'Inflow');
     setPromoMixEnabled(!!first.promoMix);
     setPromoMixAxis(first.promoMixAxis ?? 'value');
+    // Clause 14 (A): one basis per campaign — every row is built by one call.
+    setPromoYieldArpuMode(first.arpuBasis ?? 'historical');
     setPromoDraftMix(first.promoMix ? { ...first.promoMix } : {});
     // R3, from the SAME row the mix comes from.
     setDraftPromoBandArpu({ ...(first.promoBandArpuOverride ?? {}) });
@@ -6015,6 +6040,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
       mixLocked: promoMixLocked,
       bandArpuOverride: draftPromoBandArpu,
+      arpuBasis: promoYieldArpuMode,
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
       pricingDilutionCurrentPct: promoDilutionCurrent, pricingDilutionTargetPct: promoDilutionTarget,
       cohortAvgArpu: promoCohortAvgArpu,
@@ -6038,7 +6064,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // none of them declared any of the four. It happened to work because
   // newPromo is listed and every restore also sets it - which is the shape
   // this codebase has stopped relying on twice already.
-  }, [editingPromoId, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, marketEvents, updateMarketEvent, resetPromoDraft]);
+  }, [editingPromoId, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoYieldArpuMode, marketEvents, updateMarketEvent, resetPromoDraft]);
 
   const handleSavePromoCampaign = useCallback(() => {
     if (!editingPromoCampaign || !newPromo.date || !newPromo.subscriberVolume) return;
@@ -6049,6 +6075,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       mixEnabled: promoMixEnabled, mixAxis: promoMixAxis, draftMix: promoDraftMix, tierData: promoTierData,
       mixLocked: promoMixLocked,
       bandArpuOverride: draftPromoBandArpu,
+      arpuBasis: promoYieldArpuMode,
       pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
       pricingDilutionCurrentPct: promoDilutionCurrent, pricingDilutionTargetPct: promoDilutionTarget,
       cohortAvgArpu: promoCohortAvgArpu,
@@ -6075,7 +6102,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // newPromo is listed and every restore also sets it - which is the shape
   // this codebase has stopped relying on twice already.
     // B8, the same omission on the campaign-save path — it reads the same two.
-  }, [editingPromoCampaign, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoShape, promoHoldOn, promoMode, promoRampBlockReason, marketEvents, setMarketEvents, resetPromoDraft]);
+  }, [editingPromoCampaign, newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoYieldArpuMode, promoShape, promoHoldOn, promoMode, promoRampBlockReason, marketEvents, setMarketEvents, resetPromoDraft]);
 
   const handleCancelPromoEdit = useCallback(() => {
     setEditingPromoId(null);

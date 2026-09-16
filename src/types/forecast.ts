@@ -514,6 +514,12 @@ export interface YieldEvent extends EventToggle {
    * phantom lock nobody set.
    */
   mixLocked?: string[];
+  /**
+   * REQ-D6-07 clause 14 (A). The basis the tier rates were derived on, stored so a
+   * reopened event shows the rates it was saved with — the Finding 1 gap noted
+   * beside pricingMode. Absent (a save before the column) reads as Historical.
+   */
+  arpuBasis?: 'historical' | 'forecast';
   /** IBRO type this event targets */
   ibro: 'Inflow' | 'Retention';
   segment: string;

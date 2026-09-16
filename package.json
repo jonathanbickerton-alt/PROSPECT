@@ -88,7 +88,8 @@
     "spec:trap-anchors": "tsx scripts/trap-anchors-spec.ts",
     "spec:value-padlock": "tsx scripts/value-padlock-mounted-spec.tsx",
     "spec:value-cohort-target": "tsx scripts/value-cohort-target-mounted-spec.tsx",
-    "spec:promo-cohort-target": "tsx scripts/promo-cohort-target-mounted-spec.tsx"
+    "spec:promo-cohort-target": "tsx scripts/promo-cohort-target-mounted-spec.tsx",
+    "spec:arpu-basis": "tsx scripts/arpu-basis-mounted-spec.tsx"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

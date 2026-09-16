@@ -222,11 +222,18 @@ const volumes = (shape: { fraction: number }[], amount: number, round = true) =>
   //   FAIL  COLUMN: Hold is the LAST column  [Mode]
   // TWO positions, not "Hold is somewhere": a column slipped between the two
   // would still go red, which is the append-only rule this pin exists for.
-  check('COLUMN: Hold is second-to-last (REQ-D6-05)',
-    Object.keys(held)[Object.keys(held).length - 2] === 'Hold',
+  // RE-AIMED at REQ-D6-07 clause 14 (A): Tariff_ARPU_Basis appended after Mode.
+  // Seen RED first:
+  //   FAIL  COLUMN: Hold is second-to-last (REQ-D6-05)  [Mode]
+  //   FAIL  COLUMN: Mode is LAST (REQ-D6-05)  [Tariff_ARPU_Basis]
+  check('COLUMN: Hold is third-from-last (D6-07 c14)',
+    Object.keys(held)[Object.keys(held).length - 3] === 'Hold',
+    Object.keys(held)[Object.keys(held).length - 3]);
+  check('COLUMN: Mode is second-to-last (D6-07 c14)',
+    Object.keys(held)[Object.keys(held).length - 2] === 'Mode',
     Object.keys(held)[Object.keys(held).length - 2]);
-  check('COLUMN: Mode is LAST (REQ-D6-05)',
-    Object.keys(held)[Object.keys(held).length - 1] === 'Mode',
+  check('COLUMN: Tariff_ARPU_Basis is LAST (D6-07 c14)',
+    Object.keys(held)[Object.keys(held).length - 1] === 'Tariff_ARPU_Basis',
     Object.keys(held)[Object.keys(held).length - 1]);
 
   // ABSENT MEANS OFF — the whole reason every existing save reloads unchanged.

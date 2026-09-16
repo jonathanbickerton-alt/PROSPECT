@@ -151,6 +151,13 @@ export interface MarketEvent extends EventToggle {
    * which would be worse: a lock the user did not set and cannot explain.
    */
   mixLocked?: string[];
+  /**
+   * REQ-D6-07 clause 14 (A). THE BASIS THE MIX ARM'S RATES WERE DERIVED ON.
+   * Present only on a promotion that carries a Value-mix arm. Absent reads as
+   * Historical — every save written before this field existed was made on the
+   * card's then-default, so a no-change reopen-and-save reproduces its rate.
+   */
+  arpuBasis?: 'historical' | 'forecast';
 
   /**
    * Phase 4 — Custom Promotion Card: the mix arm's raw inputs, stored purely so
@@ -274,6 +281,8 @@ export interface StoredEventModifiers extends EventToggle {
   promoMix?: Record<string, number>;
   /** The user's padlocks on that mix — absent means none. See MarketEvent. */
   mixLocked?: string[];
+  /** Clause 14 (A). The mix arm's basis — see MarketEvent. */
+  arpuBasis?: 'historical' | 'forecast';
   promoPricingMode?: 'percentage' | 'absolute' | 'dilution';
   promoPricingAmount?: number;
   /** R5 decision 3 applied to the promotion arm: THE MODE AND BOTH STATED
@@ -467,6 +476,12 @@ export function marketEventExportRow(e: MarketEvent): Record<string, unknown> {
     // (rightly — the reader cannot know it was churn by Hold alone), and would
     // re-export as Spread without this. The reader stays the one absent rule.
     Mode: e.churnMode === 'churn' || eventMode(e) === 'ramp' ? 'Ramp' : 'Spread',
+    // REQ-D6-07 clause 14 (A) (Jon, 2026-09-16). APPENDED LAST, after Mode — the
+    // fifth time this sheet has followed trap 119's rule. WRITTEN FOR A MIX ARM
+    // ONLY: a promotion without one has no rates to have a basis, and '' is the
+    // absence carrier, as for Promo_Mix_JSON. A mix row with no stated basis is
+    // written as the reader's absent rule, so a save and its reload cannot differ.
+    Tariff_ARPU_Basis: e.promoMix ? (e.arpuBasis === 'forecast' ? 'Forecast' : 'Historical') : '',
   };
 }
 
@@ -1540,6 +1555,12 @@ export function readStoredEventModifiers(row: Record<string, unknown>): StoredEv
     // REQ-D6-05 clause 7 — through the ONE reader. Rides here for the reason
     // `hold` does: both market import routes spread this function.
     mode: modeFromRow(row),
+    // REQ-D6-07 clause 14 (A). THE ONE READER of Tariff_ARPU_Basis on this sheet.
+    // ABSENT MEANS HISTORICAL: every save before the column was made on the
+    // card's then-default, and reading it as Forecast would re-derive a reopened
+    // promotion's rates and rewrite its baked ARPU on a no-change save (D5-04,
+    // measured 36 -> 35.6 in the 1019 build). Only a mix row carries a basis.
+    arpuBasis: promoMix ? (row.Tariff_ARPU_Basis === 'Forecast' ? 'forecast' : 'historical') : undefined,
     isPromotion:     row.Is_Promotion === 'Yes',
     promoRebanded:   row.Promo_Rebanded === 'Yes',
     promoMixAxis:    axis === 'tariff' ? 'tariff' : axis === 'value' ? 'value' : undefined,
@@ -1745,6 +1766,12 @@ export function yieldEventExportRow(e: YieldEvent): Record<string, unknown> {
     // a bare [] would round-trip as "targets no tariff", which is the
     // opposite of what absence means here.
     Tariff_Scope: e.tariffScope && e.tariffScope.length ? JSON.stringify(e.tariffScope) : '',
+    // REQ-D6-07 clause 14 (A) (Jon, 2026-09-16). APPENDED LAST, after Tariff_Scope,
+    // by trap 119's rule. ALWAYS WRITTEN: every yield event has a mix and so a
+    // basis. This closes the gap types/forecast.ts records as Finding 1 — the
+    // mode was never stored, so a Forecast-basis event reopened on whatever the
+    // card last held.
+    Tariff_ARPU_Basis: e.arpuBasis === 'forecast' ? 'Forecast' : 'Historical',
   };
 }
 
@@ -1794,6 +1821,9 @@ export function yieldEventFromRow(r: Record<string, any>): YieldEvent {
     comment:       String(r.Comment ?? ''),
     // REQ-D6-01 decision 5. Absent means ON.
     enabled:       r.Enabled === 'No' ? false : true,
+    // REQ-D6-07 clause 14 (A). THE ONE READER on this sheet; absent -> Historical,
+    // the same rule and the same reason as the Market_Events reader.
+    arpuBasis:     r.Tariff_ARPU_Basis === 'Forecast' ? 'forecast' : 'historical',
   };
 }
 

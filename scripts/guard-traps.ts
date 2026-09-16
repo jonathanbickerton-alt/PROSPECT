@@ -114,6 +114,7 @@ const TRAPANCHORS = 'scripts/trap-anchors-spec.ts';
 const VALUEPAD = 'scripts/value-padlock-mounted-spec.tsx';
 const VALUECOHORT = 'scripts/value-cohort-target-mounted-spec.tsx';
 const PROMOCOHORT = 'scripts/promo-cohort-target-mounted-spec.tsx';
+const ARPUBASIS = 'scripts/arpu-basis-mounted-spec.tsx';
 const EVTOGGLE = 'scripts/event-toggle-spec.tsx';
 const SUMMARYBAR = 'src/components/ForecastSummaryBar.tsx';
 const AIHOLD = 'scripts/ai-hold-spec.ts';
@@ -2384,8 +2385,12 @@ const TRAPS: Trap[] = [
     file: WHATIF, spec: VALUEPAD,
     mutate: s => s.replace(
       '  }, [newYieldEvent, draftMix, mixAxis, yieldTierData, yieldMixLocked, effectiveTierArpuMap,' + nl +
-      '      draftTierArpuOverride, addYieldEvent, editingYieldId, updateYieldEvent, setNewYieldEvent]);',
-      '  }, [newYieldEvent, draftMix, mixAxis, yieldTierData, yieldMixLocked, addYieldEvent, editingYieldId, updateYieldEvent, setNewYieldEvent]);') },
+      '      draftTierArpuOverride, addYieldEvent, editingYieldId, updateYieldEvent, setNewYieldEvent,' + nl +
+      '      yieldArpuMode]);',
+      // RE-ANCHORED at REQ-D6-07 clause 14 (A): the read-set gained yieldArpuMode,
+      // which the save now stamps on the event. The plant is unchanged — the
+      // override and the effective map dropped — and yieldArpuMode stays listed.
+      '  }, [newYieldEvent, draftMix, mixAxis, yieldTierData, yieldMixLocked, addYieldEvent, editingYieldId, updateYieldEvent, setNewYieldEvent, yieldArpuMode]);') },
 
   // ---------------------------------------------------------------------
   // 143 — Apply rewrites a share the user is holding.
@@ -2729,9 +2734,12 @@ const TRAPS: Trap[] = [
     why: 'the reconciliation is the default, not the toggle: a card that'
        + ' opens on a basis the chart never plots is the reported defect',
     file: WHATIF, spec: YIELDROUND,
+    // RE-ANCHORED at REQ-D6-07 clause 14 (A): the Promotion arm now opens on
+    // Forecast too, so the bare useState text occurs TWICE and replace() would
+    // take whichever came first. Anchored on the Value card's own state name.
     mutate: s => s.replace(
-      "useState<'historical' | 'forecast'>('forecast');",
-      "useState<'historical' | 'forecast'>('historical');") },
+      "  const [yieldArpuMode, setYieldArpuMode] = useState<'historical' | 'forecast'>('forecast');",
+      "  const [yieldArpuMode, setYieldArpuMode] = useState<'historical' | 'forecast'>('historical');") },
   // 193 THE PREVIEW READS THE COMPARATOR instead of the chart. The seductive
   // version of the bug: baselineBlendedArpu is right there in the card, it is
   // a number, it is labelled "Baseline", and a preview built from it would
@@ -3112,8 +3120,10 @@ const TRAPS: Trap[] = [
     // closure is FRESH — that plant would stay green and prove nothing. The live
     // stale closure this trap names needs BOTH entries gone.
     mutate: s => s.replace(
-      '  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoShape, promoHoldOn, promoMode, promoRampBlockReason, marketEvents, setMarketEvents, resetPromoDraft]);',
-      '  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoMode, promoRampBlockReason, marketEvents, setMarketEvents, resetPromoDraft]);') },
+    // RE-ANCHORED at REQ-D6-07 clause 14 (A): the read-set gained promoYieldArpuMode
+    // (the builder now stamps the basis). Same plant: promoShape and promoHoldOn out.
+      '  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoYieldArpuMode, promoShape, promoHoldOn, promoMode, promoRampBlockReason, marketEvents, setMarketEvents, resetPromoDraft]);',
+      '  }, [newPromo, promoTarget, promoMixEnabled, promoMixAxis, promoDraftMix, promoTierData, draftPromoBandArpu, promoCohortAvgArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount, promoAmountMode, promoMixLocked, promoDilutionCurrent, promoDilutionTarget, promoYieldArpuMode, promoMode, promoRampBlockReason, marketEvents, setMarketEvents, resetPromoDraft]);') },
   // ══ WALK B10 — THE STICKY FALLBACK BANNER ════════════════════════════════
   //
   // 218 REMOVES THE PER-IMPORT CLEAR. The banner then behaves as it did when
@@ -3580,6 +3590,37 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '      baseForecast: draftScopeForecast({ segment: newYieldEvent.segment, product: newYieldEvent.product,',
       '      baseForecast: baseForecast ?? draftScopeForecast({ segment: newYieldEvent.segment, product: newYieldEvent.product,') },
+
+  // ══ REQ-D6-07 CLAUSE 14 (A) — THE ARPU BASIS STORED ON THE EVENT ══════════
+  //
+  // 257 THE READER TREATS ABSENT AS FORECAST. Every save written before the
+  // column reopens on the new default and re-derives its rates — the D5-04
+  // rewrite (36 -> 35.6) that held clause 14 in the 1019 build, back again.
+  { id: '257 the Market_Events reader treats an absent basis as Forecast',
+    why: 'every promotion saved before the column reopens on Forecast and rewrites its baked rate on a no-change save',
+    file: ENGINE, spec: ARPUBASIS,
+    mutate: s => s.replace(
+      "    arpuBasis: promoMix ? (row.Tariff_ARPU_Basis === 'Forecast' ? 'forecast' : 'historical') : undefined,",
+      "    arpuBasis: promoMix ? (row.Tariff_ARPU_Basis === 'Historical' ? 'historical' : 'forecast') : undefined,") },
+
+  // 258 THE WRITER OMITS THE COLUMN. Nothing fails at save; the loss shows only on
+  // reload, where the absent rule quietly turns a Forecast event into Historical.
+  { id: '258 the Yield_Events writer omits Tariff_ARPU_Basis',
+    why: 'an event saved on Forecast reloads on Historical, showing rates it was never saved with',
+    file: ENGINE, spec: ARPUBASIS,
+    mutate: s => s.replace(
+      "    Tariff_ARPU_Basis: e.arpuBasis === 'forecast' ? 'Forecast' : 'Historical',",
+      "") },
+
+  // 259 REOPEN IGNORES THE STORED BASIS. The event carries it and the card never
+  // reads it, so reopening shows the new default's rates, not the saved ones —
+  // Finding 1, reopened.
+  { id: '259 reopening a yield event ignores its stored basis',
+    why: 'a Historical event reopens on Forecast and its rates silently change under the user',
+    file: WHATIF, spec: ARPUBASIS,
+    mutate: s => s.replace(
+      "    setYieldArpuMode(ev.arpuBasis ?? 'historical');",
+      "") },
 ];
 
 
@@ -3764,6 +3805,8 @@ const CONTROL_SPEC_MAP: Record<string, string> = {
   VALUECOHORT,
   // REQ-D6-07 clause 12 build. Registered WITH its first trap, 252.
   PROMOCOHORT,
+  // REQ-D6-07 clause 14 (A). Registered WITH its first trap, 257.
+  ARPUBASIS,
 };
 const controlHashNow = () => GT.controlHash(
   [...Object.values(CONTROL_SPEC_MAP), ...TARGETS, 'scripts/guard-traps.ts', 'scripts/guard-traps-select.ts'],
