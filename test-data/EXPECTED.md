@@ -10538,3 +10538,42 @@ Jon's answers to the inventory's questions, 2026-09-11:
     Forecast — the card resets like the Promotion arm (resetPromoDraft); a
     chosen basis never carries from one added event to the next. Reopen
     still restores the stored basis (clause 14).
+
+## REQ-D6-08 — INITIATIVES ON THE EVENTS SUMMARY (Alessandro, 2026-09-16; Jon's decisions 2026-09-16)
+
+Alessandro's last UAT request: group campaigns and events into
+INITIATIVES on the Events summary, switch an initiative on/off in one
+go, group/ungroup/dissolve by hand; ships before UAT closes.
+
+1. Membership: one initiative may hold campaigns AND single events
+   from all four cards (Volume, Promotion, Value, Pricing) — all three
+   carriers. A single event joins on its own. A campaign joins WHOLE;
+   its rows are never split across initiatives. One initiative per
+   row, never two.
+2. Storage: an `Initiative` column (a name; '' = none) appended LAST
+   on Market_Events, Yield_Events and Pricing_Events; ONE writer and ONE
+   reader per sheet; absent → none. The initiative IS its rows (as a
+   campaign is): no members, no initiative; old saves load with none.
+   No Initiatives sheet.
+3. The switch: on the Events summary ONLY (not the card tables). It
+   sets `Enabled` on every member row — on → all on, off → all off —
+   and shows three states (all on / all off / mixed) as the card
+   campaign switch does. Rows stay the truth; card switches keep
+   working independently; the initiative's state is DERIVED from its
+   rows on every render.
+4. Controls, summary only, option (ii): a selection mode — tick
+   campaigns and single events, 'Group as…', type the name (or pick an
+   existing one to add to it); a campaign ticks as a whole; 'Ungroup'
+   per member; 'Dissolve' the whole initiative (membership cleared,
+   rows untouched otherwise).
+5. Layout: once grouped, an initiative's members sit TOGETHER on the
+   summary under its header row (name, switch, member count); ungrouped
+   rows keep today's order.
+6. An initiative BIN on the header: deletes every member row through
+   the existing dialog (a new kind naming the initiative and its row
+   count), via handleDeleteCampaign's machinery or one sibling — never a
+   second remover. Compare shows the Initiative name as a column, no
+   switch, no bin (Compare applies nothing).
+7. Ships within UAT before close; walked by Jon; released via Maddie.
+
+Open: rename (costed by the inventory, not decided).
