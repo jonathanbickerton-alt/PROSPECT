@@ -5,7 +5,7 @@
 ```
 Generated: 2026-09-16 16:41 +0100 (UTC 2026-09-16 15:41)
 Certifies: ab2c634
-Repo: src ab2c634; report+ledger committed REPORT_LEDGER_HASH, pushed (origin in sync)
+Repo: src ab2c634; report+ledger committed 0f52704, pushed (origin in sync)
 255/255 caught
 full suite:  75/75 green
 ```
