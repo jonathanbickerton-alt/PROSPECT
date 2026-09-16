@@ -74,6 +74,12 @@ export interface EventsSummaryTableProps {
    * campaign, and the action stays the caller's one function.
    */
   onDeleteCampaign?: (row: EventSummaryRow) => { name: string; n: number; run: () => void } | null;
+  /**
+   * REQ-D6-07 clause 3. OPT-IN, for the reason every other opt-in here is: this
+   * component is Compare's too, and Compare has no forecast to read a per-month
+   * pair from. Absent = no title anywhere, which is Compare's case exactly.
+   */
+  adjustsTitle?: (row: EventSummaryRow) => string | null;
 }
 
 /**
@@ -96,7 +102,7 @@ export const SHOW_ALL_THRESHOLD = 9;
 
 export function EventsSummaryTable({
   rows, t, open, onToggle, title, testIdPrefix = 'events-summary', dense = false,
-  onSetEnabled, showAllToggle = false, effectOf, onDeleteCampaign,
+  onSetEnabled, showAllToggle = false, effectOf, onDeleteCampaign, adjustsTitle,
 }: EventsSummaryTableProps) {
   // D5-08. VIEW STATE, local to the panel: not exported, not persisted, and
   // reset on reload — a height preference is not a property of the forecast.
@@ -263,7 +269,9 @@ export function EventsSummaryTable({
                         <td className={`px-3 py-2 max-w-[160px] truncate ${r.unnamed ? 'italic text-slate-400' : 'text-slate-700'}`} title={r.name}>
                           {r.name}
                         </td>
-                        <td className="px-3 py-2 text-slate-700 whitespace-nowrap">{r.adjusts}</td>
+                        <td className="px-3 py-2 text-slate-700 whitespace-nowrap"
+                            data-testid={`${testIdPrefix}-adjusts-${r.id}`}
+                            title={adjustsTitle ? (adjustsTitle(r) ?? undefined) : undefined}>{r.adjusts}</td>
                         <td className="px-3 py-2 text-slate-500 max-w-[180px] truncate" title={r.scope}>{r.scope}</td>
                         <td className="px-3 py-2 text-slate-500 whitespace-nowrap tabular-nums">{r.when}</td>
                       </tr>

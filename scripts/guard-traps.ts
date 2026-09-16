@@ -112,6 +112,7 @@ const VIEWAPPLY = 'scripts/view-apply-mounted-spec.tsx';
 const LOCKRT = 'scripts/lock-roundtrip-spec.ts';
 const TRAPANCHORS = 'scripts/trap-anchors-spec.ts';
 const VALUEPAD = 'scripts/value-padlock-mounted-spec.tsx';
+const VALUECOHORT = 'scripts/value-cohort-target-mounted-spec.tsx';
 const EVTOGGLE = 'scripts/event-toggle-spec.tsx';
 const SUMMARYBAR = 'src/components/ForecastSummaryBar.tsx';
 const AIHOLD = 'scripts/ai-hold-spec.ts';
@@ -2397,9 +2398,12 @@ const TRAPS: Trap[] = [
   { id: '143 Apply moves a tier the user is holding',
     why: 'a target may not be reached by spending a share its owner locked',
     file: WHATIF, spec: VALUEPAD,
+    // RE-ANCHORED at REQ-D6-07: the mix solver is now handed the SOLVED BLEND
+    // rather than the typed figure, because the typed figure is a cohort ARPU.
+    // The defect this plants is unchanged — Apply spending a locked share.
     mutate: s => s.replace(
-      '      : solveForTarget(yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap, yieldTargetParsed),',
-      '      : solveForTarget(yieldMembers, draftMix, [], effectiveTierArpuMap, yieldTargetParsed),') },
+      '      yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap, yieldTargetParsed,',
+      '      yieldMembers, draftMix, [], effectiveTierArpuMap, yieldTargetParsed,') },
 
   // ── REQ-D6-01, per-event on/off (Jon, 2026-09-06) ───────────────────────
   //
@@ -2789,8 +2793,11 @@ const TRAPS: Trap[] = [
     why: 'the box was right about the CHART and wrong about the DRAFT, and a'
        + ' silent box is exactly how that shipped',
     file: WHATIF, spec: VIEWAPPLY,
+    // RE-ANCHORED at REQ-D6-07: the single-line loop became a block when the
+    // unrounded pair joined the same pass. The plant is the same one — the ids
+    // never written, so the rival line has nothing to render from.
     mutate: s => s.replace(
-      "    for (const m of run.adjustedMonths) arpuIdsByMonth[m.month] = m.appliedArpuIds ?? [];",
+      "      arpuIdsByMonth[m.month] = m.appliedArpuIds ?? [];",
       "") },
   // 198 THE WINNER IS READ AT THE WRONG MONTH. `wanted` is the month the box
   // reads — the month AFTER an Inflow draft's own. Comparing at `draft.month`
@@ -3445,6 +3452,83 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "onClick={(ev) => { ev.stopPropagation(); if (rowDeleteBarred) return; setPendingChange({ kind: 'delete', nextEvents: marketEvents.filter(x => x.id !== e.id) }); }}",
       'onClick={(ev) => { ev.stopPropagation(); if (rowDeleteBarred) return; removeMarketEvent(e.id); }}') },
+
+  // ══ REQ-D6-07 — THE VALUE CARD LEADS WITH THE COHORT ARPU ════════════════
+  //
+  // 245 THE SOLVE READS THE ROUNDED COLUMN. The chart's ARPU columns are written
+  // `+x.toFixed(2)`, so a target inside a penny of the fitted figure cannot be
+  // distinguished from it: the solve converges on the first step and reports a
+  // hit it did not make. This is clause 6's whole reason for the unrounded pair,
+  // and it is invisible at two decimals — which is why (b) types four.
+  // 245 THE SOLVE READS THE ROUNDED COLUMN. MEASURED: on the trimmed fixture
+  // this changes no rendered figure — tolerance 0.005 against a 0.01 grain means
+  // the first guess is accepted either way — so the spec that catches it is the
+  // SOURCE pin in yield-roundtrip, not the mounted card. What the rounded read
+  // costs is the guarantee, and a guarantee is not visible at two decimals.
+  { id: '245 the cohort solve reads the ROUNDED ARPU column',
+    why: 'the solve can stop a full penny from the target while reporting a hit, and no rendered figure shows it',
+    file: WHATIF, spec: YIELDROUND,
+    mutate: s => s.replace(
+      "return draft.ibro === 'Inflow' ? (raw?.inflowAdjusted ?? null) : (raw?.retentionAdjusted ?? null);",
+      "return draft.ibro === 'Inflow' ? ((series as any[]).find((r: any) => r.month === yieldReadMonthOf(series, draft.month, draft.ibro))?.['Inflow ARPU (Adjusted)'] ?? null) : ((series as any[]).find((r: any) => r.month === draft.month)?.['Retention ARPU (Adjusted)'] ?? null);") },
+
+  // 246 THE TYPED FIGURE IS HANDED ON UNCONVERTED. The card is back in blend
+  // units with a cohort label over it: the sliders move to a blend equal to the
+  // number typed, and the lead lands somewhere else entirely.
+  { id: '246 the cohort target is handed to the mix solver unconverted',
+    why: 'blend semantics return under a cohort label and the lead lands on a different number',
+    file: WHATIF, spec: VALUECOHORT,
+    mutate: s => s.replace(
+      "    if (res.kind === 'ok') { setYieldBlendTarget(res.blend); setDraftMix(res.shares); }",
+      "    if (res.kind === 'ok') { setYieldBlendTarget(yieldTargetParsed); setDraftMix(((solveForTarget(yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap, yieldTargetParsed) as any).shares) ?? res.shares); }") },
+
+  // 247 THE READOUT REVERTS TO THE BLEND BAND. The two bands differ by pence on
+  // this fixture, which is the point: a reader cannot see which one they are
+  // being shown, so the spec asserts it instead.
+  { id: '247 the band readout reverts to the blend band',
+    why: 'the card offers a range in units the reader is not typing in, and the pence-level difference hides it',
+    file: WHATIF, spec: VALUECOHORT,
+    mutate: s => s.replace(
+      '                      rangeOverride={yieldCohortBand}',
+      '                      rangeOverride={undefined}') },
+
+  // 248 THE NO-RATES REFUSAL IS REMOVED. With no stored rates the engine's ratio
+  // is 1, so every mix delivers the same figure: the sliders move, the lead does
+  // not, and nothing says why. A control that appears to work and does not.
+  { id: '248 the no-rates refusal is dropped and the target silently does nothing',
+    why: 'the ratio is 1, so a target can never be reached, and the card moves sliders as if it could',
+    file: MIXENGINE, spec: VALUECOHORT,
+    mutate: s => s.replace(
+      "    return { kind: 'refused', reason: 'no-rates', detail: 'the draft carries no stored tier rates, so its ratio is 1' };",
+      "    return { kind: 'blocked', reason: 'malformed-shares', detail: 'no rates' };") },
+
+  // 249 THE PROMOTION ARM GAINS COHORT SEMANTICS. The panel is shared and every
+  // cohort prop is optional for exactly this reason; a default that leaked would
+  // re-label an arm whose target really is a blend.
+  { id: '249 the Promotion arm picks up the Value card cohort label',
+    why: 'the shared panel re-labels an arm whose target genuinely is a blend',
+    file: TARGETPANEL, spec: VALUECOHORT,
+    mutate: s => s.replace(
+      "          {label ?? t('whatif_mix_target_arpu')}",
+      "          {label ?? t('whatif_value_target_cohort', { ibro: 'Inflow', month: '' })}") },
+
+  // 250 THE SUMMARY CELL PRINTS THE BLEND AGAIN. A money figure where a ratio
+  // belongs, and one that cannot be reconciled with any number on the chart.
+  { id: '250 the summary cell prints the blend instead of the ratio',
+    why: 'a money figure in blend units reads as the ARPU the event produces, which it is not',
+    file: ENGINE, spec: SUMMARYSPEC,
+    mutate: s => s.replace(
+      '  const ratio = yieldRatioFrom(e.tariffMix ?? {}, e.tariffBaseArpu ?? {});',
+      '  const ratio = blendTierMixOrNull(e.tariffMix ?? {}, e.tariffBaseArpu ?? {});') },
+
+  // 251 THE TITLE RENDERS WITHOUT THE PROP. Compare would then assert a pair at
+  // a month over several runs at once — the reason the prop is opt-in.
+  { id: '251 the adjusts title renders without the opt-in prop',
+    why: 'Compare mounts the same table over several files and would state one run\'s pair on all of them',
+    file: SUMMARYTABLE, spec: VALUECOHORT,
+    mutate: s => s.replace(
+      '                            title={adjustsTitle ? (adjustsTitle(r) ?? undefined) : undefined}>{r.adjusts}</td>',
+      '                            title={r.adjusts}>{r.adjusts}</td>') },
 ];
 
 
@@ -3624,6 +3708,9 @@ const CONTROL_SPEC_MAP: Record<string, string> = {
   SPREADRAMPPROMO,
   // REQ-D6-06. Registered WITH its first trap, 237.
   CAMPDEL,
+  // REQ-D6-07. Registered WITH its first trap, 245 — the lesson D505HELD was
+  // registered late for, and the reason 223 could have caught vacuously.
+  VALUECOHORT,
 };
 const controlHashNow = () => GT.controlHash(
   [...Object.values(CONTROL_SPEC_MAP), ...TARGETS, 'scripts/guard-traps.ts', 'scripts/guard-traps-select.ts'],

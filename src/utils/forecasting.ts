@@ -999,13 +999,42 @@ export function promoEventSummary(e: MarketEvent, t: SummaryT): string {
  * at save), so no override rule is re-implemented here either. Absence stays
  * absence: a mix whose blend is unknown says so rather than printing 0.00.
  */
+/**
+ * THE YIELD RATIO — REQ-D6-07 clause 3, and the ONE definition of it.
+ *
+ * blend(mix, stored rates) / equal-weight(stored rates): exactly the arithmetic the
+ * engine applies (WhatIfTab, the Inflow and Retention arms), lifted here so the
+ * summary cell states the same number the forecast uses rather than a second copy
+ * of it. The engine now calls this too.
+ *
+ * NULL IS ABSENCE, not 1: a mix whose blend is unknown, or stored rates that are
+ * empty or sum to nothing, have no ratio to state. The engine's own fallback to 1
+ * is a FORECASTING decision (an event that cannot move ARPU leaves it alone) and is
+ * kept at the call site, where it can be read next to what it protects.
+ */
+export function yieldRatioFrom(
+  tariffMix: Record<string, number>,
+  tariffBaseArpu: Record<string, number>,
+): number | null {
+  const blend = blendTierMixOrNull(tariffMix ?? {}, tariffBaseArpu ?? {});
+  if (blend === null) return null;
+  const tiers = Object.keys(tariffBaseArpu ?? {});
+  if (tiers.length === 0) return null;
+  const equalWeight = tiers.reduce((s, t) => s + (tariffBaseArpu[t] ?? 0), 0) / tiers.length;
+  if (!(equalWeight > 0)) return null;
+  return blend / equalWeight;
+}
+
+/**
+ * REQ-D6-07 clause 3. The cell states the COHORT EFFECT THAT PERSISTS — the ratio,
+ * as a percentage — not the blend, which is a number in tier-rate space that no
+ * surface the user reads is denominated in.
+ */
 export function yieldEventSummary(e: YieldEventLike, t: SummaryT): string {
-  const bands = Object.keys(e.tariffMix ?? {}).length;
-  const blend = blendTierMixOrNull(e.tariffMix ?? {}, e.tariffBaseArpu ?? {});
+  const ratio = yieldRatioFrom(e.tariffMix ?? {}, e.tariffBaseArpu ?? {});
   return t('whatif_summary_yield', {
     ibro: e.ibro,
-    bands,
-    blend: blend === null ? t('whatif_mix_blend_unknown') : blend.toFixed(2),
+    ratio: ratio === null ? String.fromCharCode(8212) : (ratio >= 1 ? String.fromCharCode(43) : String.fromCharCode(45)) + Math.abs((ratio - 1) * 100).toFixed(1) + String.fromCharCode(37),
   });
 }
 

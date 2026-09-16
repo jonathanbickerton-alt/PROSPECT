@@ -800,7 +800,7 @@
   "whatif_summary_volume": "{{scenario}} {{amount}}",
   "whatif_summary_promo_volume": "Promoción {{amount}}",
   "whatif_summary_promo_mix": "Combinación de {{axis}} con {{count}} bandas",
-  "whatif_summary_yield": "Combinación {{ibro}}, {{bands}} bandas → {{blend}}",
+  "whatif_summary_yield": "ARPU de {{ibro}} {{ratio}}",
   "whatif_summary_scope_all": "Todos",
   "whatif_summary_recurring": "recurrente",
   "whatif_summary_card_value": "Valor",
@@ -916,5 +916,15 @@
   "whatif_delete_campaign_bin": "Eliminar la campaña '{{name}}' ({{n}} eventos)",
   "whatif_row_delete_barred": "Use la papelera de la campaña",
   "whatif_row_edit_barred": "Use la etiqueta de la campaña",
-  "whatif_member_no_edit": "Este mes es un paso de una rampa de campaña, por lo que no puede editarse por separado. Edite la campaña desde su etiqueta."
+  "whatif_member_no_edit": "Este mes es un paso de una rampa de campaña, por lo que no puede editarse por separado. Edite la campaña desde su etiqueta.",
+  "whatif_value_lead_label": "ARPU de {{ibro}} {{cohort}}, {{month}}",
+  "whatif_value_rollfwd_onward": "se aplica desde {{month}} en adelante",
+  "whatif_value_rollfwd_only": "solo en {{month}}",
+  "whatif_value_how_computed": "Cómo se calcula",
+  "whatif_value_target_cohort": "ARPU de {{ibro}} objetivo en {{month}}",
+  "whatif_value_refuse_no_fitted": "No hay ARPU ajustado para esta cohorte en {{month}}, por lo que no se puede resolver un objetivo.",
+  "whatif_value_refuse_no_rates": "Este borrador no indica tarifas por nivel, así que su ratio es 1 y no se puede alcanzar ningún objetivo.",
+  "whatif_summary_yield_title": "de {{baseline}} a {{adjusted}} en {{month}}",
+  "whatif_value_bound_above": "El ARPU de cohorte mas alto que permiten estos bloqueos es {{bound}}, fijado por {{member}}.",
+  "whatif_value_bound_below": "El ARPU de cohorte mas bajo que permiten estos bloqueos es {{bound}}, fijado por {{member}}."
 }

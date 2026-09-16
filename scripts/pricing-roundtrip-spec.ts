@@ -450,9 +450,17 @@ check('baseline: the slice invocation is ONE extracted function',
 // this pin wants, not a violation of it. The count is raised, never removed,
 // and the invariant it was a proxy for is now pinned directly below:
 // the number of ENGINE calls in the file did not move.
-check('baseline: EXACTLY THREE callers share it — save, Preview, yield preview',
-  (tab.split('eventScopeSeriesFor(').length - 1) === 3,
-  `${tab.split('eventScopeSeriesFor(').length - 1} call sites, expected 3`);
+// RE-AIMED at REQ-D6-07, 2026-09-16: FOUR. The cohort solve asks the same
+// question the preview asks — "what does this draft deliver" — once per
+// bisection step, and it asks it HERE. A solver that called the engine itself
+// would be measuring a draft the card never previewed, which is precisely the
+// failure the count exists to catch; so the fourth caller is the outcome this
+// pin wants, and the pin that actually guards the invariant is the engine
+// count directly below, which did NOT move.
+check('baseline: EXACTLY FOUR callers share it — save, Preview, yield preview, cohort solve',
+  (tab.split('eventScopeSeriesFor(').length - 1) === 4
+    && tab.includes('const yieldDeliverForMix = useCallback('),
+  `${tab.split('eventScopeSeriesFor(').length - 1} call sites, expected 4`);
 check('baseline: and the third caller added NO new engine call',
   (tab.split('computeAdjustedForecast(').length - 1) === 6,
   `${tab.split('computeAdjustedForecast(').length - 1} computeAdjustedForecast sites,`
@@ -577,10 +585,10 @@ check('volumes: and NOT the unweighted 110',
 check('save: the volumes come from the SAME series as the baseline',
   tab.includes('volumesFromSeries(eventScopeSeries, newPricingEvent.month)'),
   'a second slice run at save would reopen the two-moments problem inside one save');
-check('save: still EXACTLY THREE callers of the slice invocation',
-  (tab.split('eventScopeSeriesFor(').length - 1) === 3,
+check('save: still EXACTLY FOUR callers of the slice invocation',
+  (tab.split('eventScopeSeriesFor(').length - 1) === 4,
   `${tab.split('eventScopeSeriesFor(').length - 1} call sites,`
-  + ' expected 3 (save + Preview + D5-11 yield preview)');
+  + ' expected 4 (save + Preview + D5-11 yield preview + D6-07 cohort solve)');
 check('save: baseline and volumes are written TOGETHER on the event',
   tab.includes('pricedVol: savedVolumes.pricedVol, totalVol: savedVolumes.totalVol'),
   'an edit refreshing one and not the other recreates the mixed-axes defect');

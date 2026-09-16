@@ -913,3 +913,123 @@ export function exactlyDeterminedUnderTarget(
   }
   return true;
 }
+
+/**
+ * REQ-D6-07 clause 6 — THE COHORT TARGET, SOLVED ON THE PREVIEW.
+ *
+ * `solveForTarget` answers "which shares blend to this number", and the number is
+ * a BLEND in tier-rate space. What a user types on the card is now a COHORT ARPU:
+ * the figure the forecast delivers at the read month. The two differ by the
+ * engine's ratio anchoring, by the pool arithmetic, and by any override — so the
+ * blend cannot be converted to the cohort figure in closed form and trusted.
+ *
+ * WHAT THIS DOES: closed form as the FIRST GUESS (target x equal-weight / fitted,
+ * which the 0647 inventory measured landing 0.0039 from a 14.2861 target), then
+ * BISECTION on whatever `deliver` returns until the miss is inside `tolerance`.
+ * `deliver` is the seam — the same engine invocation the preview already makes —
+ * injected rather than imported, so this file stays free of React and of the
+ * forecast engine, and remains a pure function the specs can drive directly.
+ *
+ * IT COMPUTES NO MIX OF ITS OWN: every candidate blend goes through
+ * `solveForTarget`, so the shares this returns are the shares that function would
+ * have produced, and `rebalanceToTarget` is handed a blend exactly as before.
+ */
+export type CohortSolveOutcome =
+  | { kind: 'ok'; blend: number; shares: Record<string, number>; delivered: number; steps: number; converged: boolean }
+  | { kind: 'blocked'; reason: MixBlockReason | 'above-max' | 'below-min'; detail: string;
+      binding?: MixBinding; cohortBand?: { min: number; max: number } }
+  | { kind: 'refused'; reason: 'no-fitted' | 'no-rates'; detail: string };
+
+export function solveForCohortTarget(
+  members: readonly string[],
+  shares: Readonly<Record<string, number>>,
+  locked: readonly string[],
+  perMemberArpus: Readonly<Record<string, number>>,
+  targetCohortArpu: number,
+  ctx: {
+    /** The cohort's fitted ARPU at the read month. Null = clause 11's first refusal. */
+    fitted: number | null;
+    /** The seam: a blend in, the UNROUNDED delivered cohort ARPU out. */
+    deliver: (blend: number) => number | null;
+    /** The delivered figures at the blend band's ends, when the card already has them. */
+    cohortBand?: { min: number; max: number } | null;
+    tolerance?: number;
+    cap?: number;
+  },
+): CohortSolveOutcome {
+  const tolerance = ctx.tolerance ?? 0.005;
+  const cap = ctx.cap ?? 30;
+  const tiers = Object.keys(perMemberArpus ?? {});
+  const equalWeight = tiers.length
+    ? tiers.reduce((s, t) => s + (perMemberArpus[t] ?? 0), 0) / tiers.length : 0;
+  // CLAUSE 11, second refusal: with no stored rates the engine's ratio falls back to
+  // 1, so every blend delivers the same figure and a target could never be reached.
+  if (!(equalWeight > 0)) {
+    return { kind: 'refused', reason: 'no-rates', detail: 'the draft carries no stored tier rates, so its ratio is 1' };
+  }
+  // CLAUSE 11, first refusal.
+  if (ctx.fitted === null || !Number.isFinite(ctx.fitted) || !(ctx.fitted > 0)) {
+    return { kind: 'refused', reason: 'no-fitted', detail: 'there is no fitted ARPU at the read month' };
+  }
+  if (typeof targetCohortArpu !== 'number' || !Number.isFinite(targetCohortArpu)) {
+    return { kind: 'blocked', reason: 'malformed-shares', detail: 'the target is not a finite number' };
+  }
+  const band = achievableTargetRange(members, shares, locked, perMemberArpus);
+  if (band.kind !== 'ok') return { kind: 'blocked', reason: band.reason, detail: band.detail };
+  const lo0 = band.range.min, hi0 = band.range.max;
+  const cohort = ctx.cohortBand ?? (() => {
+    const a = ctx.deliver(lo0), b = ctx.deliver(hi0);
+    return (a === null || b === null) ? null : { min: Math.min(a, b), max: Math.max(a, b) };
+  })();
+  if (cohort && targetCohortArpu > cohort.max + tolerance) {
+    const edge = solveForTarget(members, shares, locked, perMemberArpus, hi0);
+    return { kind: 'blocked', reason: 'above-max', cohortBand: cohort,
+      detail: 'the target is above what this cohort reaches at the read month',
+      binding: edge.kind === 'blocked' ? edge.binding : bindingAt(members, shares, locked, perMemberArpus, 'max') };
+  }
+  if (cohort && targetCohortArpu < cohort.min - tolerance) {
+    const edge = solveForTarget(members, shares, locked, perMemberArpus, lo0);
+    return { kind: 'blocked', reason: 'below-min', cohortBand: cohort,
+      detail: 'the target is below what this cohort reaches at the read month',
+      binding: edge.kind === 'blocked' ? edge.binding : bindingAt(members, shares, locked, perMemberArpus, 'min') };
+  }
+  // THE FIRST GUESS, clamped into the blend band.
+  let blend = Math.min(hi0, Math.max(lo0, targetCohortArpu * equalWeight / ctx.fitted));
+  let lo = lo0, hi = hi0, steps = 0;
+  let best: { blend: number; delivered: number; shares: Record<string, number> } | null = null;
+  while (steps < cap) {
+    steps++;
+    const attempt = solveForTarget(members, shares, locked, perMemberArpus, blend);
+    if (attempt.kind !== 'ok') return { kind: 'blocked', reason: attempt.reason, detail: attempt.detail, binding: attempt.binding };
+    const delivered = ctx.deliver(blend);
+    if (delivered === null) {
+      return { kind: 'refused', reason: 'no-fitted', detail: 'the seam returned no figure for this draft' };
+    }
+    if (best === null || Math.abs(delivered - targetCohortArpu) < Math.abs(best.delivered - targetCohortArpu)) {
+      best = { blend, delivered, shares: attempt.shares };
+    }
+    if (Math.abs(delivered - targetCohortArpu) <= tolerance) {
+      return { kind: 'ok', blend, shares: attempt.shares, delivered, steps, converged: true };
+    }
+    if (delivered < targetCohortArpu) lo = blend; else hi = blend;
+    blend = (lo + hi) / 2;
+  }
+  // THE CAP IS NOT A FAILURE, and it is not silence either: the closest attempt is
+  // returned with converged:false, so the card can show what it actually reached.
+  return best
+    ? { kind: 'ok', blend: best.blend, shares: best.shares, delivered: best.delivered, steps, converged: false }
+    : { kind: 'blocked', reason: 'malformed-shares', detail: 'no candidate blend could be solved' };
+}
+
+/** The member that forms the wall at an end of the band, for the blocked message. */
+function bindingAt(
+  members: readonly string[], shares: Readonly<Record<string, number>>,
+  locked: readonly string[], perMemberArpus: Readonly<Record<string, number>>,
+  end: 'min' | 'max',
+): MixBinding | undefined {
+  const free = members.filter(m => !locked.includes(m) && Number.isFinite(perMemberArpus[m]));
+  if (free.length === 0) return undefined;
+  const sorted = [...free].sort((a, b) => (perMemberArpus[a] ?? 0) - (perMemberArpus[b] ?? 0));
+  const m = end === 'max' ? sorted[sorted.length - 1] : sorted[0];
+  return { member: m, bound: perMemberArpus[m] ?? 0 };
+}

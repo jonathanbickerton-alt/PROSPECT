@@ -800,7 +800,7 @@
   "whatif_summary_volume": "{{scenario}} {{amount}}",
   "whatif_summary_promo_volume": "Promotion {{amount}}",
   "whatif_summary_promo_mix": "{{axis}}-Mix mit {{count}} Bändern",
-  "whatif_summary_yield": "{{ibro}}-Mix, {{bands}} Bänder → {{blend}}",
+  "whatif_summary_yield": "{{ibro}}-ARPU {{ratio}}",
   "whatif_summary_scope_all": "Alle",
   "whatif_summary_recurring": "wiederkehrend",
   "whatif_summary_card_value": "Wert",
@@ -916,5 +916,15 @@
   "whatif_delete_campaign_bin": "Kampagne '{{name}}' löschen ({{n}} Ereignisse)",
   "whatif_row_delete_barred": "Den Kampagnen-Papierkorb verwenden",
   "whatif_row_edit_barred": "Den Kampagnen-Chip verwenden",
-  "whatif_member_no_edit": "Dieser Monat ist ein Schritt einer Kampagnenrampe und kann daher nicht einzeln bearbeitet werden. Bearbeiten Sie stattdessen die Kampagne über ihren Chip."
+  "whatif_member_no_edit": "Dieser Monat ist ein Schritt einer Kampagnenrampe und kann daher nicht einzeln bearbeitet werden. Bearbeiten Sie stattdessen die Kampagne über ihren Chip.",
+  "whatif_value_lead_label": "{{ibro}}-ARPU {{cohort}}, {{month}}",
+  "whatif_value_rollfwd_onward": "gilt ab {{month}} fortlaufend",
+  "whatif_value_rollfwd_only": "nur im {{month}}",
+  "whatif_value_how_computed": "Wie das berechnet wird",
+  "whatif_value_target_cohort": "Ziel-{{ibro}}-ARPU im {{month}}",
+  "whatif_value_refuse_no_fitted": "Für diese Kohorte gibt es im {{month}} keinen angepassten ARPU-Wert, daher kann kein Ziel gelöst werden.",
+  "whatif_value_refuse_no_rates": "Dieser Entwurf nennt keine Stufenwerte, sein Verhältnis ist daher 1 und kein Ziel ist erreichbar.",
+  "whatif_summary_yield_title": "{{baseline}} auf {{adjusted}} im {{month}}",
+  "whatif_value_bound_above": "Der hoechste Kohorten-ARPU, den diese Sperren zulassen, ist {{bound}}, bestimmt durch {{member}}.",
+  "whatif_value_bound_below": "Der niedrigste Kohorten-ARPU, den diese Sperren zulassen, ist {{bound}}, bestimmt durch {{member}}."
 }

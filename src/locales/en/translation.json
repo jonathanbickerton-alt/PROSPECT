@@ -800,7 +800,7 @@
   "whatif_summary_volume": "{{scenario}} {{amount}}",
   "whatif_summary_promo_volume": "Promotion {{amount}}",
   "whatif_summary_promo_mix": "{{count}}-band {{axis}} mix",
-  "whatif_summary_yield": "{{ibro}} mix, {{bands}} bands → {{blend}}",
+  "whatif_summary_yield": "{{ibro}} ARPU {{ratio}}",
   "whatif_summary_scope_all": "All",
   "whatif_summary_recurring": "recurring",
   "whatif_summary_card_value": "Value",
@@ -916,5 +916,15 @@
   "whatif_delete_campaign_bin": "Delete campaign '{{name}}' ({{n}} events)",
   "whatif_row_delete_barred": "Use the campaign bin",
   "whatif_row_edit_barred": "Use the campaign pill",
-  "whatif_member_no_edit": "This month is one step of a campaign ramp, so it cannot be edited on its own. Edit the campaign from its pill instead."
+  "whatif_member_no_edit": "This month is one step of a campaign ramp, so it cannot be edited on its own. Edit the campaign from its pill instead.",
+  "whatif_value_lead_label": "{{cohort}} {{ibro}} ARPU, {{month}}",
+  "whatif_value_rollfwd_onward": "applies from {{month}} onward",
+  "whatif_value_rollfwd_only": "at {{month}} only",
+  "whatif_value_how_computed": "How this is computed",
+  "whatif_value_target_cohort": "Target {{ibro}} ARPU at {{month}}",
+  "whatif_value_refuse_no_fitted": "No fitted ARPU for this cohort at {{month}}, so a target cannot be solved.",
+  "whatif_value_refuse_no_rates": "This draft states no tier rates, so its ratio is 1 and no target can be reached.",
+  "whatif_summary_yield_title": "{{baseline}} to {{adjusted}} at {{month}}",
+  "whatif_value_bound_above": "The highest cohort ARPU these holds allow is {{bound}}, set by {{member}}.",
+  "whatif_value_bound_below": "The lowest cohort ARPU these holds allow is {{bound}}, set by {{member}}."
 }

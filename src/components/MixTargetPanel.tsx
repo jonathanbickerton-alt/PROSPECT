@@ -56,18 +56,31 @@ export interface MixTargetPanelProps {
   exactlyDetermined: boolean;
   t: (key: string, opts?: Record<string, unknown>) => string;
   formatNumber: (v: number) => string;
+  /**
+   * REQ-D6-07 clause 2 — OPT-IN, all four. The Value card types a COHORT ARPU and
+   * needs its own label, its own band (cohort terms, not blend), a commit on
+   * Enter/blur, and clause 11's refusals. The Promotion arm passes none of them and
+   * renders exactly what it rendered before: blend semantics, unchanged.
+   */
+  label?: string;
+  /** The band to READ OUT, when it is not the blend band `range` carries. */
+  rangeOverride?: { min: number; max: number } | null;
+  /** Enter and blur commit the typed figure — the D4-02 rule, where a solve is dear. */
+  onCommit?: () => void;
+  /** A stated refusal (clause 11), rendered in place of the blocked message. */
+  refusal?: { text: string; testId: string } | null;
 }
 
 export function MixTargetPanel({
   testIdPrefix, value, onChange, onApply, outcome, range, rangeCollapsed, wall,
   exactlyDetermined,
-  t, formatNumber,
+  t, formatNumber, label, rangeOverride, onCommit, refusal,
 }: MixTargetPanelProps) {
   return (
     <div className="mb-3 p-2.5 rounded-lg bg-slate-50 border border-slate-100">
       <div className="flex items-center gap-2 flex-wrap">
         <label className="text-[11px] font-semibold text-slate-600 whitespace-nowrap">
-          {t('whatif_mix_target_arpu')}
+          {label ?? t('whatif_mix_target_arpu')}
         </label>
         <input
           type="number"
@@ -76,6 +89,8 @@ export function MixTargetPanel({
           data-testid={`${testIdPrefix}-mix-target`}
           placeholder={t('whatif_mix_target_placeholder')}
           onChange={e => onChange(e.target.value)}
+          onKeyDown={e => { if (onCommit && e.key === 'Enter') { e.preventDefault(); onCommit(); } }}
+          onBlur={() => { if (onCommit) onCommit(); }}
           className="w-24 text-xs font-semibold text-slate-700 text-right tabular-nums border border-slate-200 rounded px-1.5 py-1 outline-none focus:border-[#e60000] bg-white"
         />
         {/* DISABLED UNLESS THE TARGET IS REACHABLE. Apply is only ever called
@@ -88,11 +103,11 @@ export function MixTargetPanel({
           onClick={onApply}
           className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-[#e60000] text-white disabled:opacity-40 disabled:cursor-not-allowed"
         >{t('whatif_mix_target_apply')}</button>
-        {range.kind === 'ok' && !rangeCollapsed && (
+        {(rangeOverride ?? (range.kind === 'ok' && !rangeCollapsed ? range.range : null)) && (
           <span className="text-[11px] text-slate-500 tabular-nums"
             data-testid={`${testIdPrefix}-mix-target-range`}>
             {t('whatif_mix_reachable_range')}{' '}
-            {formatNumber(range.range.min)} – {formatNumber(range.range.max)}
+            {formatNumber((rangeOverride ?? (range as any).range).min)} – {formatNumber((rangeOverride ?? (range as any).range).max)}
           </span>
         )}
       </div>
@@ -144,12 +159,25 @@ export function MixTargetPanel({
           which member forms the wall and where the wall is. Moving the user's
           number to the nearest reachable one would be the tool stating
           something on their behalf. */}
-      {outcome?.kind === 'blocked' && (
+      {/* CLAUSE 11: a refusal is stated, and takes the place of the blocked message —
+          a target that cannot be SOLVED is a different thing from one that is out of
+          range, and saying both at once would describe two failures where there is one. */}
+      {refusal && (
+        <div className="mt-2 text-[11px] text-amber-600" data-testid={refusal.testId}>{refusal.text}</div>
+      )}
+      {!refusal && outcome?.kind === 'blocked' && (
         <div className="mt-2 text-[11px] text-amber-600"
           data-testid={`${testIdPrefix}-mix-target-blocked`}>
           <span className="font-semibold">{t('whatif_mix_target_unreachable')}</span>{' '}
+          {/* THE SENTENCE FOLLOWS THE UNITS. A caller that states its own band has
+              stated it in COHORT terms, and "the highest blend these holds allow"
+              would then name a figure in units the reader never typed. The
+              Promotion arm passes no band and keeps the blend sentence, byte for
+              byte — which is what its own assertion pins. */}
           {(outcome.reason === 'above-max' || outcome.reason === 'below-min')
-            ? t(outcome.reason === 'above-max' ? 'whatif_mix_bound_above' : 'whatif_mix_bound_below',
+            ? t(rangeOverride !== undefined
+                  ? (outcome.reason === 'above-max' ? 'whatif_value_bound_above' : 'whatif_value_bound_below')
+                  : (outcome.reason === 'above-max' ? 'whatif_mix_bound_above' : 'whatif_mix_bound_below'),
                 { member: outcome.binding?.member ?? '',
                   bound: formatNumber(outcome.binding?.bound ?? 0) })
             : t('whatif_mix_target_blocked_other')}

@@ -103,7 +103,6 @@ async function main() {
     return m;
   };
 
-  const MONTH = '2026-01';
   const captured: any[] = [];
 
   // `newYieldEvent` is a PROP with a noop setter here, so the month is supplied
@@ -146,23 +145,42 @@ async function main() {
     for (const row of bucket as any[]) {
       const tms = row._parsedDate.getTime();
       if (!acc.has(tms)) acc.set(tms, { _parsedDate: row._parsedDate, inflow: 0, outflow: 0, retention: 0,
-        arpu: 0, inflowArpu: 0, outflowArpu: 0, retentionArpu: 0, baseArpu: 0 });
+        arpu: 0, inflowArpu: 0, outflowArpu: 0, retentionArpu: 0, baseArpu: 0, _rev: 0, _vol: 0 });
       const e = acc.get(tms)!, m = String(row[C.metric]), v = Number(row[C.val]) || 0;
       if (m === 'Inflow') e.inflow += v; else if (m === 'Outflow') e.outflow += v;
       else if (m === 'Retention') e.retention += v;
+      // REQ-D6-07. THE HISTORY NOW CARRIES ARPU. It did not before, and it did not
+      // need to: every check here was about SHARES. The card's band is now stated in
+      // cohort terms, and a cohort ARPU of zero is a band of [0.00, 0.00] — a mount
+      // that could not tell a working solve from a broken one.
+      e._rev += Number(row[C.rev]) || 0; e._vol += v;
     }
   }
-  const seriesArr = [...acc.values()].sort((a, b) => a._parsedDate - b._parsedDate);
+  const seriesArr = [...acc.values()].sort((a, b) => a._parsedDate - b._parsedDate)
+    .map((r: any) => { const a = r._vol > 0 ? r._rev / r._vol : 20;
+      return { ...r, arpu: a, inflowArpu: a, outflowArpu: a, retentionArpu: a, baseArpu: a }; });
   const baseForecast = fc.calculateBaseForecast(seriesArr,
     { segment: SEG, product: 'All', productL2: 'All', channel: 'All', channelL2: 'All',
       tariffL1: 'All', tariffL2: 'All', scenario: 'Base Case' },
-    10000, 12, 1.0, 1.5, 3, 'Holt Linear');
+    10000, 24, 1.0, 1.5, 3, 'Holt Linear');
+
+  // THE DRAFT MONTH IS THE FORECAST'S OWN, not a literal. A month outside the
+  // forecast has no fitted ARPU at all, which is clause 11's refusal rather than
+  // the state (f) and (g) exercise.
+  const MONTH: string = baseForecast.months[3].month;
 
   const withProvider = (child: any) => React.createElement(ForecastProvider as any, {
     baseForecast, setBaseForecast: noop,
     adjustedForecast: null, setAdjustedForecast: noop,
     forecastStore: new Map(), setForecastStore: noop,
-    resolveForecast: (k: string) => fc.resolveFromStore(new Map(), new Map(), k),
+    // REQ-D6-07. THE SEAM NEEDS A RESOLVABLE FORECAST, because the card's band is
+    // now stated in COHORT terms and a cohort figure comes from the slice's own
+    // forecast. An empty store resolves nothing, so before this the card could
+    // only ever have said "no fitted ARPU here" — which is clause 11 working, but
+    // it is not the state (f) and (g) are about. Every key resolves to the seeded
+    // baseline: this spec's subject is the CARD, and which key the store answers
+    // to is resolveFromStore's own spec, not this one's.
+    resolveForecast: (_k: string) => ({ forecast: baseForecast, reason: null, leaves: [] }),
     canResolve: () => false,
     hasLegacyBaseline: !!baseForecast, updatedAt: new Date().toISOString(),
     bulkRuns: [], setBulkRuns: noop,
@@ -183,6 +201,18 @@ async function main() {
     if (tab) await (act as any)(async () => { tab.click(); });
     return { c, root, tab };
   };
+  /**
+   * REQ-D6-07. WHAT THE TARGET IS NOW MEASURED AGAINST.
+   *
+   * The typed figure is a COHORT ARPU, so "did Apply hit the target" is a question
+   * about what the cohort delivers, not about the blend — and the two are different
+   * numbers (the engine multiplies the fitted ARPU by blend / equal-weight). Read
+   * from the card's own lead, which is the figure the chart will draw; it is
+   * displayed to two decimals, so the bar here is 0.01 rather than the solver's own
+   * 0.005 tolerance. Measuring the blend instead is trap 246.
+   */
+  const deliveredIn = (c: any) => Number(
+    (c.querySelector('[data-testid="yield-preview-adjusted"]') as any)?.textContent);
   const lockOf = (c: any, tier: string) => c.querySelector(`[data-testid="yield-mix-lock-${tier}"]`) as any;
   const rangeOf = (c: any, tier: string) => c.querySelector(`[data-testid="yield-mix-range-${tier}"]`) as any;
   const tiersIn = (c: any) => [...c.querySelectorAll('[data-testid^="yield-mix-range-"]')]
@@ -450,9 +480,10 @@ async function main() {
     const achieved = blendOf(c6, tiers6);
     // TO THE PENNY, against the number the USER typed - not against anything
     // the solver reported back, which would be the solver checking itself.
-    check('(f) and the achieved blend equals the target to the penny',
-      Math.abs(achieved - REACH) < 0.005,
-      `by hand ${achieved.toFixed(6)} vs target ${REACH}`);
+    // RE-AIMED at REQ-D6-07: the COHORT figure, because that is what was typed.
+    check('(f) and the DELIVERED COHORT ARPU equals the target, as displayed',
+      Math.abs(deliveredIn(c6) - REACH) <= 0.01,
+      `delivered ${deliveredIn(c6)} vs target ${REACH} (blend by hand ${achieved.toFixed(6)})`);
     // STATED ON A GREEN RUN, not only on a red one. A figure that only appears
     // when a check fails cannot be quoted in a report without re-running the
     // spec with the failure induced, and the reachable interval is fixture-
@@ -501,9 +532,9 @@ async function main() {
       check('(f) a HELD tier is untouched by Apply, to the penny',
         Number(rangeOf(c7, H).value) === heldExact,
         `${Number(rangeOf(c7, H).value)} vs ${heldExact} - Apply ignored the lock set`);
-      check('(f) and Apply still hit the target with the hold in place',
-        Math.abs(blendOf(c7, tiers7) - tgt7) < 0.005,
-        `by hand ${blendOf(c7, tiers7).toFixed(6)} vs target ${tgt7}`);
+      check('(f) and Apply still hit the COHORT target with the hold in place',
+        Math.abs(deliveredIn(c7) - tgt7) <= 0.01,
+        `delivered ${deliveredIn(c7)} vs target ${tgt7} (blend by hand ${blendOf(c7, tiers7).toFixed(6)})`);
       check('(f) and the padlock is still engaged after Apply',
         lockOf(c7, H).getAttribute('aria-pressed') === 'true');
     }
@@ -564,9 +595,10 @@ async function main() {
     const after8 = blend8();
     console.log(`  (g) value drag: target ${T8}, blend after Apply ${applied8.toFixed(6)},`
       + ` dragged ${mv8} ${from8.toFixed(3)} -> ${to8}, blend after ${after8.toFixed(6)}`);
-    check('(g) THE BLEND IS STILL THE TARGET AFTER A DRAG',
-      Math.abs(after8 - T8) < 0.005,
-      `${after8.toFixed(6)} vs ${T8} — 1213 measured this at 21.385325 against 23.93`);
+    check('(g) THE COHORT FIGURE IS STILL THE TARGET AFTER A DRAG',
+      Math.abs(deliveredIn(c8) - T8) <= 0.01,
+      `delivered ${deliveredIn(c8)} vs ${T8}, blend ${after8.toFixed(6)}`
+      + ' — 1213 measured the blend case at 21.385325 against 23.93');
     check('(g) and the shares still total 100',
       Math.abs(tiers8.reduce((s, t) => s + Number(rangeOf(c8, t).value), 0) - 100) < 0.05,
       String(tiers8.reduce((s, t) => s + Number(rangeOf(c8, t).value), 0)));
@@ -601,7 +633,8 @@ async function main() {
         Number(rangeOf(c9, H9).value) === heldExact9,
         `${Number(rangeOf(c9, H9).value)} vs ${heldExact9}`);
       check('(g) and the target is still held with a lock in play',
-        Math.abs(blend9 - T9) < 0.005, `${blend9.toFixed(6)} vs ${T9}`);
+        Math.abs(deliveredIn(c9) - T9) <= 0.01,
+        `delivered ${deliveredIn(c9)} vs ${T9}, blend ${blend9.toFixed(6)}`);
     }
 
     // ── THE WALL ────────────────────────────────────────────────────────────
@@ -632,9 +665,10 @@ async function main() {
     check('(g) the wall reason is RENDERED',
       !!cW.querySelector('[data-testid="yield-mix-wall"]'),
       'a slider that stops without saying why is the dead-control state');
-    check('(g) and AT THE WALL the target is still held',
-      Math.abs(blendW - TW) < 0.005,
-      `${blendW.toFixed(6)} vs ${TW} — a wall that abandoned the target would be the old bug`);
+    check('(g) and AT THE WALL the COHORT target is still held',
+      Math.abs(deliveredIn(cW) - TW) <= 0.01,
+      `delivered ${deliveredIn(cW)} vs ${TW}, blend ${blendW.toFixed(6)}`
+      + ' — a wall that abandoned the target would be the old bug');
     check('(g) and the shares still total 100 at the wall',
       Math.abs(tiersW.reduce((s, t) => s + Number(rangeOf(cW, t).value), 0) - 100) < 0.05);
   }
@@ -758,8 +792,9 @@ async function main() {
     const rateB = (t: string) => Number(
       (cb.querySelector(`[data-testid="tier-arpu-override-${t}"]`) as any).placeholder);
     const blendB = tiersB.reduce((s, t) => s + Number(rangeOf(cb, t).value) / 100 * rateB(t), 0);
-    check('(i) and the commit held the target, exactly as a drag would',
-      Math.abs(blendB - TB) < 0.005, `${blendB.toFixed(6)} vs ${TB}`);
+    check('(i) and the commit held the COHORT target, exactly as a drag would',
+      Math.abs(deliveredIn(cb) - TB) <= 0.01,
+      `delivered ${deliveredIn(cb)} vs ${TB}, blend ${blendB.toFixed(6)}`);
     console.log(`  (i) typed 35 under target ${TB}: committed mix `
       + `${committedShares.map(v => v.toFixed(3)).join(', ')}, blend ${blendB.toFixed(6)}`);
 

@@ -12,9 +12,9 @@ import type { AdjustedForecastMonth, MarketEventAdjustedForecast, YieldEvent, Pr
 import { SKIP_REASON_KEY } from '../types/forecast';
 import { EventChangeConfirmModal } from './EventChangeConfirmModal';
 import type { MarketEvent } from '../utils/forecasting';
-import { rebalance, achievableTargetRange, solveForTarget, blendedArpu, conformsToTotal,
+import { rebalance, achievableTargetRange, solveForTarget, solveForCohortTarget, blendedArpu, conformsToTotal,
          rebalanceToTarget, exactlyDeterminedUnderTarget } from '../utils/mixConstraint';
-import type { DragWall } from '../utils/mixConstraint';
+import type { DragWall, CohortSolveOutcome } from '../utils/mixConstraint';
 import { EventsSummaryTable } from './EventsSummaryTable';
 import { EventOnOffSwitch, OFF_ROW } from './EventOnOffSwitch';
 import { foldChurnRamp, linearChurnRamp, type ChurnFoldMonth } from '../utils/churnFold';
@@ -26,7 +26,7 @@ import { MixTargetPanel } from './MixTargetPanel';
 import type { ScenarioKey, ScenarioPricing } from '../utils/scenarioArpu';
 import { nextAmountControlState, effectiveAmountControl, churnAvailableFor,
          type AmountControl } from '../utils/amountControl';
-import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, eventProRataShare, eventCoverage, forecastCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor, pricingBaselineArpu, eventVolumeLabel, isEventOn, effectStatusOf, eventMode } from '../utils/forecasting';
+import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, yieldRatioFrom, eventProRataShare, eventCoverage, forecastCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor, pricingBaselineArpu, eventVolumeLabel, isEventOn, effectStatusOf, eventMode } from '../utils/forecasting';
 import type { EventSummaryRow } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope, PricingVolumes, ViewScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
@@ -1763,14 +1763,15 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
           // as an ARPU ratio: (new blended yield ARPU) / (equal-weight baseline ARPU).
           // That ratio is then applied to the forecast's per-scenario Inflow ARPU for
           // the previous month, so the improvement is anchored to the forecast level.
-          const rawBlendedYieldArpu = Object.keys(applicableInflowYield.tariffMix).reduce((sum, tier) => {
-            return sum + (applicableInflowYield.tariffMix[tier] / 100) * (applicableInflowYield.tariffBaseArpu[tier] ?? 0);
-          }, 0);
+          // REQ-D6-07 clause 3 — ONE definition of the ratio, shared with the summary
+          // cell (`yieldRatioFrom`). The FALLBACK TO 1 stays here, at the call site,
+          // where what it protects can be read: an event that states no rates must not
+          // move ARPU. The helper returns null for that case rather than inventing a 1.
           const storedTiers = Object.keys(applicableInflowYield.tariffBaseArpu);
           const storedEqualWeightArpu = storedTiers.length > 0
             ? storedTiers.reduce((s, t) => s + (applicableInflowYield.tariffBaseArpu[t] ?? 0), 0) / storedTiers.length
-            : rawBlendedYieldArpu;
-          const yieldRatio = storedEqualWeightArpu > 0 ? rawBlendedYieldArpu / storedEqualWeightArpu : 1;
+            : 0;
+          const yieldRatio = yieldRatioFrom(applicableInflowYield.tariffMix, applicableInflowYield.tariffBaseArpu) ?? 1;
           m_inflowYieldRatio = yieldRatio;
           // Forecast inflow ARPU for the month whose subscribers are entering this pool
           const fcPrevMonth = baseForecast.months[idx - 1];
@@ -2002,14 +2003,12 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
         const retentionVol = Math.min(m.uplifted.retention, p_basePool);
         // Same ratio-anchoring logic as the Inflow case above: express as a ratio
         // of (new blended) / (equal-weight stored) then apply to forecast retention ARPU.
-        const rawRetentionYieldArpu = Object.keys(applicableRetentionYield.tariffMix).reduce((sum, tier) => {
-          return sum + (applicableRetentionYield.tariffMix[tier] / 100) * (applicableRetentionYield.tariffBaseArpu[tier] ?? 0);
-        }, 0);
+        // REQ-D6-07 clause 3 — the same one helper as the Inflow arm above.
         const retStoredTiers = Object.keys(applicableRetentionYield.tariffBaseArpu);
         const retStoredEqualWeightArpu = retStoredTiers.length > 0
           ? retStoredTiers.reduce((s, t) => s + (applicableRetentionYield.tariffBaseArpu[t] ?? 0), 0) / retStoredTiers.length
-          : rawRetentionYieldArpu;
-        const retYieldRatio = retStoredEqualWeightArpu > 0 ? rawRetentionYieldArpu / retStoredEqualWeightArpu : 1;
+          : 0;
+        const retYieldRatio = yieldRatioFrom(applicableRetentionYield.tariffMix, applicableRetentionYield.tariffBaseArpu) ?? 1;
         m_retentionYieldRatio = retYieldRatio;
         const fcCurMonth = baseForecast.months[idx];
         const fcRetentionArpu = fcCurMonth
@@ -2780,23 +2779,23 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     return Number.isFinite(n) ? n : null;
   }, [yieldTargetArpu]);
 
-  /** Null when nothing is typed - the free-sliders case, which carries NO
-   *  verdict, as distinct from a target that was typed and blocked. */
-  const yieldTargetOutcome = useMemo(
-    () => yieldTargetParsed === null
-      ? null
-      : solveForTarget(yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap, yieldTargetParsed),
-    [yieldTargetParsed, yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap]);
+  /**
+   * REQ-D6-07 clause 2. THE TYPED FIGURE IS A COHORT ARPU, and the BLEND that
+   * reaches it is solved on the preview (see `runYieldCohortSolve` below, which is
+   * defined after the seam it needs). What is kept here is the SOLVED BLEND: the
+   * drag solver and the exactly-determined rule are blend-space rules and stay
+   * exactly as they were — they simply hold the blend the solve found rather than
+   * the number the user typed, which is no longer in their units.
+   */
+  const [yieldBlendTarget, setYieldBlendTarget] = useState<number | null>(null);
+  const [yieldSolve, setYieldSolve] = useState<CohortSolveOutcome | null>(null);
 
-  /** Applying rewrites the UNLOCKED shares to hit the target. Only ever called
-   *  from the ok arm: an unreachable target is SHOWN, never clamped to the
-   *  nearest reachable one. The solver holds the locked members at their
-   *  shares, so a held tier is untouched by this - which is asserted mounted
-   *  rather than assumed, because it is the whole point of the padlock. */
-  const handleYieldApplyTarget = useCallback(() => {
-    if (yieldTargetOutcome?.kind !== 'ok') return;
-    setDraftMix(yieldTargetOutcome.shares);
-  }, [yieldTargetOutcome]);
+  /** Null when no blend has been solved — free sliders, and no verdict. */
+  const yieldTargetOutcome = useMemo(
+    () => yieldBlendTarget === null
+      ? null
+      : solveForTarget(yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap, yieldBlendTarget),
+    [yieldBlendTarget, yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap]);
 
   /** Where a drag was stopped, or null. Cleared by every drag that is not
    *  stopped, so it can never describe an older interaction. */
@@ -2808,10 +2807,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
    * the reachable range follows, and for the same reason.
    */
   const yieldExactlyDetermined = useMemo(
-    () => (yieldTargetOutcome?.kind === 'ok' && yieldTargetParsed !== null)
+    () => (yieldTargetOutcome?.kind === 'ok' && yieldBlendTarget !== null)
       && exactlyDeterminedUnderTarget(yieldMembers, draftMix, yieldMixLocked,
-           effectiveTierArpuMap, yieldTargetParsed),
-    [yieldTargetOutcome, yieldTargetParsed, yieldMembers, draftMix,
+           effectiveTierArpuMap, yieldBlendTarget),
+    [yieldTargetOutcome, yieldBlendTarget, yieldMembers, draftMix,
      yieldMixLocked, effectiveTierArpuMap]);
 
   /**
@@ -2825,7 +2824,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const handleSliderChange = useCallback((changedTier: string, newValue: number) => {
     const solved = dragUnderTarget(
       yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap,
-      yieldTargetOutcome?.kind === 'ok' ? yieldTargetParsed : null,
+      yieldTargetOutcome?.kind === 'ok' ? yieldBlendTarget : null,
       changedTier, newValue);
     if (solved) {
       setYieldWall(solved.wall);
@@ -2835,7 +2834,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setYieldWall(null);
     setDraftMix(prev => autoBalanceMix(prev, changedTier, newValue, yieldMixLocked));
   }, [yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap,
-      yieldTargetOutcome, yieldTargetParsed]);
+      yieldTargetOutcome, yieldBlendTarget]);
 
   const draftBlendedArpu = useMemo(() => {
     // From the EFFECTIVE rates, so a tier edit moves this on screen with no
@@ -3699,6 +3698,15 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
         * a second place deciding what won.
         */
        arpuIdsByMonth: Record<string, string[]>;
+       /**
+        * REQ-D6-07 clause 6. THE UNROUNDED PAIR, per month. `chartData`'s ARPU
+        * columns are written `+x.toFixed(2)` (see the column builder), so a solve
+        * that read them could never do better than a penny — measured in the 0647
+        * inventory, where bisection and the closed form both stopped at 0.0039.
+        * These are the engine's own numbers, before that rounding.
+        */
+       rawArpuByMonth: Record<string, { inflowBaseline: number | null; inflowAdjusted: number | null;
+                                        retentionBaseline: number | null; retentionAdjusted: number | null }>;
      } => {
     // CALLER 2 OF TWO — and the fix this returns is the whole point.
     //
@@ -3725,7 +3733,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // travels back to the card verbatim; substituting a generic sentence here
     // would be the two-meanings-of-null defect at another site.
     if (!resolution.forecast) {
-      return { series: null, reason: resolution.reason ?? null, arpuIdsByMonth: {} };
+      return { series: null, reason: resolution.reason ?? null, arpuIdsByMonth: {}, rawArpuByMonth: {} };
     }
     // D5-11(2). The yield list the preview measures against: the edited event
     // dropped, the draft spliced in. Untouched when no yield draft is given,
@@ -3749,8 +3757,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // two callers read `.series` and nothing else, so this field is inert for
     // them — asserted byte-identical by the spec rather than assumed.
     const arpuIdsByMonth: Record<string, string[]> = {};
-    for (const m of run.adjustedMonths) arpuIdsByMonth[m.month] = m.appliedArpuIds ?? [];
-    return { series: run.chartData, reason: null, arpuIdsByMonth };
+    const rawArpuByMonth: Record<string, { inflowBaseline: number | null; inflowAdjusted: number | null;
+                                           retentionBaseline: number | null; retentionAdjusted: number | null }> = {};
+    const fcByMonth = new Map<string, any>((resolution.forecast.months ?? []).map((m: any) => [m.month, m]));
+    for (const m of run.adjustedMonths) {
+      arpuIdsByMonth[m.month] = m.appliedArpuIds ?? [];
+      const fcM = fcByMonth.get(m.month);
+      const num = (v: any) => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
+      rawArpuByMonth[m.month] = {
+        inflowBaseline: num(fcM?.inflowArpu?.mean),
+        inflowAdjusted: num((m as any).scenarioArpu?.inflow?.arpu),
+        retentionBaseline: num(fcM?.retentionArpu?.mean),
+        retentionAdjusted: num((m as any).scenarioArpu?.retention?.arpu),
+      };
+    }
+    return { series: run.chartData, reason: null, arpuIdsByMonth, rawArpuByMonth };
     // `baseForecast` is NO LONGER READ HERE and is therefore not a dependency —
     // the read-set rule, applied in the direction that usually gets missed.
     // `resolveForecast` replaces it, and is what must retrigger this.
@@ -3801,36 +3822,48 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
    * EDIT the event being edited is dropped by id, or the draft would be
    * measured against a blend that already contains it.
    */
+  /**
+   * REQ-D6-07. ONE DRAFT SHAPE, for the preview and for every solve step. Two
+   * literals would be two answers to "what is this draft", and the solve would be
+   * measuring an event the preview never showed.
+   */
+  const yieldDraftFields = useMemo(() => ({
+    ibro: newYieldEvent.ibro ?? 'Inflow',
+    segment: newYieldEvent.segment ?? 'All',
+    product: newYieldEvent.product ?? 'All',
+    channelL1: newYieldEvent.channelL1 ?? 'All',
+    channelL2: newYieldEvent.channelL2 ?? 'All',
+    month: newYieldEvent.month,
+    mixAxis,
+    tariffBaseArpu: { ...effectiveTierArpuMap },
+    rollForward: newYieldEvent.rollForward ?? false,
+    name: '', comment: '',
+  }), [newYieldEvent.ibro, newYieldEvent.segment, newYieldEvent.product,
+       newYieldEvent.channelL1, newYieldEvent.channelL2, newYieldEvent.month,
+       newYieldEvent.rollForward, mixAxis, effectiveTierArpuMap]);
+
+  /**
+   * CLAUSE 7. The month the effect is READ at, by key and never by offset: an
+   * Inflow yield reaches the NEXT month's pool, a Retention one the draft month.
+   */
+  const yieldReadMonthOf = useCallback((series: any[], month: string, ibro: string): string =>
+    ibro === 'Inflow' ? (series.find((r: any) => r.month > month)?.month ?? month) : month, []);
+
   const yieldPreview = useMemo(() => {
     if (!newYieldEvent.month || yieldTierData.length === 0) return null;
-    const draft: any = {
-      id: 'yield-preview-draft',
-      ibro: newYieldEvent.ibro ?? 'Inflow',
-      segment: newYieldEvent.segment ?? 'All',
-      product: newYieldEvent.product ?? 'All',
-      channelL1: newYieldEvent.channelL1 ?? 'All',
-      channelL2: newYieldEvent.channelL2 ?? 'All',
-      month: newYieldEvent.month,
-      mixAxis,
-      tariffMix: { ...draftMix },
-      tariffBaseArpu: { ...effectiveTierArpuMap },
-      rollForward: newYieldEvent.rollForward ?? false,
-      name: '', comment: '',
-    };
-    const { series, reason, arpuIdsByMonth } = eventScopeSeriesFor(
+    const draft: any = { ...yieldDraftFields, id: 'yield-preview-draft', tariffMix: { ...draftMix } };
+    const { series, reason, arpuIdsByMonth, rawArpuByMonth } = eventScopeSeriesFor(
       { segment: draft.segment, product: draft.product,
         channelL1: draft.channelL1, channelL2: draft.channelL2 } as any,
       null, draft, editingYieldId ?? null);
-    if (!series) return { baseline: null, adjusted: null, reason, rival: null };
+    if (!series) return { baseline: null, adjusted: null, rawBaseline: null, rawAdjusted: null, month: null, reason, rival: null };
     // The month the yield event's effect is READ at. Inflow yield reaches the
     // NEXT month's pool (site 2 uses the previous month's flow), so the draft
     // month itself is where a Retention yield shows and the month after is
     // where an Inflow one does. Both are looked up by key, never by offset.
-    const wanted = draft.ibro === 'Inflow'
-      ? (series.find((r: any) => r.month > draft.month)?.month ?? draft.month)
-      : draft.month;
+    const wanted = yieldReadMonthOf(series, draft.month, draft.ibro);
     const row: any = series.find((r: any) => r.month === wanted);
-    if (!row) return { baseline: null, adjusted: null, reason: null };
+    if (!row) return { baseline: null, adjusted: null, rawBaseline: null, rawAdjusted: null, month: wanted, reason: null, rival: null };
     const key = draft.ibro === 'Inflow' ? 'Inflow ARPU' : 'Retention ARPU';
     const baseline = row[`${key} (Baseline)`];
     const adjusted = row[`${key} (Adjusted)`];
@@ -3868,16 +3901,138 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                  || t('whatif_summary_unnamed_yield'),
           month: wanted, firstWin }
       : null;
+    // CLAUSE 6: the DISPLAY keeps the rounded column; the SOLVE reads these.
+    const raw = rawArpuByMonth[wanted];
     return {
       baseline: typeof baseline === 'number' ? baseline : null,
       adjusted: typeof adjusted === 'number' ? adjusted : null,
+      rawBaseline: draft.ibro === 'Inflow' ? (raw?.inflowBaseline ?? null) : (raw?.retentionBaseline ?? null),
+      rawAdjusted: draft.ibro === 'Inflow' ? (raw?.inflowAdjusted ?? null) : (raw?.retentionAdjusted ?? null),
       month: wanted, reason: null, rival,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newYieldEvent.month, newYieldEvent.ibro, newYieldEvent.segment,
       newYieldEvent.product, newYieldEvent.channelL1, newYieldEvent.channelL2,
       newYieldEvent.rollForward, mixAxis, draftMix, effectiveTierArpuMap,
-      yieldTierData, editingYieldId, eventScopeSeriesFor, yieldEvents, t]);
+      yieldTierData, editingYieldId, eventScopeSeriesFor, yieldEvents, t,
+      yieldDraftFields, yieldReadMonthOf]);
+
+  /**
+   * REQ-D6-07 clause 2 — WHAT A BLEND DELIVERS, through the seam the preview uses.
+   *
+   * The FOURTH caller of `eventScopeSeriesFor` (the two Pricing ones and the yield
+   * preview are the others), and deliberately not a fifth engine site: a solve that
+   * called `computeAdjustedForecast` itself would be a second definition of what a
+   * draft does. It reads the UNROUNDED figure (clause 6).
+   */
+  const yieldDeliverForMix = useCallback((mix: Record<string, number>): number | null => {
+    if (!newYieldEvent.month || yieldTierData.length === 0) return null;
+    const draft: any = { ...yieldDraftFields, id: 'yield-solve-draft', tariffMix: mix };
+    const { series, rawArpuByMonth } = eventScopeSeriesFor(
+      { segment: draft.segment, product: draft.product,
+        channelL1: draft.channelL1, channelL2: draft.channelL2 } as any,
+      null, draft, editingYieldId ?? null);
+    if (!series) return null;
+    const raw = rawArpuByMonth[yieldReadMonthOf(series, draft.month, draft.ibro)];
+    return draft.ibro === 'Inflow' ? (raw?.inflowAdjusted ?? null) : (raw?.retentionAdjusted ?? null);
+  }, [newYieldEvent.month, yieldTierData, yieldDraftFields, eventScopeSeriesFor,
+      editingYieldId, yieldReadMonthOf]);
+
+  const yieldDeliverForBlend = useCallback((blend: number): number | null => {
+    const solved = solveForTarget(yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap, blend);
+    return solved.kind === 'ok' ? yieldDeliverForMix(solved.shares) : null;
+  }, [yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap, yieldDeliverForMix]);
+
+  /**
+   * CLAUSE 9. THE BAND IN COHORT TERMS: the blend band's ends put through the seam,
+   * memoised on the draft — two calls, ~29 ms measured, and not once per keystroke
+   * because nothing in the key changes while a figure is being typed.
+   */
+  const yieldCohortBand = useMemo(() => {
+    if (yieldMixRange.kind !== 'ok' || yieldRangeCollapsed) return null;
+    const lo = yieldDeliverForBlend(yieldMixRange.range.min);
+    const hi = yieldDeliverForBlend(yieldMixRange.range.max);
+    if (lo === null || hi === null) return null;
+    return { min: Math.min(lo, hi), max: Math.max(lo, hi) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yieldMixRange, yieldRangeCollapsed, yieldDeliverForBlend]);
+
+  /** The cohort label the lead names, from the draft's own dims. */
+  const yieldCohortLabel = useMemo(() => {
+    const parts = [newYieldEvent.segment, newYieldEvent.product, newYieldEvent.channelL1]
+      .filter(d => d && d !== 'All') as string[];
+    return parts.length ? parts.join(' · ') : t('whatif_all');
+  }, [newYieldEvent.segment, newYieldEvent.product, newYieldEvent.channelL1, t]);
+
+  /**
+   * CLAUSE 6. THE SOLVE, on Enter, on blur and on Apply — never per keystroke: one
+   * seam call is ~8.9 ms and a solve is a handful of them (measured 10 steps / 72 ms
+   * in the 0647 inventory), which is the D4-02 commit rule's own reasoning.
+   */
+  const runYieldCohortSolve = useCallback(() => {
+    if (yieldTargetParsed === null) { setYieldSolve(null); setYieldBlendTarget(null); return; }
+    const res = solveForCohortTarget(
+      yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap, yieldTargetParsed,
+      { fitted: yieldPreview?.rawBaseline ?? null, deliver: yieldDeliverForBlend,
+        cohortBand: yieldCohortBand, tolerance: 0.005, cap: 30 });
+    setYieldSolve(res);
+    if (res.kind === 'ok') { setYieldBlendTarget(res.blend); setDraftMix(res.shares); }
+    else setYieldBlendTarget(null);
+  }, [yieldTargetParsed, yieldMembers, draftMix, yieldMixLocked, effectiveTierArpuMap,
+      yieldPreview, yieldDeliverForBlend, yieldCohortBand]);
+
+  /**
+   * WHAT THE PANEL DRAWS. Apply is offered when the typed cohort figure is inside the
+   * cohort band — a band read, not a solve, so the control does not cost a run to
+   * become enabled. The solve happens when it is pressed.
+   */
+  /** The member that forms the wall at an end — named as the blend band names it. */
+  const bindingMemberAt = useCallback((end: 'min' | 'max'): string => {
+    const free = yieldMembers.filter(m => !yieldMixLocked.includes(m)
+      && Number.isFinite(effectiveTierArpuMap[m]));
+    if (free.length === 0) return '';
+    const sorted = [...free].sort((a, b) => (effectiveTierArpuMap[a] ?? 0) - (effectiveTierArpuMap[b] ?? 0));
+    return end === 'max' ? sorted[sorted.length - 1] : sorted[0];
+  }, [yieldMembers, yieldMixLocked, effectiveTierArpuMap]);
+
+  const yieldPanelOutcome = useMemo(() => {
+    if (yieldTargetParsed === null) return null;
+    if (yieldSolve && yieldSolve.kind === 'refused') return null;
+    if (yieldSolve && yieldSolve.kind === 'blocked') {
+      // THE MEMBER IS THE SOLVE'S, THE FIGURE IS THE BAND'S. The solver names the
+      // wall in BLEND terms — a tier's own rate — and that number under a cohort
+      // sentence would be the card quoting the arithmetic at a reader who asked
+      // about the answer. Measured on the trimmed fixture: the blend wall is 27.51
+      // where the cohort ceiling is 27.49, which is exactly close enough to look
+      // right and not be.
+      // NEVER mixConstraint's `detail` either: it is diagnostic English and the
+      // card's copy is translated.
+      return { kind: 'blocked' as const, reason: yieldSolve.reason as any, detail: '',
+        binding: yieldSolve.binding && yieldCohortBand
+          ? { member: yieldSolve.binding.member,
+              bound: yieldSolve.reason === 'below-min' ? yieldCohortBand.min : yieldCohortBand.max }
+          : yieldSolve.binding };
+    }
+    if (!yieldCohortBand) return null;
+    if (yieldTargetParsed > yieldCohortBand.max) {
+      return { kind: 'blocked' as const, reason: 'above-max' as any, detail: '',
+        binding: { member: bindingMemberAt('max'), bound: yieldCohortBand.max } };
+    }
+    if (yieldTargetParsed < yieldCohortBand.min) {
+      return { kind: 'blocked' as const, reason: 'below-min' as any, detail: '',
+        binding: { member: bindingMemberAt('min'), bound: yieldCohortBand.min } };
+    }
+    return { kind: 'ok' as const, shares: draftMix, blend: yieldBlendTarget ?? 0 };
+  }, [yieldTargetParsed, yieldSolve, yieldCohortBand, draftMix, yieldBlendTarget, bindingMemberAt]);
+
+  /** CLAUSE 11's two refusals, as text. */
+  const yieldTargetRefusal = useMemo(() => {
+    if (!yieldSolve || yieldSolve.kind !== 'refused') return null;
+    const month = yieldPreview?.month ? fmtMonth(yieldPreview.month) : (newYieldEvent.month ?? '');
+    return yieldSolve.reason === 'no-rates'
+      ? { text: t('whatif_value_refuse_no_rates'), testId: 'yield-target-refused-no-rates' }
+      : { text: t('whatif_value_refuse_no_fitted', { month }), testId: 'yield-target-refused-no-fitted' };
+  }, [yieldSolve, yieldPreview, newYieldEvent.month, t]);
 
   /**
    * THE SLICE THE DRAFT ASKS FOR HAS NO FORECAST — the seam's own words.
@@ -6637,6 +6792,35 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           // join is unsettled (see the report's step 1c), so a column there
           // could state "No coverage" about events that plainly applied.
           effectOf={effectOf}
+          /**
+           * REQ-D6-07 Item 2 — WHAT THE CELL SAYS vs WHAT THE TITLE SAYS.
+           *
+           * The cell states the event's RATIO, which is arithmetic on the event
+           * alone and is true wherever it lands. The PAIR is not: it belongs to a
+           * cohort, a month and a run, and putting it in the cell would have the
+           * summary assert about THIS view what the event does not carry.
+           *
+           * The pair therefore rides in the title, and it is read from the chart
+           * run this tab already holds — no second engine call, and by
+           * construction the same figures the chart draws. Compare passes
+           * nothing and renders no title: it has no single run to name.
+           */
+          adjustsTitle={(row) => {
+            const ev = yieldEvents.find(y => y.id === row.id);
+            if (!ev || !ev.month) return null;
+            // CLAUSE 7's read month, by key: Inflow reaches the NEXT month's pool.
+            const key = ev.ibro === 'Inflow'
+              ? ((chartData as any[]).find(r => r.month > ev.month)?.month ?? ev.month)
+              : ev.month;
+            const hit: any = (chartData as any[]).find(r => r.month === key);
+            if (!hit) return null;
+            const band = ev.ibro === 'Inflow' ? 'Inflow' : 'Retention';
+            const bl = hit[`${band} ARPU (Baseline)`];
+            const ad = hit[`${band} ARPU (Adjusted)`];
+            if (bl === null || bl === undefined || ad === null || ad === undefined) return null;
+            return t('whatif_summary_yield_title', {
+              baseline: formatNumber(bl), adjusted: formatNumber(ad), month: key });
+          }}
         />
 
         {/* ── Volume / Value / Pricing / Promotion tab switcher — below the chart ── */}
@@ -10353,8 +10537,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       testIdPrefix="yield"
                       value={yieldTargetArpu}
                       onChange={setYieldTargetArpu}
-                      onApply={handleYieldApplyTarget}
-                      outcome={yieldTargetOutcome}
+                      onApply={runYieldCohortSolve}
+                      onCommit={runYieldCohortSolve}
+                      label={t('whatif_value_target_cohort', {
+                        ibro: newYieldEvent.ibro ?? 'Inflow',
+                        month: yieldPreview?.month ? fmtMonth(yieldPreview.month) : fmtMonth(newYieldEvent.month ?? '') })}
+                      rangeOverride={yieldCohortBand}
+                      refusal={yieldTargetRefusal}
+                      outcome={yieldPanelOutcome}
                       range={yieldMixRange}
                       rangeCollapsed={yieldRangeCollapsed}
   wall={yieldWall}
@@ -10438,47 +10628,27 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                       })}
                     </div>
 
-                    {/* ARPU summary */}
-                    <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-4">
-                      <div className="bg-slate-50 rounded-xl p-3">
-                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">{t('whatif_baseline_blended_arpu')}</p>
-                        <p className="text-lg font-bold text-slate-700">{formatNumber(baselineBlendedArpu)}</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">{t('whatif_equal_weight_avg_of_tier_arpus')}</p>
-                      </div>
-                      <div className={`rounded-xl p-3 ${draftBlendedArpu >= baselineBlendedArpu ? 'bg-emerald-50' : 'bg-rose-50'}`}>
-                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">{t('whatif_new_blended_arpu')}</p>
-                        <p className={`text-lg font-bold ${draftBlendedArpu >= baselineBlendedArpu ? 'text-emerald-700' : 'text-rose-700'}`}>
-                          {formatNumber(draftBlendedArpu)}
-                        </p>
-                        <p className={`text-[10px] mt-0.5 ${draftBlendedArpu >= baselineBlendedArpu ? 'text-emerald-600' : 'text-rose-600'}`}>
-                          {draftBlendedArpu >= baselineBlendedArpu ? '+' : ''}{formatNumber(draftBlendedArpu - baselineBlendedArpu)} vs baseline
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* D5-11(3). THE CAPTION. The two boxes above are a
-                        COMPARATOR whose ratio is what reaches the forecast;
-                        saying so is the difference between a figure a reader
-                        can place and one that looks like a broken forecast. */}
-                    <p data-testid="yield-ratio-caption"
-                       className="mt-3 text-[10px] leading-snug text-slate-400">
-                      {t('whatif_yield_ratio_caption')}
-                    </p>
-
-                    {/* D5-11(2). PREVIEW IMPACT — the CHART's two figures at
-                        the draft's own month, through the same draft-preview
-                        path the Pricing card uses. */}
+                    {/* REQ-D6-07 clause 1 — THE CARD LEADS WITH THE COHORT FIGURE.
+                        The two blend boxes below used to hold this position, and they
+                        are the card's ARITHMETIC, not its answer: a reader asked "what
+                        does Corporate's ARPU become" and was shown a comparator whose
+                        ratio they then had to apply themselves. The pair here is the
+                        SAME pair the chart will draw, through the same seam; the blends
+                        are one click away rather than gone. */}
                     {yieldPreview && (
-                      <div data-testid="yield-preview" className="mt-3 pt-3 border-t border-slate-100">
+                      <div data-testid="yield-preview" className="mt-4 pt-4 border-t border-slate-100">
                         <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
-                          {t('whatif_yield_preview_impact')}
+                          {t('whatif_value_lead_label', {
+                            cohort: yieldCohortLabel,
+                            ibro: newYieldEvent.ibro ?? 'Inflow',
+                            month: fmtMonth(yieldPreview.month ?? newYieldEvent.month ?? '') })}
                         </p>
                         {yieldPreview.baseline === null || yieldPreview.adjusted === null ? (
                           <p data-testid="yield-preview-absent" className="text-xs text-slate-400">
                             {yieldPreview.reason ?? t('whatif_yield_preview_unavailable')}
                           </p>
                         ) : (
-                          <p className="text-sm font-bold text-slate-700">
+                          <p className="text-lg font-bold text-slate-700">
                             <span data-testid="yield-preview-baseline">
                               {formatNumber(yieldPreview.baseline)}</span>
                             {' → '}
@@ -10493,8 +10663,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             </span>
                           </p>
                         )}
-                        <p className="text-[10px] text-slate-400 mt-0.5">
-                          {t('whatif_yield_preview_caption')}
+                        {/* CLAUSE 10. WHICH MONTHS THIS IS TRUE OF. The pair is read at
+                            ONE month; whether it holds beyond that month is the
+                            roll-forward toggle's business, and a lead figure that did
+                            not say so invites the reader to assume the wrong one. */}
+                        <p data-testid="yield-lead-scope" className="text-[10px] text-slate-400 mt-0.5">
+                          {(newYieldEvent.rollForward ?? false)
+                            ? t('whatif_value_rollfwd_onward', { month: fmtMonth(yieldPreview.month ?? newYieldEvent.month ?? '') })
+                            : t('whatif_value_rollfwd_only', { month: fmtMonth(yieldPreview.month ?? newYieldEvent.month ?? '') })}
                         </p>
                         {/* D5-13. THE FIGURES ABOVE BELONG TO ANOTHER EVENT.
                             A month has one yield winner and a first-saved
@@ -10529,6 +10705,40 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                         )}
                       </div>
                     )}
+
+                    {/* THE ARITHMETIC, ONE CLICK AWAY. Closed by default: the two blends
+                        and their caption answer "why is that the figure", which is a
+                        question asked after the figure, not instead of it. The keys are
+                        RE-HOMED, not re-worded — the same sentences, moved. */}
+                    <details data-testid="yield-how-computed" className="mt-3 pt-3 border-t border-slate-100">
+                      <summary className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider cursor-pointer select-none">
+                        {t('whatif_value_how_computed')}
+                      </summary>
+                      <div className="mt-2 grid grid-cols-2 gap-4">
+                        <div className="bg-slate-50 rounded-xl p-3">
+                          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">{t('whatif_baseline_blended_arpu')}</p>
+                          <p className="text-lg font-bold text-slate-700">{formatNumber(baselineBlendedArpu)}</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">{t('whatif_equal_weight_avg_of_tier_arpus')}</p>
+                        </div>
+                        <div className={`rounded-xl p-3 ${draftBlendedArpu >= baselineBlendedArpu ? 'bg-emerald-50' : 'bg-rose-50'}`}>
+                          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">{t('whatif_new_blended_arpu')}</p>
+                          <p className={`text-lg font-bold ${draftBlendedArpu >= baselineBlendedArpu ? 'text-emerald-700' : 'text-rose-700'}`}>
+                            {formatNumber(draftBlendedArpu)}
+                          </p>
+                          <p className={`text-[10px] mt-0.5 ${draftBlendedArpu >= baselineBlendedArpu ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {draftBlendedArpu >= baselineBlendedArpu ? '+' : ''}{formatNumber(draftBlendedArpu - baselineBlendedArpu)} vs baseline
+                          </p>
+                        </div>
+                      </div>
+                      {/* D5-11(3). THE CAPTION. The two boxes above are a
+                          COMPARATOR whose ratio is what reaches the forecast;
+                          saying so is the difference between a figure a reader
+                          can place and one that looks like a broken forecast. */}
+                      <p data-testid="yield-ratio-caption"
+                         className="mt-3 text-[10px] leading-snug text-slate-400">
+                        {t('whatif_yield_ratio_caption')}
+                      </p>
+                    </details>
                   </div>
                 )}
 

@@ -219,8 +219,12 @@ const textOf = (rows: any[]) => rows.map(r => `${r.card}|${r.name}|${r.adjusts}|
     mkt.card !== promo.card, `${mkt.card} vs ${promo.card}`);
 
   const yld = byId(panelA, 'a-yld');
-  check('CELL: the yield event reads as a mix with its blend',
-    yld.adjusts === 'Inflow mix, 2 bands → 16.00', yld.adjusts);
+  // REQ-D6-07 Item 2 RE-AIM. The ratio, hand-computed from the loaded row:
+  // Low 40 / High 60 over rates 10 and 20 blends to 16.00, equal-weight 15.00,
+  // so 16 / 15 = 1.0667 -> +6.7%. Compare renders the cell and NO title: a title
+  // names a pair at a month in one run, and Compare holds several.
+  check('CELL: the yield event reads as the ratio it applies',
+    yld.adjusts === 'Inflow ARPU +6.7%', yld.adjusts);
   check('CELL: the yield event takes the VALUE card label',
     yld.card === en['whatif_summary_card_value'], yld.card);
 

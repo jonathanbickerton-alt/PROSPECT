@@ -364,14 +364,51 @@ const BASE: any = {
     tab.includes('const run = computeAdjustedForecast({')
       && (tab.split('computeAdjustedForecast(').length - 1) === 6,
     'a second run for the ids would be a second engine, and could disagree');
-  check('D5-13: and series is that same run chartData, untouched',
-    tab.includes('return { series: run.chartData, reason: null, arpuIdsByMonth };'),
+  // REQ-D6-07 RE-AIM. The seam gained a SECOND additive field, `rawArpuByMonth`
+  // — the UNROUNDED pair the cohort solve reads, because the chart columns are
+  // written `+x.toFixed(2)` and a target inside a penny could never land on them.
+  // What this pin has always been about is unchanged and is still asserted: the
+  // engine runs ONCE into a local, and `series` is that run's own `chartData`
+  // with nothing done to it, so the two Pricing callers are byte-identical.
+  check('D5-13/D6-07: and series is that same run chartData, untouched',
+    tab.includes('return { series: run.chartData, reason: null, arpuIdsByMonth, rawArpuByMonth };'),
     'the Pricing callers must get byte-identical series');
   check('D5-13: the ids are the engine appliedArpuIds, per month',
-    tab.includes('for (const m of run.adjustedMonths) arpuIdsByMonth[m.month] = m.appliedArpuIds ?? [];'),
+    tab.includes('arpuIdsByMonth[m.month] = m.appliedArpuIds ?? [];')
+      && tab.includes('for (const m of run.adjustedMonths) {'),
     're-deriving the winner beside the engine is how two answers appear');
-  check('D5-13: the null-forecast return carries the field too',
-    tab.includes('return { series: null, reason: resolution.reason ?? null, arpuIdsByMonth: {} };'),
+  // ONE PASS, not two. The raw pair is built in the SAME loop over the months the
+  // run already produced — a second loop would be a second opinion about which
+  // months exist.
+  check('D6-07: the raw pair is built in that same pass',
+    (tab.split('for (const m of run.adjustedMonths) {').length - 1) === 1
+      && tab.includes('inflowAdjusted: num((m as any).scenarioArpu?.inflow?.arpu),')
+      && tab.includes('inflowBaseline: num(fcM?.inflowArpu?.mean),'),
+    'the unrounded figures are the engine\'s own, not a re-rounded column');
+  // REQ-D6-07 CLAUSE 6, PINNED AT THE SOURCE — and deliberately so.
+  //
+  // MEASURED 2026-09-16 on the trimmed fixture: planting the rounded read and
+  // running the mounted spec produced the SAME answer to six figures (target
+  // 14.2861 -> delivered 14.29, blend 14.2989 either way). That is not the pin
+  // failing; it is the arithmetic. The solve's tolerance is 0.005 and the chart
+  // columns are quantised to 0.01, so the first guess is accepted under both
+  // reads and the difference never reaches a rendered figure. What the rounded
+  // read costs is the GUARANTEE: it can stop up to a full penny from the target
+  // while reporting a hit, and no mounted assertion can see that without the
+  // spec reimplementing the engine to recover the unrounded figure.
+  //
+  // So the claim is pinned where it is observable — the deliver helper reads the
+  // seam's unrounded pair, and reads no chart column at all.
+  check('D6-07: the cohort solve reads the UNROUNDED pair, not a chart column',
+    tab.includes('const raw = rawArpuByMonth[yieldReadMonthOf(series, draft.month, draft.ibro)];')
+      && tab.includes("return draft.ibro === 'Inflow' ? (raw?.inflowAdjusted ?? null) : (raw?.retentionAdjusted ?? null);"),
+    'the columns are written +x.toFixed(2), so a solve reading them cannot honour a 0.005 tolerance');
+  check('D6-07: and the deliver helper names no ARPU column',
+    !(tab.slice(tab.indexOf('const yieldDeliverForMix'), tab.indexOf('const yieldDeliverForMix') + 900)
+        .includes('ARPU (Adjusted)')),
+    'a column read inside the deliver helper is the rounded path returning');
+  check('D5-13/D6-07: the null-forecast return carries BOTH fields too',
+    tab.includes('return { series: null, reason: resolution.reason ?? null, arpuIdsByMonth: {}, rawArpuByMonth: {} };'),
     'an absent field would make the caller read undefined at the one moment'
     + ' it is already handling a failure');
   // THE WINNER IS FILTERED TO THE YIELD LIST. appliedArpuIds also carries
@@ -392,16 +429,38 @@ const BASE: any = {
     'the superseded case is a different sentence, not an empty rival line');
 
   // THE CAPTION EXISTS AND IS KEYED, in all six locales.
-  check('D5-11: the ratio caption renders under the tier table',
+  // REQ-D6-07 RE-AIM (Item 1.1). The caption is RE-HOMED, not re-worded: the
+  // same sentence, now inside the collapsed "how this is computed" line, because
+  // the card leads with the cohort pair and the two blends are the arithmetic
+  // behind it. What is pinned is that the caption still exists, still under the
+  // two boxes, and that the line it now lives in is CLOSED by default — an
+  // explanation that opens itself is the thing the lead was meant to replace.
+  check('D5-11/D6-07: the ratio caption renders inside the collapsed line',
     /data-testid="yield-ratio-caption"/.test(tab)
-      && /t\('whatif_yield_ratio_caption'\)/.test(tab),
+      && /t\('whatif_yield_ratio_caption'\)/.test(tab)
+      && /data-testid="yield-how-computed"/.test(tab)
+      && tab.indexOf('data-testid="yield-how-computed"') < tab.indexOf('data-testid="yield-ratio-caption"'),
     'the two blended figures must say what they are');
+  check('D6-07: the collapsed line carries no open attribute',
+    !/<details data-testid="yield-how-computed"[^>]*\bopen\b/.test(tab),
+    'closed by default is the decision; open by default is the old card');
+  // THE LEAD IS THE COHORT PAIR, above the collapsed line.
+  check('D6-07: the promoted pair leads the card',
+    tab.indexOf('data-testid="yield-preview-baseline"') < tab.indexOf('data-testid="yield-how-computed"')
+      && /t\('whatif_value_lead_label', \{/.test(tab)
+      && /data-testid="yield-lead-scope"/.test(tab),
+    'the card answers "what does this cohort become", then shows its working');
   for (const loc of ['en', 'de', 'es', 'fr', 'it', 'pt']) {
     const j = fs.readFileSync(`src/locales/${loc}/translation.json`, 'utf8');
-    check(`D5-11/13: ${loc} carries all six keys`,
+    check(`D5-11/13: ${loc} carries all fourteen keys`,
       ['whatif_yield_ratio_caption', 'whatif_yield_preview_impact',
        'whatif_yield_preview_caption', 'whatif_yield_preview_unavailable',
-       'whatif_yield_preview_rival', 'whatif_yield_preview_superseded']
+       'whatif_yield_preview_rival', 'whatif_yield_preview_superseded',
+       // REQ-D6-07's own copy, in the same six locales as everything else.
+       'whatif_value_lead_label', 'whatif_value_rollfwd_onward',
+       'whatif_value_rollfwd_only', 'whatif_value_how_computed',
+       'whatif_value_target_cohort', 'whatif_value_refuse_no_fitted',
+       'whatif_value_refuse_no_rates', 'whatif_summary_yield_title']
         .every(k => j.includes(`"${k}"`)),
       loc);
   }

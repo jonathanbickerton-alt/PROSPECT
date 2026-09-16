@@ -113,11 +113,28 @@ check('promo: an arm the event does not carry is not invented',
   promoEventSummary(mkMarket({ id: 'p2', isPromotion: true, subscriberVolume: 50 }), t)
     === 'Promotion 50',
   promoEventSummary(mkMarket({ id: 'p2', isPromotion: true, subscriberVolume: 50 }), t));
-check('yield: reports cohort, band count and the blended rate',
-  yieldEventSummary(yieldEv, t) === 'Inflow mix, 2 bands → 15.00',
+// REQ-D6-07 Item 2 RE-AIM. The cell used to print the BLEND — a money figure
+// that looked like the ARPU the event produces and was not: it is one side of a
+// comparator, and the forecast only ever sees blend ÷ equal-weight. A reader
+// comparing "15.00" against a chart reading 14.29 had no way to reconcile them.
+// The cell now states the RATIO, which is what the event actually asserts and is
+// true wherever the event lands, with the cohort pair carried in the title.
+//
+// HAND-COMPUTED from the fixture above: mix 50/50 over rates 10 and 20 blends to
+// 15.00, equal-weight is (10 + 20) / 2 = 15.00, so the ratio is exactly 1 and the
+// cell reads +0.0% — a real event that moves nothing, which the old cell printed
+// as a confident "15.00".
+check('yield: reports the RATIO the forecast applies, not the blend',
+  yieldEventSummary(yieldEv, t) === 'Inflow ARPU +0.0%',
   yieldEventSummary(yieldEv, t));
-check('yield: an unknown blend says so rather than printing 0.00',
-  yieldEventSummary({ ...yieldEv, tariffBaseArpu: {} }, t).includes(en.whatif_mix_blend_unknown),
+// AND A TILTED MIX, so the assertion above is not satisfied by any function that
+// happens to return zero: 40/60 over 10 and 20 blends to 16.00 against the same
+// equal-weight 15.00 = 1.0667.
+check('yield: a tilted mix reads as the ratio it produces',
+  yieldEventSummary({ ...yieldEv, tariffMix: { A: 40, B: 60 } }, t) === 'Inflow ARPU +6.7%',
+  yieldEventSummary({ ...yieldEv, tariffMix: { A: 40, B: 60 } }, t));
+check('yield: an unknown ratio keeps its em-dash rather than printing 0.0%',
+  yieldEventSummary({ ...yieldEv, tariffBaseArpu: {} }, t).includes('—'),
   yieldEventSummary({ ...yieldEv, tariffBaseArpu: {} }, t));
 check('pricing: a dilution event reads in the USER\'s figures',
   pricingEventSummary(pricingDilution, t) === '25% → 20% dilution',
