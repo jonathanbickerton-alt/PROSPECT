@@ -10534,3 +10534,7 @@ Jon's answers to the inventory's questions, 2026-09-11:
     `buildPromoEvents` — a second row builder in the preview is a
     second definition of a promotion. `computeAdjustedForecast` stays
     at 6 sites.
+16. (Jon, 2026-09-16) After a Value-card Add, the next new draft opens on
+    Forecast — the card resets like the Promotion arm (resetPromoDraft); a
+    chosen basis never carries from one added event to the next. Reopen
+    still restores the stored basis (clause 14).
