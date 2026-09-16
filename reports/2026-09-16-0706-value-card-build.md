@@ -4,8 +4,8 @@
 
 ```
 Generated: 2026-09-16 08:53 +0100 (UTC 2026-09-16 07:53)
-Certifies: PENDING
-Repo: PENDING
+Certifies: 3510cc99753b50e18d5b170b6bd99f533cb0ddf3
+Repo: committed 3510cc9, pushed (origin in sync)
 The Value card answers in the reader's units: "Corporate Inflow ARPU,
 Nov 2026: 13.87 -> 14.29", the two blends collapsed behind one closed line.
 A typed target is a COHORT ARPU, solved on the preview seam (closed form,
@@ -21,7 +21,8 @@ anchoring; only 143 and 197 had aged out, and both were re-anchored.
 The padlock mount now resolves a forecast and carries ARPU in its history:
 without it the cohort band is [0.00, 0.00] and (f)/(g) measure nothing.
 Nothing was shed. No decision is reserved for Jon.
-guard-traps targeted __/__ CAUGHT (ids PENDING), rotation 20 (ids PENDING), NOT RUN __, last FULL run <hash> <date>
+guard-traps targeted 64/64 CAUGHT, rotation 20, NOT RUN 183 (line
+quoted verbatim in section 4), last FULL run e7c88aa 2026-09-15T22:19Z
 full suite:  73/73 green
 ```
 
@@ -132,7 +133,7 @@ also still match and were left alone.
 
 | id | plants | spec |
 |---|---|---|
-| 245 | the solve reads the ROUNDED ARPU column | value-cohort-target |
+| 245 | the solve reads the ROUNDED ARPU column | yield-roundtrip (re-pointed — see the gate section) |
 | 246 | the cohort target handed to the mix solver unconverted | value-cohort-target |
 | 247 | the band readout reverts to the blend band | value-cohort-target |
 | 248 | the no-rates refusal dropped — a target "solves" to no movement | value-cohort-target |
@@ -165,7 +166,7 @@ computed in the spec from its own mix and rates), and its title reads `13.87 to
 | step | result |
 |---|---|
 | `npm run suite` | **73/73 green** (72 + the new spec) |
-| `npm run guard-traps -- --targeted` | PENDING |
+| `npm run guard-traps -- --targeted` | **64/64 CAUGHT**, 0 missed / inconclusive / crashed (line below) |
 | `spec:trap-anchors` | 261 passed, 0 failed (247 traps, 256 anchors) |
 | `spec:i18n-parity` | 200 passed, 0 failed — **928 keys per locale**, all six |
 | `spec:i18n-scan` | PASS |
@@ -173,6 +174,37 @@ computed in the spec from its own mix and rates), and its title reads `13.87 to
 | `tsc --noEmit` | clean |
 | `npm run lint` | clean |
 | `npm run build` | built in 9.18s |
+
+The certification line, verbatim:
+
+```
+guard-traps targeted 64/64 CAUGHT (ids 63 64 65 70 71 72 73 74 75 76 77 78 79 80 81 87 88 89 90 94 145 146 147 148 132 133 138 140 141 142 143 192 193 194 197 227 244 245 246 247 248 249 250 251), rotation 20 (ids 21 22 23 24 25 26 27 29 30 32 33 34 35 36 37 38 39 40 41 42), NOT RUN 183, last FULL run e7c88aa 2026-09-15T22:19:55.696Z
+```
+
+**guard-traps left the tree clean:** the five mutated files' md5s are identical
+before and after the run — `WhatIfTab.tsx` `f514b965…`, `mixConstraint.ts`
+`f7f32f18…`, `MixTargetPanel.tsx` `22fc07e0…`, `forecasting.ts` `201ea2f9…`,
+`EventsSummaryTable.tsx` `e4607e87…`.
+
+**The first targeted run was 62/64**, and both MISSED traps were mine:
+
+- **143** (`Apply moves a tier the user is holding`) had been re-anchored onto
+  `yieldTargetOutcome`, which no longer drives Apply — the cohort solve does.
+  Re-anchored onto the locks handed to `solveForCohortTarget`; hand-planted and
+  the padlock spec went red on both held-tier checks, then restored from the
+  scratchpad backup (md5 back to `f514b965…`).
+- **245** (`the solve reads the ROUNDED ARPU column`) stayed green, and the
+  measurement says why. Planting it and running the mounted spec produced the
+  SAME answer to six figures: target 14.2861 -> delivered 14.29, blend 14.2989
+  either way. The solve's tolerance is 0.005 and the columns are quantised to
+  0.01, so the first guess is accepted under both reads. What the rounded read
+  costs is the GUARANTEE — it can stop a full penny out while reporting a hit —
+  and no mounted assertion can see that without the spec reimplementing the
+  engine to recover the unrounded figure. The trap therefore earned a
+  DISCRIMINATOR rather than being removed: two source pins in
+  `yield-roundtrip` (the deliver helper reads `rawArpuByMonth`, and names no
+  ARPU column), and the trap now points at that spec. Hand-planted: both pins
+  red. The second run is the 64/64 above.
 
 ### Exact counts the brief named
 
