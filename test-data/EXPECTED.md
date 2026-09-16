@@ -10519,8 +10519,15 @@ Jon's answers to the inventory's questions, 2026-09-11:
     Promotion arm's lead and target read the promotion's own month —
     (A). A multi-month campaign reads the draft's FIRST month with that
     month's volume, and the caption says so.
-14. (Jon, 2026-09-16) The Promotion arm's ARPU basis opens on FORECAST,
-    as the Value card does (D5-11); the toggle stays.
+14. (Jon, 2026-09-16, option A) The ARPU basis (Historical / Forecast)
+    is STORED on the event — a `Tariff_ARPU_Basis` column
+    ('Historical'/'Forecast') appended LAST on Yield_Events, and on every
+    promotion row that carries a Value-mix arm on Market_Events (after
+    `Mode`). Reader: absent → Historical, so every existing save reopens
+    as it was saved and D5-04's no-change save holds. Reopen restores the
+    stored basis; a NEW draft opens on Forecast on both cards. The Value
+    card's `yieldArpuMode` gap (types/forecast.ts, Finding 1) closes with
+    it.
 15. (Jon, 2026-09-16) The preview seam gains a MARKET-DRAFT slot
     (`marketDraft`, `excludeMarketIds`) spliced exactly as `yieldDraft`
     is; the promotion `deliver` builds its rows through
