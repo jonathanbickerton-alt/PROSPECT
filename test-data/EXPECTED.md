@@ -10577,3 +10577,24 @@ go, group/ungroup/dissolve by hand; ships before UAT closes.
 7. Ships within UAT before close; walked by Jon; released via Maddie.
 
 Open: rename (costed by the inventory, not decided).
+
+Jon's answers to the 1606 inventory's questions (2026-09-16):
+
+8. The bin across carriers: Value and Pricing members are removed through
+   the existing per-row removers (`removeYieldEvent`, `removePricingEvent`),
+   called from the one confirm; no whole-array setters.
+9. A campaign edit: rebuilt rows keep the initiative, and added months join
+   it (one builder call, one initiative).
+10. Grouping a member already in initiative A as B MOVES it to B.
+11. Names: trimmed on entry; compared exactly after trimming,
+    case-sensitive. Rename onto a name in use → prompt "Merge into
+    '{name}'? {n} events will join it"; rename to an unused name → no
+    prompt. Group as an existing name → adds, no prompt. (Closes the open
+    rename item: rename is in scope.)
+12. An initiative's group sits at the position of its earliest member in
+    today's order.
+13. Counting: the badge counts events only; the Show all threshold counts
+    every visible row, headers included.
+14. The header's Effect cell: a per-state count in the column's order, empty
+    states omitted, e.g. "Volume ×2 · ARPU ×1 · Off ×1".
+15. Compare: pipeline order, the Initiative name in a column only.
