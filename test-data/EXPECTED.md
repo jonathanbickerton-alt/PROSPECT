@@ -10504,3 +10504,12 @@ Jon's answers to the inventory's questions, 2026-09-11:
 11. The solve REFUSES with a stated reason when the fitted ARPU is
     absent at the read month, or when the draft carries no stored
     rates (ratio 1 — the target could never move).
+12. (Jon, 2026-09-16) The Promotion card's Value-mix arm speaks in
+    cohort units too: its lead is the cohort's fitted {ibro} ARPU → the
+    ARPU the forecast delivers with THIS PROMOTION at the read month
+    (the pooled effect — volume, mix and dilution as D3 records them),
+    month and cohort named; the target typed there is that cohort ARPU,
+    solved on the seam; the promotion's blended ARPU is demoted to the
+    collapsed line. The Promotion arm's `MixTargetPanel` therefore takes
+    the cohort props; 1.3's byte-identical literal is retired with the
+    reason.
