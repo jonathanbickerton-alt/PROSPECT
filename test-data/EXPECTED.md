@@ -10462,3 +10462,30 @@ Jon's answers to the inventory's questions, 2026-09-11:
    <rev>` against a named base. A build session's gate runs targeted; a
    release, a docs 'last gated state', and the session-close skill run
    full.
+
+## REQ-D6-07 — THE VALUE CARD LEADS WITH THE COHORT ARPU (Alessandro, 2026-09-15; Jon's decisions 2026-09-15)
+
+1. The card's leading figures are the COHORT's fitted ARPU and the
+   ARPU the forecast delivers with this event, at the month the
+   preview reads (Inflow: the month after the draft's; Retention:
+   the draft month), with the month and cohort named — the pair
+   D5-11's Preview Impact already computes through the existing
+   seam. The equal-weight blends (Baseline blended / New blended)
+   are DEMOTED to a collapsed "how this is computed" line; the
+   comparator itself is unchanged ("SETTLED 2026-08-12 — the
+   comparator is option (c)" is not reopened).
+2. The Target box means the COHORT ARPU at that month. The solve is
+   a goal-seek ON THE PREVIEW: the blend target is bisected until
+   the seam's delivered figure meets the typed number (tolerance
+   and iteration cap to be recorded by the build); overrides are
+   honoured because the seam honours them. "Reachable" is stated in
+   cohort terms from the same seam.
+3. The Events summary ADJUSTS cell for a yield event states the
+   cohort effect that persists across months — the ratio as a
+   percentage ("Inflow ARPU +52.1%"); the tooltip carries the pair
+   for the month. It no longer prints the blend.
+4. The Historical / Forecast basis toggle is unchanged (D5-11).
+5. This is NOT the never-re-propose entry "goal-seek-as-
+   recommendation" (EXPECTED.md:7702): the app proposes nothing;
+   a user-typed target is solved against the figure the user sees,
+   as Apply already does in blend space.
