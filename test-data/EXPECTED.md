@@ -10513,3 +10513,17 @@ Jon's answers to the inventory's questions, 2026-09-11:
     collapsed line. The Promotion arm's `MixTargetPanel` therefore takes
     the cohort props; 1.3's byte-identical literal is retired with the
     reason.
+13. (Jon, 2026-09-16) Clause 7 amended for promotions: an Inflow
+    promotion moves Inflow ARPU in its OWN month (the pool enters Base
+    at T+1, diluted); a Retention promotion its own month. The
+    Promotion arm's lead and target read the promotion's own month —
+    (A). A multi-month campaign reads the draft's FIRST month with that
+    month's volume, and the caption says so.
+14. (Jon, 2026-09-16) The Promotion arm's ARPU basis opens on FORECAST,
+    as the Value card does (D5-11); the toggle stays.
+15. (Jon, 2026-09-16) The preview seam gains a MARKET-DRAFT slot
+    (`marketDraft`, `excludeMarketIds`) spliced exactly as `yieldDraft`
+    is; the promotion `deliver` builds its rows through
+    `buildPromoEvents` — a second row builder in the preview is a
+    second definition of a promotion. `computeAdjustedForecast` stays
+    at 6 sites.
