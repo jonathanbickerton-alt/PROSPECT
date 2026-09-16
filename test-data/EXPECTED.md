@@ -10489,3 +10489,18 @@ Jon's answers to the inventory's questions, 2026-09-11:
    recommendation" (EXPECTED.md:7702): the app proposes nothing;
    a user-typed target is solved against the figure the user sees,
    as Apply already does in blend space.
+6. (Jon, 2026-09-16) The solve reads the UNROUNDED adjusted series;
+   tolerance 0.005; cap 30 steps; closed form (target × equal-weight ÷
+   fitted) as the first guess, bisection to the tolerance. The lead
+   pair displays the rounded column as today.
+7. The solve's month is the read month (Inflow: the month after the
+   draft's; Retention: the draft month), named in the target label.
+8. The summary cell carries no rival marker; D5-13's rival line stays
+   on the card.
+9. The cohort band is computed per render, memoised on the draft (two
+   seam calls).
+10. Roll-forward wording: "applies from {month} onward" / "at {month}
+    only" as a suffix on the lead line.
+11. The solve REFUSES with a stated reason when the fitted ARPU is
+    absent at the read month, or when the draft carries no stored
+    rates (ratio 1 — the target could never move).
