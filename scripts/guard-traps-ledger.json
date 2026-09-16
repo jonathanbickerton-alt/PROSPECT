@@ -7,13 +7,13 @@
     "total": 254
   },
   "control": {
-    "hash": "9b204924778e77334a6b8f7e8a3a911117d039e160b093dfecf375608d1a3033",
-    "date": "2026-09-16T13:49:48.562Z"
+    "hash": "bb084d0dd1b77e8a1d308f9e6959b431e4532de75a7895420d1fe8032d6acdb6",
+    "date": "2026-09-16T14:49:36.789Z"
   },
   "traps": {
     "1": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 2718,
@@ -22,8 +22,8 @@
       }
     },
     "2": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 2718,
@@ -32,8 +32,8 @@
       }
     },
     "3": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 2718,
@@ -42,8 +42,8 @@
       }
     },
     "4": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 2718,
@@ -52,8 +52,8 @@
       }
     },
     "5": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 2718,
@@ -62,8 +62,8 @@
       }
     },
     "6": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 4276,
@@ -72,28 +72,28 @@
       }
     },
     "7": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
-        "start": 6540,
-        "end": 6540,
+        "start": 6548,
+        "end": 6548,
         "textHash": "ba5edd2f7bb6fefe"
       }
     },
     "8": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
-        "start": 6500,
-        "end": 6500,
+        "start": 6508,
+        "end": 6508,
         "textHash": "01be01c474266508"
       }
     },
     "9": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 2446,
@@ -102,8 +102,8 @@
       }
     },
     "10": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 2446,
@@ -112,8 +112,8 @@
       }
     },
     "11": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 1435,
@@ -122,8 +122,8 @@
       }
     },
     "12": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 195,
@@ -132,8 +132,8 @@
       }
     },
     "13": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 4212,
@@ -142,8 +142,8 @@
       }
     },
     "14": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 4021,
@@ -152,8 +152,8 @@
       }
     },
     "15": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 913,
@@ -162,8 +162,8 @@
       }
     },
     "16": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 3290,
@@ -172,8 +172,8 @@
       }
     },
     "17": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 3291,
@@ -182,8 +182,8 @@
       }
     },
     "18": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 3422,
@@ -192,8 +192,8 @@
       }
     },
     "19": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 4348,
@@ -202,8 +202,8 @@
       }
     },
     "20": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 379,
@@ -1372,23 +1372,23 @@
       }
     },
     "141": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
-        "start": 3595,
-        "end": 3595,
+        "start": 3603,
+        "end": 3603,
         "textHash": "a94e065faab30ed3"
       }
     },
     "142": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
-        "start": 3595,
-        "end": 3597,
-        "textHash": "ea6c62c029e859c3"
+        "start": 3603,
+        "end": 3605,
+        "textHash": "49ac072f307d04e5"
       }
     },
     "143": {
@@ -2532,8 +2532,8 @@
       }
     },
     "257": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 1563,
@@ -2542,8 +2542,8 @@
       }
     },
     "258": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 1774,
@@ -2552,13 +2552,23 @@
       }
     },
     "259": {
-      "lastRunHash": "67346b6",
-      "lastRunDate": "2026-09-16T13:49:48.562Z",
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
       "lastState": "CAUGHT",
       "anchorSpan": {
         "start": 3485,
         "end": 3485,
         "textHash": "6dfeaf5b9b25af05"
+      }
+    },
+    "260": {
+      "lastRunHash": "23f9b3a+dirty",
+      "lastRunDate": "2026-09-16T14:49:36.789Z",
+      "lastState": "CAUGHT",
+      "anchorSpan": {
+        "start": 3593,
+        "end": 3593,
+        "textHash": "9f735a48ff3a2ba1"
       }
     }
   }
