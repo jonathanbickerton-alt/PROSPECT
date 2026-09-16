@@ -5,7 +5,7 @@
 ```
 Generated: 2026-09-16 17:14 +0100 (UTC 2026-09-16 16:14)
 Certifies: ab2c634 (src read; no src/scripts/spec change)
-Repo: PENDING
+Repo: committed d9fe40b, pushed (origin in sync)
 Decisions commit: 6b7fdea (REQ-D6-08 1-7, committed alone before reading)
 Read-only inventory; every claim below carries file:line in the body.
 FINDING 1: the delete dialog is MARKET-ONLY end to end - pendingChange
