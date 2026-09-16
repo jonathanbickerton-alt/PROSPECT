@@ -365,6 +365,15 @@ export interface EventToggle {
   /** Absent means ON. Only an explicit `false` turns an event off. */
   enabled?: boolean;
   /**
+   * REQ-D6-08 (Jon, 2026-09-16). THE INITIATIVE THIS ROW BELONGS TO, by name.
+   * ABSENT MEANS NONE: every save written before the column loads with no
+   * initiative (clause 2). The initiative IS its rows — there is no separate
+   * record of it, so no members means no initiative. One per row (clause 1).
+   * Here, on the toggle every carrier extends, for the reason `enabled` is:
+   * one field, one meaning, on Market, Yield and Pricing rows alike.
+   */
+  initiative?: string;
+  /**
    * D5-10 (Jon, 2026-09-09): THE TARIFFS THIS EVENT TARGETS, WHEN ITS OWN
    * CONTROL SAYS "All" AND "All" MEANT A SUBSET.
    *

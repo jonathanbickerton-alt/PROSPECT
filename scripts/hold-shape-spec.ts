@@ -226,15 +226,16 @@ const volumes = (shape: { fraction: number }[], amount: number, round = true) =>
   // Seen RED first:
   //   FAIL  COLUMN: Hold is second-to-last (REQ-D6-05)  [Mode]
   //   FAIL  COLUMN: Mode is LAST (REQ-D6-05)  [Tariff_ARPU_Basis]
-  check('COLUMN: Hold is third-from-last (D6-07 c14)',
-    Object.keys(held)[Object.keys(held).length - 3] === 'Hold',
-    Object.keys(held)[Object.keys(held).length - 3]);
-  check('COLUMN: Mode is second-to-last (D6-07 c14)',
-    Object.keys(held)[Object.keys(held).length - 2] === 'Mode',
-    Object.keys(held)[Object.keys(held).length - 2]);
-  check('COLUMN: Tariff_ARPU_Basis is LAST (D6-07 c14)',
-    Object.keys(held)[Object.keys(held).length - 1] === 'Tariff_ARPU_Basis',
-    Object.keys(held)[Object.keys(held).length - 1]);
+  // RE-AIMED at REQ-D6-08 session 1: Initiative appended LAST. Seen RED first:
+  //   FAIL  COLUMN: Hold is third-from-last (D6-07 c14)  [Mode]
+  //   FAIL  COLUMN: Mode is second-to-last (D6-07 c14)  [Tariff_ARPU_Basis]
+  //   FAIL  COLUMN: Tariff_ARPU_Basis is LAST (D6-07 c14)  [Initiative]
+  const heldKeys = Object.keys(held);
+  check('COLUMN: Hold is fourth-from-last (D6-08)', heldKeys[heldKeys.length - 4] === 'Hold', heldKeys[heldKeys.length - 4]);
+  check('COLUMN: Mode is third-from-last (D6-08)', heldKeys[heldKeys.length - 3] === 'Mode', heldKeys[heldKeys.length - 3]);
+  check('COLUMN: Tariff_ARPU_Basis is second-to-last (D6-08)',
+    heldKeys[heldKeys.length - 2] === 'Tariff_ARPU_Basis', heldKeys[heldKeys.length - 2]);
+  check('COLUMN: Initiative is LAST (D6-08)', heldKeys[heldKeys.length - 1] === 'Initiative', heldKeys[heldKeys.length - 1]);
 
   // ABSENT MEANS OFF — the whole reason every existing save reloads unchanged.
   const legacy = { ...plain }; delete (legacy as any).Hold;

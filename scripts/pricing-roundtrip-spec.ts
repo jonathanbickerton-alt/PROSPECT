@@ -720,10 +720,14 @@ check('row: the stored branch goes through the SHARED applyPricingToBlend',
     contractLength: 6,
   } as any);
   const keys = Object.keys(row);
-  check('D5-14: Contract_Length_Months is the LAST column on Pricing_Events',
-    keys[keys.length - 1] === 'Contract_Length_Months', keys[keys.length - 1]);
-  check('D5-14: and Tariff_Scope is now second-to-last, not last',
-    keys[keys.length - 2] === 'Tariff_Scope', keys[keys.length - 2]);
+  // RE-AIMED at REQ-D6-08 session 1: Initiative appended LAST. Seen RED first:
+  //   FAIL  D5-14: Contract_Length_Months is the LAST column on Pricing_Events  [Initiative]
+  //   FAIL  D5-14: and Tariff_Scope is now second-to-last, not last  [Contract_Length_Months]
+  check('D5-14/D6-08: Contract_Length_Months is second-to-last, Initiative LAST',
+    keys[keys.length - 2] === 'Contract_Length_Months' && keys[keys.length - 1] === 'Initiative',
+    keys.slice(-2).join(' / '));
+  check('D5-14/D6-08: and Tariff_Scope is third-from-last',
+    keys[keys.length - 3] === 'Tariff_Scope', keys[keys.length - 3]);
   check('D5-14: the stated months are written as a NUMBER, not the empty carrier',
     row.Contract_Length_Months === 6, String(row.Contract_Length_Months));
 

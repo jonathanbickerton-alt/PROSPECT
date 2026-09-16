@@ -472,9 +472,12 @@ async function main() {
     const keys = Object.keys(sheet[0] ?? {});
     // RE-AIMED at REQ-D6-07 clause 14 (A). Seen RED first, all three shapes:
     //   FAIL  (g-b|c|d) Mode is the LAST column  [Tariff_ARPU_Basis]
-    check(`(g-${tag}) Mode is second-to-last, Tariff_ARPU_Basis LAST`,
-      keys[keys.length - 2] === 'Mode' && keys[keys.length - 1] === 'Tariff_ARPU_Basis',
-      keys.slice(-2).join(' / '));
+    // RE-AIMED at REQ-D6-08 session 1. Seen RED first, all three shapes:
+    //   FAIL  (g-b|c|d) Mode is second-to-last, Tariff_ARPU_Basis LAST  [Tariff_ARPU_Basis / Initiative]
+    check(`(g-${tag}) Mode, Tariff_ARPU_Basis, then Initiative LAST`,
+      keys[keys.length - 3] === 'Mode' && keys[keys.length - 2] === 'Tariff_ARPU_Basis'
+        && keys[keys.length - 1] === 'Initiative',
+      keys.slice(-3).join(' / '));
     const back = sheet.map((r: any) => fc.marketEventFromRow(r, 'session'));
     check(`(g-${tag}) mode reads back as ${mode}, Hold as ${held}`,
       back.every((e: any) => e.mode === mode && e.hold === held));

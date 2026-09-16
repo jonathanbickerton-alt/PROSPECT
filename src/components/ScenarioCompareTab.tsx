@@ -731,6 +731,8 @@ export const ScenarioCompareTab: React.FC<ScenarioCompareTabProps> = ({ globalSe
                     title={scenarioNames[f.fileName] || f.fileName}
                     testIdPrefix={`compare-events-${f.fileName}`}
                     effectOf={effectByFile.get(f.fileName)}
+                    // REQ-D6-08 clause 15: the name in a column, pipeline order, no switch.
+                    showInitiativeColumn
                     dense
                   />
                 ))}

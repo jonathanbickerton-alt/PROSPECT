@@ -136,6 +136,10 @@ const ALLOW: Record<string, Entry> = {
   baseline_date:         { locales: ['fr'],            why: 'Date is the French word' },
   whatif_mode:           { locales: ['fr'],            why: 'Mode is the French word' },
   whatif_summary_col_name: { locales: ['de'],          why: 'Name is the German word' },
+  // REQ-D6-08, 2026-09-16. Seen RED first:
+  //   FAIL PARITY de: no non-allowlisted key equals English  [1 — first: whatif_summary_col_initiative]
+  //   FAIL PARITY fr: no non-allowlisted key equals English  [1 — first: whatif_summary_col_initiative]
+  whatif_summary_col_initiative: { locales: ['de', 'fr'], why: 'Initiative is the word in de/fr; Iniciativa/Iniziativa elsewhere' },
   bulk_optional:         { locales: ['de', 'it'],      why: '(optional) is the same in de/it' },
   whatif_pricing_mode_direct:   { locales: ['fr'],     why: 'Direct is the French word' },
   whatif_pricing_mode_dilution: { locales: ['fr'],     why: 'Dilution is the French word' },
@@ -146,8 +150,11 @@ const ALLOW: Record<string, Entry> = {
 // are whatif_effect_arpu in all five locales and whatif_effect_volume in
 // fr/it/pt. Both edits are deliberate and reviewed, which is what the exact
 // count exists to force.
-const ALLOW_ENTRIES = 54;
-const ALLOW_PAIRS   = 192;
+// REQ-D6-08, 2026-09-16: 54 -> 55 entries, 192 -> 194 pairs — whatif_summary_col_initiative
+// in de and fr. Seen RED first:
+//   FAIL ALLOWLIST: (key, locale) pairs equal the pinned number  [194 vs 192 — ...]
+const ALLOW_ENTRIES = 55;
+const ALLOW_PAIRS   = 194;
 
 const applies = (e: Entry, l: Loc) => e.locales === 'ALL' || e.locales.includes(l);
 

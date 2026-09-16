@@ -26,7 +26,7 @@ import { MixTargetPanel } from './MixTargetPanel';
 import type { ScenarioKey, ScenarioPricing } from '../utils/scenarioArpu';
 import { nextAmountControlState, effectiveAmountControl, churnAvailableFor,
          type AmountControl } from '../utils/amountControl';
-import { draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, yieldRatioFrom, eventProRataShare, eventCoverage, forecastCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor, pricingBaselineArpu, eventVolumeLabel, isEventOn, effectStatusOf, eventMode } from '../utils/forecasting';
+import { carryInitiative, initiativeGroups, draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, yieldRatioFrom, eventProRataShare, eventCoverage, forecastCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor, pricingBaselineArpu, eventVolumeLabel, isEventOn, effectStatusOf, eventMode } from '../utils/forecasting';
 import type { EventSummaryRow } from '../utils/forecasting';
 import type { ProRataLeaf, ProRataScope, PricingVolumes, ViewScope } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
@@ -3273,6 +3273,20 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     () => buildEventsSummaryRows({ marketEvents, yieldEvents, pricingEvents }, t),
     [marketEvents, yieldEvents, pricingEvents, t]);
 
+  /** REQ-D6-08. The summary's entries: initiative headers placed among the rows. */
+  const summaryEntries = useMemo(() => initiativeGroups(summaryRows), [summaryRows]);
+
+  /**
+   * REQ-D6-08 clause 3. THE INITIATIVE SWITCH — every member, each through its
+   * OWN carrier. No new writer: the same per-row handler every summary switch
+   * calls, with the row's own `pass`, so a Value or Pricing member is written
+   * exactly as its own switch would write it. (The card campaign switch passes
+   * pass 0, because a campaign is Market rows only; an initiative is not.)
+   */
+  const handleSetInitiativeEnabled = useCallback((members: readonly { id: string; pass: 0 | 1 | 2 }[], next: boolean) => {
+    members.forEach(r => handleSetEventEnabled({ id: r.id, pass: r.pass }, next));
+  }, [handleSetEventEnabled]);
+
   /**
    * D5-12. HOW MANY EVENTS ARE SWITCHED ON — derived ONCE.
    *
@@ -5529,7 +5543,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       // half-applied ramp is a forecast nobody stated.
       setMarketEvents([
         ...marketEvents.filter(e => !isMineChurn(e)),
-        ...newEvents,
+        // REQ-D6-08 clause 9 — the churn campaign save rebuilds its rows too.
+        ...carryInitiative(newEvents, marketEvents.filter(isMineChurn)),
       ]);
       setEditingCampaign(null);
       setStoredAmountControl('subs');
@@ -5641,7 +5656,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const isMine = (e: MarketEvent) => e.campaignName === editingCampaign && !e.isPromotion;
     const survivors = marketEvents.filter(e => !isMine(e));
     const replaced  = marketEvents.filter(isMine);
-    setMarketEvents([...survivors, ...resequenceRebuild(newEvents, replaced, survivors)]);
+    // REQ-D6-08 clause 9 — rebuilt rows (and added months) stay in the initiative.
+    setMarketEvents([...survivors, ...carryInitiative(resequenceRebuild(newEvents, replaced, survivors), replaced)]);
     setEditingCampaign(null);
     setNewEvent(BLANK_EVENT);
     // REQ-D6-05 — back to a fresh form: Spread, one month, nothing held.
@@ -6101,7 +6117,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const isMinePromo = (e: MarketEvent) => e.campaignName === editingPromoCampaign && !!e.isPromotion;
     const promoSurvivors = marketEvents.filter(e => !isMinePromo(e));
     const promoReplaced  = marketEvents.filter(isMinePromo);
-    setMarketEvents([...promoSurvivors, ...resequenceRebuild(events, promoReplaced, promoSurvivors)]);
+    // REQ-D6-08 clause 9 — rebuilt rows (and added months) stay in the initiative.
+    setMarketEvents([...promoSurvivors, ...carryInitiative(resequenceRebuild(events, promoReplaced, promoSurvivors), promoReplaced)]);
     setEditingPromoCampaign(null);
     resetPromoDraft();
   // THE DEPENDENCY ARRAY IS THE READ-SET (D3-04). All three promo builders
@@ -7017,6 +7034,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           // join is unsettled (see the report's step 1c), so a column there
           // could state "No coverage" about events that plainly applied.
           effectOf={effectOf}
+          // REQ-D6-08. The What-If summary places initiative headers; its state is
+          // the campaign switch's own tri-state rule, over the members' rows.
+          entries={summaryEntries}
+          initiativeState={campaignToggleState}
+          onSetInitiativeEnabled={handleSetInitiativeEnabled}
           /**
            * REQ-D6-07 Item 2 — WHAT THE CELL SAYS vs WHAT THE TITLE SAYS.
            *

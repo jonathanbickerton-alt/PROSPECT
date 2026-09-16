@@ -464,11 +464,17 @@ async function main() {
   // EVERY WRITE GOES THROUGH THE ONE HANDLER. Five invocations: the four card
   // tables, and the campaign handler's per-row loop. A sixth would be a second
   // way to set the same field - the defect this whole arc is shaped against.
+  // RE-AIMED at REQ-D6-08 session 1, 2026-09-16: SIX. The initiative switch's
+  // per-member loop is the sixth invocation — the same handler, each member's own
+  // `pass` (clause 3), which is the rule this pin exists for, not a second way to
+  // set the field. Seen RED first:
+  //   FAIL  pin: EXACTLY 5 invocations of handleSetEventEnabled  [6 - ...]
   const handlerCalls = (wi.match(/handleSetEventEnabled\(\{/g) ?? []).length;
-  check('pin: EXACTLY 5 invocations of handleSetEventEnabled',
-    handlerCalls === 5, String(handlerCalls)
-    + ' - four card tables plus the campaign loop; the summary passes it by'
-    + ' reference, which is why this counts invocations and not mentions');
+  check('pin: EXACTLY 6 invocations of handleSetEventEnabled',
+    handlerCalls === 6 && wi.includes('members.forEach(r => handleSetEventEnabled({ id: r.id, pass: r.pass }, next));'),
+    String(handlerCalls)
+    + ' - four card tables, the campaign loop and the initiative loop; the summary'
+    + ' passes it by reference, which is why this counts invocations and not mentions');
   check('pin: the summary table is still handed the SAME handler',
     /onSetEnabled=\{handleSetEventEnabled\}/.test(wi));
 
@@ -543,25 +549,35 @@ async function main() {
   //   FAIL  export: Tariff_Scope is LAST on Yield_Events (D5-10)  [Tariff_ARPU_Basis]
   // FIVE and THREE positions: every trailing column named, the rule unchanged.
   const fromEnd = (o: Record<string, unknown>, n: number) => Object.keys(o)[Object.keys(o).length - n];
-  check('export: Enabled is fifth-from-last on Market_Events (D6-07 c14)',
-    fromEnd(mkt, 5) === 'Enabled', fromEnd(mkt, 5));
-  check('export: Tariff_Scope is fourth-from-last on Market_Events (D6-07 c14)',
-    fromEnd(mkt, 4) === 'Tariff_Scope', fromEnd(mkt, 4));
-  check('export: Hold is third-from-last on Market_Events (D6-07 c14)',
-    fromEnd(mkt, 3) === 'Hold', fromEnd(mkt, 3));
-  check('export: Mode is second-to-last on Market_Events (D6-07 c14)',
-    fromEnd(mkt, 2) === 'Mode', fromEnd(mkt, 2));
-  check('export: Tariff_ARPU_Basis is LAST on Market_Events (D6-07 c14)',
-    fromEnd(mkt, 1) === 'Tariff_ARPU_Basis', fromEnd(mkt, 1));
+  // RE-AIMED at REQ-D6-08 session 1: `Initiative` appended LAST on all three
+  // sheets — Market 6, Yield 4, Pricing 4 trailing positions, every one named.
+  // Seen RED first, all eleven lines, e.g.:
+  //   FAIL  export: Tariff_ARPU_Basis is LAST on Market_Events (D6-07 c14)  [Initiative]
+  //   FAIL  export: Tariff_ARPU_Basis is LAST on Yield_Events (D6-07 c14)  [Initiative]
+  //   FAIL  export: Contract_Length_Months is LAST on Pricing_Events (D5-14)  [Initiative]
+  check('export: Enabled is sixth-from-last on Market_Events (D6-08)',
+    fromEnd(mkt, 6) === 'Enabled', fromEnd(mkt, 6));
+  check('export: Tariff_Scope is fifth-from-last on Market_Events (D6-08)',
+    fromEnd(mkt, 5) === 'Tariff_Scope', fromEnd(mkt, 5));
+  check('export: Hold is fourth-from-last on Market_Events (D6-08)',
+    fromEnd(mkt, 4) === 'Hold', fromEnd(mkt, 4));
+  check('export: Mode is third-from-last on Market_Events (D6-08)',
+    fromEnd(mkt, 3) === 'Mode', fromEnd(mkt, 3));
+  check('export: Tariff_ARPU_Basis is second-to-last on Market_Events (D6-08)',
+    fromEnd(mkt, 2) === 'Tariff_ARPU_Basis', fromEnd(mkt, 2));
+  check('export: Initiative is LAST on Market_Events (D6-08)',
+    fromEnd(mkt, 1) === 'Initiative', fromEnd(mkt, 1));
   const yr = fc.yieldEventExportRow({ id: 'y1', ibro: 'Inflow', segment: 'All', product: 'All',
     channelL1: 'All', channelL2: 'All', month: MONTHS[0], rollForward: false,
     tariffMix: {}, tariffBaseArpu: {}, enabled: false } as any);
-  check('export: Enabled is third-from-last on Yield_Events (D6-07 c14)',
-    fromEnd(yr, 3) === 'Enabled', fromEnd(yr, 3));
-  check('export: Tariff_Scope is second-to-last on Yield_Events (D6-07 c14)',
-    fromEnd(yr, 2) === 'Tariff_Scope', fromEnd(yr, 2));
-  check('export: Tariff_ARPU_Basis is LAST on Yield_Events (D6-07 c14)',
-    fromEnd(yr, 1) === 'Tariff_ARPU_Basis', fromEnd(yr, 1));
+  check('export: Enabled is fourth-from-last on Yield_Events (D6-08)',
+    fromEnd(yr, 4) === 'Enabled', fromEnd(yr, 4));
+  check('export: Tariff_Scope is third-from-last on Yield_Events (D6-08)',
+    fromEnd(yr, 3) === 'Tariff_Scope', fromEnd(yr, 3));
+  check('export: Tariff_ARPU_Basis is second-to-last on Yield_Events (D6-08)',
+    fromEnd(yr, 2) === 'Tariff_ARPU_Basis', fromEnd(yr, 2));
+  check('export: Initiative is LAST on Yield_Events (D6-08)',
+    fromEnd(yr, 1) === 'Initiative', fromEnd(yr, 1));
   void antepenult; void penultKey;
   const pr = fc.pricingEventExportRow({ id: 'p1', segment: 'All', product: 'All', productL2: 'All',
     channelL1: 'All', channelL2: 'All', month: MONTHS[0], inputMode: 'percentage',
@@ -577,12 +593,15 @@ async function main() {
   // goes red, which is what makes append-only a rule rather than a hope.
   const antepenultKey = (o: Record<string, unknown>) =>
     Object.keys(o)[Object.keys(o).length - 3];
-  check('export: Enabled is third-from-last on Pricing_Events (D5-14)',
-    antepenultKey(pr) === 'Enabled', antepenultKey(pr));
-  check('export: Tariff_Scope is second-to-last on Pricing_Events (D5-14)',
-    penultKey(pr) === 'Tariff_Scope', penultKey(pr));
-  check('export: Contract_Length_Months is LAST on Pricing_Events (D5-14)',
-    lastKey(pr) === 'Contract_Length_Months', lastKey(pr));
+  check('export: Enabled is fourth-from-last on Pricing_Events (D6-08)',
+    fromEnd(pr, 4) === 'Enabled', fromEnd(pr, 4));
+  check('export: Tariff_Scope is third-from-last on Pricing_Events (D6-08)',
+    fromEnd(pr, 3) === 'Tariff_Scope', fromEnd(pr, 3));
+  check('export: Contract_Length_Months is second-to-last on Pricing_Events (D6-08)',
+    fromEnd(pr, 2) === 'Contract_Length_Months', fromEnd(pr, 2));
+  check('export: Initiative is LAST on Pricing_Events (D6-08)',
+    fromEnd(pr, 1) === 'Initiative', fromEnd(pr, 1));
+  void antepenultKey; void lastKey;
 
   /** Through a REAL workbook, not an object handed straight back. */
   const throughXlsx = (rows: Record<string, unknown>[]) => {

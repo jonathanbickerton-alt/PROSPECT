@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, Trash2 } from 'lucide-react';
-import type { EventSummaryRow, SummaryT, EffectStatus } from '../utils/forecasting';
-import { EFFECT_LABEL_KEY } from '../utils/forecasting';
+import type { EventSummaryRow, SummaryT, EffectStatus, SummaryEntry } from '../utils/forecasting';
+import { EFFECT_LABEL_KEY, INITIATIVE_EFFECT_ORDER } from '../utils/forecasting';
 import { EventOnOffSwitch, OFF_ROW } from './EventOnOffSwitch';
 
 /**
@@ -80,6 +80,19 @@ export interface EventsSummaryTableProps {
    * pair from. Absent = no title anywhere, which is Compare's case exactly.
    */
   adjustsTitle?: (row: EventSummaryRow) => string | null;
+  /**
+   * REQ-D6-08. OPT-IN, as every prop above: the What-If summary passes the
+   * entries `initiativeGroups` laid out; Compare passes none and renders its rows
+   * in pipeline order (clause 15). This component still BUILDS nothing — it is
+   * handed the headers, and asks the caller for each header's state.
+   */
+  entries?: SummaryEntry[];
+  /** REQ-D6-08 clause 3. A header's tri-state, from its members' rows. */
+  initiativeState?: (members: EventSummaryRow[]) => boolean | null;
+  /** REQ-D6-08 clause 3. Absent = no switch on the header. */
+  onSetInitiativeEnabled?: (members: EventSummaryRow[], next: boolean) => void;
+  /** REQ-D6-08 clause 15. Compare's read-only Initiative column. */
+  showInitiativeColumn?: boolean;
 }
 
 /**
@@ -103,11 +116,20 @@ export const SHOW_ALL_THRESHOLD = 9;
 export function EventsSummaryTable({
   rows, t, open, onToggle, title, testIdPrefix = 'events-summary', dense = false,
   onSetEnabled, showAllToggle = false, effectOf, onDeleteCampaign, adjustsTitle,
+  entries, initiativeState, onSetInitiativeEnabled, showInitiativeColumn = false,
 }: EventsSummaryTableProps) {
   // D5-08. VIEW STATE, local to the panel: not exported, not persisted, and
   // reset on reload — a height preference is not a property of the forecast.
   const [showAll, setShowAll] = useState(false);
-  const canShowAll = showAllToggle && rows.length > SHOW_ALL_THRESHOLD;
+  // REQ-D6-08. With no entries handed in, every row is its own entry — exactly
+  // the table as it was, which is Compare's case.
+  const shown: SummaryEntry[] = entries ?? rows.map(row => ({ kind: 'row' as const, row }));
+  // REQ-D6-08 clause 13. THE THRESHOLD COUNTS WHAT TAKES HEIGHT — every visible
+  // entry, headers included — because it stands in for the panel's pixel cap.
+  // The badge below still counts EVENTS (`rows.length`): a header is not one.
+  const canShowAll = showAllToggle && shown.length > SHOW_ALL_THRESHOLD;
+  // Columns after the switch (and effect) cells, for a header's spanning cell.
+  const spanAfter = 5 + (showInitiativeColumn ? 1 : 0);
   const bodyId = `${testIdPrefix}-scroll`;
   return (
     <div className={`bg-white rounded-2xl shadow-sm border border-slate-200 ${dense ? 'rounded-xl' : ''}`}>
@@ -189,13 +211,63 @@ export function EventsSummaryTable({
                       )}
                       <th className="px-3 py-2 font-semibold">{t('whatif_summary_col_card')}</th>
                       <th className="px-3 py-2 font-semibold">{t('whatif_summary_col_name')}</th>
+                      {showInitiativeColumn && (
+                        <th className="px-3 py-2 font-semibold">{t('whatif_summary_col_initiative')}</th>
+                      )}
                       <th className="px-3 py-2 font-semibold">{t('whatif_summary_col_adjusts')}</th>
                       <th className="px-3 py-2 font-semibold">{t('whatif_summary_col_scope')}</th>
                       <th className="px-3 py-2 font-semibold">{t('whatif_summary_col_when')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {rows.map(r => (
+                    {shown.map(entry => entry.kind === 'header' ? (() => {
+                      // REQ-D6-08 — THE INITIATIVE HEADER: name, event count, the
+                      // tri-state switch over its members, and the members' EFFECT
+                      // states counted. No bin, no controls: session 2.
+                      const members = entry.members;
+                      const state = initiativeState ? initiativeState(members) : null;
+                      const effectParts = effectOf
+                        ? INITIATIVE_EFFECT_ORDER
+                            .map(st => [st, members.filter(m => effectOf(m) === st).length] as const)
+                            .filter(([, n]) => n > 0)
+                            .map(([st, n]) => `${t(EFFECT_LABEL_KEY[st])} ×${n}`)
+                            .join(' · ')
+                        : '';
+                      return (
+                        <tr key={`initiative-${entry.name}`}
+                            data-testid={`${testIdPrefix}-initiative-${entry.name}`}
+                            className="bg-slate-50/70">
+                          <td className="px-3 py-2">
+                            {onSetInitiativeEnabled && (
+                              <EventOnOffSwitch
+                                id={`initiative-${entry.name}`}
+                                checked={state}
+                                onChange={(next) => onSetInitiativeEnabled(members, next)}
+                                t={t as any}
+                                dense
+                              />
+                            )}
+                          </td>
+                          {effectOf && (
+                            <td className="px-3 py-2 whitespace-nowrap text-[10px] font-semibold text-slate-500"
+                                data-testid={`${testIdPrefix}-initiative-effect-${entry.name}`}>
+                              {effectParts}
+                            </td>
+                          )}
+                          <td colSpan={spanAfter} className="px-3 py-2">
+                            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-200 text-slate-700 mr-2">
+                              {t('whatif_summary_col_initiative')}
+                            </span>
+                            <span className="font-semibold text-slate-800"
+                                  data-testid={`${testIdPrefix}-initiative-name-${entry.name}`}>{entry.name}</span>
+                            <span className="ml-2 text-[11px] text-slate-500"
+                                  data-testid={`${testIdPrefix}-initiative-count-${entry.name}`}>
+                              {t('whatif_summary_count', { count: members.length })}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })() : (() => { const r = entry.row; return (
                       // OFF ROWS ARE GREYED, NOT HIDDEN (decision 4). One class,
                       // applied to the row, so a reader can see at a glance which
                       // events are in play without losing the ones that are not.
@@ -269,13 +341,18 @@ export function EventsSummaryTable({
                         <td className={`px-3 py-2 max-w-[160px] truncate ${r.unnamed ? 'italic text-slate-400' : 'text-slate-700'}`} title={r.name}>
                           {r.name}
                         </td>
+                        {showInitiativeColumn && (
+                          <td className="px-3 py-2 text-slate-600 max-w-[140px] truncate"
+                              data-testid={`${testIdPrefix}-initiative-cell-${r.id}`}
+                              title={r.initiative ?? ''}>{r.initiative ?? ''}</td>
+                        )}
                         <td className="px-3 py-2 text-slate-700 whitespace-nowrap"
                             data-testid={`${testIdPrefix}-adjusts-${r.id}`}
                             title={adjustsTitle ? (adjustsTitle(r) ?? undefined) : undefined}>{r.adjusts}</td>
                         <td className="px-3 py-2 text-slate-500 max-w-[180px] truncate" title={r.scope}>{r.scope}</td>
                         <td className="px-3 py-2 text-slate-500 whitespace-nowrap tabular-nums">{r.when}</td>
                       </tr>
-                    ))}
+                    ); })())}
                   </tbody>
                 </table>
               </div>

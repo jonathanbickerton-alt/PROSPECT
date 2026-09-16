@@ -115,6 +115,7 @@ const VALUEPAD = 'scripts/value-padlock-mounted-spec.tsx';
 const VALUECOHORT = 'scripts/value-cohort-target-mounted-spec.tsx';
 const PROMOCOHORT = 'scripts/promo-cohort-target-mounted-spec.tsx';
 const ARPUBASIS = 'scripts/arpu-basis-mounted-spec.tsx';
+const INITIATIVES = 'scripts/initiatives-mounted-spec.tsx';
 const EVTOGGLE = 'scripts/event-toggle-spec.tsx';
 const SUMMARYBAR = 'src/components/ForecastSummaryBar.tsx';
 const AIHOLD = 'scripts/ai-hold-spec.ts';
@@ -3637,6 +3638,64 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '    // Clause 16: BOTH dispositions — an Add resets exactly as an edit-Save does.',
       '    if (!editingYieldId) { setNewYieldEvent({}); return; }') },
+
+  // ══ REQ-D6-08 SESSION 1 — INITIATIVES: THE COLUMN, THE CARRY, THE SWITCH ══
+  //
+  // All five were seen RED by hand on 2026-09-16, each against a pre-plant md5
+  // and restored from a scratchpad backup to that md5 (the 1937 report quotes
+  // every before/planted/after triple and the red lines).
+  //
+  // 261 THE PRICING WRITER OMITS THE COLUMN. A Pricing member saves and reloads
+  // out of its initiative; the header then counts four events, not five.
+  //   FAIL  (a) Initiative is written LAST on Pricing_Events  [Contract_Length_Months]
+  { id: '261 the Pricing_Events writer omits the Initiative column',
+    why: 'a Pricing member reloads outside its initiative and the header undercounts',
+    file: ENGINE, spec: INITIATIVES,
+    mutate: s => s.replace(
+      "    // REQ-D6-08 clause 2. APPENDED LAST, after Contract_Length_Months." + nl +
+      "    Initiative: e.initiative ?? '',",
+      "") },
+
+  // 262 THE PROMOTION CAMPAIGN SAVE DROPS THE INITIATIVE — FINDING 2, restored:
+  // the rebuilt rows are new objects and leave the initiative behind.
+  //   FAIL  (c) the rebuilt PROMOTION rows keep the initiative  [hm0xkkzgf:-,krgsxkf7o:-]
+  { id: '262 the Promotion campaign save drops the initiative',
+    why: 'editing a promotion campaign silently takes it out of its initiative',
+    file: WHATIF, spec: INITIATIVES,
+    mutate: s => s.replace(
+      "...carryInitiative(resequenceRebuild(events, promoReplaced, promoSurvivors), promoReplaced)]",
+      "...resequenceRebuild(events, promoReplaced, promoSurvivors)]") },
+
+  // 263 THE HEADER SWITCH HARD-CODES PASS 0 — the card campaign switch's rule
+  // applied to an initiative. The Value and Pricing members are never written.
+  //   FAIL  (e) OFF: the VALUE member is off — its own carrier was written  [true]
+  { id: '263 the initiative switch hard-codes pass 0',
+    why: 'switching an initiative off leaves its Value and Pricing members on',
+    file: WHATIF, spec: INITIATIVES,
+    mutate: s => s.replace(
+      "members.forEach(r => handleSetEventEnabled({ id: r.id, pass: r.pass }, next));",
+      "members.forEach(r => handleSetEventEnabled({ id: r.id, pass: 0 }, next));") },
+
+  // 264 THE LAYOUT PUTS EVERY GROUP ABOVE ALL UNGROUPED ROWS — clause 12 ignored.
+  //   FAIL  (d) the order: group at its earliest member, ...  [initiative-Launch | ... | row-early | ...]
+  { id: '264 the layout places every initiative above all ungrouped rows',
+    why: 'an ungrouped event that came first in the order is pushed below a group',
+    file: ENGINE, spec: INITIATIVES,
+    mutate: s => s
+      .replace("  const placed = new Set<string>();", "  const placed = new Set<string>(); const deferred: SummaryEntry[] = [];")
+      .replace("    if (!r.initiative) { out.push({ kind: 'row', row: r }); continue; }",
+               "    if (!r.initiative) { deferred.push({ kind: 'row', row: r }); continue; }")
+      .replace("    for (const m of group) out.push({ kind: 'row', row: m });" + nl + "  }" + nl + "  return out;",
+               "    for (const m of group) out.push({ kind: 'row', row: m });" + nl + "  }" + nl + "  return [...out, ...deferred];") },
+
+  // 265 THE BADGE COUNTS HEADER ENTRIES — clause 13: a header is not an event.
+  //   FAIL  (d) the panel badge still counts EVENTS (9), not entries (10)  [10 events]
+  { id: '265 the summary badge counts initiative headers as events',
+    why: 'the panel claims more events than exist',
+    file: SUMMARYTABLE, spec: INITIATIVES,
+    mutate: s => s.replace(
+      ">{t('whatif_summary_count', { count: rows.length })}</span>",
+      ">{t('whatif_summary_count', { count: shown.length })}</span>") },
 ];
 
 
@@ -3823,6 +3882,8 @@ const CONTROL_SPEC_MAP: Record<string, string> = {
   PROMOCOHORT,
   // REQ-D6-07 clause 14 (A). Registered WITH its first trap, 257.
   ARPUBASIS,
+  // REQ-D6-08 session 1. Registered WITH its first trap, 261.
+  INITIATIVES,
 };
 const controlHashNow = () => GT.controlHash(
   [...Object.values(CONTROL_SPEC_MAP), ...TARGETS, 'scripts/guard-traps.ts', 'scripts/guard-traps-select.ts'],

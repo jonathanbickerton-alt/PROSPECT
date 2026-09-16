@@ -928,5 +928,6 @@
   "whatif_value_bound_above": "L'ARPU de cohorte le plus eleve que ces verrous autorisent est {{bound}}, fixe par {{member}}.",
   "whatif_value_bound_below": "L'ARPU de cohorte le plus bas que ces verrous autorisent est {{bound}}, fixe par {{member}}.",
   "whatif_promo_lead_scope": "avec les {{n}} abonnés de cette promotion à ce mix",
-  "whatif_promo_lead_scope_first": "avec les {{n}} abonnés de cette promotion à ce mix, premier mois sur {{k}}"
+  "whatif_promo_lead_scope_first": "avec les {{n}} abonnés de cette promotion à ce mix, premier mois sur {{k}}",
+  "whatif_summary_col_initiative": "Initiative"
 }

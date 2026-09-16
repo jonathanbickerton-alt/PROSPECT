@@ -928,5 +928,6 @@
   "whatif_value_bound_above": "Der hoechste Kohorten-ARPU, den diese Sperren zulassen, ist {{bound}}, bestimmt durch {{member}}.",
   "whatif_value_bound_below": "Der niedrigste Kohorten-ARPU, den diese Sperren zulassen, ist {{bound}}, bestimmt durch {{member}}.",
   "whatif_promo_lead_scope": "mit den {{n}} Abonnenten dieser Aktion bei diesem Mix",
-  "whatif_promo_lead_scope_first": "mit den {{n}} Abonnenten dieser Aktion bei diesem Mix, erster Monat von {{k}}"
+  "whatif_promo_lead_scope_first": "mit den {{n}} Abonnenten dieser Aktion bei diesem Mix, erster Monat von {{k}}",
+  "whatif_summary_col_initiative": "Initiative"
 }

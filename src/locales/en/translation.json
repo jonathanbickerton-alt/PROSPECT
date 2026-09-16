@@ -928,5 +928,6 @@
   "whatif_value_bound_above": "The highest cohort ARPU these holds allow is {{bound}}, set by {{member}}.",
   "whatif_value_bound_below": "The lowest cohort ARPU these holds allow is {{bound}}, set by {{member}}.",
   "whatif_promo_lead_scope": "with this promotion's {{n}} subscribers at this mix",
-  "whatif_promo_lead_scope_first": "with this promotion's {{n}} subscribers at this mix, first month of {{k}}"
+  "whatif_promo_lead_scope_first": "with this promotion's {{n}} subscribers at this mix, first month of {{k}}",
+  "whatif_summary_col_initiative": "Initiative"
 }

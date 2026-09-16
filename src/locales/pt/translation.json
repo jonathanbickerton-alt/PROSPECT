@@ -928,5 +928,6 @@
   "whatif_value_bound_above": "O ARPU de coorte mais alto que estes bloqueios permitem e {{bound}}, definido por {{member}}.",
   "whatif_value_bound_below": "O ARPU de coorte mais baixo que estes bloqueios permitem e {{bound}}, definido por {{member}}.",
   "whatif_promo_lead_scope": "com os {{n}} assinantes desta promoção com este mix",
-  "whatif_promo_lead_scope_first": "com os {{n}} assinantes desta promoção com este mix, primeiro mês de {{k}}"
+  "whatif_promo_lead_scope_first": "com os {{n}} assinantes desta promoção com este mix, primeiro mês de {{k}}",
+  "whatif_summary_col_initiative": "Iniciativa"
 }

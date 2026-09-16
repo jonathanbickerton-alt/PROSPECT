@@ -482,6 +482,9 @@ export function marketEventExportRow(e: MarketEvent): Record<string, unknown> {
     // absence carrier, as for Promo_Mix_JSON. A mix row with no stated basis is
     // written as the reader's absent rule, so a save and its reload cannot differ.
     Tariff_ARPU_Basis: e.promoMix ? (e.arpuBasis === 'forecast' ? 'Forecast' : 'Historical') : '',
+    // REQ-D6-08 clause 2. APPENDED LAST, by trap 119's rule. '' is the absence
+    // carrier: a row in no initiative writes an empty cell, never a placeholder.
+    Initiative: e.initiative ?? '',
   };
 }
 
@@ -1096,6 +1099,11 @@ export interface EventSummaryRow {
   /** REQ-D6-01. The row's own on/off state, so the summary's switch does not
    *  have to look the event up again in an array it was built from. */
   enabled: boolean;
+  /** REQ-D6-08. The row's initiative, or absent — the layout groups by it. */
+  initiative?: string;
+  /** REQ-D6-08. A Market row's campaign, so a campaign can be treated whole
+   *  (session 2's selection) without the table looking the event up again. */
+  campaignName?: string;
 }
 
 /**
@@ -1206,6 +1214,31 @@ const EMPTY_IDS: ReadonlySet<string> = new Set<string>();
  * therefore to one status. The join is then coarser than the data. Not fixed
  * here; see EXPECTED.md §D5-09, "recorded watch".
  */
+/**
+ * REQ-D6-08 clause 2 and 11. THE ONE PARSE of an `Initiative` cell, used by all
+ * three readers — as `tariffScopeFromRow` is — so the three sheets cannot
+ * disagree about what an initiative's name is. TRIMMED (clause 11: names are
+ * compared exactly after trimming); blank or absent is none.
+ */
+export function initiativeFromCell(v: unknown): string | undefined {
+  if (v === undefined || v === null) return undefined;
+  const s = String(v).trim();
+  return s === '' ? undefined : s;
+}
+
+/**
+ * REQ-D6-08 clause 9. A CAMPAIGN SAVE REBUILDS ITS ROWS — the rows it writes are
+ * new objects from the card's builder, which knows nothing about initiatives —
+ * so without this an edit silently took the campaign out of its initiative.
+ * The rebuilt rows take the initiative the rows they replace carried; added
+ * months join it, because one builder call is one campaign and one initiative.
+ * A campaign's rows share one initiative (clause 1), so the first found is it.
+ */
+export function carryInitiative<T extends { initiative?: string }>(rebuilt: T[], replaced: readonly { initiative?: string }[]): T[] {
+  const name = replaced.find(e => e.initiative)?.initiative;
+  return name ? rebuilt.map(e => ({ ...e, initiative: name })) : rebuilt;
+}
+
 export function eventRowId(raw: Record<string, unknown>): string {
   const stable = raw?.ID ?? raw?.Name;
   return stable === undefined || stable === null || String(stable) === ''
@@ -1280,6 +1313,7 @@ export function buildEventsSummaryRows(
       // statement that the carrier has no such field.
       when: e.date, month: e.date,
       enabled: isEventOn(e),
+      initiative: e.initiative, campaignName: e.campaignName || undefined,
     });
   }
 
@@ -1295,6 +1329,7 @@ export function buildEventsSummaryRows(
       when: e.rollForward ? `${e.month} · ${t('whatif_all_fwd')}` : e.month,
       month: e.month,
       enabled: isEventOn(e),
+      initiative: e.initiative,
     });
   }
 
@@ -1310,11 +1345,58 @@ export function buildEventsSummaryRows(
       when: e.duration === 'recurring' ? `${e.month} · ${t('whatif_summary_recurring')}` : e.month,
       month: e.month,
       enabled: isEventOn(e),
+      initiative: e.initiative,
     });
   }
 
   return rows.sort((a, b) => a.pass - b.pass || a.month.localeCompare(b.month));
 }
+
+/** REQ-D6-08. One entry in the What-If summary: an initiative's header, or a row. */
+export type SummaryEntry =
+  | { kind: 'header'; name: string; members: EventSummaryRow[] }
+  | { kind: 'row'; row: EventSummaryRow };
+
+/**
+ * REQ-D6-08 clauses 5 and 12 — THE ONE LAYOUT of initiatives on the summary.
+ *
+ * Applied AFTER `buildEventsSummaryRows`, never inside it: the builder's
+ * pipeline order is Compare's too, and Compare keeps it (clause 15). Pure, so a
+ * spec drives it directly.
+ *
+ * An initiative's group sits where its EARLIEST member falls in today's order;
+ * its members follow the header in today's order; every ungrouped row keeps its
+ * place. Nothing is sorted — the walk only decides where each group first
+ * appears, which is what makes "today's order" survive unchanged.
+ */
+export function initiativeGroups(rows: readonly EventSummaryRow[]): SummaryEntry[] {
+  const members = new Map<string, EventSummaryRow[]>();
+  for (const r of rows) {
+    if (!r.initiative) continue;
+    const list = members.get(r.initiative);
+    if (list) list.push(r); else members.set(r.initiative, [r]);
+  }
+  const out: SummaryEntry[] = [];
+  const placed = new Set<string>();
+  for (const r of rows) {
+    if (!r.initiative) { out.push({ kind: 'row', row: r }); continue; }
+    if (placed.has(r.initiative)) continue;
+    placed.add(r.initiative);
+    const group = members.get(r.initiative)!;
+    out.push({ kind: 'header', name: r.initiative, members: group });
+    for (const m of group) out.push({ kind: 'row', row: m });
+  }
+  return out;
+}
+
+/**
+ * REQ-D6-08 clause 14. The order an initiative header lists its members' EFFECT
+ * states in: the order the EFFECT cell's own styling tests them (volume, arpu,
+ * no-coverage, superseded, then the neutral pair), with Off last — the order of
+ * Jon's example, "Volume ×2 · ARPU ×1 · Off ×1".
+ */
+export const INITIATIVE_EFFECT_ORDER: readonly EffectStatus[] =
+  ['volume', 'arpu', 'no-coverage', 'superseded', 'not-applied-here', 'off'];
 
 /** One file's worth of summary rows, keyed by the file it came from. */
 export interface FileEventPanel {
@@ -1428,6 +1510,8 @@ export function pricingEventExportRow(e: PricingEvent): Record<string, unknown> 
     // meaning (24), so writing the resolved figure keeps the sheet
     // self-describing instead of making every reader re-apply the rule.
     Contract_Length_Months: e.contractLength ?? 24,
+    // REQ-D6-08 clause 2. APPENDED LAST, after Contract_Length_Months.
+    Initiative: e.initiative ?? '',
   };
 }
 
@@ -1473,6 +1557,8 @@ export function pricingEventFromRow(r: Record<string, unknown>): PricingEvent {
     comment:          String(r.Comment ?? ''),
     // REQ-D6-01 decision 5. Absent means ON.
     enabled: r.Enabled === 'No' ? false : true,
+    // REQ-D6-08 clause 2. Absent or blank means none.
+    initiative: initiativeFromCell(r.Initiative),
   };
 }
 
@@ -1561,6 +1647,9 @@ export function readStoredEventModifiers(row: Record<string, unknown>): StoredEv
     // promotion's rates and rewrite its baked ARPU on a no-change save (D5-04,
     // measured 36 -> 35.6 in the 1019 build). Only a mix row carries a basis.
     arpuBasis: promoMix ? (row.Tariff_ARPU_Basis === 'Forecast' ? 'forecast' : 'historical') : undefined,
+    // REQ-D6-08 clause 2. THE Market_Events reader of the column, for the session
+    // and workbook routes alike. Absent or blank means none.
+    initiative: initiativeFromCell(row.Initiative),
     isPromotion:     row.Is_Promotion === 'Yes',
     promoRebanded:   row.Promo_Rebanded === 'Yes',
     promoMixAxis:    axis === 'tariff' ? 'tariff' : axis === 'value' ? 'value' : undefined,
@@ -1772,6 +1861,8 @@ export function yieldEventExportRow(e: YieldEvent): Record<string, unknown> {
     // mode was never stored, so a Forecast-basis event reopened on whatever the
     // card last held.
     Tariff_ARPU_Basis: e.arpuBasis === 'forecast' ? 'Forecast' : 'Historical',
+    // REQ-D6-08 clause 2. APPENDED LAST, after Tariff_ARPU_Basis.
+    Initiative: e.initiative ?? '',
   };
 }
 
@@ -1824,6 +1915,8 @@ export function yieldEventFromRow(r: Record<string, any>): YieldEvent {
     // REQ-D6-07 clause 14 (A). THE ONE READER on this sheet; absent -> Historical,
     // the same rule and the same reason as the Market_Events reader.
     arpuBasis:     r.Tariff_ARPU_Basis === 'Forecast' ? 'forecast' : 'historical',
+    // REQ-D6-08 clause 2. Absent or blank means none.
+    initiative:    initiativeFromCell(r.Initiative),
   };
 }
 
