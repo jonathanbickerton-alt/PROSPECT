@@ -320,3 +320,8 @@ Stated in full as the questions in section 3.
 | `npm run suite` | **75/75 green** |
 | `tsc --noEmit` | clean |
 | `git status --short` before the report | empty. No file under `src/`, `scripts/` or any spec was touched; `EXPECTED.md` changed only in `6b7fdea` |
+
+## Addendum — Jon's answers recorded
+
+Questions 1-8 answered by Jon 2026-09-16 and recorded as REQ-D6-08 clauses 8-15
+in test-data/EXPECTED.md, committed alone as `69624ef`.
