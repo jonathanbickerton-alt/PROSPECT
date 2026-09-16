@@ -5,7 +5,7 @@
 ```
 Generated: 2026-09-16 14:55 +0100 (UTC 2026-09-16 13:55)
 Certifies: fdc5852
-Repo: src fdc5852; report+ledger committed in the commit adding this file (hash in its follow-up line below), pushed (origin in sync)
+Repo: src fdc5852; report+ledger committed 00eaf0b, pushed (origin in sync)
 254/254 caught
 full suite:  75/75 green
 ```
