@@ -3497,12 +3497,22 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     setEditingYieldId(ev.id);
   }, [setNewYieldEvent]);
 
-  const handleCancelYieldEdit = useCallback(() => {
-    setEditingYieldId(null);
+  /**
+   * REQ-D6-07 clause 16 (Jon, 2026-09-16). THE VALUE CARD'S ONE DRAFT RESET — the
+   * twin of `resetPromoDraft`, and the only place this card returns the basis to
+   * Forecast. Cancel, edit-Save and Add all reach it, so a basis chosen for one
+   * event never carries into the next new draft. Reopen restoring the STORED
+   * basis (clause 14) is a different moment and stays in handleEditYieldStart.
+   */
+  const resetYieldDraft = useCallback(() => {
     setNewYieldEvent({});
-    // Clause 14 (A): leaving an edit returns the card to a NEW draft's basis.
     setYieldArpuMode('forecast');
   }, [setNewYieldEvent]);
+
+  const handleCancelYieldEdit = useCallback(() => {
+    setEditingYieldId(null);
+    resetYieldDraft();
+  }, [resetYieldDraft]);
 
   const handleEditPricingStart = useCallback((ev: PricingEvent) => {
     setNewPricingEvent({
@@ -3577,13 +3587,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       const { id: _discard, ...patch } = event;
       updateYieldEvent(editingYieldId, patch);
       setEditingYieldId(null);
-      // Clause 14 (A): the next draft is NEW, and opens on Forecast. Only after an
-      // edit: a user adding several events keeps the basis they chose.
-      setYieldArpuMode('forecast');
     } else {
       addYieldEvent(event);
     }
-    setNewYieldEvent({});
+    // Clause 16: BOTH dispositions — an Add resets exactly as an edit-Save does.
+    resetYieldDraft();
   // THE READ-SET, NOT A SUBSET OF IT. `yieldMixLocked`, `effectiveTierArpuMap`
   // and `draftTierArpuOverride` are all READ above and none of them were listed
   // here, so this callback closed over the values they held when the card
@@ -3593,7 +3601,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   // correctly, so every source-level check of it passed while the saved event
   // came out empty.
   }, [newYieldEvent, draftMix, mixAxis, yieldTierData, yieldMixLocked, effectiveTierArpuMap,
-      draftTierArpuOverride, addYieldEvent, editingYieldId, updateYieldEvent, setNewYieldEvent,
+      draftTierArpuOverride, addYieldEvent, editingYieldId, updateYieldEvent, resetYieldDraft,
       yieldArpuMode]);
 
   // ── All unique tiers across saved yield events (for table header) ──────────

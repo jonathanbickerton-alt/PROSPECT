@@ -17,7 +17,9 @@
  *  (c) a yield event saved on Forecast round-trips as Forecast — through the card's
  *      save, the writer, a real workbook, the reader, and a reopen;
  *  (d) an old save without the column reads Historical for every row, both sheets;
- *  (e) the Value card's new draft opens on Forecast (D5-11, unchanged).
+ *  (e) the Value card's new draft opens on Forecast (D5-11, unchanged);
+ *  (f) clause 16: after an Add the next draft opens on Forecast, and the added
+ *      event still reopens on the basis it was saved with.
  *
  * The harness is promo-cohort-target's, so the tab mounts exactly as that spec's do.
  */
@@ -368,6 +370,30 @@ async function main() {
         && throughXlsx([fc.yieldEventExportRow({ ...(yRows[0] as any), id: 'yz', tariffMix: {}, tariffBaseArpu: {}, arpuBasis: 'forecast' } as any)])
           .map(r => fc.yieldEventFromRow(r))[0].arpuBasis === 'forecast',
       'a reader that ignored the column entirely would also pass the two lines above');
+  }
+
+  // ── (f) CLAUSE 16: AFTER AN ADD, THE NEXT DRAFT OPENS ON FORECAST ───────────
+  // A PAIR, deliberately. "The next draft reads Forecast" alone would also pass if
+  // the Add never stored Historical at all — the card would simply never have left
+  // Forecast. So the event this Add wrote is reopened too, and must come back on
+  // Historical: the basis was stored AND the draft was reset.
+  {
+    const captured: any[] = [];
+    const c = await openWith({ addYieldEvent: (e: any) => captured.push(e) }, 'value');
+    await clickIt(basisButton(c, 'historical'));
+    check('(f) the user chose Historical before adding', basisPressed(c) === 'historical', basisPressed(c));
+    const add = [...c.querySelectorAll('button')].find((b: any) => txt(b) === EN['whatif_add_yield_event']) as any;
+    if (add) await clickIt(add);
+    check('(f) the Add went through', captured.length === 1, String(captured.length));
+    check('(f) and the NEXT draft opens on Forecast — the chosen basis did not carry',
+      basisPressed(c) === 'forecast', basisPressed(c));
+    const saved = captured[0];
+    check('(f) the added event STORED Historical', saved?.arpuBasis === 'historical', String(saved?.arpuBasis));
+    const c2 = await openWith({ yieldEvents: saved ? [{ ...saved, id: 'y-f' }] : [] }, 'value');
+    const edit = c2.querySelector('[data-testid="yield-edit-y-f"]') as any;
+    if (edit) await clickIt(edit);
+    check('(f) the PAIR: that event reopens on Historical, so "reset" is not "never stored"',
+      !!edit && basisPressed(c2) === 'historical', edit ? basisPressed(c2) : 'no edit control');
   }
 
   // ── (e) THE VALUE CARD'S NEW DRAFT OPENS ON FORECAST (D5-11) ────────────────

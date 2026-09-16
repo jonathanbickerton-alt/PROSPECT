@@ -2385,12 +2385,14 @@ const TRAPS: Trap[] = [
     file: WHATIF, spec: VALUEPAD,
     mutate: s => s.replace(
       '  }, [newYieldEvent, draftMix, mixAxis, yieldTierData, yieldMixLocked, effectiveTierArpuMap,' + nl +
-      '      draftTierArpuOverride, addYieldEvent, editingYieldId, updateYieldEvent, setNewYieldEvent,' + nl +
+      // RE-ANCHORED at REQ-D6-07 clause 16: the save now calls resetYieldDraft, the
+      // card's one reset, in place of setNewYieldEvent. Same plant.
+      '      draftTierArpuOverride, addYieldEvent, editingYieldId, updateYieldEvent, resetYieldDraft,' + nl +
       '      yieldArpuMode]);',
       // RE-ANCHORED at REQ-D6-07 clause 14 (A): the read-set gained yieldArpuMode,
       // which the save now stamps on the event. The plant is unchanged — the
       // override and the effective map dropped — and yieldArpuMode stays listed.
-      '  }, [newYieldEvent, draftMix, mixAxis, yieldTierData, yieldMixLocked, addYieldEvent, editingYieldId, updateYieldEvent, setNewYieldEvent, yieldArpuMode]);') },
+      '  }, [newYieldEvent, draftMix, mixAxis, yieldTierData, yieldMixLocked, addYieldEvent, editingYieldId, updateYieldEvent, resetYieldDraft, yieldArpuMode]);') },
 
   // ---------------------------------------------------------------------
   // 143 — Apply rewrites a share the user is holding.
@@ -3621,6 +3623,20 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       "    setYieldArpuMode(ev.arpuBasis ?? 'historical');",
       "") },
+
+  // ══ REQ-D6-07 CLAUSE 16 — THE VALUE CARD RESETS AFTER ADD ════════════════
+  //
+  // 260 ADD LEAVES THE BASIS AS CHOSEN. The Add disposition skips the one reset
+  // (resetYieldDraft), so a user who picked Historical for one event starts the
+  // next on Historical too — the carry clause 16 forbids. Seen RED by hand on
+  // 2026-09-16 against pre-plant md5 ede11d14…, restored from the scratchpad:
+  //   FAIL  (f) and the NEXT draft opens on Forecast — the chosen basis did not carry  [historical]
+  { id: '260 a Value-card Add leaves the ARPU basis as chosen',
+    why: 'a basis picked for one event silently carries into the next new draft',
+    file: WHATIF, spec: ARPUBASIS,
+    mutate: s => s.replace(
+      '    // Clause 16: BOTH dispositions — an Add resets exactly as an edit-Save does.',
+      '    if (!editingYieldId) { setNewYieldEvent({}); return; }') },
 ];
 
 
