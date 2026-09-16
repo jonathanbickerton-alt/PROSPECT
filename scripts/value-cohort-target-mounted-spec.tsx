@@ -165,6 +165,32 @@ async function main() {
   // the state (f) and (g) exercise.
   const MONTH: string = baseForecast.months[3].month;
 
+  // REQ-D6-07 1.5. A SECOND COHORT'S FORECAST, built exactly as the first, so a
+  // draft can be for a cohort that is NOT the one the bar has loaded. Every other
+  // key still resolves to the seeded baseline, so nothing above changes.
+  const forecastFor = (seg: string) => {
+    const acc2 = new Map<number, any>();
+    for (const [k, bucket] of map) {
+      if (String(k).split('|')[0] !== seg) continue;
+      for (const row of bucket as any[]) {
+        const tms = row._parsedDate.getTime();
+        if (!acc2.has(tms)) acc2.set(tms, { _parsedDate: row._parsedDate, inflow: 0, outflow: 0, retention: 0, _rev: 0, _vol: 0 });
+        const e = acc2.get(tms)!, m = String(row[C.metric]), v = Number(row[C.val]) || 0;
+        if (m === 'Inflow') e.inflow += v; else if (m === 'Outflow') e.outflow += v;
+        else if (m === 'Retention') e.retention += v;
+        e._rev += Number(row[C.rev]) || 0; e._vol += v;
+      }
+    }
+    const ser = [...acc2.values()].sort((a, b) => a._parsedDate - b._parsedDate)
+      .map((r: any) => { const a = r._vol > 0 ? r._rev / r._vol : 20;
+        return { ...r, arpu: a, inflowArpu: a, outflowArpu: a, retentionArpu: a, baseArpu: a }; });
+    return fc.calculateBaseForecast(ser,
+      { segment: seg, product: 'All', productL2: 'All', channel: 'All', channelL2: 'All',
+        tariffL1: 'All', tariffL2: 'All', scenario: 'Base Case' },
+      10000, 24, 1.0, 1.5, 3, 'Holt Linear');
+  };
+  const sohoForecast = forecastFor('SOHO');
+
   const withProvider = (child: any) => React.createElement(ForecastProvider as any, {
     baseForecast, setBaseForecast: noop,
     adjustedForecast: null, setAdjustedForecast: noop,
@@ -176,7 +202,8 @@ async function main() {
     // it is not the state (f) and (g) are about. Every key resolves to the seeded
     // baseline: this spec's subject is the CARD, and which key the store answers
     // to is resolveFromStore's own spec, not this one's.
-    resolveForecast: (_k: string) => ({ forecast: baseForecast, reason: null, leaves: [] }),
+    resolveForecast: (k: string) => ({
+      forecast: String(k).startsWith('SOHO|') ? sohoForecast : baseForecast, reason: null, leaves: [] }),
     canResolve: () => false,
     hasLegacyBaseline: !!baseForecast, updatedAt: new Date().toISOString(),
     bulkRuns: [], setBulkRuns: noop,
@@ -191,14 +218,14 @@ async function main() {
   const nativeSetter = Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!;
 
   /** Mount the card with the VALUE tab active. By testid, never by label. */
-  const openValueCard = async (yieldEvents: any[] = [], ibro: string = 'Inflow') => {
+  const openValueCard = async (yieldEvents: any[] = [], ibro: string = 'Inflow', dims: Record<string, string> = {}) => {
     host.replaceChildren();
     const c = document.createElement('div');
     host.appendChild(c);
     const root = createRoot(c);
     await (act as any)(async () => {
       root.render(withProvider(React.createElement(M, { ...whatIfProps(yieldEvents),
-        newYieldEvent: { month: MONTH, ibro } })));
+        newYieldEvent: { month: MONTH, ibro, ...dims } })));
     });
     const tab = c.querySelector('[data-testid="whatif-tab-value"]') as any;
     if (tab) await (act as any)(async () => { tab.click(); });
@@ -464,13 +491,59 @@ async function main() {
   if (mixBox) await clickIt(mixBox);
   const promoLabelEl = cp.querySelector('[data-testid="promo-mix-target"]')
     ?.closest('div')?.parentElement?.querySelector('label') as any;
-  check('(1.3) the Promotion arm keeps the BLEND label, byte for byte',
-    (promoLabelEl?.textContent ?? '') === 'Target blended ARPU',
+  // 1.3 RETIRED — REQ-D6-07 clause 12 (Jon, 2026-09-16). These two checks pinned the
+  // Promotion arm's panel BYTE-IDENTICAL in blend units: "Target blended ARPU" and a
+  // blend-band readout. Clause 12 moves that arm into cohort units deliberately, so
+  // the literal now describes the defect it used to prevent. Seen red before this
+  // edit: the label read "Target Inflow ARPU at Sep 2026" and, with no volume
+  // typed, there was no cohort band and so no readout. What replaces the pin is
+  // the cohort arm's own spec (spec:promo-cohort-target), and here the one claim
+  // that still belongs to THIS card: the arm now takes the cohort label.
+  check('(1.3 retired) the Promotion arm now carries the cohort label',
+    (promoLabelEl?.textContent ?? '').startsWith('Target Inflow ARPU at '),
     promoLabelEl?.textContent ?? 'no panel — the mix arm did not open');
-  const promoRo = cp.querySelector('[data-testid="promo-mix-target-range"]') as any;
-  check('(1.3) and its readout still begins with the blend wording',
-    (promoRo?.textContent ?? '').startsWith('Reachable: '),
-    promoRo?.textContent ?? 'no readout');
+
+  // ── 1.5: THE RATES COLUMN BELONGS TO THE DRAFT'S COHORT ───────────────────
+  // Jon's image 8: a Value-card draft for SOHO while the bar has Corporate loaded.
+  // The column's rates must be SOHO's — the same map the blend reads — and on the
+  // Forecast basis (the card's default) they are scaled to a forecast level. The
+  // question is WHICH forecast: the draft cohort's, or the one the bar loaded.
+  // Both candidates are computed here from first principles, independently of the
+  // card: SOHO's own historical per-tier ARPU over the Inflow rows the card reads,
+  // scaled by SOHO's fitted Inflow ARPU at the month, or by Corporate's.
+  {
+    const slice = rows.slice(0, 4000);
+    const agg = new Map<string, { rev: number; vol: number }>();
+    for (const r of slice) {
+      if (String(r[C.seg]) !== 'SOHO' || String(r[C.metric]) !== 'Inflow') continue;
+      const tier = String(r[C.prodL2] ?? ''); if (!tier || tier === 'undefined') continue;
+      const e = agg.get(tier) ?? { rev: 0, vol: 0 };
+      e.rev += Number(r[C.rev]) || 0; e.vol += Number(r[C.val]) || 0; agg.set(tier, e);
+    }
+    const hist: Record<string, number> = {};
+    for (const [t, e] of agg) hist[t] = e.vol > 0 ? e.rev / e.vol : 0;
+    const histMean = Object.values(hist).reduce((a, b) => a + b, 0) / Math.max(1, Object.keys(hist).length);
+    const fitAt = (f: any) => f.months.find((m: any) => m.month === MONTH)?.inflowArpu?.mean as number;
+    const draftScaled: Record<string, string> = {}, barScaled: Record<string, string> = {};
+    for (const t of Object.keys(hist)) {
+      draftScaled[t] = (hist[t] * fitAt(sohoForecast) / histMean).toFixed(2);
+      barScaled[t] = (hist[t] * fitAt(baseForecast) / histMean).toFixed(2);
+    }
+    const { c: cR } = await openValueCard([], 'Inflow', { segment: 'SOHO' });
+    const shown: Record<string, string> = {};
+    for (const t of tiersIn(cR)) {
+      shown[t] = (cR.querySelector(`[data-testid="tier-arpu-override-${t}"]`) as any)?.placeholder ?? '';
+    }
+    console.log(`  (1.5) SOHO fitted ${fitAt(sohoForecast).toFixed(4)}, Corporate fitted ${fitAt(baseForecast).toFixed(4)};`
+      + ` shown ${JSON.stringify(shown)}; draft-scaled ${JSON.stringify(draftScaled)}; bar-scaled ${JSON.stringify(barScaled)}`);
+    check('(1.5) the two candidates are distinguishable on this fixture',
+      JSON.stringify(draftScaled) !== JSON.stringify(barScaled), 'if they matched, this case could not tell them apart');
+    check('(1.5) the column shows SOHO tiers', Object.keys(shown).length === Object.keys(hist).length
+      && Object.keys(hist).every(t => t in shown), JSON.stringify(Object.keys(shown)));
+    check("(1.5) the rates are the DRAFT cohort's, scaled to the DRAFT cohort's forecast",
+      Object.keys(hist).every(t => shown[t] === draftScaled[t]),
+      `shown ${JSON.stringify(shown)} vs draft ${JSON.stringify(draftScaled)} (bar would be ${JSON.stringify(barScaled)})`);
+  }
 
   check('the run exercised every case',
     tiers1.length >= 3 && tiers3.length >= 3 && tiersIn(c4).length >= 3,

@@ -113,6 +113,7 @@ const LOCKRT = 'scripts/lock-roundtrip-spec.ts';
 const TRAPANCHORS = 'scripts/trap-anchors-spec.ts';
 const VALUEPAD = 'scripts/value-padlock-mounted-spec.tsx';
 const VALUECOHORT = 'scripts/value-cohort-target-mounted-spec.tsx';
+const PROMOCOHORT = 'scripts/promo-cohort-target-mounted-spec.tsx';
 const EVTOGGLE = 'scripts/event-toggle-spec.tsx';
 const SUMMARYBAR = 'src/components/ForecastSummaryBar.tsx';
 const AIHOLD = 'scripts/ai-hold-spec.ts';
@@ -1775,9 +1776,12 @@ const TRAPS: Trap[] = [
     // the single line that names the resolved slice, which is unique and is
     // the defect this id is about — swapping the DRAFT'S forecast for the
     // loaded cohort's.
+    // RE-ANCHORED again at REQ-D6-07 clause 15, 2026-09-16: the line now passes
+    // `marketsForRun`, the market-draft splice. The plant is unchanged — the
+    // loaded cohort's forecast in place of the draft slice's.
     mutate: s => s.replace(
-      '    baseForecast: resolution.forecast, marketEvents, yieldEvents: yieldsForRun,',
-      '    baseForecast, marketEvents, yieldEvents: yieldsForRun,') },
+      '    baseForecast: resolution.forecast, marketEvents: marketsForRun, yieldEvents: yieldsForRun,',
+      '    baseForecast, marketEvents: marketsForRun, yieldEvents: yieldsForRun,') },
   // 109 forks the shared helper into a card-local copy. The count is what
   // catches it: the behaviour is IDENTICAL the moment it is planted, so no
   // figure moves and only the exactly-two-callers pin can see it. That is the
@@ -3502,15 +3506,13 @@ const TRAPS: Trap[] = [
       "    return { kind: 'refused', reason: 'no-rates', detail: 'the draft carries no stored tier rates, so its ratio is 1' };",
       "    return { kind: 'blocked', reason: 'malformed-shares', detail: 'no rates' };") },
 
-  // 249 THE PROMOTION ARM GAINS COHORT SEMANTICS. The panel is shared and every
-  // cohort prop is optional for exactly this reason; a default that leaked would
-  // re-label an arm whose target really is a blend.
-  { id: '249 the Promotion arm picks up the Value card cohort label',
-    why: 'the shared panel re-labels an arm whose target genuinely is a blend',
-    file: TARGETPANEL, spec: VALUECOHORT,
-    mutate: s => s.replace(
-      "          {label ?? t('whatif_mix_target_arpu')}",
-      "          {label ?? t('whatif_value_target_cohort', { ibro: 'Inflow', month: '' })}") },
+  // 249 RETIRED — REQ-D6-07 clause 12 build, 2026-09-16. It planted a cohort label
+  // as the panel's DEFAULT, guarding "the Promotion arm keeps its blend label".
+  // Clause 12 moved that arm into cohort units on purpose and both cards now pass
+  // their own label, so the default reaches no caller: planted, it changed nothing
+  // on screen and the targeted run reported it MISSED. There is no remaining claim
+  // for it to discriminate, so the id is retired rather than re-pointed; the
+  // number is not reused.
 
   // 250 THE SUMMARY CELL PRINTS THE BLEND AGAIN. A money figure where a ratio
   // belongs, and one that cannot be reconciled with any number on the chart.
@@ -3529,6 +3531,55 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       '                            title={adjustsTitle ? (adjustsTitle(r) ?? undefined) : undefined}>{r.adjusts}</td>',
       '                            title={r.adjusts}>{r.adjusts}</td>') },
+
+  // ══ REQ-D6-07 CLAUSES 12-15 — THE PROMOTION ARM IN COHORT UNITS ══════════
+  //
+  // 252 THE PROMO DELIVER IGNORES VOLUME. The pool is volume-weighted; a deliver
+  // that measured every draft at one volume would give the same figure and the
+  // same band at 300 subscribers as at 3,000, and the caption would lie with it.
+  { id: '252 the promotion deliver ignores the draft volume',
+    why: 'the same mix at a tenth of the subscribers reports the same cohort ARPU and the same band',
+    file: WHATIF, spec: PROMOCOHORT,
+    mutate: s => s.replace(
+      '    const rows = promoRowsFor(mix);',
+      '    const rows = promoRowsFor(mix).map(r => ({ ...r, subscriberVolume: 3000, revenue: 3000 * r.arpu }));') },
+
+  // 253 THE PROMO BAND REVERTS TO THE BLEND BAND — pence apart on some mixes,
+  // and it does not move with volume, which is how the spec tells them apart.
+  { id: '253 the promotion band readout reverts to the blend band',
+    why: 'the arm offers a range in blend units under a cohort label, and it no longer moves with volume',
+    file: WHATIF, spec: PROMOCOHORT,
+    mutate: s => s.replace(
+      '                            rangeOverride={promoCohortBand}',
+      '                            rangeOverride={undefined}') },
+
+  // 254 A SECOND ROW BUILDER IN THE PREVIEW. Behaviourally identical when planted
+  // — that is the point, as with 109 — so only the structural count sees it.
+  { id: '254 the preview builds its rows through a second, local builder',
+    why: 'the preview measures a promotion the save path does not write, the moment either is edited',
+    file: WHATIF, spec: PROMOCOHORT,
+    mutate: s => s
+      .replace('    return buildPromoEvents({', '    return promoPreviewRows({')
+      .replace('  const promoRowsFor = useCallback(',
+        '  const promoPreviewRows = (p: BuildPromoEventsParams): MarketEvent[] => buildPromoEvents(p).map(r => ({ ...r }));\n  const promoRowsFor = useCallback(') },
+
+  // 255 THE MARKET-DRAFT SPLICE DROPPED — the 1008 STOP symptom verbatim: the
+  // draft never reaches the run, so delivered equals fitted at any mix.
+  { id: '255 the market-draft splice is dropped from the seam',
+    why: 'a promotion draft never reaches the run and the lead reads fitted at every mix',
+    file: WHATIF, spec: PROMOCOHORT,
+    mutate: s => s.replace(
+      '    baseForecast: resolution.forecast, marketEvents: marketsForRun, yieldEvents: yieldsForRun,',
+      '    baseForecast: resolution.forecast, marketEvents, yieldEvents: yieldsForRun,') },
+
+  // 256 THE RATES COLUMN READS THE BAR'S FORECAST (Jon's image 8). A SOHO draft
+  // with Corporate loaded shows SOHO's tier shape at Corporate's level.
+  { id: '256 the Value card rates are scaled to the loaded cohort, not the draft',
+    why: "a draft for one cohort shows its tiers at another cohort's forecast level",
+    file: WHATIF, spec: VALUECOHORT,
+    mutate: s => s.replace(
+      '      baseForecast: draftScopeForecast({ segment: newYieldEvent.segment, product: newYieldEvent.product,',
+      '      baseForecast: baseForecast ?? draftScopeForecast({ segment: newYieldEvent.segment, product: newYieldEvent.product,') },
 ];
 
 
@@ -3711,6 +3762,8 @@ const CONTROL_SPEC_MAP: Record<string, string> = {
   // REQ-D6-07. Registered WITH its first trap, 245 — the lesson D505HELD was
   // registered late for, and the reason 223 could have caught vacuously.
   VALUECOHORT,
+  // REQ-D6-07 clause 12 build. Registered WITH its first trap, 252.
+  PROMOCOHORT,
 };
 const controlHashNow = () => GT.controlHash(
   [...Object.values(CONTROL_SPEC_MAP), ...TARGETS, 'scripts/guard-traps.ts', 'scripts/guard-traps-select.ts'],

@@ -926,5 +926,7 @@
   "whatif_value_refuse_no_rates": "Este rascunho não indica tarifas por escalão, pelo que o seu rácio é 1 e nenhum objetivo é alcançável.",
   "whatif_summary_yield_title": "de {{baseline}} para {{adjusted}} em {{month}}",
   "whatif_value_bound_above": "O ARPU de coorte mais alto que estes bloqueios permitem e {{bound}}, definido por {{member}}.",
-  "whatif_value_bound_below": "O ARPU de coorte mais baixo que estes bloqueios permitem e {{bound}}, definido por {{member}}."
+  "whatif_value_bound_below": "O ARPU de coorte mais baixo que estes bloqueios permitem e {{bound}}, definido por {{member}}.",
+  "whatif_promo_lead_scope": "com os {{n}} assinantes desta promoção com este mix",
+  "whatif_promo_lead_scope_first": "com os {{n}} assinantes desta promoção com este mix, primeiro mês de {{k}}"
 }

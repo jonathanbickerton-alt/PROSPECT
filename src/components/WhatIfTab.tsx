@@ -14,7 +14,7 @@ import { EventChangeConfirmModal } from './EventChangeConfirmModal';
 import type { MarketEvent } from '../utils/forecasting';
 import { rebalance, achievableTargetRange, solveForTarget, solveForCohortTarget, blendedArpu, conformsToTotal,
          rebalanceToTarget, exactlyDeterminedUnderTarget } from '../utils/mixConstraint';
-import type { DragWall, CohortSolveOutcome } from '../utils/mixConstraint';
+import type { DragWall, CohortSolveOutcome, SolveOutcome } from '../utils/mixConstraint';
 import { EventsSummaryTable } from './EventsSummaryTable';
 import { EventOnOffSwitch, OFF_ROW } from './EventOnOffSwitch';
 import { foldChurnRamp, linearChurnRamp, type ChurnFoldMonth } from '../utils/churnFold';
@@ -354,6 +354,58 @@ function computeTierData(p: TierDataParams): { tier: string; baseArpu: number; h
 // by Add / Save Edit / Save Campaign alike so the mix/pricing/spread
 // resolution logic exists in exactly one place.
 // ---------------------------------------------------------------------------
+
+/**
+ * REQ-D6-07. WHAT A COHORT-TARGET PANEL DRAWS — one definition for BOTH cards.
+ *
+ * The Value card wrote this inline in the 0706 build; clause 12 gives the
+ * Promotion arm the same panel, and two copies of "above the band means blocked,
+ * naming this member at this ceiling" is exactly how two cards come to disagree
+ * about one rule. Pure: the member ordering, the band and the solve outcome in,
+ * the panel's outcome out.
+ *
+ * THE MEMBER IS THE SOLVE'S, THE FIGURE IS THE BAND'S. The solver names a wall in
+ * BLEND terms — a tier's own rate — and that number under a cohort sentence would
+ * quote the arithmetic at a reader who asked about the answer (measured: blend
+ * wall 27.51, cohort ceiling 27.49). mixConstraint's `detail` is never read: it
+ * is diagnostic English and the card's copy is translated.
+ */
+export function cohortTargetVerdict(p: {
+  parsed: number | null;
+  solve: CohortSolveOutcome | null;
+  band: { min: number; max: number } | null;
+  members: readonly string[];
+  locked: readonly string[];
+  rates: Readonly<Record<string, number>>;
+  shares: Record<string, number>;
+  blendTarget: number | null;
+}): SolveOutcome | null {
+  if (p.parsed === null) return null;
+  if (p.solve && p.solve.kind === 'refused') return null;
+  const memberAt = (end: 'min' | 'max'): string => {
+    const free = p.members.filter(m => !p.locked.includes(m) && Number.isFinite(p.rates[m]));
+    if (free.length === 0) return '';
+    const sorted = [...free].sort((a, b) => (p.rates[a] ?? 0) - (p.rates[b] ?? 0));
+    return end === 'max' ? sorted[sorted.length - 1] : sorted[0];
+  };
+  if (p.solve && p.solve.kind === 'blocked') {
+    return { kind: 'blocked', reason: p.solve.reason as any, detail: '',
+      binding: p.solve.binding && p.band
+        ? { member: p.solve.binding.member,
+            bound: p.solve.reason === 'below-min' ? p.band.min : p.band.max }
+        : p.solve.binding };
+  }
+  if (!p.band) return null;
+  if (p.parsed > p.band.max) {
+    return { kind: 'blocked', reason: 'above-max' as any, detail: '',
+      binding: { member: memberAt('max'), bound: p.band.max } };
+  }
+  if (p.parsed < p.band.min) {
+    return { kind: 'blocked', reason: 'below-min' as any, detail: '',
+      binding: { member: memberAt('min'), bound: p.band.min } };
+  }
+  return { kind: 'ok', shares: p.shares, blend: p.blendTarget ?? 0 };
+}
 
 interface PromoDraft {
   segment: string; product: string; productL2: string;
@@ -2460,6 +2512,26 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
    *  Recharts' `tickFormatter` identity does not churn every render. */
   const fmtMonth = useCallback((m: string) => monthLabel(m, i18n.language), [i18n.language]);
   const { baseForecast, setAdjustedForecast, forecastStore, hasBaseline, resolveForecast } = useForecast();
+  /**
+   * REQ-D6-07 1.5 (Jon's image 8). THE FORECAST A DRAFT'S RATES ARE SCALED TO is
+   * the DRAFT cohort's, not the one the bar has loaded. Both tier derivations
+   * passed `baseForecast` — the LOADED cohort — so a SOHO draft viewed with
+   * Corporate loaded showed SOHO's tier shape at Corporate's level. Measured on the
+   * trimmed fixture: 31.08 / 3.49 / 7.07 shown, where SOHO's own forecast gives
+   * 34.65 / 3.90 / 7.89. The seam the lead reads was already draft-scoped; this
+   * makes the rates the blend reads agree with it.
+   *
+   * No draft forecast means no draft forecast LEVEL: null, and the derivation
+   * returns the historical rates rather than borrowing another cohort's level.
+   * A mount with no resolver keeps the old reading.
+   */
+  const draftScopeForecast = useCallback((dims: { segment?: string; product?: string;
+    channelL1?: string; channelL2?: string }) =>
+    typeof resolveForecast !== 'function'
+      ? baseForecast
+      : (resolveEventScopeForecast({ segment: dims.segment ?? 'All', product: dims.product ?? 'All',
+          channelL1: dims.channelL1 ?? 'All', channelL2: dims.channelL2 ?? 'All' }, resolveForecast).forecast ?? null),
+  [resolveForecast, baseForecast]);
 
   // KPI selection is PER TAB. One shared set produced two wrong behaviours in
   // turn: re-defaulting on every tab change silently discarded a hand-picked
@@ -2667,9 +2739,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       segment: newYieldEvent.segment, product: newYieldEvent.product,
       channelL1: newYieldEvent.channelL1, channelL2: newYieldEvent.channelL2,
       ibro: newYieldEvent.ibro, ibroInflowVal: wiInflowVal, ibroRetentionVal: wiRetentionVal,
-      yieldArpuMode, month: newYieldEvent.month, baseForecast,
+      yieldArpuMode, month: newYieldEvent.month,
+      baseForecast: draftScopeForecast({ segment: newYieldEvent.segment, product: newYieldEvent.product,
+        channelL1: newYieldEvent.channelL1, channelL2: newYieldEvent.channelL2 }),
     });
-  }, [data, mixAxis, wiTariffL1Col, selectedTariffs, wiProductL2Col, wiArpuCol, wiValueCol, wiRevenueCol, wiMetricCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col, wiInflowVal, wiRetentionVal, newYieldEvent.segment, newYieldEvent.product, newYieldEvent.channelL1, newYieldEvent.channelL2, newYieldEvent.ibro, newYieldEvent.month, yieldArpuMode, baseForecast]);
+  }, [data, mixAxis, wiTariffL1Col, selectedTariffs, wiProductL2Col, wiArpuCol, wiValueCol, wiRevenueCol, wiMetricCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col, wiInflowVal, wiRetentionVal, newYieldEvent.segment, newYieldEvent.product, newYieldEvent.channelL1, newYieldEvent.channelL2, newYieldEvent.ibro, newYieldEvent.month, yieldArpuMode, draftScopeForecast]);
 
   // Which mix axes are usable (Phase 2b). Value availability comes from the
   // already-computed productTree (O(1), no data scan) — "value null/All" means
@@ -2910,6 +2984,11 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
 
   const [promoMixEnabled, setPromoMixEnabled] = useState(false);
   const [promoMixAxis, setPromoMixAxis] = useState<'value' | 'tariff'>('value');
+  // REQ-D6-07 clause 14 is HELD, not applied — see the 1019 build report. Opening
+  // on Forecast re-derives the tier rates of a promotion saved under Historical
+  // (the basis is not stored on the event), so a no-change edit-and-save rewrites
+  // its baked rate: measured by view-apply-mounted's D5-04 case, 36 -> 35.6. That
+  // contradicts D5-04's recorded decision, and the conflict is Jon's to settle.
   const [promoYieldArpuMode, setPromoYieldArpuMode] = useState<'historical' | 'forecast'>('historical');
   const [promoDraftMix, setPromoDraftMix] = useState<Record<string, number>>({});
   /** Padlocked members. MANUAL ONLY — settled 2026-08-11, auto-lock is OFF, so
@@ -2957,9 +3036,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       segment: newPromo.segment, product: newPromo.product,
       channelL1: newPromo.channel, channelL2: newPromo.channelL2,
       ibro: promoTarget, ibroInflowVal: wiInflowVal, ibroRetentionVal: wiRetentionVal,
-      yieldArpuMode: promoYieldArpuMode, month: newPromo.date, baseForecast,
+      yieldArpuMode: promoYieldArpuMode, month: newPromo.date,
+      // 1.5's rule on this card too: the same line, the same defect on its Forecast basis.
+      baseForecast: draftScopeForecast({ segment: newPromo.segment, product: newPromo.product,
+        channelL1: newPromo.channel, channelL2: newPromo.channelL2 }),
     });
-  }, [data, promoMixAxis, wiTariffL1Col, selectedTariffs, wiProductL2Col, wiArpuCol, wiValueCol, wiRevenueCol, wiMetricCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col, wiInflowVal, wiRetentionVal, newPromo.segment, newPromo.product, newPromo.channel, newPromo.channelL2, promoTarget, newPromo.date, promoYieldArpuMode, baseForecast]);
+  }, [data, promoMixAxis, wiTariffL1Col, selectedTariffs, wiProductL2Col, wiArpuCol, wiValueCol, wiRevenueCol, wiMetricCol, wiSegmentCol, wiProductCol, wiChannelCol, wiChannelL2Col, wiInflowVal, wiRetentionVal, newPromo.segment, newPromo.product, newPromo.channel, newPromo.channelL2, promoTarget, newPromo.date, promoYieldArpuMode, draftScopeForecast]);
 
   const promoTariffAxisAvailable = !!wiTariffL1Col && selectedTariffs.length > 0;
 
@@ -3026,21 +3108,29 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   /** The typed target's outcome. Null when no target is typed — which is the
    *  free-sliders case and carries no verdict at all, as distinct from a target
    *  that was typed and blocked. Two meanings of null, kept apart. */
+  //
+  // REQ-D6-07 clause 12. THE TYPED FIGURE IS A COHORT ARPU, as on the Value card:
+  // the blend that reaches it is solved on the seam by `runPromoCohortSolve`
+  // below (defined after the seam and the shape it needs). What is kept here is
+  // the SOLVED BLEND, because the drag and the exactly-determined rule are
+  // blend-space rules and the typed number is no longer in their units.
+  const [promoBlendTarget, setPromoBlendTarget] = useState<number | null>(null);
+  const [promoSolve, setPromoSolve] = useState<CohortSolveOutcome | null>(null);
   const promoTargetOutcome = useMemo(
-    () => promoTargetParsed === null
+    () => promoBlendTarget === null
       ? null
-      : solveForTarget(promoMembers, promoDraftMix, promoMixLocked, promoTierArpu, promoTargetParsed),
-    [promoTargetParsed, promoMembers, promoDraftMix, promoMixLocked, promoTierArpu]);
+      : solveForTarget(promoMembers, promoDraftMix, promoMixLocked, promoTierArpu, promoBlendTarget),
+    [promoBlendTarget, promoMembers, promoDraftMix, promoMixLocked, promoTierArpu]);
 
   /** Where a drag was stopped, or null. See the Value card's twin. */
   const [promoWall, setPromoWall] = useState<DragWall | null>(null);
 
   /** The Value card's twin; see its comment. */
   const promoExactlyDetermined = useMemo(
-    () => (promoTargetOutcome?.kind === 'ok' && promoTargetParsed !== null)
+    () => (promoTargetOutcome?.kind === 'ok' && promoBlendTarget !== null)
       && exactlyDeterminedUnderTarget(promoMembers, promoDraftMix, promoMixLocked,
-           promoTierArpu, promoTargetParsed),
-    [promoTargetOutcome, promoTargetParsed, promoMembers, promoDraftMix,
+           promoTierArpu, promoBlendTarget),
+    [promoTargetOutcome, promoBlendTarget, promoMembers, promoDraftMix,
      promoMixLocked, promoTierArpu]);
 
   const handlePromoSliderChange = useCallback((changedTier: string, newValue: number) => {
@@ -3053,7 +3143,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     // question of what a drag means.
     const solved = dragUnderTarget(
       promoMembers, promoDraftMix, promoMixLocked, promoTierArpu,
-      promoTargetOutcome?.kind === 'ok' ? promoTargetParsed : null,
+      promoTargetOutcome?.kind === 'ok' ? promoBlendTarget : null,
       changedTier, newValue);
     if (solved) {
       setPromoWall(solved.wall);
@@ -3066,7 +3156,7 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       return out.kind === 'ok' ? out.shares : prev;
     });
   }, [promoMembers, promoDraftMix, promoMixLocked, promoTierArpu,
-      promoTargetOutcome, promoTargetParsed]);
+      promoTargetOutcome, promoBlendTarget]);
 
   /** The padlock. The ONLY thing that changes lock state. */
   const handlePromoLockToggle = useCallback((tier: string) => {
@@ -3077,10 +3167,8 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
    *  called from the ok arm — an unreachable target is SHOWN, never clamped to
    *  the nearest reachable one, because silently moving a user's number to one
    *  they did not type is the tool stating something on their behalf. */
-  const handlePromoApplyTarget = useCallback(() => {
-    if (promoTargetOutcome?.kind !== 'ok') return;
-    setPromoDraftMix(promoTargetOutcome.shares);
-  }, [promoTargetOutcome]);
+  // REQ-D6-07: Apply is `runPromoCohortSolve`, defined after the seam — the typed
+  // figure is a cohort ARPU and applying it is a solve, not a blend lookup.
 
   /** The live blend. Null is ABSENCE — a member carrying share whose ARPU is
    *  unknown — and renders as such with its reason, never as 0.00. */
@@ -3685,6 +3773,17 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
      */
     yieldDraft?: YieldEvent | null,
     excludeYieldId?: string | null,
+    /**
+     * REQ-D6-07 clause 15. THE MARKET DRAFT — the Promotion arm previewing.
+     *
+     * The rows `buildPromoEvents` would save, spliced into the list this function
+     * ALREADY passes to the engine, mirroring the yield slot above line for line.
+     * Measured in the 1008 session: without it a promotion draft never reached the
+     * run, and delivered equalled fitted at any mix. `excludeMarketIds` drops the
+     * rows being edited — a campaign is several rows, so it is a list.
+     */
+    marketDraft?: MarketEvent[] | null,
+    excludeMarketIds?: readonly string[] | null,
   ): { series: any[] | null; reason: string | null;
        /**
         * D5-13. THE WINNER, PER MONTH — `appliedArpuIds` verbatim, keyed by
@@ -3742,8 +3841,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       ? [...(excludeYieldId ? yieldEvents.filter(y => y.id !== excludeYieldId) : yieldEvents),
          ...(yieldDraft ? [yieldDraft] : [])]
       : yieldEvents;
+    // REQ-D6-07 clause 15. The SAME splice for promotion rows. Untouched when no
+    // market draft is given, so the four earlier callers get the very same array.
+    const marketsForRun = (marketDraft || excludeMarketIds)
+      ? [...(excludeMarketIds ? marketEvents.filter(e => !excludeMarketIds.includes(e.id)) : marketEvents),
+         ...(marketDraft ? marketDraft : [])]
+      : marketEvents;
     const run = computeAdjustedForecast({
-    baseForecast: resolution.forecast, marketEvents, yieldEvents: yieldsForRun,
+    baseForecast: resolution.forecast, marketEvents: marketsForRun, yieldEvents: yieldsForRun,
     pricingEvents: excludeId ? pricingEvents.filter(p => p.id !== excludeId) : pricingEvents,
     viewSegment: draft.segment ?? 'All',
     viewProduct: { l1: dimOrNull(draft.product), l2: dimOrNull(draft.productL2) },
@@ -3986,44 +4091,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
    * cohort band — a band read, not a solve, so the control does not cost a run to
    * become enabled. The solve happens when it is pressed.
    */
-  /** The member that forms the wall at an end — named as the blend band names it. */
-  const bindingMemberAt = useCallback((end: 'min' | 'max'): string => {
-    const free = yieldMembers.filter(m => !yieldMixLocked.includes(m)
-      && Number.isFinite(effectiveTierArpuMap[m]));
-    if (free.length === 0) return '';
-    const sorted = [...free].sort((a, b) => (effectiveTierArpuMap[a] ?? 0) - (effectiveTierArpuMap[b] ?? 0));
-    return end === 'max' ? sorted[sorted.length - 1] : sorted[0];
-  }, [yieldMembers, yieldMixLocked, effectiveTierArpuMap]);
-
-  const yieldPanelOutcome = useMemo(() => {
-    if (yieldTargetParsed === null) return null;
-    if (yieldSolve && yieldSolve.kind === 'refused') return null;
-    if (yieldSolve && yieldSolve.kind === 'blocked') {
-      // THE MEMBER IS THE SOLVE'S, THE FIGURE IS THE BAND'S. The solver names the
-      // wall in BLEND terms — a tier's own rate — and that number under a cohort
-      // sentence would be the card quoting the arithmetic at a reader who asked
-      // about the answer. Measured on the trimmed fixture: the blend wall is 27.51
-      // where the cohort ceiling is 27.49, which is exactly close enough to look
-      // right and not be.
-      // NEVER mixConstraint's `detail` either: it is diagnostic English and the
-      // card's copy is translated.
-      return { kind: 'blocked' as const, reason: yieldSolve.reason as any, detail: '',
-        binding: yieldSolve.binding && yieldCohortBand
-          ? { member: yieldSolve.binding.member,
-              bound: yieldSolve.reason === 'below-min' ? yieldCohortBand.min : yieldCohortBand.max }
-          : yieldSolve.binding };
-    }
-    if (!yieldCohortBand) return null;
-    if (yieldTargetParsed > yieldCohortBand.max) {
-      return { kind: 'blocked' as const, reason: 'above-max' as any, detail: '',
-        binding: { member: bindingMemberAt('max'), bound: yieldCohortBand.max } };
-    }
-    if (yieldTargetParsed < yieldCohortBand.min) {
-      return { kind: 'blocked' as const, reason: 'below-min' as any, detail: '',
-        binding: { member: bindingMemberAt('min'), bound: yieldCohortBand.min } };
-    }
-    return { kind: 'ok' as const, shares: draftMix, blend: yieldBlendTarget ?? 0 };
-  }, [yieldTargetParsed, yieldSolve, yieldCohortBand, draftMix, yieldBlendTarget, bindingMemberAt]);
+  const yieldPanelOutcome = useMemo(() => cohortTargetVerdict({
+    parsed: yieldTargetParsed, solve: yieldSolve, band: yieldCohortBand,
+    members: yieldMembers, locked: yieldMixLocked, rates: effectiveTierArpuMap,
+    shares: draftMix, blendTarget: yieldBlendTarget,
+  }), [yieldTargetParsed, yieldSolve, yieldCohortBand, yieldMembers, yieldMixLocked,
+       effectiveTierArpuMap, draftMix, yieldBlendTarget]);
 
   /** CLAUSE 11's two refusals, as text. */
   const yieldTargetRefusal = useMemo(() => {
@@ -4304,6 +4377,123 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
             : promoCustomDist.slice(0, promoSpreadMonths) }),
     [promoMode, promoSpreadMonths, promoRampValues, promoHold, horizonMonthsFrom, newPromo.date,
      promoSpreadDistType, promoSpreadValues, promoCustomDist]);
+  /**
+   * REQ-D6-07 clauses 12-15 — THE PROMOTION ARM IN COHORT UNITS.
+   *
+   * THE ROWS ARE THE ROWS THE CARD WOULD SAVE, built by `buildPromoEvents` from the
+   * card's own draft, volume, shape, mix and pricing arm (clause 15). A second row
+   * builder here would be a second definition of what this promotion is, and the
+   * preview would be measuring an event the save never writes.
+   */
+  const promoRowsFor = useCallback((mix: Record<string, number>): MarketEvent[] => {
+    if (!newPromo.date || !(newPromo.subscriberVolume > 0) || promoTierData.length === 0) return [];
+    return buildPromoEvents({
+      target: promoTarget,
+      amountType: promoAmountMode, draft: newPromo,
+      mixEnabled: true, mixAxis: promoMixAxis, draftMix: mix, tierData: promoTierData,
+      mixLocked: promoMixLocked,
+      bandArpuOverride: draftPromoBandArpu,
+      pricingEnabled: promoPricingEnabled, pricingMode: promoPricingMode, pricingAmount: promoPricingAmount,
+      pricingDilutionCurrentPct: promoDilutionCurrent, pricingDilutionTargetPct: promoDilutionTarget,
+      cohortAvgArpu: promoCohortAvgArpu,
+      shape: promoShape, hold: promoHoldOn, mode: promoMode,
+      startSequence: 0,
+      selectedTariffs, fullTariffL1s: [...fullTariffTree.keys()],
+    });
+  }, [newPromo, promoTarget, promoAmountMode, promoMixAxis, promoTierData, promoMixLocked,
+      draftPromoBandArpu, promoPricingEnabled, promoPricingMode, promoPricingAmount,
+      promoDilutionCurrent, promoDilutionTarget, promoCohortAvgArpu, promoShape, promoHoldOn,
+      promoMode, selectedTariffs, fullTariffTree]);
+
+  /** The saved rows this draft replaces when editing — a campaign is several rows. */
+  const promoExcludeIds = useMemo<string[] | null>(() => {
+    if (editingPromoCampaign) {
+      return marketEvents.filter(e => e.isPromotion && e.campaignName === editingPromoCampaign).map(e => e.id);
+    }
+    return editingPromoId ? [editingPromoId] : null;
+  }, [editingPromoCampaign, editingPromoId, marketEvents]);
+
+  /**
+   * CLAUSE 13. THE PROMOTION'S OWN MONTH — its FIRST month for a campaign — and
+   * the scenario it targets, read from the seam's UNROUNDED pair. Measured in the
+   * 1008 session: an Inflow promotion moves Inflow ARPU in its own month and is
+   * flat a month later, so clause 7's T+1 would read a figure that never moves.
+   */
+  const promoMeasure = useCallback((mix: Record<string, number>) => {
+    const rows = promoRowsFor(mix);
+    if (rows.length === 0 || !newPromo.date) return null;
+    const { series, reason, rawArpuByMonth } = eventScopeSeriesFor(
+      { segment: newPromo.segment, product: newPromo.product, productL2: newPromo.productL2,
+        channelL1: newPromo.channel, channelL2: newPromo.channelL2,
+        tariffL1: newPromo.tariffL1, tariffL2: newPromo.tariffL2 } as any,
+      null, null, null, rows, promoExcludeIds);
+    const month = newPromo.date;
+    const raw = series ? rawArpuByMonth[month] : undefined;
+    const inflow = promoTarget === 'Inflow';
+    return {
+      month, reason,
+      baseline: raw ? (inflow ? raw.inflowBaseline : raw.retentionBaseline) : null,
+      adjusted: raw ? (inflow ? raw.inflowAdjusted : raw.retentionAdjusted) : null,
+      firstVolume: rows[0].subscriberVolume,
+      months: promoShape.length,
+    };
+  }, [promoRowsFor, newPromo.date, newPromo.segment, newPromo.product, newPromo.productL2,
+      newPromo.channel, newPromo.channelL2, newPromo.tariffL1, newPromo.tariffL2,
+      eventScopeSeriesFor, promoExcludeIds, promoTarget, promoShape.length]);
+
+  /** The lead: what the forecast delivers with THIS promotion at THIS mix. */
+  const promoPreview = useMemo(
+    () => (promoMixEnabled ? promoMeasure(promoDraftMix) : null),
+    [promoMixEnabled, promoMeasure, promoDraftMix]);
+
+  /** A blend in, the delivered cohort ARPU out — the solver's injected `deliver`. */
+  const promoDeliverForBlend = useCallback((blend: number): number | null => {
+    const solved = solveForTarget(promoMembers, promoDraftMix, promoMixLocked, promoTierArpu, blend);
+    return solved.kind === 'ok' ? (promoMeasure(solved.shares)?.adjusted ?? null) : null;
+  }, [promoMembers, promoDraftMix, promoMixLocked, promoTierArpu, promoMeasure]);
+
+  /**
+   * CLAUSE 9 ON THIS CARD. The band in cohort terms, memoised on the draft — and
+   * the draft includes its VOLUME, through `promoRowsFor`: the pool is volume-
+   * weighted, so the same mix at a tenth of the subscribers reaches a narrower band.
+   */
+  const promoCohortBand = useMemo(() => {
+    if (!promoMixEnabled || promoMixRange.kind !== 'ok' || promoRangeCollapsed) return null;
+    const lo = promoDeliverForBlend(promoMixRange.range.min);
+    const hi = promoDeliverForBlend(promoMixRange.range.max);
+    if (lo === null || hi === null) return null;
+    return { min: Math.min(lo, hi), max: Math.max(lo, hi) };
+  }, [promoMixEnabled, promoMixRange, promoRangeCollapsed, promoDeliverForBlend]);
+
+  /** THE ONE SOLVER, on Enter, blur and Apply. */
+  const runPromoCohortSolve = useCallback(() => {
+    if (promoTargetParsed === null) { setPromoSolve(null); setPromoBlendTarget(null); return; }
+    const res = solveForCohortTarget(
+      promoMembers, promoDraftMix, promoMixLocked, promoTierArpu, promoTargetParsed,
+      { fitted: promoPreview?.baseline ?? null, deliver: promoDeliverForBlend,
+        cohortBand: promoCohortBand, tolerance: 0.005, cap: 30 });
+    setPromoSolve(res);
+    if (res.kind === 'ok') { setPromoBlendTarget(res.blend); setPromoDraftMix(res.shares); }
+    else setPromoBlendTarget(null);
+  }, [promoTargetParsed, promoMembers, promoDraftMix, promoMixLocked, promoTierArpu,
+      promoPreview, promoDeliverForBlend, promoCohortBand]);
+
+  const promoPanelOutcome = useMemo(() => cohortTargetVerdict({
+    parsed: promoTargetParsed, solve: promoSolve, band: promoCohortBand,
+    members: promoMembers, locked: promoMixLocked, rates: promoTierArpu,
+    shares: promoDraftMix, blendTarget: promoBlendTarget,
+  }), [promoTargetParsed, promoSolve, promoCohortBand, promoMembers, promoMixLocked,
+       promoTierArpu, promoDraftMix, promoBlendTarget]);
+
+  /** CLAUSE 11's two refusals, on this card. */
+  const promoTargetRefusal = useMemo(() => {
+    if (!promoSolve || promoSolve.kind !== 'refused') return null;
+    return promoSolve.reason === 'no-rates'
+      ? { text: t('whatif_value_refuse_no_rates'), testId: 'promo-target-refused-no-rates' }
+      : { text: t('whatif_value_refuse_no_fitted', { month: fmtMonth(newPromo.date ?? '') }),
+          testId: 'promo-target-refused-no-fitted' };
+  }, [promoSolve, newPromo.date, t, fmtMonth]);
+
   /** Clause 11 on this card — the reason the button, the line and the guards read. */
   const promoRampBlockReason = useMemo((): string | null => {
     // A ROW edit is one month, not a ramp: its typed values are stale and must
@@ -9786,8 +9976,13 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                             testIdPrefix="promo"
                             value={promoTargetArpu}
                             onChange={setPromoTargetArpu}
-                            onApply={handlePromoApplyTarget}
-                            outcome={promoTargetOutcome}
+                            onApply={runPromoCohortSolve}
+                            onCommit={runPromoCohortSolve}
+                            label={t('whatif_value_target_cohort', {
+                              ibro: promoTarget, month: fmtMonth(newPromo.date ?? '') })}
+                            rangeOverride={promoCohortBand}
+                            refusal={promoTargetRefusal}
+                            outcome={promoPanelOutcome}
                             range={promoMixRange}
                             rangeCollapsed={promoRangeCollapsed}
   wall={promoWall}
@@ -9941,12 +10136,57 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
                               the cause. formatNumber(null) would have printed a
                               figure that reads as a real, very cheap mix — which is
                               exactly what the ?? 0 collapse removed. */}
-                          <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">
-                            {t('whatif_promo_blended_arpu')}{' '}
-                            {promoDraftBlendedArpu === null
-                              ? <span className="font-semibold text-amber-600" title={t('whatif_mix_blend_unknown_reason')}>{t('whatif_mix_blend_unknown')}</span>
-                              : <span className="font-semibold text-slate-700">{formatNumber(promoDraftBlendedArpu)}</span>}
-                          </div>
+                          {/* REQ-D6-07 clause 12 — THE ARM LEADS WITH THE COHORT FIGURE: the
+                              ARPU the forecast delivers WITH THIS PROMOTION, at its own
+                              month (clause 13). The caption names the volume, because the
+                              pool is volume-weighted and the same mix at a tenth of the
+                              subscribers is a different answer. */}
+                          {promoPreview && (
+                            <div data-testid="promo-preview" className="mt-3 pt-3 border-t border-slate-100">
+                              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                                {t('whatif_value_lead_label', {
+                                  cohort: [newPromo.segment, newPromo.product, newPromo.channel]
+                                    .filter(d => d && d !== 'All').join(' · ') || t('whatif_all'),
+                                  ibro: promoTarget, month: fmtMonth(promoPreview.month) })}
+                              </p>
+                              {promoPreview.baseline === null || promoPreview.adjusted === null ? (
+                                <p data-testid="promo-preview-absent" className="text-xs text-slate-400">
+                                  {promoPreview.reason ?? t('whatif_yield_preview_unavailable')}
+                                </p>
+                              ) : (
+                                <p className="text-lg font-bold text-slate-700">
+                                  <span data-testid="promo-preview-baseline">{formatNumber(promoPreview.baseline)}</span>
+                                  {' → '}
+                                  <span data-testid="promo-preview-adjusted">{formatNumber(promoPreview.adjusted)}</span>
+                                  <span data-testid="promo-preview-pct" className="ml-2 text-xs font-semibold text-slate-500">
+                                    {promoPreview.baseline > 0
+                                      ? `${promoPreview.adjusted >= promoPreview.baseline ? '+' : ''}${
+                                          formatNumber((promoPreview.adjusted / promoPreview.baseline - 1) * 100)}%`
+                                      : '—'}
+                                  </span>
+                                </p>
+                              )}
+                              <p data-testid="promo-lead-scope" className="text-[10px] text-slate-400 mt-0.5">
+                                {promoPreview.months > 1
+                                  ? t('whatif_promo_lead_scope_first', { n: formatNumber(promoPreview.firstVolume), k: promoPreview.months })
+                                  : t('whatif_promo_lead_scope', { n: formatNumber(promoPreview.firstVolume) })}
+                              </p>
+                            </div>
+                          )}
+                          {/* THE PROMOTION'S BLEND, one click away and closed by default — the
+                              same demotion the Value card's two blends took. The sentence is
+                              unchanged; it moved. */}
+                          <details data-testid="promo-how-computed" className="mt-3 pt-3 border-t border-slate-100">
+                            <summary className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider cursor-pointer select-none">
+                              {t('whatif_value_how_computed')}
+                            </summary>
+                            <div className="mt-2 text-xs text-slate-500">
+                              {t('whatif_promo_blended_arpu')}{' '}
+                              {promoDraftBlendedArpu === null
+                                ? <span className="font-semibold text-amber-600" title={t('whatif_mix_blend_unknown_reason')}>{t('whatif_mix_blend_unknown')}</span>
+                                : <span data-testid="promo-blend" className="font-semibold text-slate-700">{formatNumber(promoDraftBlendedArpu)}</span>}
+                            </div>
+                          </details>
                         </div>
                       )}
                     </div>

@@ -232,7 +232,12 @@ for (const f of tracked) {
   if (f === 'scripts/guard-traps.ts') continue;
   if (f === 'test-data/EXPECTED.md') continue;
   if (f.startsWith('reports/')) continue;
-  if (f === 'docs/PROSPECT-development-history-and-working-agreement-v3-3-16.md') continue;
+  // BY NAME PATTERN, NOT BY VERSION. This named v3-3-16 exactly, and the 0706
+  // session swapped in v3-3-18 without touching it: the check went red the moment
+  // the new copy was committed (3510cc9), and that session's 73/73 was measured
+  // while the copy was still untracked. The working agreement is re-issued every
+  // few sessions; an exclusion that must be edited each time will be missed again.
+  if (f.startsWith('docs/PROSPECT-development-history-and-working-agreement-v') && f.endsWith('.md')) continue;
   if (f === '.claude/agents/regression-guard.md') continue;
   const body = read(f);
   for (const id of AI_IDENTIFIERS) {

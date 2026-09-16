@@ -926,5 +926,7 @@
   "whatif_value_refuse_no_rates": "Ce brouillon n'indique aucun tarif par palier : son ratio vaut 1 et aucune cible n'est atteignable.",
   "whatif_summary_yield_title": "de {{baseline}} à {{adjusted}} au mois de {{month}}",
   "whatif_value_bound_above": "L'ARPU de cohorte le plus eleve que ces verrous autorisent est {{bound}}, fixe par {{member}}.",
-  "whatif_value_bound_below": "L'ARPU de cohorte le plus bas que ces verrous autorisent est {{bound}}, fixe par {{member}}."
+  "whatif_value_bound_below": "L'ARPU de cohorte le plus bas que ces verrous autorisent est {{bound}}, fixe par {{member}}.",
+  "whatif_promo_lead_scope": "avec les {{n}} abonnés de cette promotion à ce mix",
+  "whatif_promo_lead_scope_first": "avec les {{n}} abonnés de cette promotion à ce mix, premier mois sur {{k}}"
 }

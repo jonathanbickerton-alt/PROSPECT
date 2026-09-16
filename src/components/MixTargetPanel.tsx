@@ -103,13 +103,24 @@ export function MixTargetPanel({
           onClick={onApply}
           className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-[#e60000] text-white disabled:opacity-40 disabled:cursor-not-allowed"
         >{t('whatif_mix_target_apply')}</button>
-        {(rangeOverride ?? (range.kind === 'ok' && !rangeCollapsed ? range.range : null)) && (
-          <span className="text-[11px] text-slate-500 tabular-nums"
-            data-testid={`${testIdPrefix}-mix-target-range`}>
-            {t('whatif_mix_reachable_range')}{' '}
-            {formatNumber((rangeOverride ?? (range as any).range).min)} – {formatNumber((rangeOverride ?? (range as any).range).max)}
-          </span>
-        )}
+        {/* A CALLER THAT STATES ITS OWN BAND OWNS THE READOUT, null included. This
+            read `rangeOverride ?? range`, so a cohort card whose cohort figure was
+            unavailable (no month in the forecast, a promotion with no volume yet)
+            fell back to the BLEND band and printed blend numbers under a cohort
+            label — found building REQ-D6-07 clause 12. `undefined` is the only
+            "not a cohort card", which is what the Promotion arm used to pass. */}
+        {(() => {
+          const band = rangeOverride !== undefined
+            ? rangeOverride
+            : (range.kind === 'ok' && !rangeCollapsed ? range.range : null);
+          return band && (
+            <span className="text-[11px] text-slate-500 tabular-nums"
+              data-testid={`${testIdPrefix}-mix-target-range`}>
+              {t('whatif_mix_reachable_range')}{' '}
+              {formatNumber(band.min)} – {formatNumber(band.max)}
+            </span>
+          );
+        })()}
       </div>
 
       {/* EXACTLY DETERMINED (Jon, 2026-09-04, D4-03). The sliders are

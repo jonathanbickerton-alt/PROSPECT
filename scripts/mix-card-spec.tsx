@@ -298,54 +298,27 @@ async function main() {
       !/not reachable/i.test(bodyText()),
       'blank is a real state and must not read as a failed target');
 
-    // A target far above anything the members can blend to.
+    // RE-AIMED at REQ-D6-07 clause 12 (Jon, 2026-09-16). This leg asserted BLEND
+    // verdicts — a blend wall named, a blend band shown, Apply landing the rendered
+    // blend on the typed number. The Promotion arm's target is now a COHORT ARPU,
+    // and a cohort figure needs the promotion's month and volume, which this mount
+    // never types. Seen red first: "an unreachable target is FLAGGED", "the binding
+    // constraint is NAMED", "the reachable range is displayed". The cohort verdicts
+    // live in spec:promo-cohort-target (d) and (f), driven with a real draft.
+    //
+    // What this mount CAN still say, and must: with no cohort figure the panel
+    // offers NO band at all — before the 1019 build it fell back to the blend band
+    // and printed blend numbers under the cohort label.
     await setNum(targetInput, '99999');
-    check('target: an unreachable target is FLAGGED', /not reachable/i.test(bodyText()));
-    check('target: and the binding constraint is NAMED, not just "unreachable"',
-      /highest blend these holds allow/i.test(bodyText()),
-      'the settled semantics require the binding constraint named');
+    check('target (cohort): with no volume there is no cohort band, and no blend band in its place',
+      !/Reachable:/i.test(bodyText()),
+      'a blend band under a cohort label is the fallback the panel no longer takes');
     const sharesWhenBlocked = shares();
     check('target: an unreachable target is never silently clamped — the mix is untouched',
       near(sharesWhenBlocked.reduce((a, b) => a + b, 0), 100, 1e-3));
-
     const applyBtn = btnByText('Apply');
-    check('target: Apply is disabled while the target is unreachable',
+    check('target: Apply is disabled while there is no verdict to apply',
       !!applyBtn && applyBtn.disabled === true);
-
-    // Amend to something reachable, then apply and re-measure the blend.
-    // AMENDED → REACHABLE. The leg that proves the flag is a live verdict and
-    // not a sticky banner, and that Apply actually hits the number typed.
-    const rangeText = bodyText().match(/Reachable:\s*([\d.]+)\s*–\s*([\d.]+)/);
-    check('target: the reachable range is displayed as a range, not just enforced',
-      !!rangeText, 'the user needs to know what they may type before typing it');
-    if (rangeText) {
-      const lo = Number(rangeText[1]), hi = Number(rangeText[2]);
-      const midpoint = (lo + hi) / 2;
-      await setNum(targetInput, midpoint.toFixed(4));
-      check('target: amending to a reachable value clears the unreachable flag',
-        !/not reachable/i.test(bodyText()), `${lo}..${hi}, typed ${midpoint}`);
-
-      const apply = btnByText('Apply');
-      check('target: Apply becomes enabled once the target is reachable',
-        !!apply && apply.disabled === false);
-      if (apply && !apply.disabled) {
-        const beforeApply = shares().join(',');
-        await (act as any)(async () => { apply.click(); });
-        check('target: applying rewrites the mix', shares().join(',') !== beforeApply,
-          `${beforeApply} -> ${shares().join(',')}`);
-        check('target: and the applied mix still conserves the total',
-          near(sumShares(), 100, 1e-3), `${sumShares()}`);
-
-        // RE-MEASURED THROUGH THE RENDERED BLEND, not through the engine again.
-        // Session 1's trap 53 caught a check that asserted conformance and
-        // passed on a mix blending to the wrong number; this is that lesson
-        // applied at the card.
-        const blendShown = bodyText().match(/blended ARPU:?\s*([\d.]+)/i);
-        check('target: the RENDERED blend equals the target that was applied',
-          !!blendShown && near(Number(blendShown[1]), midpoint, 1e-3),
-          blendShown ? `shown ${blendShown[1]} vs target ${midpoint.toFixed(4)}` : 'no blend rendered');
-      }
-    }
 
     await setNum(targetInput, '');
     check('target: clearing the target clears the flag',
@@ -2001,8 +1974,13 @@ async function main() {
       // So the count is raised rather than relaxed to `>=`. A fourth site
       // still fails here, which is the discriminating power worth keeping;
       // `>=` would have surrendered it permanently to buy this one change.
-      check('pricing scope: the shared helper has EXACTLY three callers',
-        callers === 3, `found ${callers}`);
+      // RAISED 3 -> 4, REQ-D6-07 1.5 (2026-09-16), for the reason above and with
+      // it: `draftScopeForecast` resolves a DRAFT's own dims so its tier rates are
+      // scaled to the draft cohort's forecast, not the loaded one (Jon's image 8).
+      // It routes through this helper precisely so the slice question is not
+      // answered a second way. A fifth site still fails.
+      check('pricing scope: the shared helper has EXACTLY four callers',
+        callers === 4, `found ${callers}`);
       check('pricing scope: and it is IMPORTED, not redefined locally',
         /import\s*\{[^}]*resolveEventScopeForecast/.test(src)
           && !/function\s+resolveEventScopeForecast/.test(src),

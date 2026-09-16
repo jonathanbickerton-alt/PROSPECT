@@ -457,10 +457,16 @@ check('baseline: the slice invocation is ONE extracted function',
 // failure the count exists to catch; so the fourth caller is the outcome this
 // pin wants, and the pin that actually guards the invariant is the engine
 // count directly below, which did NOT move.
-check('baseline: EXACTLY FOUR callers share it — save, Preview, yield preview, cohort solve',
-  (tab.split('eventScopeSeriesFor(').length - 1) === 4
-    && tab.includes('const yieldDeliverForMix = useCallback('),
-  `${tab.split('eventScopeSeriesFor(').length - 1} call sites, expected 4`);
+// RE-AIMED at REQ-D6-07 clause 15, 2026-09-16: FIVE. The Promotion arm asks the
+// seam the same question in cohort units — "what does the cohort deliver with
+// THIS promotion" — through the new market-draft slot, from `promoMeasure`. It
+// builds its rows with buildPromoEvents and hands them to this seam rather than
+// calling the engine, which is why the engine-count pin below still reads 6.
+check('baseline: EXACTLY FIVE callers share it — save, Preview, yield preview, yield solve, promotion measure',
+  (tab.split('eventScopeSeriesFor(').length - 1) === 5
+    && tab.includes('const yieldDeliverForMix = useCallback(')
+    && tab.includes('const promoMeasure = useCallback('),
+  `${tab.split('eventScopeSeriesFor(').length - 1} call sites, expected 5`);
 check('baseline: and the third caller added NO new engine call',
   (tab.split('computeAdjustedForecast(').length - 1) === 6,
   `${tab.split('computeAdjustedForecast(').length - 1} computeAdjustedForecast sites,`
@@ -585,10 +591,10 @@ check('volumes: and NOT the unweighted 110',
 check('save: the volumes come from the SAME series as the baseline',
   tab.includes('volumesFromSeries(eventScopeSeries, newPricingEvent.month)'),
   'a second slice run at save would reopen the two-moments problem inside one save');
-check('save: still EXACTLY FOUR callers of the slice invocation',
-  (tab.split('eventScopeSeriesFor(').length - 1) === 4,
+check('save: still EXACTLY FIVE callers of the slice invocation',
+  (tab.split('eventScopeSeriesFor(').length - 1) === 5,
   `${tab.split('eventScopeSeriesFor(').length - 1} call sites,`
-  + ' expected 4 (save + Preview + D5-11 yield preview + D6-07 cohort solve)');
+  + ' expected 5 (save + Preview + D5-11 yield preview + D6-07 yield solve + D6-07 promotion measure)');
 check('save: baseline and volumes are written TOGETHER on the event',
   tab.includes('pricedVol: savedVolumes.pricedVol, totalVol: savedVolumes.totalVol'),
   'an edit refreshing one and not the other recreates the mixed-axes defect');

@@ -926,5 +926,7 @@
   "whatif_value_refuse_no_rates": "Questa bozza non indica tariffe per fascia, quindi il suo rapporto è 1 e nessun obiettivo è raggiungibile.",
   "whatif_summary_yield_title": "da {{baseline}} a {{adjusted}} a {{month}}",
   "whatif_value_bound_above": "L'ARPU di coorte piu alto consentito da questi blocchi e {{bound}}, determinato da {{member}}.",
-  "whatif_value_bound_below": "L'ARPU di coorte piu basso consentito da questi blocchi e {{bound}}, determinato da {{member}}."
+  "whatif_value_bound_below": "L'ARPU di coorte piu basso consentito da questi blocchi e {{bound}}, determinato da {{member}}.",
+  "whatif_promo_lead_scope": "con i {{n}} abbonati di questa promozione con questo mix",
+  "whatif_promo_lead_scope_first": "con i {{n}} abbonati di questa promozione con questo mix, primo mese di {{k}}"
 }

@@ -699,29 +699,22 @@ async function main() {
       const pBlend = () => pTiers.reduce((s, t) => s + Number(pRange(t).value) / 100 * pRate(t), 0);
       const pBox = cp.querySelector('[data-testid="promo-mix-target"]') as any;
       const pRo = cp.querySelector('[data-testid="promo-mix-target-range"]') as any;
-      check('(h) the Promotion target box and range readout are present by testid',
-        !!pBox && !!pRo, 'the 0958 testids');
-      const pN = ((pRo?.textContent) || '').match(/-?\d+\.\d+/g) || [];
-      if (pBox && pN.length === 2) {
-        const pT = Math.round(((Number(pN[0]) + Number(pN[1])) / 2) * 100) / 100;
-        await (act as any)(async () => {
-          nativeSetter.call(pBox, String(pT));
-          pBox.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-          pBox.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-        });
-        await clickIt(cp.querySelector('[data-testid="promo-mix-target-apply"]') as any);
-        const pMv = pTiers[1];
-        const pFrom = Number(pRange(pMv).value);
-        await setRange(pRange(pMv), Math.max(0, Math.min(100, pFrom > 50 ? pFrom - 5 : pFrom + 5)));
-        const pAfter = pBlend();
-        console.log(`  (h) promo drag: target ${pT}, dragged ${pMv} ${pFrom.toFixed(3)},`
-          + ` blend after ${pAfter.toFixed(6)}`);
-        check('(h) THE PROMOTION ARM ALSO HOLDS THE TARGET UNDER A DRAG',
-          Math.abs(pAfter - pT) < 0.005,
-          `${pAfter.toFixed(6)} vs ${pT} — 1213 measured 21.385325 against 23.93 here too`);
-        check('(h) and its shares still total 100',
-          Math.abs(pTiers.reduce((s, t) => s + Number(pRange(t).value), 0) - 100) < 0.05);
-      }
+      // RE-AIMED at REQ-D6-07 clause 12 (Jon, 2026-09-16). (h) typed the midpoint of
+      // the Promotion arm's BLEND band, applied it, dragged, and measured the BLEND
+      // against the typed number. That target is now a COHORT ARPU, which needs the
+      // promotion's month and volume — this mount types neither, so there is no
+      // cohort band to take a midpoint of. Seen red first: "(h) THE PROMOTION ARM
+      // ALSO HOLDS THE TARGET UNDER A DRAG [20.040250 vs 23.93]", then "(h) the
+      // Promotion target box and range readout are present by testid".
+      //
+      // The drag-holds-target claim did not go away; it MOVED to where a real
+      // promotion draft exists: spec:promo-cohort-target (d), "a drag under the
+      // target keeps the lead on it". The drag itself is the same call on both
+      // cards (dragUnderTarget, with the solved blend), and (g) above holds it here.
+      check('(h) the Promotion target box is present by testid', !!pBox, 'the 0958 testid');
+      check('(h) and with no cohort figure it offers no band — not the blend band in its place',
+        !pRo, pRo ? String(pRo.textContent) : 'absent, as it should be');
+      void pRange; void pBlend; void setRange;
     }
   }
 
