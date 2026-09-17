@@ -3269,6 +3269,25 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     });
   }, [marketEvents]);
 
+  /**
+   * REQ-D6-08 clauses 6 and 8 — THE INITIATIVE BIN, a sibling of
+   * handleDeleteCampaign. It commits nothing: it stages the three arrays the
+   * dialog previews, and the Value and Pricing ids the confirm removes through
+   * their own per-row removers.
+   */
+  const handleDeleteInitiative = useCallback((name: string, members: readonly { id: string; pass: 0 | 1 | 2 }[]) => {
+    if (!name || members.length === 0) return;
+    const idsOf = (p: 0 | 1 | 2) => new Set(members.filter(m => m.pass === p).map(m => m.id));
+    const m0 = idsOf(0), m1 = idsOf(1), m2 = idsOf(2);
+    setPendingChange({
+      kind: 'initiative',
+      nextEvents: marketEvents.filter(e => !m0.has(e.id)),
+      nextYield: yieldEvents.filter(e => !m1.has(e.id)),
+      nextPricing: pricingEvents.filter(e => !m2.has(e.id)),
+      initiative: { name, n: members.length, yieldIds: [...m1], pricingIds: [...m2] },
+    });
+  }, [marketEvents, yieldEvents, pricingEvents]);
+
   const summaryRows = useMemo(
     () => buildEventsSummaryRows({ marketEvents, yieldEvents, pricingEvents }, t),
     [marketEvents, yieldEvents, pricingEvents, t]);
@@ -3286,6 +3305,22 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const handleSetInitiativeEnabled = useCallback((members: readonly { id: string; pass: 0 | 1 | 2 }[], next: boolean) => {
     members.forEach(r => handleSetEventEnabled({ id: r.id, pass: r.pass }, next));
   }, [handleSetEventEnabled]);
+
+  /**
+   * REQ-D6-08 session 2 — THE ONE WRITER OF A ROW'S INITIATIVE, the sibling of
+   * handleSetEventEnabled. Group as, Ungroup, Dissolve and Rename are all this
+   * function applied to a member set; '' is none. Each member is written through
+   * its OWN carrier's per-row updater, so nothing rebuilds an array and N calls in
+   * one tick compose. The name is trimmed here, on entry (clause 11).
+   */
+  const handleSetInitiative = useCallback((members: readonly { id: string; pass: 0 | 1 | 2 }[], name: string) => {
+    const initiative = name.trim();
+    members.forEach(r => {
+      if (r.pass === 0) { updateMarketEvent(r.id, { initiative } as any); return; }
+      if (r.pass === 1) { updateYieldEvent(r.id, { initiative } as any); return; }
+      updatePricingEvent(r.id, { initiative } as any);
+    });
+  }, [updateMarketEvent, updateYieldEvent, updatePricingEvent]);
 
   /**
    * D5-12. HOW MANY EVENTS ARE SWITCHED ON — derived ONCE.
@@ -5688,9 +5723,21 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
 
   const [pendingChange, setPendingChange] = useState<
-    { kind: 'delete' | 'edit' | 'clear' | 'campaign'; nextEvents: MarketEvent[];
+    { kind: 'delete' | 'edit' | 'clear' | 'campaign' | 'initiative'; nextEvents: MarketEvent[];
+      /**
+       * REQ-D6-08 clause 8. The Value and Pricing arrays the preview runs; absent =
+       * unchanged. Only an `initiative` change carries them — every other kind is
+       * Market-only, as it was.
+       */
+      nextYield?: YieldEvent[];
+      nextPricing?: PricingEvent[];
       /** REQ-D6-06: which campaign a `campaign` change deletes — named in the dialog. */
-      campaign?: { name: string; n: number; isPromotion: boolean } } | null
+      campaign?: { name: string; n: number; isPromotion: boolean };
+      /**
+       * REQ-D6-08 clause 8: which initiative an `initiative` change deletes, and the
+       * Value and Pricing members the confirm removes one by one.
+       */
+      initiative?: { name: string; n: number; yieldIds: string[]; pricingIds: string[] } } | null
   >(null);
 
   const changeSummary = useMemo(() => {
@@ -5704,7 +5751,10 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
     };
     const before = computeAdjustedForecast({ ...shared, marketEvents });
-    const after = computeAdjustedForecast({ ...shared, marketEvents: pendingChange.nextEvents });
+    // REQ-D6-08 clause 8: an initiative change varies all THREE arrays — the same
+    // two engine calls, the preview still run on exactly what the confirm commits.
+    const after = computeAdjustedForecast({ ...shared, marketEvents: pendingChange.nextEvents,
+      yieldEvents: pendingChange.nextYield ?? yieldEvents, pricingEvents: pendingChange.nextPricing ?? pricingEvents });
     if (!before.adjustedMonths.length || !after.adjustedMonths.length) return null;
 
     // Inflow, Outflow and Retention are FLOWS: summed across the horizon, so a
@@ -6139,6 +6189,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
   const confirmPendingChange = useCallback(() => {
     if (!pendingChange) return;
     setMarketEvents(pendingChange.nextEvents);
+    // REQ-D6-08 clause 8 — THE INITIATIVE BIN: its Value and Pricing members go
+    // through their carriers' OWN per-row removers, once per member. No
+    // whole-array setter; the ids are the ones the preview left out.
+    const binned = pendingChange.initiative;
+    binned?.yieldIds.forEach(id => removeYieldEvent(id));
+    binned?.pricingIds.forEach(id => removePricingEvent(id));
     setPendingChange(null);
     setEditingEventId(null);
     setNewEvent(BLANK_EVENT);
@@ -6147,7 +6203,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
     const gone = pendingChange.campaign;
     if (gone && !gone.isPromotion && editingCampaign === gone.name) handleCancelEdit();
     if (gone && gone.isPromotion && editingPromoCampaign === gone.name) handleCancelPromoEdit();
-  }, [pendingChange, setMarketEvents, setNewEvent, editingCampaign, editingPromoCampaign, handleCancelEdit, handleCancelPromoEdit]);
+    // An initiative bin that took an open campaign's rows closes that editor too.
+    const left = pendingChange.nextEvents;
+    if (binned && editingCampaign && !left.some(e => !e.isPromotion && e.campaignName === editingCampaign)) handleCancelEdit();
+    if (binned && editingPromoCampaign && !left.some(e => e.isPromotion && e.campaignName === editingPromoCampaign)) handleCancelPromoEdit();
+  }, [pendingChange, setMarketEvents, setNewEvent, editingCampaign, editingPromoCampaign, handleCancelEdit, handleCancelPromoEdit,
+      removeYieldEvent, removePricingEvent]);
 
   // -------------------------------------------------------------------------
   // Write MarketEventAdjustedForecast back to context whenever inputs change
@@ -6570,13 +6631,19 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       {pendingChange && (
         <EventChangeConfirmModal
           kind={pendingChange.kind}
-          affectedCount={pendingChange.kind === 'clear' ? marketEvents.length : pendingChange.campaign?.n ?? 1}
+          affectedCount={pendingChange.kind === 'clear' ? marketEvents.length : pendingChange.campaign?.n ?? pendingChange.initiative?.n ?? 1}
           // REQ-D6-06 decision 2 — ONE dialog names the campaign and its row count.
           text={pendingChange.campaign ? {
             title: t('whatif_delete_campaign_title', { name: pendingChange.campaign.name, n: pendingChange.campaign.n }),
             blurb: t('whatif_delete_campaign_blurb'),
             confirm: t('whatif_delete_campaign_confirm'),
             cancel: t('whatif_delete_campaign_cancel'),
+          } : pendingChange.initiative ? {
+            // REQ-D6-08 clause 6: the same dialog names the initiative and its row count.
+            title: t('whatif_delete_initiative_title', { name: pendingChange.initiative.name, n: pendingChange.initiative.n }),
+            blurb: t('whatif_delete_initiative_blurb'),
+            confirm: t('whatif_delete_initiative_confirm'),
+            cancel: t('common_cancel'),
           } : undefined}
           summary={changeSummary}
           formatNumber={formatNumber}
@@ -7039,6 +7106,9 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
           entries={summaryEntries}
           initiativeState={campaignToggleState}
           onSetInitiativeEnabled={handleSetInitiativeEnabled}
+          // REQ-D6-08 session 2: the one setter and the initiative bin.
+          onSetInitiative={handleSetInitiative}
+          onDeleteInitiative={handleDeleteInitiative}
           /**
            * REQ-D6-07 Item 2 — WHAT THE CELL SAYS vs WHAT THE TITLE SAYS.
            *

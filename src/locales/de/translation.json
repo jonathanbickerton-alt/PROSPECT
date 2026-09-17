@@ -929,5 +929,21 @@
   "whatif_value_bound_below": "Der niedrigste Kohorten-ARPU, den diese Sperren zulassen, ist {{bound}}, bestimmt durch {{member}}.",
   "whatif_promo_lead_scope": "mit den {{n}} Abonnenten dieser Aktion bei diesem Mix",
   "whatif_promo_lead_scope_first": "mit den {{n}} Abonnenten dieser Aktion bei diesem Mix, erster Monat von {{k}}",
-  "whatif_summary_col_initiative": "Initiative"
+  "whatif_summary_col_initiative": "Initiative",
+  "whatif_summary_select": "Auswählen",
+  "whatif_summary_selected": "{{n}} ausgewählt",
+  "whatif_summary_tick": "'{{name}}' auswählen",
+  "whatif_initiative_group_as": "Gruppieren als…",
+  "whatif_initiative_name_placeholder": "Name der Initiative",
+  "whatif_initiative_pick_existing": "Vorhandene Initiative…",
+  "whatif_initiative_ungroup": "Gruppierung aufheben",
+  "whatif_initiative_dissolve": "Auflösen",
+  "whatif_initiative_rename": "Umbenennen",
+  "whatif_initiative_rename_save": "Namen speichern",
+  "whatif_initiative_merge_title": "In '{{name}}' zusammenführen? {{n}} Ereignisse werden hinzugefügt",
+  "whatif_initiative_merge_confirm": "Zusammenführen",
+  "whatif_delete_initiative_title": "Initiative '{{name}}' löschen — alle {{n}} Ereignisse?",
+  "whatif_delete_initiative_blurb": "Alle Ereignisse der Initiative werden auf allen Karten entfernt und die Prognose neu berechnet. Dies kann nicht rückgängig gemacht werden.",
+  "whatif_delete_initiative_confirm": "Initiative löschen",
+  "whatif_delete_initiative_bin": "Initiative '{{name}}' löschen ({{n}} Ereignisse)"
 }

@@ -26,7 +26,7 @@ export interface ChangeSummary {
 }
 
 interface Props {
-  kind: 'delete' | 'edit' | 'clear' | 'campaign';
+  kind: 'delete' | 'edit' | 'clear' | 'campaign' | 'initiative';
   /** How many events the change affects — 1 for delete/edit, all for clear. */
   affectedCount: number;
   summary: ChangeSummary | null;
@@ -41,13 +41,13 @@ interface Props {
   text?: { title: string; blurb: string; confirm: string; cancel: string };
 }
 
-const TITLES: Record<Exclude<Props['kind'], 'campaign'>, string> = {
+const TITLES: Record<Exclude<Props['kind'], 'campaign' | 'initiative'>, string> = {
   delete: 'Delete this event?',
   edit: 'Save these changes?',
   clear: 'Clear all market events?',
 };
 
-const BLURBS: Record<Exclude<Props['kind'], 'campaign'>, string> = {
+const BLURBS: Record<Exclude<Props['kind'], 'campaign' | 'initiative'>, string> = {
   delete: 'The forecast will be recalculated without this event.',
   edit: 'The forecast will be recalculated with the edited event.',
   clear: 'Every market event will be removed and the forecast returned to baseline.',
@@ -56,6 +56,8 @@ const BLURBS: Record<Exclude<Props['kind'], 'campaign'>, string> = {
 export const EventChangeConfirmModal: React.FC<Props> = ({
   kind, affectedCount, summary, formatNumber, onConfirm, onCancel, text,
 }) => {
+  // REQ-D6-08: an `initiative` change is worded by its caller, as a `campaign` one is.
+  const keyed = kind === 'campaign' || kind === 'initiative';
   const rows: Array<{ label: string; key: 'inflow' | 'outflow' | 'retention' | 'base' }> = [
     { label: 'Inflow', key: 'inflow' },
     { label: 'Outflow', key: 'outflow' },
@@ -67,13 +69,13 @@ export const EventChangeConfirmModal: React.FC<Props> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex items-start gap-3">
-          <div className={`mt-0.5 shrink-0 ${kind === 'clear' || kind === 'campaign' ? 'text-[#e60000]' : 'text-amber-500'}`}>
-            {kind === 'clear' || kind === 'campaign' ? <Trash2 size={18} /> : <AlertTriangle size={18} />}
+          <div className={`mt-0.5 shrink-0 ${kind === 'clear' || keyed ? 'text-[#e60000]' : 'text-amber-500'}`}>
+            {kind === 'clear' || keyed ? <Trash2 size={18} /> : <AlertTriangle size={18} />}
           </div>
           <div>
-            <h3 className="text-base font-semibold text-slate-800" data-testid="event-change-title">{kind === 'campaign' ? text?.title : TITLES[kind]}</h3>
+            <h3 className="text-base font-semibold text-slate-800" data-testid="event-change-title">{keyed ? text?.title : TITLES[kind]}</h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              {kind === 'campaign' ? text?.blurb : BLURBS[kind]}
+              {keyed ? text?.blurb : BLURBS[kind]}
               {kind === 'clear' && affectedCount > 0 && ` ${affectedCount} event${affectedCount === 1 ? '' : 's'}.`}
             </p>
           </div>
@@ -147,7 +149,7 @@ export const EventChangeConfirmModal: React.FC<Props> = ({
             onClick={onCancel}
             className="px-3.5 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-white transition-colors"
           >
-            {kind === 'campaign' ? text?.cancel : <>Cancel</>}
+            {keyed ? text?.cancel : <>Cancel</>}
           </button>
           <button
             type="button"
@@ -155,7 +157,7 @@ export const EventChangeConfirmModal: React.FC<Props> = ({
             onClick={onConfirm}
             className="px-3.5 py-1.5 text-sm rounded-lg bg-[#e60000] text-white font-medium hover:bg-[#cc0000] transition-colors"
           >
-            {kind === 'campaign' ? text?.confirm : kind === 'clear' ? 'Clear all' : kind === 'delete' ? 'Delete' : 'Save'}
+            {keyed ? text?.confirm : kind === 'clear' ? 'Clear all' : kind === 'delete' ? 'Delete' : 'Save'}
           </button>
         </div>
       </div>

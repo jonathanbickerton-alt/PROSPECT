@@ -325,6 +325,17 @@ async function main() {
       src.split('const handleDeleteCampaign = useCallback(').length - 1 === 1);
     check("PIN: a campaign change is staged in ONE place — `kind: 'campaign'` occurs once",
       src.split("kind: 'campaign'").length - 1 === 1, String(src.split("kind: 'campaign'").length - 1));
+    // REQ-D6-08 session 2 (2026-09-17): the initiative bin is a SIBLING staging site, not
+    // a second campaign one. The literal pin above did not go red on it (it counts
+    // `kind: 'campaign'` only), so the count of staging sites is pinned here, naming
+    // BOTH kinds: 6 -> 7, one campaign and one initiative.
+    {
+      const sites = src.split('setPendingChange({').length - 1;
+      const initiative = src.split("kind: 'initiative'").length - 1;
+      check("PIN: staging sites EXACTLY 7 — one `kind: 'campaign'` (the campaign bin), one `kind: 'initiative'` (the initiative bin)",
+        sites === 7 && src.split("kind: 'campaign'").length - 1 === 1 && initiative === 1,
+        `sites ${sites}, campaign ${src.split("kind: 'campaign'").length - 1}, initiative ${initiative}`);
+    }
     const binBlock = (tid: string) => {
       const i = src.indexOf(`data-testid="${tid}"`);
       return i < 0 ? '' : src.slice(i, src.indexOf('</button>', i));

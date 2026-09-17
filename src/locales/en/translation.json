@@ -929,5 +929,21 @@
   "whatif_value_bound_below": "The lowest cohort ARPU these holds allow is {{bound}}, set by {{member}}.",
   "whatif_promo_lead_scope": "with this promotion's {{n}} subscribers at this mix",
   "whatif_promo_lead_scope_first": "with this promotion's {{n}} subscribers at this mix, first month of {{k}}",
-  "whatif_summary_col_initiative": "Initiative"
+  "whatif_summary_col_initiative": "Initiative",
+  "whatif_summary_select": "Select",
+  "whatif_summary_selected": "{{n}} selected",
+  "whatif_summary_tick": "Select '{{name}}'",
+  "whatif_initiative_group_as": "Group as…",
+  "whatif_initiative_name_placeholder": "Initiative name",
+  "whatif_initiative_pick_existing": "Existing initiative…",
+  "whatif_initiative_ungroup": "Ungroup",
+  "whatif_initiative_dissolve": "Dissolve",
+  "whatif_initiative_rename": "Rename",
+  "whatif_initiative_rename_save": "Save name",
+  "whatif_initiative_merge_title": "Merge into '{{name}}'? {{n}} events will join it",
+  "whatif_initiative_merge_confirm": "Merge",
+  "whatif_delete_initiative_title": "Delete initiative '{{name}}' — all {{n}} events?",
+  "whatif_delete_initiative_blurb": "Every event in the initiative, on every card, is removed and the forecast recalculated. This cannot be undone.",
+  "whatif_delete_initiative_confirm": "Delete initiative",
+  "whatif_delete_initiative_bin": "Delete initiative '{{name}}' ({{n}} events)"
 }

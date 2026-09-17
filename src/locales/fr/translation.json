@@ -929,5 +929,21 @@
   "whatif_value_bound_below": "L'ARPU de cohorte le plus bas que ces verrous autorisent est {{bound}}, fixe par {{member}}.",
   "whatif_promo_lead_scope": "avec les {{n}} abonnés de cette promotion à ce mix",
   "whatif_promo_lead_scope_first": "avec les {{n}} abonnés de cette promotion à ce mix, premier mois sur {{k}}",
-  "whatif_summary_col_initiative": "Initiative"
+  "whatif_summary_col_initiative": "Initiative",
+  "whatif_summary_select": "Sélectionner",
+  "whatif_summary_selected": "{{n}} sélectionnés",
+  "whatif_summary_tick": "Sélectionner « {{name}} »",
+  "whatif_initiative_group_as": "Regrouper sous…",
+  "whatif_initiative_name_placeholder": "Nom de l'initiative",
+  "whatif_initiative_pick_existing": "Initiative existante…",
+  "whatif_initiative_ungroup": "Dissocier",
+  "whatif_initiative_dissolve": "Dissoudre",
+  "whatif_initiative_rename": "Renommer",
+  "whatif_initiative_rename_save": "Enregistrer le nom",
+  "whatif_initiative_merge_title": "Fusionner avec « {{name}} » ? {{n}} événements la rejoindront",
+  "whatif_initiative_merge_confirm": "Fusionner",
+  "whatif_delete_initiative_title": "Supprimer l'initiative « {{name}} » — les {{n}} événements ?",
+  "whatif_delete_initiative_blurb": "Tous les événements de l'initiative, sur toutes les cartes, sont supprimés et la prévision est recalculée. Cette action est irréversible.",
+  "whatif_delete_initiative_confirm": "Supprimer l'initiative",
+  "whatif_delete_initiative_bin": "Supprimer l'initiative « {{name}} » ({{n}} événements)"
 }

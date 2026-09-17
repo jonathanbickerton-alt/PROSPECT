@@ -18,6 +18,22 @@
  *  (f) 8 events in 2 initiatives: the badge says 8 events, Show all is offered;
  *  (g) Compare: the name in a column, pipeline order, no header.
  *
+ * Session 2 (2026-09-17) — the controls and the bin, same order of filling:
+ *  (h) the row-edit carry: a Value member's comment and a Pricing member's amount
+ *      edited in their own cards — both still in the initiative;
+ *  (i) Select; tick ONE row of a 3-row campaign -> all 3 ticked; Group as "New":
+ *      the 3 rows and a ticked Value event carry "New";
+ *  (j) Group as an EXISTING name, picked from the list: adds, no dialog;
+ *  (k) a member of Launch grouped as New leaves Launch (Launch -3, New +3);
+ *  (l) Ungroup on a campaign member clears the whole campaign; the Value member stays;
+ *  (m) Dissolve clears every member, the event count unchanged, no header;
+ *  (n) Rename to an unused name renames every member under one header; Rename onto
+ *      a used name asks "Merge into…": cancel leaves two headers, confirm one;
+ *  (o) the bin: the dialog names the initiative and its count; the preview runs on
+ *      all THREE arrays; confirm removes the Market, Value AND Pricing members and
+ *      nothing else, the Value and Pricing ones one call per member; the Value
+ *      card's own bin still removes its row.
+ *
  * The Host holds all three carriers in real state with App's update semantics,
  * so a switch that wrote the wrong carrier shows in the rows, not in a mock.
  */
@@ -166,6 +182,8 @@ async function main() {
   let capturedYield: any[] = [];
   let capturedPricing: any[] = [];
   let draftSetter: ((d: any) => void) | null = null;
+  /** Session 2: every per-row remover call, so "once per member" is counted, not inferred. */
+  let removeCalls: { yield: string[]; pricing: string[] } = { yield: [], pricing: [] };
   let initial: { market: any[]; yield: any[]; pricing: any[] } = { market: [], yield: [], pricing: [] };
 
   /** App's own update semantics: a functional map by id, so N calls in one tick compose. */
@@ -182,6 +200,10 @@ async function main() {
     const [marketEvents, setMarketEvents] = (React as any).useState(initial.market);
     const [yieldEvents, setYieldEvents] = (React as any).useState(initial.yield);
     const [pricingEvents, setPricingEvents] = (React as any).useState(initial.pricing);
+    // Session 2 (h): the Value and Pricing DRAFTS are real state, so an edit in the
+    // card reaches its save the way it does in App.
+    const [newYieldEvent, setNewYieldEvent] = (React as any).useState({});
+    const [newPricingEvent, setNewPricingEvent] = (React as any).useState({});
     draftSetter = setNewEvent;
     captured = marketEvents; capturedYield = yieldEvents; capturedPricing = pricingEvents;
     return React.createElement(Card, {
@@ -189,9 +211,10 @@ async function main() {
       addMarketEvent: () => setMarketEvents((e: any[]) => [...e, { ...newEvent, id: 'single' }]),
       updateMarketEvent: byId(setMarketEvents),
       yieldEvents, updateYieldEvent: byId(setYieldEvents),
-      removeYieldEvent: (id: string) => setYieldEvents((p: any[]) => p.filter((e: any) => e.id !== id)),
+      removeYieldEvent: (id: string) => { removeCalls.yield.push(id); setYieldEvents((p: any[]) => p.filter((e: any) => e.id !== id)); },
       pricingEvents, updatePricingEvent: byId(setPricingEvents),
-      removePricingEvent: (id: string) => setPricingEvents((p: any[]) => p.filter((e: any) => e.id !== id)),
+      removePricingEvent: (id: string) => { removeCalls.pricing.push(id); setPricingEvents((p: any[]) => p.filter((e: any) => e.id !== id)); },
+      newYieldEvent, setNewYieldEvent, newPricingEvent, setNewPricingEvent,
     });
   };
 
@@ -508,6 +531,220 @@ async function main() {
       cmpSrc.includes('showInitiativeColumn') && !cmpSrc.includes('entries=') && !cmpSrc.includes('onSetInitiativeEnabled'));
   }
 
+  // ══ SESSION 2 — THE CONTROLS AND THE BIN ══════════════════════════════════
+
+  // ── (h) THE ROW-EDIT CARRY, mounted ───────────────────────────────────────
+  initial = { market: mBack, yield: yBack, pricing: pBack };
+  await mount();
+  {
+    const saveChanges = () => btnByText(i18n.t('whatif_save_changes'));
+    await click(byTestId('whatif-tab-value'));
+    const yEdit = byTestId('yield-edit-y-in');
+    check('(h) the Value member has its edit control', !!yEdit);
+    if (yEdit) await click(yEdit);
+    const comment = [...container.querySelectorAll('input[type="text"]')]
+      .find((el: any) => el.getAttribute('placeholder') === i18n.t('whatif_describe_this_mix_change_e_g_promo_pushing_hi')) as any;
+    check('(h) the Value card comment field is present', !!comment);
+    if (comment) await type(comment, 'edited in the card');
+    const ySave = saveChanges();
+    check('(h) the Value Save changes button is enabled', !!ySave && !ySave.disabled, ySave ? String(ySave.disabled) : 'absent');
+    if (ySave) await click(ySave);
+    const yIn = capturedYield.find((e: any) => e.id === 'y-in');
+    check('(h) the Value edit SAVED (the comment changed)', yIn?.comment === 'edited in the card', String(yIn?.comment));
+    check('(h) and the Value member is STILL in the initiative', yIn?.initiative === L, String(yIn?.initiative));
+
+    await click(byTestId('whatif-tab-pricing'));
+    const pRow = [...container.querySelectorAll('tr')]
+      .find((tr: any) => !tr.closest('[data-testid="events-summary-body"]') && (tr.textContent || '').includes('PriceIn')
+        && [...tr.querySelectorAll('button')].some((b: any) => b.getAttribute('title') === i18n.t('whatif_edit_event'))) as any;
+    const pEdit = pRow ? [...pRow.querySelectorAll('button')].find((b: any) => b.getAttribute('title') === i18n.t('whatif_edit_event')) as any : null;
+    check('(h) the Pricing member has its edit control', !!pEdit);
+    if (pEdit) await click(pEdit);
+    const amount = [...container.querySelectorAll('input[type="number"]')]
+      .find((el: any) => el.getAttribute('placeholder') === i18n.t('whatif_5_or_10')) as any;
+    check('(h) the Pricing amount field is present, reopened on 5', amount?.value === '5', amount?.value);
+    if (amount) await type(amount, '7');
+    const pSave = saveChanges();
+    check('(h) the Pricing Save changes button is enabled', !!pSave && !pSave.disabled, pSave ? String(pSave.disabled) : 'absent');
+    if (pSave) await click(pSave);
+    const pIn = capturedPricing.find((e: any) => e.id === 'p-in');
+    check('(h) the Pricing edit SAVED (the amount changed)', pIn?.amount === 7, String(pIn?.amount));
+    check('(h) and the Pricing member is STILL in the initiative', pIn?.initiative === L, String(pIn?.initiative));
+  }
+
+  // ── THE CONTROLS FIXTURE: Launch as before, plus CampB (3 rows, no initiative) ──
+  const FIX2_MARKET = [...FIX_MARKET,
+    vol('campb-1', 'CampB', MONTHS[5], undefined, 6), vol('campb-2', 'CampB', MONTHS[6], undefined, 7),
+    vol('campb-3', 'CampB', MONTHS[7], undefined, 8)];
+  initial = { market: FIX2_MARKET, yield: FIX_YIELD, pricing: FIX_PRICING };
+  await mount();
+  await openSummary();
+  const TOTAL = FIX2_MARKET.length + FIX_YIELD.length + FIX_PRICING.length;   // 12
+  const allRows = () => [...captured, ...capturedYield, ...capturedPricing];
+  const initOf = (id: string) => allRows().find((e: any) => e.id === id)?.initiative || '-';
+  const hdrCount = (name: string) => (byTestId(`events-summary-initiative-count-${name}`)?.textContent || '').trim();
+  const countText = (n: number) => i18n.t('whatif_summary_count', { count: n });
+  const headerNames = () => [...container.querySelectorAll('[data-testid="events-summary-body"] tbody tr')]
+    .map((tr: any) => String(tr.getAttribute('data-testid')))
+    .filter((id: string) => id.startsWith('events-summary-initiative-'))
+    .map((id: string) => id.replace('events-summary-initiative-', ''));
+  const tick = (id: string) => byTestId(`events-summary-tick-${id}`);
+  const enterSelect = async () => { const b = byTestId('events-summary-select'); if (b) await click(b); };
+  const change = async (el: any, value: string) => {
+    await (act as any)(async () => {
+      el.value = value;
+      el.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    });
+  };
+
+  // ── (i) A CAMPAIGN TICKS WHOLE; Group as a NEW name ───────────────────────
+  check('(i) no selection mode until Select is pressed', !tick('campb-2') && !byTestId('events-summary-selection-bar'));
+  await enterSelect();
+  check('(i) Select shows the bar and a tick per event row', !!byTestId('events-summary-selection-bar') && !!tick('campb-2') && !!tick('y-out'));
+  check('(i) a header row has no tick',
+    !byTestId('events-summary-initiative-Launch')?.querySelector('input[type="checkbox"]'));
+  if (tick('campb-2')) await click(tick('campb-2'));
+  check('(i) ticking ONE campaign row ticks all THREE',
+    ['campb-1', 'campb-2', 'campb-3'].every(id => tick(id)?.checked === true),
+    ['campb-1', 'campb-2', 'campb-3'].map(id => String(tick(id)?.checked)).join(','));
+  check('(i) and nothing else is ticked', ['camp-1', 'early', 'solo', 'y-out', 'p-out'].every(id => tick(id)?.checked === false));
+  if (tick('y-out')) await click(tick('y-out'));
+  check('(i) the bar says 4 selected', (byTestId('events-summary-selected-count')?.textContent || '').trim() === i18n.t('whatif_summary_selected', { n: 4 }),
+    byTestId('events-summary-selected-count')?.textContent);
+  if (byTestId('events-summary-group-name')) await type(byTestId('events-summary-group-name'), '  New ');
+  if (byTestId('events-summary-group-as')) await click(byTestId('events-summary-group-as'));
+  check('(i) Group as "New": the 3 campaign rows and the Value event carry "New" (trimmed)',
+    ['campb-1', 'campb-2', 'campb-3', 'y-out'].every(id => initOf(id) === 'New'),
+    ['campb-1', 'campb-2', 'campb-3', 'y-out'].map(initOf).join(','));
+  check('(i) nothing else moved', ['camp-1', 'camp-2', 'camp-3', 'y-in', 'p-in'].every(id => initOf(id) === L)
+    && ['early', 'solo', 'p-out'].every(id => initOf(id) === '-'));
+  check('(i) a "New" header saying 4 events', hdrCount('New') === countText(4), hdrCount('New'));
+  check('(i) the selection mode closed', !byTestId('events-summary-selection-bar') && !tick('campb-2'));
+
+  // ── (j) Group as an EXISTING name: adds, no prompt ────────────────────────
+  await enterSelect();
+  if (tick('p-out')) await click(tick('p-out'));
+  const pick = byTestId('events-summary-group-pick');
+  check('(j) the pick-list offers the existing names',
+    !!pick && [...pick.querySelectorAll('option')].map((o: any) => o.value).filter(Boolean).join(',') === 'Launch,New',
+    pick ? [...pick.querySelectorAll('option')].map((o: any) => o.value).join(',') : 'absent');
+  if (pick) await change(pick, 'New');
+  check('(j) picking fills the name', byTestId('events-summary-group-name')?.value === 'New', byTestId('events-summary-group-name')?.value);
+  if (byTestId('events-summary-group-as')) await click(byTestId('events-summary-group-as'));
+  check('(j) no merge dialog', !byTestId('events-summary-merge-dialog'));
+  check('(j) the Pricing event joined New: 5 events', initOf('p-out') === 'New' && hdrCount('New') === countText(5), initOf('p-out') + ' ' + hdrCount('New'));
+
+  // ── (k) A MEMBER OF Launch GROUPED AS New MOVES ───────────────────────────
+  await enterSelect();
+  if (tick('camp-1')) await click(tick('camp-1'));
+  if (byTestId('events-summary-group-name')) await type(byTestId('events-summary-group-name'), 'New');
+  if (byTestId('events-summary-group-as')) await click(byTestId('events-summary-group-as'));
+  check('(k) CampA moved WHOLE to New', ['camp-1', 'camp-2', 'camp-3'].every(id => initOf(id) === 'New'),
+    ['camp-1', 'camp-2', 'camp-3'].map(initOf).join(','));
+  check('(k) Launch 5 -> 2', hdrCount(L) === countText(2), hdrCount(L));
+  check('(k) New 5 -> 8', hdrCount('New') === countText(8), hdrCount('New'));
+
+  // ── (l) UNGROUP ON A CAMPAIGN MEMBER ──────────────────────────────────────
+  const ung = byTestId('events-summary-ungroup-campb-3');
+  check('(l) a member row carries Ungroup', !!ung);
+  check('(l) a row in no initiative carries none', !byTestId('events-summary-ungroup-early'));
+  if (ung) await click(ung);
+  check('(l) Ungroup on ONE campaign row clears the WHOLE campaign',
+    ['campb-1', 'campb-2', 'campb-3'].every(id => initOf(id) === '-'),
+    ['campb-1', 'campb-2', 'campb-3'].map(initOf).join(','));
+  check('(l) the Value member stays in New', initOf('y-out') === 'New');
+  check('(l) New 8 -> 5', hdrCount('New') === countText(5), hdrCount('New'));
+
+  // ── (m) DISSOLVE ──────────────────────────────────────────────────────────
+  const diss = byTestId('events-summary-initiative-dissolve-Launch');
+  check('(m) the Launch header carries Dissolve', !!diss);
+  if (diss) await click(diss);
+  check('(m) no dialog for Dissolve', !byTestId('event-change-title') && !byTestId('events-summary-merge-dialog'));
+  check('(m) every Launch member is cleared', ['y-in', 'p-in'].every(id => initOf(id) === '-'), ['y-in', 'p-in'].map(initOf).join(','));
+  check('(m) the event count is unchanged (12), rows otherwise untouched',
+    allRows().length === TOTAL && capturedYield.find((e: any) => e.id === 'y-in')?.name === 'YieldIn', String(allRows().length));
+  check('(m) the Launch header is gone', !headerNames().includes(L), headerNames().join(','));
+
+  // ── (n) RENAME ────────────────────────────────────────────────────────────
+  const rename = async (from: string, to: string) => {
+    const b = byTestId(`events-summary-initiative-rename-${from}`);
+    if (b) await click(b);
+    const inp = byTestId(`events-summary-initiative-rename-input-${from}`);
+    if (inp) await type(inp, to);
+    const sv = byTestId(`events-summary-initiative-rename-save-${from}`);
+    if (sv) await click(sv);
+    return !!b && !!inp && !!sv;
+  };
+  const newMembers = allRows().filter((e: any) => e.initiative === 'New').map((e: any) => e.id).sort();
+  check('(n) Rename reaches its input and save', await rename('New', '  Big '));
+  check('(n) an UNUSED name renames with no prompt', !byTestId('events-summary-merge-dialog'));
+  check('(n) EVERY member renamed',
+    allRows().filter((e: any) => e.initiative === 'Big').map((e: any) => e.id).sort().join(',') === newMembers.join(',') && newMembers.length === 5,
+    allRows().filter((e: any) => e.initiative === 'Big').map((e: any) => e.id).join(','));
+  check('(n) ONE header, Big', headerNames().join(',') === 'Big', headerNames().join(','));
+  await enterSelect();
+  if (tick('early')) await click(tick('early'));
+  if (byTestId('events-summary-group-name')) await type(byTestId('events-summary-group-name'), 'Other');
+  if (byTestId('events-summary-group-as')) await click(byTestId('events-summary-group-as'));
+  check('(n) a second initiative, Other', headerNames().includes('Other') && initOf('early') === 'Other', headerNames().join(','));
+  await rename('Other', 'Big');
+  const mt = (byTestId('events-summary-merge-title')?.textContent || '').trim();
+  check('(n) renaming onto a USED name asks first',
+    mt === i18n.t('whatif_initiative_merge_title', { name: 'Big', n: 1 }) && mt === "Merge into 'Big'? 1 events will join it", mt);
+  check('(n) nothing is written while it asks', initOf('early') === 'Other');
+  if (byTestId('events-summary-merge-cancel')) await click(byTestId('events-summary-merge-cancel'));
+  check('(n) CANCEL leaves both: two headers', headerNames().sort().join(',') === 'Big,Other' && initOf('early') === 'Other', headerNames().join(','));
+  await rename('Other', 'Big');
+  if (byTestId('events-summary-merge-confirm')) await click(byTestId('events-summary-merge-confirm'));
+  check('(n) CONFIRM merges: one header, Big, with the sum (6)',
+    headerNames().join(',') === 'Big' && hdrCount('Big') === countText(6) && initOf('early') === 'Big',
+    headerNames().join(',') + ' ' + hdrCount('Big'));
+  check('(n) and no event was added or lost', allRows().length === TOTAL, String(allRows().length));
+
+  // ── (o) THE INITIATIVE BIN ────────────────────────────────────────────────
+  initial = { market: FIX2_MARKET, yield: FIX_YIELD, pricing: FIX_PRICING };
+  await mount();
+  await openSummary();
+  removeCalls = { yield: [], pricing: [] };
+  const bin = byTestId(`events-summary-initiative-delete-${L}`);
+  check('(o) the Launch header carries the bin', !!bin);
+  if (bin) await click(bin);
+  const title = (byTestId('event-change-title')?.textContent || '').trim();
+  check('(o) the dialog names the initiative and its count',
+    title === i18n.t('whatif_delete_initiative_title', { name: L, n: 5 }) && title.includes("'Launch'") && title.includes('5'), title);
+  check('(o) nothing is removed before confirm', allRows().length === TOTAL, String(allRows().length));
+  // THE PREVIEW RUNS ON ALL THREE ARRAYS. The dialog's four figures are VOLUMES,
+  // which Value and Pricing events do not move — so a Market-only preview would
+  // show the same digits. The discriminator is therefore the engine call itself.
+  {
+    const wiSrc = fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8');
+    const i = wiSrc.indexOf('const after = computeAdjustedForecast(');
+    const call = i < 0 ? '' : wiSrc.slice(i, wiSrc.indexOf(');', i));
+    check('(o) the preview varies all THREE arrays — market, yield and pricing from the pending change',
+      call.includes('marketEvents: pendingChange.nextEvents') && call.includes('yieldEvents: pendingChange.nextYield ?? yieldEvents')
+        && call.includes('pricingEvents: pendingChange.nextPricing ?? pricingEvents'), call.replace(/\s+/g, ' '));
+  }
+  const confirm = byTestId('event-change-confirm');
+  check('(o) the confirm button is present', !!confirm);
+  if (confirm) await click(confirm);
+  const ids = (xs: any[]) => xs.map((e: any) => e.id).sort().join(',');
+  check('(o) confirm removed the THREE Market members and nothing else',
+    ids(captured) === 'campb-1,campb-2,campb-3,early,solo', ids(captured));
+  check('(o) confirm removed the VALUE member and nothing else', ids(capturedYield) === 'y-out', ids(capturedYield));
+  check('(o) confirm removed the PRICING member and nothing else', ids(capturedPricing) === 'p-out', ids(capturedPricing));
+  check('(o) through the per-row removers, ONCE per member',
+    removeCalls.yield.join(',') === 'y-in' && removeCalls.pricing.join(',') === 'p-in',
+    JSON.stringify(removeCalls));
+  check('(o) the dialog closed, no Launch header', !byTestId('event-change-title') && !headerNames().includes(L));
+  // The Value card's own bin is unchanged: the sibling of its edit control.
+  await click(byTestId('whatif-tab-value'));
+  const yOutEdit = byTestId('yield-edit-y-out');
+  const yBin = yOutEdit?.nextElementSibling as any;
+  check('(o) the Value card still has its own row bin', !!yBin && yBin.tagName === 'BUTTON');
+  if (yBin) await click(yBin);
+  check("(o) and it still removes its row, through its own remover", capturedYield.length === 0 && removeCalls.yield.join(',') === 'y-in,y-out',
+    ids(capturedYield) + ' ' + JSON.stringify(removeCalls.yield));
+
   // ── STRUCTURE ─────────────────────────────────────────────────────────────
   {
     const strip2 = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -518,6 +755,23 @@ async function main() {
     check('(X) campaignToggleState and handleSetEventEnabled are each defined once',
       count(wi, 'const campaignToggleState = useCallback(') === 1 && count(wi, 'const handleSetEventEnabled = useCallback(') === 1);
     check('(X) the carry sits at all THREE campaign saves', count(wi, 'carryInitiative(') === 3, String(count(wi, 'carryInitiative(')));
+    // Session 2. ONE writer of `initiative`: the setter, defined once; the table
+    // holds no writer of its own, and the campaign unit is one helper.
+    const tbl = strip2(fs.readFileSync('src/components/EventsSummaryTable.tsx', 'utf8'));
+    check('(X) handleSetInitiative is defined ONCE', count(wi, 'const handleSetInitiative = useCallback(') === 1);
+    check('(X) the only writes of { initiative } are the setter\'s three carrier calls',
+      count(wi, '{ initiative }') === 3, String(count(wi, '{ initiative }')));
+    check('(X) campaignUnit is defined once, and the table reads it for the tick and Ungroup (2 calls)',
+      count(fct, 'export function campaignUnit(') === 1 && count(tbl, 'campaignUnit(rows, r)') === 2, String(count(tbl, 'campaignUnit(rows, r)')));
+    check('(X) the table never writes events itself',
+      !/update(Market|Yield|Pricing)Event|remove(Yield|Pricing)Event|setMarketEvents/.test(tbl));
+    check('(X) the bin: setPendingChange staged at 7 sites, handleDeleteCampaign callers still 3',
+      count(wi, 'setPendingChange({') === 7 && count(wi, 'handleDeleteCampaign(') === 3,
+      `${count(wi, 'setPendingChange({')} / ${count(wi, 'handleDeleteCampaign(')}`);
+    check('(X) the confirm removes Value and Pricing members through the per-row removers, no whole-array setter',
+      wi.includes('binned?.yieldIds.forEach(id => removeYieldEvent(id));') && wi.includes('binned?.pricingIds.forEach(id => removePricingEvent(id));')
+        && !/setYieldEvents|setPricingEvents/.test(wi));
+    check('(X) computeAdjustedForecast stays 6', count(wi, 'computeAdjustedForecast(') === 6, String(count(wi, 'computeAdjustedForecast(')));
   }
 
   report();

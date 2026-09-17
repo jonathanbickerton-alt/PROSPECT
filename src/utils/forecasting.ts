@@ -1390,6 +1390,17 @@ export function initiativeGroups(rows: readonly EventSummaryRow[]): SummaryEntry
 }
 
 /**
+ * REQ-D6-08 clauses 1 and 4 — A CAMPAIGN MOVES WHOLE. The unit a summary row is
+ * ticked, grouped and ungrouped as: every row of its campaign (same carrier, same
+ * card, same campaign name — the grouping the card pills use), or the row alone.
+ * Defined once, so the tick and Ungroup cannot disagree about what a campaign is.
+ */
+export function campaignUnit(rows: readonly EventSummaryRow[], row: EventSummaryRow): EventSummaryRow[] {
+  if (!row.campaignName) return [row];
+  return rows.filter(r => r.pass === row.pass && r.card === row.card && r.campaignName === row.campaignName);
+}
+
+/**
  * REQ-D6-08 clause 14. The order an initiative header lists its members' EFFECT
  * states in: the order the EFFECT cell's own styling tests them (volume, arpu,
  * no-coverage, superseded, then the neutral pair), with Off last — the order of

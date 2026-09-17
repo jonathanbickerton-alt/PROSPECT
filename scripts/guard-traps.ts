@@ -3696,6 +3696,61 @@ const TRAPS: Trap[] = [
     mutate: s => s.replace(
       ">{t('whatif_summary_count', { count: rows.length })}</span>",
       ">{t('whatif_summary_count', { count: shown.length })}</span>") },
+
+  // ══ REQ-D6-08 SESSION 2 — INITIATIVES: THE CONTROLS AND THE BIN ══
+  //
+  // All six were seen RED by hand on 2026-09-17, each against a pre-plant md5
+  // and restored from a scratchpad backup to that md5 (the 0647 report quotes
+  // every before/planted/after triple and the red lines).
+  //
+  // 266 A CAMPAIGN TICKS AS ONE ROW — clause 1 broken at the tick: Group as then
+  // writes only the ticked row and splits the campaign across initiatives.
+  //   FAIL  (i) ticking ONE campaign row ticks all THREE  [false,true,false]
+  { id: '266 Group as writes only the ticked row of a campaign',
+    why: 'a campaign is split across two initiatives by one tick',
+    file: SUMMARYTABLE, spec: INITIATIVES,
+    mutate: s => s.replace("    const unit = campaignUnit(rows, r);", "    const unit = [r];") },
+
+  // 267 UNGROUP ON A CAMPAIGN MEMBER CLEARS ONE ROW — the rest stay grouped.
+  //   FAIL  (l) Ungroup on ONE campaign row clears the WHOLE campaign  [New,New,-]
+  { id: '267 Ungroup on a campaign member clears one row',
+    why: 'ungrouping one row of a campaign leaves its siblings in the initiative',
+    file: SUMMARYTABLE, spec: INITIATIVES,
+    mutate: s => s.replace("onClick={() => onSetInitiative(campaignUnit(rows, r), '')}", "onClick={() => onSetInitiative([r], '')}") },
+
+  // 268 DISSOLVE REMOVES ROWS — it stages the bin instead of clearing the field.
+  //   FAIL  (m) no dialog for Dissolve
+  { id: '268 Dissolve removes rows instead of clearing the field',
+    why: 'dissolving a grouping offers to delete every member event',
+    file: SUMMARYTABLE, spec: INITIATIVES,
+    mutate: s => s.replace("onClick={() => onSetInitiative(members, '')}", "onClick={() => onDeleteInitiative?.(entry.name, members)}") },
+
+  // 269 RENAME ONTO A USED NAME MERGES WITHOUT ASKING — clause 11.
+  //   FAIL  (n) renaming onto a USED name asks first
+  { id: '269 Rename onto an existing name merges without the dialog',
+    why: 'a rename silently merges two initiatives',
+    file: SUMMARYTABLE, spec: INITIATIVES,
+    mutate: s => s.replace("    if (initiativeNames.includes(to)) { setMerge({ into: to, members }); return; }" + nl, "") },
+
+  // 270 THE BIN'S CONFIRM REMOVES MARKET MEMBERS ONLY — clause 8's removers dropped.
+  //   FAIL  (o) confirm removed the VALUE member and nothing else  [y-in,y-out]
+  { id: "270 the initiative bin's confirm removes Market members only",
+    why: 'deleting an initiative leaves its Value and Pricing events behind',
+    file: WHATIF, spec: INITIATIVES,
+    mutate: s => s.replace(
+      "    binned?.yieldIds.forEach(id => removeYieldEvent(id));" + nl + "    binned?.pricingIds.forEach(id => removePricingEvent(id));" + nl, "") },
+
+  // 271 THE BIN'S PREVIEW VARIES marketEvents ONLY. BEHAVIOURALLY INVISIBLE in the
+  // dialog: its four figures are volumes, which Value and Pricing events do not
+  // move — so the discriminator is source-level, on the engine call itself.
+  //   FAIL  (o) the preview varies all THREE arrays — market, yield and pricing ...
+  { id: "271 the initiative bin's preview varies marketEvents only",
+    why: 'the dialog previews a state that keeps the Value and Pricing members',
+    file: WHATIF, spec: INITIATIVES,
+    mutate: s => s.replace(
+      "    const after = computeAdjustedForecast({ ...shared, marketEvents: pendingChange.nextEvents," + nl
+        + "      yieldEvents: pendingChange.nextYield ?? yieldEvents, pricingEvents: pendingChange.nextPricing ?? pricingEvents });",
+      "    const after = computeAdjustedForecast({ ...shared, marketEvents: pendingChange.nextEvents });") },
 ];
 
 

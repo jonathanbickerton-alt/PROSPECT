@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { ChevronDown, Trash2 } from 'lucide-react';
+import { ChevronDown, Trash2, Pencil } from 'lucide-react';
 import type { EventSummaryRow, SummaryT, EffectStatus, SummaryEntry } from '../utils/forecasting';
-import { EFFECT_LABEL_KEY, INITIATIVE_EFFECT_ORDER } from '../utils/forecasting';
+import { EFFECT_LABEL_KEY, INITIATIVE_EFFECT_ORDER, campaignUnit } from '../utils/forecasting';
 import { EventOnOffSwitch, OFF_ROW } from './EventOnOffSwitch';
 
 /**
@@ -93,6 +93,15 @@ export interface EventsSummaryTableProps {
   onSetInitiativeEnabled?: (members: EventSummaryRow[], next: boolean) => void;
   /** REQ-D6-08 clause 15. Compare's read-only Initiative column. */
   showInitiativeColumn?: boolean;
+  /**
+   * REQ-D6-08 session 2. THE CALLER'S ONE SETTER of a member set's initiative
+   * ('' = none). Absent = no selection mode, no Ungroup, Dissolve or Rename —
+   * Compare's case. Every control below is this function applied to rows; the
+   * table decides only WHICH rows, and a campaign is always all of its rows.
+   */
+  onSetInitiative?: (members: EventSummaryRow[], name: string) => void;
+  /** REQ-D6-08 clauses 6 and 8. The initiative bin: the caller stages its dialog. */
+  onDeleteInitiative?: (name: string, members: EventSummaryRow[]) => void;
 }
 
 /**
@@ -117,6 +126,7 @@ export function EventsSummaryTable({
   rows, t, open, onToggle, title, testIdPrefix = 'events-summary', dense = false,
   onSetEnabled, showAllToggle = false, effectOf, onDeleteCampaign, adjustsTitle,
   entries, initiativeState, onSetInitiativeEnabled, showInitiativeColumn = false,
+  onSetInitiative, onDeleteInitiative,
 }: EventsSummaryTableProps) {
   // D5-08. VIEW STATE, local to the panel: not exported, not persisted, and
   // reset on reload — a height preference is not a property of the forecast.
@@ -131,6 +141,47 @@ export function EventsSummaryTable({
   // Columns after the switch (and effect) cells, for a header's spanning cell.
   const spanAfter = 5 + (showInitiativeColumn ? 1 : 0);
   const bodyId = `${testIdPrefix}-scroll`;
+
+  // REQ-D6-08 session 2 — SELECTION MODE and the header controls. VIEW STATE,
+  // local to the panel, as `showAll` is: a tick is not a property of the forecast.
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const [groupName, setGroupName] = useState('');
+  const [renaming, setRenaming] = useState<{ from: string; to: string } | null>(null);
+  const [merge, setMerge] = useState<{ into: string; members: EventSummaryRow[] } | null>(null);
+  const keyOf = (r: EventSummaryRow) => `${r.pass}-${r.id}`;
+  const initiativeNames = shown.flatMap(e => (e.kind === 'header' ? [e.name] : []));
+  const membersOf = (name: string) => shown.flatMap(e => (e.kind === 'header' && e.name === name ? e.members : []));
+  const pickedRows = rows.filter(r => picked.has(keyOf(r)));
+  // Clause 4: A CAMPAIGN TICKS WHOLE — ticking any of its rows ticks (or unticks) all.
+  const toggleTick = (r: EventSummaryRow) => {
+    const unit = campaignUnit(rows, r);
+    setPicked(prev => {
+      const next = new Set(prev);
+      const on = !prev.has(keyOf(r));
+      unit.forEach(u => (on ? next.add(keyOf(u)) : next.delete(keyOf(u))));
+      return next;
+    });
+  };
+  const endSelecting = () => { setSelecting(false); setPicked(new Set()); setGroupName(''); };
+  // Clauses 4 and 10: a new name creates, an existing one ADDS (no prompt), and a
+  // member of another initiative MOVES — one row holds one initiative.
+  const groupAs = () => {
+    const name = groupName.trim();
+    if (!onSetInitiative || !name || pickedRows.length === 0) return;
+    onSetInitiative(pickedRows, name);
+    endSelecting();
+  };
+  // Clause 11: trimmed; an unused name renames silently, a used one asks first.
+  const commitRename = () => {
+    if (!renaming || !onSetInitiative) return;
+    const to = renaming.to.trim();
+    const members = membersOf(renaming.from);
+    setRenaming(null);
+    if (!to || to === renaming.from || members.length === 0) return;
+    if (initiativeNames.includes(to)) { setMerge({ into: to, members }); return; }
+    onSetInitiative(members, to);
+  };
   return (
     <div className={`bg-white rounded-2xl shadow-sm border border-slate-200 ${dense ? 'rounded-xl' : ''}`}>
       {/* D5-08: the header is now a ROW holding two independent controls.
@@ -162,6 +213,16 @@ export function EventsSummaryTable({
         {/* Only while the panel is OPEN: a height control on a collapsed panel
             governs nothing the user can see, and would read as a second way to
             expand it. */}
+        {open && onSetInitiative && rows.length > 0 && !selecting && (
+          <button
+            type="button"
+            data-testid={`${testIdPrefix}-select`}
+            onClick={() => setSelecting(true)}
+            className={`shrink-0 text-[11px] font-semibold text-[#e60000] hover:underline ${canShowAll ? '' : (dense ? 'pr-4' : 'pr-5')}`}
+          >
+            {t('whatif_summary_select')}
+          </button>
+        )}
         {open && canShowAll && (
           <button
             type="button"
@@ -187,6 +248,67 @@ export function EventsSummaryTable({
                   and the table cannot show chronology because no
                   cross-carrier creation order exists to show. */}
               <p className="text-[10px] text-slate-400 mb-2">{t('whatif_summary_order_note')}</p>
+              {selecting && onSetInitiative && (
+                <div data-testid={`${testIdPrefix}-selection-bar`}
+                     className="mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-xs">
+                  <span data-testid={`${testIdPrefix}-selected-count`} className="font-semibold text-slate-700">
+                    {t('whatif_summary_selected', { n: pickedRows.length })}
+                  </span>
+                  <input
+                    type="text"
+                    data-testid={`${testIdPrefix}-group-name`}
+                    value={groupName}
+                    placeholder={t('whatif_initiative_name_placeholder')}
+                    onChange={e => setGroupName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') groupAs(); }}
+                    className="text-xs border border-slate-200 rounded px-2 py-1 bg-white outline-none focus:border-[#e60000]"
+                  />
+                  {initiativeNames.length > 0 && (
+                    <select
+                      data-testid={`${testIdPrefix}-group-pick`}
+                      value=""
+                      onChange={e => { if (e.target.value) setGroupName(e.target.value); }}
+                      className="text-xs border border-slate-200 rounded px-1 py-1 bg-white"
+                    >
+                      <option value="">{t('whatif_initiative_pick_existing')}</option>
+                      {initiativeNames.map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  )}
+                  <button
+                    type="button"
+                    data-testid={`${testIdPrefix}-group-as`}
+                    onClick={groupAs}
+                    disabled={!groupName.trim() || pickedRows.length === 0}
+                    className="px-2.5 py-1 rounded bg-[#e60000] text-white font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+                  >{t('whatif_initiative_group_as')}</button>
+                  <button
+                    type="button"
+                    data-testid={`${testIdPrefix}-select-cancel`}
+                    onClick={endSelecting}
+                    className="px-2.5 py-1 rounded border border-slate-200 text-slate-600 bg-white"
+                  >{t('common_cancel')}</button>
+                </div>
+              )}
+              {merge && onSetInitiative && (
+                <div data-testid={`${testIdPrefix}-merge-dialog`} role="alertdialog"
+                     className="mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs">
+                  <span data-testid={`${testIdPrefix}-merge-title`} className="font-semibold text-amber-800">
+                    {t('whatif_initiative_merge_title', { name: merge.into, n: merge.members.length })}
+                  </span>
+                  <button
+                    type="button"
+                    data-testid={`${testIdPrefix}-merge-confirm`}
+                    onClick={() => { onSetInitiative(merge.members, merge.into); setMerge(null); }}
+                    className="px-2.5 py-1 rounded bg-[#e60000] text-white font-semibold"
+                  >{t('whatif_initiative_merge_confirm')}</button>
+                  <button
+                    type="button"
+                    data-testid={`${testIdPrefix}-merge-cancel`}
+                    onClick={() => setMerge(null)}
+                    className="px-2.5 py-1 rounded border border-slate-200 text-slate-600 bg-white"
+                  >{t('common_cancel')}</button>
+                </div>
+              )}
               {/* D5-08: the cap comes OFF when "Show all" is on, so every row
                   is visible and the PAGE scrolls instead of the panel. The
                   horizontal scroll stays either way — it is what keeps a wide
@@ -222,8 +344,9 @@ export function EventsSummaryTable({
                   <tbody className="divide-y divide-slate-100">
                     {shown.map(entry => entry.kind === 'header' ? (() => {
                       // REQ-D6-08 — THE INITIATIVE HEADER: name, event count, the
-                      // tri-state switch over its members, and the members' EFFECT
-                      // states counted. No bin, no controls: session 2.
+                      // tri-state switch over its members, the members' EFFECT
+                      // states counted, and (session 2) Rename, Dissolve and the bin.
+                      // A header has no tick: it is not an event.
                       const members = entry.members;
                       const state = initiativeState ? initiativeState(members) : null;
                       const effectParts = effectOf
@@ -264,6 +387,48 @@ export function EventsSummaryTable({
                                   data-testid={`${testIdPrefix}-initiative-count-${entry.name}`}>
                               {t('whatif_summary_count', { count: members.length })}
                             </span>
+                            {onSetInitiative && (renaming?.from === entry.name ? (
+                              <span className="ml-2 inline-flex items-center gap-1">
+                                <input
+                                  type="text"
+                                  data-testid={`${testIdPrefix}-initiative-rename-input-${entry.name}`}
+                                  value={renaming.to}
+                                  onChange={e => setRenaming({ from: entry.name, to: e.target.value })}
+                                  onKeyDown={e => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenaming(null); }}
+                                  className="text-xs border border-slate-200 rounded px-1.5 py-0.5 bg-white outline-none focus:border-[#e60000]"
+                                />
+                                <button type="button"
+                                  data-testid={`${testIdPrefix}-initiative-rename-save-${entry.name}`}
+                                  onClick={commitRename}
+                                  className="text-[11px] font-semibold text-[#e60000] hover:underline"
+                                >{t('whatif_initiative_rename_save')}</button>
+                              </span>
+                            ) : (
+                              <span className="ml-3 inline-flex items-center gap-2 align-middle">
+                                <button type="button"
+                                  data-testid={`${testIdPrefix}-initiative-rename-${entry.name}`}
+                                  onClick={() => setRenaming({ from: entry.name, to: entry.name })}
+                                  title={t('whatif_initiative_rename')} aria-label={t('whatif_initiative_rename')}
+                                  className="p-0.5 rounded text-slate-400 hover:text-[#e60000]"
+                                ><Pencil size={12} /></button>
+                                {/* Clause 4: DISSOLVE clears the grouping and nothing else — no dialog,
+                                    because nothing is lost but the grouping. */}
+                                <button type="button"
+                                  data-testid={`${testIdPrefix}-initiative-dissolve-${entry.name}`}
+                                  onClick={() => onSetInitiative(members, '')}
+                                  className="text-[11px] font-semibold text-slate-500 hover:text-[#e60000] hover:underline"
+                                >{t('whatif_initiative_dissolve')}</button>
+                                {onDeleteInitiative && (
+                                  <button type="button"
+                                    data-testid={`${testIdPrefix}-initiative-delete-${entry.name}`}
+                                    onClick={() => onDeleteInitiative(entry.name, members)}
+                                    title={t('whatif_delete_initiative_bin', { name: entry.name, n: members.length })}
+                                    aria-label={t('whatif_delete_initiative_bin', { name: entry.name, n: members.length })}
+                                    className="p-0.5 rounded text-rose-400 hover:text-rose-600 hover:bg-rose-50"
+                                  ><Trash2 size={12} /></button>
+                                )}
+                              </span>
+                            ))}
                           </td>
                         </tr>
                       );
@@ -273,7 +438,17 @@ export function EventsSummaryTable({
                       // events are in play without losing the ones that are not.
                       <tr key={`${r.pass}-${r.id}`} data-testid={`${testIdPrefix}-row-${r.id}`}
                           className={r.enabled ? '' : OFF_ROW}>
-                        <td className="px-3 py-2">
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          {selecting && onSetInitiative && (
+                            <input
+                              type="checkbox"
+                              data-testid={`${testIdPrefix}-tick-${r.id}`}
+                              checked={picked.has(keyOf(r))}
+                              onChange={() => toggleTick(r)}
+                              aria-label={t('whatif_summary_tick', { name: r.name })}
+                              className="align-middle mr-1.5 accent-[#e60000]"
+                            />
+                          )}
                           {onSetEnabled ? (
                             <EventOnOffSwitch
                               id={r.id}
@@ -308,6 +483,15 @@ export function EventsSummaryTable({
                               </button>
                             ) : null;
                           })()}
+                          {/* Clause 4: UNGROUP per member — a campaign member ungroups its whole campaign. */}
+                          {onSetInitiative && entries && r.initiative && !selecting && (
+                            <button
+                              type="button"
+                              data-testid={`${testIdPrefix}-ungroup-${r.id}`}
+                              onClick={() => onSetInitiative(campaignUnit(rows, r), '')}
+                              className="align-middle ml-1.5 text-[10px] font-semibold text-slate-400 hover:text-[#e60000] hover:underline"
+                            >{t('whatif_initiative_ungroup')}</button>
+                          )}
                         </td>
                         {/* D5-09. ONE label component, one keyed string per
                             status, both from EFFECT_LABEL_KEY — so the four

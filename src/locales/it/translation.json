@@ -929,5 +929,21 @@
   "whatif_value_bound_below": "L'ARPU di coorte piu basso consentito da questi blocchi e {{bound}}, determinato da {{member}}.",
   "whatif_promo_lead_scope": "con i {{n}} abbonati di questa promozione con questo mix",
   "whatif_promo_lead_scope_first": "con i {{n}} abbonati di questa promozione con questo mix, primo mese di {{k}}",
-  "whatif_summary_col_initiative": "Iniziativa"
+  "whatif_summary_col_initiative": "Iniziativa",
+  "whatif_summary_select": "Seleziona",
+  "whatif_summary_selected": "{{n}} selezionati",
+  "whatif_summary_tick": "Seleziona '{{name}}'",
+  "whatif_initiative_group_as": "Raggruppa come…",
+  "whatif_initiative_name_placeholder": "Nome dell'iniziativa",
+  "whatif_initiative_pick_existing": "Iniziativa esistente…",
+  "whatif_initiative_ungroup": "Separa",
+  "whatif_initiative_dissolve": "Sciogli",
+  "whatif_initiative_rename": "Rinomina",
+  "whatif_initiative_rename_save": "Salva nome",
+  "whatif_initiative_merge_title": "Unire a '{{name}}'? {{n}} eventi vi si aggiungeranno",
+  "whatif_initiative_merge_confirm": "Unisci",
+  "whatif_delete_initiative_title": "Eliminare l'iniziativa '{{name}}' — tutti i {{n}} eventi?",
+  "whatif_delete_initiative_blurb": "Tutti gli eventi dell'iniziativa, su tutte le schede, vengono rimossi e la previsione ricalcolata. L'operazione non può essere annullata.",
+  "whatif_delete_initiative_confirm": "Elimina iniziativa",
+  "whatif_delete_initiative_bin": "Elimina l'iniziativa '{{name}}' ({{n}} eventi)"
 }
