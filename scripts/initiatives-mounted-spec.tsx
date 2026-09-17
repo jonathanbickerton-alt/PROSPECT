@@ -34,6 +34,14 @@
  *      nothing else, the Value and Pricing ones one call per member; the Value
  *      card's own bin still removes its row.
  *
+ * Clause 17 (Jon, 2026-09-17, Walk I5) — names match case-insensitively, the
+ * existing casing wins:
+ *  (p) Rename "Q4 test" -> "  launch TEST " asks to merge into 'Launch test';
+ *      Cancel writes nothing; Merge leaves every member reading 'Launch test';
+ *  (q) Group as "launch test" adds to 'Launch test', no prompt, exact casing;
+ *  (r) a save holding 'Launch test' AND 'launch test' renders ONE header with the
+ *      combined count, and its switch moves every row of both casings.
+ *
  * The Host holds all three carriers in real state with App's update semantics,
  * so a switch that wrote the wrong carrier shows in the rows, not in a mock.
  */
@@ -745,6 +753,78 @@ async function main() {
   check("(o) and it still removes its row, through its own remover", capturedYield.length === 0 && removeCalls.yield.join(',') === 'y-in,y-out',
     ids(capturedYield) + ' ' + JSON.stringify(removeCalls.yield));
 
+  // ══ CLAUSE 17 — CASE-INSENSITIVE NAMES, THE EXISTING CASING WINS ══════════
+  {
+    const LT = 'Launch test', Q4 = 'Q4 test';
+    initial = {
+      market: [vol('lt-1', 'LtCamp', MONTHS[1], LT, 1), vol('loose', 'Loose', MONTHS[2], undefined, 2)],
+      yield: [yld('q4-y', 'Q4Yield', MONTHS[1], Q4)],
+      pricing: [prc('q4-p', 'Q4Price', MONTHS[1], Q4)],
+    };
+    await mount();
+    await openSummary();
+    const initOf17 = (id: string) => [...captured, ...capturedYield, ...capturedPricing].find((e: any) => e.id === id)?.initiative ?? '-';
+    const hdrNames17 = () => [...container.querySelectorAll('[data-testid="events-summary-body"] tbody tr')]
+      .map((tr: any) => String(tr.getAttribute('data-testid')))
+      .filter((id: string) => id.startsWith('events-summary-initiative-'))
+      .map((id: string) => id.replace('events-summary-initiative-', ''));
+    const count17 = (name: string) => (byTestId(`events-summary-initiative-count-${name}`)?.textContent || '').trim();
+    const rename17 = async (from: string, to: string) => {
+      const b = byTestId(`events-summary-initiative-rename-${from}`); if (b) await click(b);
+      const inp = byTestId(`events-summary-initiative-rename-input-${from}`); if (inp) await type(inp, to);
+      const sv = byTestId(`events-summary-initiative-rename-save-${from}`); if (sv) await click(sv);
+      return !!b && !!inp && !!sv;
+    };
+
+    // ── (p) RENAME ONTO A NAME THAT DIFFERS ONLY IN CASE ──
+    check('(p) two headers to start: Launch test, Q4 test', hdrNames17().join(',') === 'Launch test,Q4 test', hdrNames17().join(','));
+    check('(p) Rename reaches its controls', await rename17(Q4, '  launch TEST '));
+    const mt17 = (byTestId('events-summary-merge-title')?.textContent || '').trim();
+    check("(p) it PROMPTS, naming the EXISTING casing: Merge into 'Launch test'? 2 events will join it",
+      mt17 === "Merge into 'Launch test'? 2 events will join it", mt17 || '(no prompt)');
+    check('(p) nothing written while it asks', initOf17('q4-y') === Q4 && initOf17('q4-p') === Q4,
+      initOf17('q4-y') + ',' + initOf17('q4-p'));
+    if (byTestId('events-summary-merge-cancel')) await click(byTestId('events-summary-merge-cancel'));
+    check('(p) CANCEL writes nothing: both names, both headers',
+      initOf17('q4-y') === Q4 && initOf17('q4-p') === Q4 && initOf17('lt-1') === LT && hdrNames17().join(',') === 'Launch test,Q4 test',
+      [initOf17('lt-1'), initOf17('q4-y'), initOf17('q4-p')].join(',') + ' | ' + hdrNames17().join(','));
+    await rename17(Q4, '  launch TEST ');
+    if (byTestId('events-summary-merge-confirm')) await click(byTestId('events-summary-merge-confirm'));
+    check("(p) MERGE: every member reads 'Launch test' EXACTLY",
+      ['lt-1', 'q4-y', 'q4-p'].every(id => initOf17(id) === LT), ['lt-1', 'q4-y', 'q4-p'].map(initOf17).join(','));
+    check("(p) one header, 'Launch test', 3 events",
+      hdrNames17().join(',') === LT && count17(LT) === i18n.t('whatif_summary_count', { count: 3 }), hdrNames17().join(',') + ' ' + count17(LT));
+
+    // ── (q) GROUP AS A NAME THAT DIFFERS ONLY IN CASE ──
+    const sel = byTestId('events-summary-select'); if (sel) await click(sel);
+    const tk = byTestId('events-summary-tick-loose'); if (tk) await click(tk);
+    if (byTestId('events-summary-group-name')) await type(byTestId('events-summary-group-name'), 'launch test');
+    if (byTestId('events-summary-group-as')) await click(byTestId('events-summary-group-as'));
+    check('(q) no prompt', !byTestId('events-summary-merge-dialog'));
+    check("(q) the row reads 'Launch test' — the existing casing, not the typed one", initOf17('loose') === LT, initOf17('loose'));
+    check("(q) it ADDED: one header, 'Launch test', 4 events",
+      hdrNames17().join(',') === LT && count17(LT) === i18n.t('whatif_summary_count', { count: 4 }), hdrNames17().join(',') + ' ' + count17(LT));
+
+    // ── (r) A SAVE ALREADY HOLDING BOTH CASINGS ──
+    initial = {
+      market: [vol('mc-1', 'CaseA', MONTHS[1], LT, 1), vol('mc-2', 'CaseB', MONTHS[2], 'launch test', 2),
+        vol('mc-free', 'Free', MONTHS[3], undefined, 3)],
+      yield: [yld('mc-y', 'CaseY', MONTHS[1], 'launch test')],
+      pricing: [],
+    };
+    await mount();
+    await openSummary();
+    check("(r) ONE header, under the first-seen casing 'Launch test'", hdrNames17().join(',') === LT, hdrNames17().join(','));
+    check('(r) with the combined count (3)', count17(LT) === i18n.t('whatif_summary_count', { count: 3 }), count17(LT));
+    const sw17 = byTestId(`event-on-initiative-${LT}`);
+    check('(r) the header switch reads ALL ON', sw17?.getAttribute('aria-checked') === 'true', sw17?.getAttribute('aria-checked'));
+    if (sw17) await click(sw17);
+    const stateOf = (id: string) => String([...captured, ...capturedYield].find((e: any) => e.id === id)?.enabled);
+    check('(r) OFF moved EVERY row of BOTH casings, across carriers',
+      ['mc-1', 'mc-2', 'mc-y'].every(id => stateOf(id) === 'false'), ['mc-1', 'mc-2', 'mc-y'].map(stateOf).join(','));
+    check('(r) and not the row in no initiative', stateOf('mc-free') !== 'false', stateOf('mc-free'));
+  }
+
   // ── STRUCTURE ─────────────────────────────────────────────────────────────
   {
     const strip2 = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -771,6 +851,17 @@ async function main() {
     check('(X) the confirm removes Value and Pricing members through the per-row removers, no whole-array setter',
       wi.includes('binned?.yieldIds.forEach(id => removeYieldEvent(id));') && wi.includes('binned?.pricingIds.forEach(id => removePricingEvent(id));')
         && !/setYieldEvents|setPricingEvents/.test(wi));
+    // Clause 17. ONE comparison of names: initiativeKey, defined once in
+    // forecasting.ts, read by the layout's grouping key (2) and by the table's one
+    // resolver (2), which Group as and Rename both call.
+    check('(X) initiativeKey is defined ONCE, in forecasting.ts, and nowhere else',
+      count(fct, 'export function initiativeKey(') === 1 && count(tbl, 'function initiativeKey') === 0 && count(wi, 'initiativeKey') === 0);
+    check('(X) the layout keys on it', count(fct, 'initiativeKey(r.initiative)') === 2, String(count(fct, 'initiativeKey(r.initiative)')));
+    check('(X) the table resolves through it once, and Group as and Rename both call that resolver',
+      count(tbl, 'initiativeKey(') === 2 && count(tbl, 'const existingInitiative = (') === 1 && count(tbl, 'existingInitiative(') === 2
+        && tbl.includes('onSetInitiative(pickedRows, existingInitiative(name) ?? name)') && tbl.includes('const into = existingInitiative(to);'),
+      `${count(tbl, 'initiativeKey(')} / ${count(tbl, 'existingInitiative(')}`);
+    check('(X) no exact name comparison survives in the table', !tbl.includes('initiativeNames.includes('));
     check('(X) computeAdjustedForecast stays 6', count(wi, 'computeAdjustedForecast(') === 6, String(count(wi, 'computeAdjustedForecast(')));
   }
 

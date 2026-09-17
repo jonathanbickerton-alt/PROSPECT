@@ -3730,7 +3730,10 @@ const TRAPS: Trap[] = [
   { id: '269 Rename onto an existing name merges without the dialog',
     why: 'a rename silently merges two initiatives',
     file: SUMMARYTABLE, spec: INITIATIVES,
-    mutate: s => s.replace("    if (initiativeNames.includes(to)) { setMerge({ into: to, members }); return; }" + nl, "") },
+    // RE-AIMED 2026-09-17 (clause 17): the exact includes() check became the
+    // initiativeKey resolver; the plant drops the merge prompt on the new line.
+    //   FAIL  (n) renaming onto a USED name asks first
+    mutate: s => s.replace("    if (into) { setMerge({ into, members }); return; }" + nl, "") },
 
   // 270 THE BIN'S CONFIRM REMOVES MARKET MEMBERS ONLY — clause 8's removers dropped.
   //   FAIL  (o) confirm removed the VALUE member and nothing else  [y-in,y-out]
@@ -3751,6 +3754,34 @@ const TRAPS: Trap[] = [
       "    const after = computeAdjustedForecast({ ...shared, marketEvents: pendingChange.nextEvents," + nl
         + "      yieldEvents: pendingChange.nextYield ?? yieldEvents, pricingEvents: pendingChange.nextPricing ?? pricingEvents });",
       "    const after = computeAdjustedForecast({ ...shared, marketEvents: pendingChange.nextEvents });") },
+
+  // ══ REQ-D6-08 CLAUSE 17 — NAMES MATCH CASE-INSENSITIVELY, EXISTING CASING WINS ══
+  //
+  // All three seen RED by hand on 2026-09-17 against pre-plant md5s and restored
+  // from scratchpad backups (the 0841 report quotes the triples and red lines).
+  //
+  // 272 THE ONE COMPARISON IS EXACT — clause 11's superseded rule restored.
+  //   FAIL  (p) it PROMPTS, naming the EXISTING casing: Merge into 'Launch test'? ...  [(no prompt)]
+  { id: '272 initiative names compare exactly (case-sensitive)',
+    why: "renaming to 'launch test' silently creates a second initiative beside 'Launch test'",
+    file: ENGINE, spec: INITIATIVES,
+    mutate: s => s.replace("  return name.trim().toLowerCase();", "  return name.trim();") },
+
+  // 273 GROUP AS WRITES THE TYPED CASING instead of resolving to the existing name.
+  //   FAIL  (q) the row reads 'Launch test' — the existing casing, not the typed one  [launch test]
+  { id: '273 Group as writes the typed casing',
+    why: 'rows of one initiative carry two spellings of its name',
+    file: SUMMARYTABLE, spec: INITIATIVES,
+    mutate: s => s.replace("onSetInitiative(pickedRows, existingInitiative(name) ?? name)", "onSetInitiative(pickedRows, name)") },
+
+  // 274 THE LAYOUT KEYS ON THE RAW NAME — a save holding both casings shows two headers.
+  //   FAIL  (r) ONE header, under the first-seen casing 'Launch test'  [Launch test,launch test]
+  { id: '274 the initiative layout keys on the raw name',
+    why: 'one initiative renders as two headers and its switch misses half its rows',
+    file: ENGINE, spec: INITIATIVES,
+    mutate: s => s
+      .replace("    const k = initiativeKey(r.initiative);", "    const k = r.initiative;")
+      .replace("    const key = initiativeKey(r.initiative);", "    const key = r.initiative;") },
 ];
 
 

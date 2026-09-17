@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, Trash2, Pencil } from 'lucide-react';
 import type { EventSummaryRow, SummaryT, EffectStatus, SummaryEntry } from '../utils/forecasting';
-import { EFFECT_LABEL_KEY, INITIATIVE_EFFECT_ORDER, campaignUnit } from '../utils/forecasting';
+import { EFFECT_LABEL_KEY, INITIATIVE_EFFECT_ORDER, campaignUnit, initiativeKey } from '../utils/forecasting';
 import { EventOnOffSwitch, OFF_ROW } from './EventOnOffSwitch';
 
 /**
@@ -151,6 +151,9 @@ export function EventsSummaryTable({
   const [merge, setMerge] = useState<{ into: string; members: EventSummaryRow[] } | null>(null);
   const keyOf = (r: EventSummaryRow) => `${r.pass}-${r.id}`;
   const initiativeNames = shown.flatMap(e => (e.kind === 'header' ? [e.name] : []));
+  // Clause 17: a typed name IS the existing initiative whose key it shares, and
+  // the EXISTING casing wins. Undefined = no such initiative.
+  const existingInitiative = (typed: string) => initiativeNames.find(n => initiativeKey(n) === initiativeKey(typed));
   const membersOf = (name: string) => shown.flatMap(e => (e.kind === 'header' && e.name === name ? e.members : []));
   const pickedRows = rows.filter(r => picked.has(keyOf(r)));
   // Clause 4: A CAMPAIGN TICKS WHOLE — ticking any of its rows ticks (or unticks) all.
@@ -169,17 +172,23 @@ export function EventsSummaryTable({
   const groupAs = () => {
     const name = groupName.trim();
     if (!onSetInitiative || !name || pickedRows.length === 0) return;
-    onSetInitiative(pickedRows, name);
+    onSetInitiative(pickedRows, existingInitiative(name) ?? name);
     endSelecting();
   };
   // Clause 11: trimmed; an unused name renames silently, a used one asks first.
+  // Clause 17: "used" is decided by initiativeKey, and the merge goes INTO the
+  // existing casing.
   const commitRename = () => {
     if (!renaming || !onSetInitiative) return;
     const to = renaming.to.trim();
     const members = membersOf(renaming.from);
     setRenaming(null);
-    if (!to || to === renaming.from || members.length === 0) return;
-    if (initiativeNames.includes(to)) { setMerge({ into: to, members }); return; }
+    if (!to || members.length === 0) return;
+    const into = existingInitiative(to);
+    // The same initiative, retyped (in any casing): the existing casing wins, so
+    // nothing changes.
+    if (into === renaming.from) return;
+    if (into) { setMerge({ into, members }); return; }
     onSetInitiative(members, to);
   };
   return (

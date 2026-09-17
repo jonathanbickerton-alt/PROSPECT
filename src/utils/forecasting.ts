@@ -1369,20 +1369,34 @@ export type SummaryEntry =
  * place. Nothing is sorted — the walk only decides where each group first
  * appears, which is what makes "today's order" survive unchanged.
  */
+/**
+ * REQ-D6-08 clause 17 (Jon, 2026-09-17, Walk I5) — THE ONE COMPARISON OF
+ * INITIATIVE NAMES: trimmed, then case-insensitive. Two names with the same key
+ * ARE the same initiative. Read by the layout's grouping key below and by the
+ * summary's Rename and Group as, so the three cannot disagree about sameness.
+ */
+export function initiativeKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
 export function initiativeGroups(rows: readonly EventSummaryRow[]): SummaryEntry[] {
+  // Clause 17: grouped by initiativeKey, so a save holding 'Launch test' and
+  // 'launch test' renders ONE header, under the casing seen first.
   const members = new Map<string, EventSummaryRow[]>();
   for (const r of rows) {
     if (!r.initiative) continue;
-    const list = members.get(r.initiative);
-    if (list) list.push(r); else members.set(r.initiative, [r]);
+    const k = initiativeKey(r.initiative);
+    const list = members.get(k);
+    if (list) list.push(r); else members.set(k, [r]);
   }
   const out: SummaryEntry[] = [];
   const placed = new Set<string>();
   for (const r of rows) {
     if (!r.initiative) { out.push({ kind: 'row', row: r }); continue; }
-    if (placed.has(r.initiative)) continue;
-    placed.add(r.initiative);
-    const group = members.get(r.initiative)!;
+    const key = initiativeKey(r.initiative);
+    if (placed.has(key)) continue;
+    placed.add(key);
+    const group = members.get(key)!;
     out.push({ kind: 'header', name: r.initiative, members: group });
     for (const m of group) out.push({ kind: 'row', row: m });
   }
