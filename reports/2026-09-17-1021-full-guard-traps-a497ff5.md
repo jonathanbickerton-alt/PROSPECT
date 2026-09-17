@@ -5,7 +5,7 @@
 ```
 Generated: 2026-09-17 12:04 +0100 (UTC 2026-09-17 11:04)
 Certifies: a497ff5
-Repo: src a497ff5; report+ledger committed PENDING, pushed (origin in sync)
+Repo: src a497ff5; report+ledger committed 744ef59, pushed (origin in sync)
 270/270 caught
 full suite:  76/76 green
 ```
