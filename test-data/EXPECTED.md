@@ -10602,3 +10602,12 @@ Jon's answers to the 1606 inventory's questions (2026-09-16):
     all THREE campaign saves (churn included — the inventory listed two), the
     header switch, the Compare column; walked H0–H6. Session 2 builds the
     controls and the bin; the row-edit carry gets a mounted case.
+17. (Jon, 2026-09-17, Walk I5) Initiative names are compared
+    CASE-INSENSITIVELY after trimming — for Rename, for Group as, and for the
+    header layout. A typed name that matches an existing initiative on that
+    comparison IS that initiative, and the EXISTING casing wins: Group as
+    'launch test' adds to 'Launch test' with no prompt; Rename onto 'launch
+    test' prompts 'Merge into 'Launch test'? {n} events will join it' and
+    merges into 'Launch test'. Two initiatives can never differ only in case.
+    Clause 11's 'case-sensitive' is superseded; its trimming and its merge
+    prompt stand.
