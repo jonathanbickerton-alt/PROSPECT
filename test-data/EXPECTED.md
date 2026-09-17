@@ -10611,3 +10611,10 @@ Jon's answers to the 1606 inventory's questions (2026-09-16):
     merges into 'Launch test'. Two initiatives can never differ only in case.
     Clause 11's 'case-sensitive' is superseded; its trimming and its merge
     prompt stand.
+18. (Jon, 2026-09-17, Walk J) Rename resolves the typed name with
+    initiativeKey. If it resolves to the initiative BEING RENAMED, it is a
+    rename: every member is re-cased to the typed (trimmed) name, no prompt.
+    If it resolves to a DIFFERENT initiative, the merge prompt names that
+    initiative and the merge writes its existing casing (clause 17). If it
+    resolves to nothing, plain rename. Group as is unchanged: a match adopts
+    the existing casing. The 0841 build's no-op is superseded.
