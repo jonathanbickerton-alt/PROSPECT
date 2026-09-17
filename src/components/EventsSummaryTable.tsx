@@ -183,11 +183,13 @@ export function EventsSummaryTable({
     const to = renaming.to.trim();
     const members = membersOf(renaming.from);
     setRenaming(null);
-    if (!to || members.length === 0) return;
+    // A typed name identical to the current one is nothing.
+    if (!to || to === renaming.from || members.length === 0) return;
     const into = existingInitiative(to);
-    // The same initiative, retyped (in any casing): the existing casing wins, so
-    // nothing changes.
-    if (into === renaming.from) return;
+    // Clause 18: resolving to the initiative BEING RENAMED is a rename — every
+    // member is re-cased to the typed name, no prompt. The branch is self vs
+    // other, not case: a DIFFERENT initiative still prompts (clause 17).
+    if (into === renaming.from) { onSetInitiative(members, to); return; }
     if (into) { setMerge({ into, members }); return; }
     onSetInitiative(members, to);
   };

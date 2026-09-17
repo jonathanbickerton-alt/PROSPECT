@@ -42,6 +42,12 @@
  *  (r) a save holding 'Launch test' AND 'launch test' renders ONE header with the
  *      combined count, and its switch moves every row of both casings.
  *
+ * Clause 18 (Jon, 2026-09-17, Walk J) — a casing-only rename re-cases:
+ *  (s) Rename 'Launch test' -> 'LAUNCH TEST': no prompt, every member re-cased,
+ *      one header 'LAUNCH TEST', the member count unchanged;
+ *  (t) Rename 'Q4 test' -> 'launch TEST' still prompts "Merge into 'LAUNCH TEST'?"
+ *      and merges into it — so the branch is self vs other, not case.
+ *
  * The Host holds all three carriers in real state with App's update semantics,
  * so a switch that wrote the wrong carrier shows in the rows, not in a mock.
  */
@@ -823,6 +829,52 @@ async function main() {
     check('(r) OFF moved EVERY row of BOTH casings, across carriers',
       ['mc-1', 'mc-2', 'mc-y'].every(id => stateOf(id) === 'false'), ['mc-1', 'mc-2', 'mc-y'].map(stateOf).join(','));
     check('(r) and not the row in no initiative', stateOf('mc-free') !== 'false', stateOf('mc-free'));
+  }
+
+  // ══ CLAUSE 18 — A CASING-ONLY RENAME RE-CASES ═════════════════════════════
+  {
+    initial = {
+      market: [vol('rc-1', 'RcCamp', MONTHS[1], 'Launch test', 1), vol('rc-2', 'RcSolo', MONTHS[2], 'Launch test', 2)],
+      yield: [yld('rc-q4', 'RcQ4', MONTHS[1], 'Q4 test')],
+      pricing: [],
+    };
+    await mount();
+    await openSummary();
+    const initOf18 = (id: string) => [...captured, ...capturedYield].find((e: any) => e.id === id)?.initiative ?? '-';
+    const hdr18 = () => [...container.querySelectorAll('[data-testid="events-summary-body"] tbody tr')]
+      .map((tr: any) => String(tr.getAttribute('data-testid')))
+      .filter((id: string) => id.startsWith('events-summary-initiative-'))
+      .map((id: string) => id.replace('events-summary-initiative-', ''));
+    const cnt18 = (name: string) => (byTestId(`events-summary-initiative-count-${name}`)?.textContent || '').trim();
+    const rename18 = async (from: string, to: string) => {
+      const b = byTestId(`events-summary-initiative-rename-${from}`); if (b) await click(b);
+      const inp = byTestId(`events-summary-initiative-rename-input-${from}`); if (inp) await type(inp, to);
+      const sv = byTestId(`events-summary-initiative-rename-save-${from}`); if (sv) await click(sv);
+      return !!b && !!inp && !!sv;
+    };
+    check('(s) start: Launch test (2), Q4 test (1)',
+      hdr18().join(',') === 'Launch test,Q4 test' && cnt18('Launch test') === i18n.t('whatif_summary_count', { count: 2 }),
+      hdr18().join(',') + ' ' + cnt18('Launch test'));
+
+    // ── (s) RENAME AN INITIATIVE TO ITS OWN NAME IN ANOTHER CASING ──
+    check('(s) Rename reaches its controls', await rename18('Launch test', 'LAUNCH TEST'));
+    check('(s) no prompt', !byTestId('events-summary-merge-dialog'));
+    check("(s) every member reads 'LAUNCH TEST' exactly",
+      initOf18('rc-1') === 'LAUNCH TEST' && initOf18('rc-2') === 'LAUNCH TEST', initOf18('rc-1') + ',' + initOf18('rc-2'));
+    check("(s) one header 'LAUNCH TEST', the old casing gone, Q4 test untouched",
+      hdr18().join(',') === 'LAUNCH TEST,Q4 test' && initOf18('rc-q4') === 'Q4 test', hdr18().join(','));
+    check('(s) the member count unchanged (2)', cnt18('LAUNCH TEST') === i18n.t('whatif_summary_count', { count: 2 }), cnt18('LAUNCH TEST'));
+
+    // ── (t) A DIFFERENT INITIATIVE, SAME KEY: STILL A MERGE ──
+    await rename18('Q4 test', 'launch TEST');
+    const mt18 = (byTestId('events-summary-merge-title')?.textContent || '').trim();
+    check("(t) renaming ANOTHER initiative onto it still prompts: Merge into 'LAUNCH TEST'? 1 events will join it",
+      mt18 === "Merge into 'LAUNCH TEST'? 1 events will join it", mt18 || '(no prompt)');
+    check('(t) nothing written while it asks', initOf18('rc-q4') === 'Q4 test', initOf18('rc-q4'));
+    if (byTestId('events-summary-merge-confirm')) await click(byTestId('events-summary-merge-confirm'));
+    check("(t) the merge writes the existing casing 'LAUNCH TEST'", initOf18('rc-q4') === 'LAUNCH TEST', initOf18('rc-q4'));
+    check("(t) one header 'LAUNCH TEST' with 3", hdr18().join(',') === 'LAUNCH TEST' && cnt18('LAUNCH TEST') === i18n.t('whatif_summary_count', { count: 3 }),
+      hdr18().join(',') + ' ' + cnt18('LAUNCH TEST'));
   }
 
   // ── STRUCTURE ─────────────────────────────────────────────────────────────

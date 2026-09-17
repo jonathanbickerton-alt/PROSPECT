@@ -3782,6 +3782,18 @@ const TRAPS: Trap[] = [
     mutate: s => s
       .replace("    const k = initiativeKey(r.initiative);", "    const k = r.initiative;")
       .replace("    const key = initiativeKey(r.initiative);", "    const key = r.initiative;") },
+
+  // ══ REQ-D6-08 CLAUSE 18 — A CASING-ONLY RENAME RE-CASES ══
+  //
+  // Seen RED by hand on 2026-09-17 against a pre-plant md5, restored from a
+  // scratchpad backup (the 0953 report quotes the triple and the red lines).
+  //
+  // 275 THE SELF-MATCH STAYS A NO-OP — the 0841 behaviour clause 18 supersedes.
+  //   FAIL  (s) every member reads 'LAUNCH TEST' exactly  [Launch test,Launch test]
+  { id: '275 a casing-only rename of an initiative stays a no-op',
+    why: 'the user cannot re-case an initiative by renaming it',
+    file: SUMMARYTABLE, spec: INITIATIVES,
+    mutate: s => s.replace("    if (into === renaming.from) { onSetInitiative(members, to); return; }", "    if (into === renaming.from) return;") },
 ];
 
 
