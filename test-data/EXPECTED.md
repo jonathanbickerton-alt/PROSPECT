@@ -10598,3 +10598,7 @@ Jon's answers to the 1606 inventory's questions (2026-09-16):
 14. The header's Effect cell: a per-state count in the column's order, empty
     states omitted, e.g. "Volume ×2 · ARPU ×1 · Off ×1".
 15. Compare: pipeline order, the Initiative name in a column only.
+16. (Jon, 2026-09-17) Session 1 shipped at 6c12fab: the column, the carry at
+    all THREE campaign saves (churn included — the inventory listed two), the
+    header switch, the Compare column; walked H0–H6. Session 2 builds the
+    controls and the bin; the row-edit carry gets a mounted case.
