@@ -5,7 +5,7 @@
 ```
 Generated: 2026-09-23 20:06 +0100 (UTC 2026-09-23 19:06)
 Certifies: a497ff5 (src read; no src/scripts/spec change)
-Repo: PENDING
+Repo: committed 57b776c, pushed (origin in sync)
 Decisions commit: 9a169c5 (REQ-D7-01 1-3, committed alone before reading)
 BASE NOT CLEAN: docs v3-3-18 deleted + v3-3-19 untracked (Jon's, left as is).
 Fixture 2026-09-23-1839.xlsx ABSENT; no .xlsx is committed. Used the local
