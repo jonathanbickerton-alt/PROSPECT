@@ -10618,3 +10618,30 @@ Jon's answers to the 1606 inventory's questions (2026-09-16):
     initiative and the merge writes its existing casing (clause 17). If it
     resolves to nothing, plain rename. Group as is unchanged: a match adopts
     the existing casing. The 0841 build's no-op is superseded.
+
+## REQ-D7-01 — ACTUALS REVIEW: LIKE-FOR-LIKE COVERAGE AND THE ACCURACY MONTH (Jon, 2026-09-23; UAT closed, signed off by Alessandro)
+
+Found on the 23 Sep 18:39 session: 60 forecast cohorts, all
+Corporate·Direct; actuals over five segments and two channels. At
+All/All the chart plots actual flows (~300K) against a forecast
+summed over the 60 covered leaves (~30K) while Base continues from
+the All seed; the Corporate row under Group-by Segment scores 0
+because its actuals include Indirect and every product and its
+forecast does not. Step 3 sums actuals over every leaf in a group
+and the forecast over only the leaves that have one.
+
+1. (A) Every Step 3 surface — chart, the four KPI cards, the cohort
+   table at every Group-by level — compares LIKE-FOR-LIKE: the actuals
+   side is restricted to the leaf set the forecast covers for that
+   view or row. The alignment must be VISIBLE — no step change between
+   the actual and forecast lines that a reader has to have explained;
+   a coverage line ('forecast covers 60 of 540 cohorts') is stated
+   beside the figure, secondary to it. A row with no covered leaf shows
+   the em dash it shows today.
+2. An ACCURACY MONTH selector on Step 3, the same control as Step
+   2's Delta month: the KPI cards and the cohort table score THAT MONTH
+   ONLY (a target, not a cumulative); default the latest month carrying
+   both actuals and forecast; any earlier such month selectable; the
+   chart is unchanged by it.
+3. Post-UAT; ships as the first post-UAT release after this
+   inventory and a walk.
