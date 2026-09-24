@@ -10665,3 +10665,9 @@ forecast Base continues from the COVERED leaves' seed (289,211), not All's
 12. The chart's seam-miss branch (FVA:2166-2297) is DELETED; a miss
     charts actuals only. The dead `accuracy` memo (FVA:2506-2533) goes
     with it.
+13. Session 1 shipped at caec3ce: like-for-like on the chart and table via
+    coveredLeafKeys (the seam's own leaves; a broader stored key covers the
+    leaves under it — harness-only), the seam-miss branch and the dead
+    accuracy memo deleted, the coverage line partial-only; walked K.
+    Carried: the Challenger's model-comparison chart still reads the full
+    row; absent product/channel grain unexercised.
