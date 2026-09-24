@@ -10630,6 +10630,10 @@ because its actuals include Indirect and every product and its
 forecast does not. Step 3 sums actuals over every leaf in a group
 and the forecast over only the leaves that have one.
 
+CORRECTION (Jon, 2026-09-24) to the premise above — MEASURED (1855): the
+forecast Base continues from the COVERED leaves' seed (289,211), not All's
+(2,600,863); the visible step is the unrestricted ACTUAL Base line.
+
 1. (A) Every Step 3 surface — chart, the four KPI cards, the cohort
    table at every Group-by level — compares LIKE-FOR-LIKE: the actuals
    side is restricted to the leaf set the forecast covers for that
@@ -10645,3 +10649,19 @@ and the forecast over only the leaves that have one.
    chart is unchanged by it.
 3. Post-UAT; ships as the first post-UAT release after this
    inventory and a walk.
+4. (Jon, 2026-09-24) The KPI cards keep the per-leaf MAPE average
+   (derive-aggregate GUARD 3 stands) and gain only the coverage line.
+5. The coverage line reads '{covered} of {total}' where total = the
+   leaves with actuals under the view or row; shown ONLY when coverage
+   is partial.
+6. The actual Base is restricted to the covered leaves exactly as the
+   flows are — no separate rule.
+7. Trend keeps its own window (all overlap months up to the chosen
+   month); Bias follows the chosen month.
+8. The default accuracy month is per VIEW.
+9. The cards' line becomes '{n} cohorts compared, {month}'.
+10. The badge and the Adjusted-scoring toggle are REQ-D7-02, separate.
+11. The Challenger tab follows (A) and the accuracy month — same builder.
+12. The chart's seam-miss branch (FVA:2166-2297) is DELETED; a miss
+    charts actuals only. The dead `accuracy` memo (FVA:2506-2533) goes
+    with it.
