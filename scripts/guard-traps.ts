@@ -118,6 +118,7 @@ const ARPUBASIS = 'scripts/arpu-basis-mounted-spec.tsx';
 const INITIATIVES = 'scripts/initiatives-mounted-spec.tsx';
 const ACTUALSCOV = 'scripts/actuals-coverage-mounted-spec.tsx';
 const ACCMONTH = 'scripts/accuracy-month-mounted-spec.tsx';
+const STEP3BAR = 'scripts/step3-one-bar-mounted-spec.tsx';
 const EVTOGGLE = 'scripts/event-toggle-spec.tsx';
 const SUMMARYBAR = 'src/components/ForecastSummaryBar.tsx';
 const AIHOLD = 'scripts/ai-hold-spec.ts';
@@ -3863,6 +3864,46 @@ const TRAPS: Trap[] = [
     file: FILE, spec: ACCMONTH,
     mutate: s => s.replace("    const trendMonths: string[] = accuracyMonth ? forecastMonths.filter(m => m <= accuracyMonth) : forecastMonths;",
       "    const trendMonths: string[] = scoredMonths;") },
+
+  // ══ REQ-D7-02 SESSION 1 — ONE VIEWING BAR; THE ADJUSTED GATE ══
+  //
+  // All four seen RED by hand on 2026-09-24 against a pre-plant md5 and restored
+  // from a scratchpad backup (the 1711 report quotes every triple and red line).
+  //
+  // 283 THE COMPARING BAR RENDERS AGAIN at a narrowed view — clause 1.
+  //   FAIL  (a) no "Comparing" bar
+  { id: '283 a COMPARING bar renders at a narrowed view',
+    why: 'Step 3 grows a second scope control beside the viewing bar',
+    file: FILE, spec: STEP3BAR,
+    mutate: s => s.replace("        {/* REQ-D7-02 clause 1: the COMPARING chip bar is REMOVED. Step 3's scope is",
+      "        {activeFilter && activeFilter.segment !== 'All' && (<div className=\"px-4 py-3\">Comparing Segment {activeFilter.segment}</div>)}" + nl
+      + "        {/* REQ-D7-02 clause 1: the COMPARING chip bar is REMOVED. Step 3's scope is") },
+
+  // 284 A ROW CLICK WRITES THE VIEWING BAR — clause 3: it selects the row only.
+  //   FAIL  (b) the viewing bar was NOT written: no call reached the old setter  [[{"segment":"Corporate",...}]]
+  { id: '284 a Step 3 row click writes step3Filter',
+    why: 'clicking a table row silently re-scopes (and can widen) the whole view',
+    file: FILE, spec: STEP3BAR,
+    mutate: s => s
+      .replace("  activeFilter," + nl + "}) => {", "  activeFilter, onCohortFilterChange," + nl + "}: any) => {")
+      .replace("                            if (c.worstKpi) setSelectedKpi(c.worstKpi);",
+        "                            if (c.worstKpi) setSelectedKpi(c.worstKpi);" + nl
+        + "                            onCohortFilterChange?.({ segment: c.seg, product: { l1: null, l2: null }, channel: { l1: null, l2: null }, tariff: { l1: null, l2: null } });") },
+
+  // 285 THE BADGE SHOWS FOR ANOTHER VIEW'S ADJUSTED FORECAST — the key check dropped.
+  //   FAIL  (d) moved to Corporate/Direct: the badge is HIDDEN
+  { id: "285 the Adjusted badge shows when the adjusted forecast's key is not the view's",
+    why: "Step 3 scores its view against Step 2's view's adjusted means (MAPE 12231.5% on the fixture)",
+    file: FILE, spec: STEP3BAR,
+    mutate: s => s.replace("    if (makeForecastKey(c.segment, c.product, c.productL2, c.channel, c.channelL2, c.tariffL1, c.tariffL2) !== viewSeam.key) return false;" + nl, "") },
+
+  // 286 THE BADGE SHOWS WITH NO APPLYING EVENT — clause 4.
+  //   FAIL  (e) disabled event only: the badge is hidden
+  { id: '286 the Adjusted badge shows with zero applying events',
+    why: '"Using Adjusted Forecast" over numbers identical to the baseline',
+    file: FILE, spec: STEP3BAR,
+    mutate: s => s.replace("    return (adjustedForecast.marketEvents as MarketEvent[]).some(e => isEventOn(e) && eventScopeMatchesView({",
+      "    return true || (adjustedForecast.marketEvents as MarketEvent[]).some(e => isEventOn(e) && eventScopeMatchesView({") },
 ];
 
 
@@ -4055,6 +4096,8 @@ const CONTROL_SPEC_MAP: Record<string, string> = {
   ACTUALSCOV,
   // REQ-D7-01 session 2. Registered WITH its first trap, 280.
   ACCMONTH,
+  // REQ-D7-02 session 1. Registered WITH its first trap, 283.
+  STEP3BAR,
 };
 const controlHashNow = () => GT.controlHash(
   [...Object.values(CONTROL_SPEC_MAP), ...TARGETS, 'scripts/guard-traps.ts', 'scripts/guard-traps-select.ts'],

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { RemoveActualsModal } from './RemoveActualsModal';
 import type { ForecastModel, BaseForecast, ActiveView } from '../types/forecast';
+import type { MarketEvent } from '../utils/forecasting';
 import { provenanceModel } from '../types/forecast';
 import {
   ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Tooltip,
@@ -20,7 +21,8 @@ import { rowInScope, cohortInScope, dimsFromGrouping, ALL_DIMS, L1_ONLY } from '
 // The ONE key builder. This file previously hand-rolled a 5-part key here,
 // which is the instance-3 defect.
 import {
-  canShowBaseForecast, makeForecastKey, deriveAggregate, coveredLeafKeys, monthsCarryingActuals } from '../utils/forecasting';
+  canShowBaseForecast, makeForecastKey, deriveAggregate, coveredLeafKeys, monthsCarryingActuals,
+  eventScopeMatchesView, isEventOn } from '../utils/forecasting';
 import { monthLabel } from '../utils/monthFormat';
 
 // ---------------------------------------------------------------------------
@@ -62,14 +64,12 @@ interface ForecastVsActualsTabProps {
   onRequestExport: () => void;
   /**
    * The current filter selection from the ViewFilterBar (per-tab state in App.tsx).
-   * Drives chart scoping, accuracy table filtering, and COMPARING chips display.
+   * Drives chart scoping and the cards' scope. Step 3 reads it; it never writes it.
    */
   activeFilter?: ViewFilter;
-  /**
-   * Called when the user clicks an accuracy-table row or a COMPARING chip —
-   * lets the parent update the ViewFilterBar to reflect the new dimensions (bidirectional nav).
-   */
-  onCohortFilterChange?: (filter: ViewFilter) => void;
+  // REQ-D7-02 clause 3: `onCohortFilterChange` is gone. Its readers were the
+  // COMPARING chips, the row click, the row deselect and the Drilled-into Clear —
+  // every one a second writer of the viewing bar. No control on Step 3 writes it.
 }
 
 // ---------------------------------------------------------------------------
@@ -1515,10 +1515,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   formatNumber, setActiveView, onAcceptChallengerModel, onAcceptAllChallengerModels,
   onRunChallengerForecast, onAcceptPreviewForecast,
   handleImportActualsFile, onRemoveActuals, onRequestExport,
-  activeFilter, onCohortFilterChange,
+  activeFilter,
 }) => {
   const { t, i18n } = useTranslation();
   const { baseForecast, adjustedForecast, forecastStore, resolveForecast } = useForecast();
+  // The user's choice. It only takes effect while the gate below is open.
   const [useAdjustedScoring, setUseAdjustedScoring] = useState(false);
 
   const [showRemoveModal, setShowRemoveModal] = useState(false);
@@ -1609,8 +1610,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   // Stores the full forecast series of the previous model for paper-trail rendering.
   const [previousForecast, setPreviousForecast] = useState<BaseForecast | null>(null);
 
-  // Use adjustedForecast if available, fall back to null (baseForecast used directly)
-  const usingAdjusted = !!adjustedForecast;
+  // REQ-D7-02 clause 4: the badge reads `showAdjusted`, defined once below `viewSeam`.
 
   // ---------------------------------------------------------------------------
   // 1. Aggregate actuals from raw data — scoped to baseForecast.cohort so the
@@ -1992,21 +1992,6 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   }, [data, wiDateCol, wiMetricCol, wiValueCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
       baseForecast, wiSegmentCol, wiProductCol, wiChannelCol, aggrSnapshotMap]);
 
-  // Adjusted mean map — month → { inflow, outflow, retention, arpu } using uplifted values.
-  // Built from adjustedForecast when useAdjustedScoring is true; undefined otherwise.
-  const adjustedMeanMap = useMemo((): AdjustedMeanMap | undefined => {
-    if (!useAdjustedScoring || !adjustedForecast) return undefined;
-    const map: AdjustedMeanMap = new Map();
-    for (const am of adjustedForecast.adjustedMonths) {
-      map.set(am.month, {
-        inflow:    am.uplifted.inflow,
-        outflow:   am.uplifted.outflow,
-        retention: am.uplifted.retention,
-        arpu:      am.uplifted.arpu,
-      });
-    }
-    return map;
-  }, [useAdjustedScoring, adjustedForecast]);
 
   // Forecast vs Actuals tab — driven by cohortDims.
   // Uses aggrSnapshotMap (baseForecast.cohort scope) as the proportional-scaling
@@ -2026,6 +2011,53 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     ].join('|');
     return { key, result: resolveForecast(key) };
   }, [activeFilter, resolveForecast]);
+
+  /**
+   * REQ-D7-02 clause 4 — THE ONE GATE for the "Using Adjusted Forecast" badge and
+   * the Adjusted-scoring toggle (interim, until Step 3 computes its own — clause 5).
+   *
+   * The adjusted forecast in context is Step 2's, built for STEP 2's view. It is
+   * shown here only when that view IS the view on screen (key equality against
+   * the view's own seam key — no new predicate) AND at least one enabled event
+   * applies to that view (the existing `eventScopeMatchesView`, as Step 2's own
+   * tooltip reads it; "enabled" is `isEventOn`, where an absent flag is on).
+   * Otherwise both are hidden — no disabled control.
+   */
+  const showAdjusted = useMemo((): boolean => {
+    if (!adjustedForecast || !viewSeam || !activeFilter) return false;
+    const c = adjustedForecast.base.cohort;
+    if (makeForecastKey(c.segment, c.product, c.productL2, c.channel, c.channelL2, c.tariffL1, c.tariffL2) !== viewSeam.key) return false;
+    const view = {
+      segment: activeFilter.segment || 'All',
+      productL1: activeFilter.product.l1, productL2: activeFilter.product.l2,
+      channelL1: activeFilter.channel.l1, channelL2: activeFilter.channel.l2,
+      tariffL1: activeFilter.tariff?.l1 ?? null, tariffL2: activeFilter.tariff?.l2 ?? null,
+    };
+    // The context types this as unknown[]; WhatIfTab writes its MarketEvent[] here.
+    return (adjustedForecast.marketEvents as MarketEvent[]).some(e => isEventOn(e) && eventScopeMatchesView({
+      segment: e.segment, product: e.product, productL2: e.productL2,
+      channelL1: e.channel, channelL2: e.channelL2,
+      tariffL1: e.tariffL1, tariffL2: e.tariffL2, tariffScope: e.tariffScope,
+    }, view));
+  }, [adjustedForecast, viewSeam, activeFilter]);
+  /** The toggle's effect: the user's choice, forced off while the gate is closed. */
+  const adjustedScoringOn = useAdjustedScoring && showAdjusted;
+
+  // Adjusted mean map — month → { inflow, outflow, retention, arpu } using uplifted values.
+  // Built only while adjusted scoring is ON and the gate is open; undefined otherwise.
+  const adjustedMeanMap = useMemo((): AdjustedMeanMap | undefined => {
+    if (!adjustedScoringOn || !adjustedForecast) return undefined;
+    const map: AdjustedMeanMap = new Map();
+    for (const am of adjustedForecast.adjustedMonths) {
+      map.set(am.month, {
+        inflow:    am.uplifted.inflow,
+        outflow:   am.uplifted.outflow,
+        retention: am.uplifted.retention,
+        arpu:      am.uplifted.arpu,
+      });
+    }
+    return map;
+  }, [adjustedScoringOn, adjustedForecast]);
 
   /**
    * REQ-D7-01 clauses 2 and 8 — THE ACCURACY MONTHS: those carrying BOTH actuals
@@ -2844,17 +2876,6 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     return `${sel.l1} — ${sel.l2}`;
   };
 
-  // COMPARING chips — only rendered when the user has an explicit activeFilter.
-  // These chips double as per-dimension reset buttons (X to clear a single dim).
-  // When no activeFilter is set the ViewFilterBar already communicates the scope.
-  type ActiveDim = { label: string; value: string; active: boolean; dim: 'segment' | 'product' | 'channel' | 'tariff' };
-  const activeDims: ActiveDim[] = activeFilter ? ([
-    { label: 'Segment', value: activeFilter.segment,                      active: activeFilter.segment !== 'All', dim: 'segment' as const },
-    { label: 'Product', value: productDisplayStr(activeFilter.product),   active: !!activeFilter.product.l1,     dim: 'product' as const },
-    { label: 'Channel', value: productDisplayStr(activeFilter.channel),   active: !!activeFilter.channel.l1,     dim: 'channel' as const },
-    ...(activeFilter.tariff ? [{ label: 'Tariff', value: productDisplayStr(activeFilter.tariff), active: !!activeFilter.tariff.l1, dim: 'tariff' as const }] : []),
-  ] as ActiveDim[]).filter(d => d.value && d.value !== 'Unknown' && d.value !== 'undefined') : [];
-  const hasActiveFilterDims = activeDims.some(d => d.active);
 
   // Whether the actuals data contains ANY rows matching the forecast scope.
   // Distinguish between "no actuals at all" and "actuals exist but not for this combo".
@@ -2880,8 +2901,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               <p className="text-sm text-slate-500 mt-0.5">
                 
                 {t('actuals_forecast_vs_actuals_comparison')}
-                {usingAdjusted && (
-                  <span className="ml-2 text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">{t('actuals_using_adjusted_forecast')}</span>
+                {showAdjusted && (
+                  <span data-testid="adjusted-badge" className="ml-2 text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">{t('actuals_using_adjusted_forecast')}</span>
                 )}
               </p>
             </div>
@@ -2951,43 +2972,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       <div className="h-full overflow-auto p-6">
       <div className="max-w-7xl mx-auto space-y-6">
 
-        {/* ── Active filter bar ─────────────────────────────────────────── */}
-        {/* Only shown when the user has applied an explicit filter via the    */}
-        {/* ViewFilterBar. Each chip shows the current value and can be        */}
-        {/* clicked to clear that dimension independently.                     */}
-        {hasActiveFilterDims && (
-        <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 shrink-0">{t('actuals_comparing')}</span>
-          {activeDims.map(d => {
-            const canReset = d.active && !!onCohortFilterChange && !!activeFilter;
-            return (
-              <button
-                key={d.label}
-                disabled={!canReset}
-                onClick={() => {
-                  if (!canReset || !activeFilter) return;
-                  const next: ViewFilter = { ...activeFilter };
-                  if (d.dim === 'segment') next.segment = 'All';
-                  else if (d.dim === 'product') next.product = { l1: null, l2: null };
-                  else if (d.dim === 'channel') next.channel = { l1: null, l2: null };
-                  else if (d.dim === 'tariff') next.tariff = { l1: null, l2: null };
-                  onCohortFilterChange!(next);
-                }}
-                className={`inline-flex items-center gap-1.5 text-xs rounded-full px-3 py-1 border transition-colors ${
-                  d.active
-                    ? `bg-slate-800 border-slate-800 text-white ${canReset ? 'cursor-pointer hover:bg-slate-700' : ''}`
-                    : 'bg-slate-50 border-slate-200 text-slate-500 cursor-default'
-                }`}
-              >
-                <span className={d.active ? 'text-slate-300' : 'text-slate-400'}>{d.label}</span>
-                <span className="font-semibold">{d.value}</span>
-                {canReset && <X size={10} className="ml-0.5 opacity-60" />}
-              </button>
-            );
-          })}
-          <span className="ml-auto text-[10px] text-slate-400 italic hidden md:block">{t('actuals_actuals_filtered_to_match_forecast_scope_like')}</span>
-        </div>
-        )}
+        {/* REQ-D7-02 clause 1: the COMPARING chip bar is REMOVED. Step 3's scope is
+            the viewing bar's, and nothing on Step 3 narrows or clears it. */}
 
         {/* ── No actuals for this combination ──────────────────────────── */}
         {noActualsForCombo && (
@@ -3056,7 +3042,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                     {t('actuals_cohorts_compared_month', { n: summaryMape.monthsWithActuals, month: accuracyMonth ? monthLabel(accuracyMonth, i18n.language) : '—' })}
                   </p>
                   <p className="text-[9px] font-medium text-slate-300 mt-0.5 uppercase tracking-wide">
-                    {useAdjustedScoring && adjustedForecast ? t('actuals_adjusted') : t('actuals_baseline')}
+                    {adjustedScoringOn ? t('actuals_adjusted') : t('actuals_baseline')}
                   </p>
                 </div>
               );
@@ -3084,7 +3070,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                     {t('actuals_cohorts_compared_month', { n: summaryMape.monthsWithActuals, month: accuracyMonth ? monthLabel(accuracyMonth, i18n.language) : '—' })}
                   </p>
                   <p className="text-[9px] font-medium text-slate-300 mt-0.5 uppercase tracking-wide">
-                    {useAdjustedScoring && adjustedForecast ? t('actuals_adjusted') : t('actuals_baseline')}
+                    {adjustedScoringOn ? t('actuals_adjusted') : t('actuals_baseline')}
                   </p>
                 </div>
               );
@@ -3106,14 +3092,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
             <div className="px-6 py-2 border-b border-slate-100 bg-indigo-50/40 flex items-center gap-2">
               <span className="text-[10px] font-semibold text-indigo-500 uppercase tracking-wide">{t('actuals_drilled_into')}</span>
               <span className="text-xs font-medium text-indigo-800">{selectedCohortRow.label}</span>
-              <button
-                onClick={() => {
-                  setSelectedForecastCohortKey(null);
-                  onCohortFilterChange?.({ segment: 'All', product: { l1: null, l2: null }, channel: { l1: null, l2: null } });
-                }}
-                className="ml-auto flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-600 font-medium transition-colors"
-              >
-                <X size={11} />{t('actuals_clear')}</button>
+              {/* REQ-D7-02 clause 3: the Clear is removed — clicking the row again deselects. */}
             </div>
           )}
 
@@ -3428,16 +3407,16 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                 )}
               </div>
 
-              {/* Forecast source toggle — only shown when an adjusted forecast exists */}
-              {adjustedForecast && (
-                <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5 text-[11px] font-medium">
+              {/* Forecast source toggle — REQ-D7-02 clause 4: behind the same gate as the badge */}
+              {showAdjusted && (
+                <div data-testid="adjusted-toggle" className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5 text-[11px] font-medium">
                   <button
                     onClick={() => setUseAdjustedScoring(false)}
-                    className={`px-2.5 py-1 rounded-md transition-colors ${!useAdjustedScoring ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    className={`px-2.5 py-1 rounded-md transition-colors ${!adjustedScoringOn ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                   >{t('actuals_exclude_market_events')}</button>
                   <button
                     onClick={() => setUseAdjustedScoring(true)}
-                    className={`px-2.5 py-1 rounded-md transition-colors ${useAdjustedScoring ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    className={`px-2.5 py-1 rounded-md transition-colors ${adjustedScoringOn ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                   >{t('actuals_include_market_events')}</button>
                 </div>
               )}
@@ -3542,27 +3521,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                           if (!isSelected) {
                             setSelectedForecastCohortKey(c.cohortKey);
                             if (c.worstKpi) setSelectedKpi(c.worstKpi);
-                            // Sync the global filter to this cohort's dims so actuals,
-                            // forecast, and variance table all compare the same scope.
-                            onCohortFilterChange?.({
-                              segment: c.seg,
-                              product: {
-                                l1: cohortDims.product   && c.prod   !== 'All' ? c.prod   : null,
-                                l2: cohortDims.productL2 && c.prodL2 !== 'All' ? c.prodL2 : null,
-                              },
-                              channel: {
-                                l1: cohortDims.channelL1 && c.chan   !== 'All' ? c.chan   : null,
-                                l2: cohortDims.channelL2 && c.chanL2 !== 'All' ? c.chanL2 : null,
-                              },
-                              tariff: {
-                                l1: cohortDims.tariffL1 && c.tariffL1 !== 'All' ? c.tariffL1 : null,
-                                l2: cohortDims.tariffL2 && c.tariffL2 !== 'All' ? c.tariffL2 : null,
-                              },
-                            });
+                            // REQ-D7-02 clause 3: a row click SELECTS the row — the chart
+                            // shows it through its own seam (chartSeam) — and never
+                            // writes the viewing bar.
                           } else {
                             setSelectedForecastCohortKey(null);
-                            // Reset filter when deselecting
-                            onCohortFilterChange?.({ segment: 'All', product: { l1: null, l2: null }, channel: { l1: null, l2: null }, tariff: { l1: null, l2: null } });
                           }
                         }}
                         className={`cursor-pointer transition-colors ${
@@ -4263,8 +4226,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
         width: TOOLTIP_W,
         ...(openAbove ? { bottom: window.innerHeight - activeTooltip.y + 8 } : { top: activeTooltip.y + 8 }),
       };
-      const meanColLabel = useAdjustedScoring && adjustedForecast ? t('actuals_adj_mean') : t('actuals_mean');
-      const sourceLabel  = useAdjustedScoring && adjustedForecast ? t('actuals_adjusted_forecast') : t('actuals_baseline_forecast');
+      const meanColLabel = adjustedScoringOn ? t('actuals_adj_mean') : t('actuals_mean');
+      const sourceLabel  = adjustedScoringOn ? t('actuals_adjusted_forecast') : t('actuals_baseline_forecast');
       if (activeTooltip.payload.kind === 'noForecast') {
         // Same dark card as every other accuracy tooltip. A grey dash with no
         // explanation reads as a rendering fault rather than a state, and

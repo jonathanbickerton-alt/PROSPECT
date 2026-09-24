@@ -452,9 +452,11 @@ const textOf = (rows: any[]) => rows.map(r => `${r.card}|${r.name}|${r.adjusts}|
   check('INHERITANCE: the worker parse consults the shared guard',
     worker.includes('rowsOrEmpty(') && worker.includes("from '../utils/sheetGuards'"),
     'the worker is the one boundary every Compare consumer reads through');
+  // RE-AIMED 2026-09-24 (REQ-D7-02 clause 6): the Adjusted_Forecasts restore is deleted — a loaded session starts with no adjusted forecast — and it was
+  // one of the nine guarded import sites. Eight remain.
   check('INHERITANCE: App consults the SAME predicate, not a local twin',
-    (app.match(/isPlaceholderSheet\(/g) ?? []).length === 9,
-    'nine import sites; a tenth or a ninth missing is a consumer going its own way');
+    (app.match(/isPlaceholderSheet\(/g) ?? []).length === 8,
+    'eight import sites; a ninth or a seventh is a consumer going its own way');
   check('INHERITANCE: no inline ?.Note twin survives anywhere',
     !app.includes('?.Note') && !worker.includes('?.Note'),
     'the convention had nine copies and one gap — that gap was the defect');

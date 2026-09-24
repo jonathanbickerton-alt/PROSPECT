@@ -91,8 +91,6 @@
   "common_import_actuals": "Ist-Werte importieren",
   "common_remove_actuals": "Ist-Werte entfernen",
   "actuals_forecast_vs_actuals": "Prognose vs. Ist-Werte",
-  "actuals_comparing": "Vergleich",
-  "actuals_actuals_filtered_to_match_forecast_scope_like": "Ist-Werte auf den Prognosebereich gefiltert — Vergleich auf gleicher Grundlage",
   "actuals_no_actuals_data_found_for_this_combination": "Für diese Kombination wurden keine Ist-Werte gefunden",
   "actuals_no_forecast_yet_tooltip": "Für diese Kohorte wurde noch keine Prognose erstellt — es gibt nichts zu bewerten.",
   "common_volume": "Volumen",

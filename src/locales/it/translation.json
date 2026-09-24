@@ -91,8 +91,6 @@
   "common_import_actuals": "Importa dati effettivi",
   "common_remove_actuals": "Rimuovi dati effettivi",
   "actuals_forecast_vs_actuals": "Previsione vs. dati effettivi",
-  "actuals_comparing": "Confronto",
-  "actuals_actuals_filtered_to_match_forecast_scope_like": "Dati effettivi filtrati in base all'ambito della previsione — confronto omogeneo",
   "actuals_no_actuals_data_found_for_this_combination": "Nessun dato effettivo trovato per questa combinazione",
   "actuals_no_forecast_yet_tooltip": "Non è stata ancora generata alcuna previsione per questa coorte — non c'è nulla da valutare.",
   "common_volume": "Volume",

@@ -91,8 +91,6 @@
   "common_import_actuals": "Importar dados reais",
   "common_remove_actuals": "Remover dados reais",
   "actuals_forecast_vs_actuals": "Previsão face aos dados reais",
-  "actuals_comparing": "A comparar",
-  "actuals_actuals_filtered_to_match_forecast_scope_like": "Dados reais filtrados para corresponder ao âmbito da previsão — comparação equivalente",
   "actuals_no_actuals_data_found_for_this_combination": "Não foram encontrados dados reais para esta combinação",
   "actuals_no_forecast_yet_tooltip": "Ainda não foi gerada nenhuma previsão para esta coorte — não há nada com que pontuar.",
   "common_volume": "Volume",

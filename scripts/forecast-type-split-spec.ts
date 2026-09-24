@@ -47,9 +47,12 @@ const all = (app.match(/Standard Forecast/g) ?? []).length;
 const inKeys = (app.match(/\|Standard Forecast\|/g) ?? []).length;
 const asLiteral = (app.match(/'Standard Forecast'/g) ?? []).length;
 
-check('IDENTIFIER: App.tsx still carries exactly 20 occurrences', all === 20, `${all}`);
+// RE-AIMED 2026-09-24 (REQ-D7-02 clause 6): the Adjusted_Forecasts restore is deleted — a loaded session starts with no adjusted forecast — and it was
+// one quoted 'Standard Forecast' literal: a scenario DEFAULT in that restore, not a
+// composite key (the in-key count below is unchanged at 10). 20 -> 19, 7 -> 6.
+check('IDENTIFIER: App.tsx still carries exactly 19 occurrences', all === 19, `${all}`);
 check('IDENTIFIER: exactly 10 sit inside a composite cohort key', inKeys === 10, `${inKeys}`);
-check('IDENTIFIER: exactly 7 are quoted literals', asLiteral === 7, `${asLiteral}`);
+check('IDENTIFIER: exactly 6 are quoted literals', asLiteral === 6, `${asLiteral}`);
 check('IDENTIFIER: no t() ever produces it',
   !/t\(\s*['"][^'"]*['"]\s*\)\s*\}\|/.test(app) && !app.includes("`${t("),
   'a translated cohort-key segment breaks matching silently — §11');

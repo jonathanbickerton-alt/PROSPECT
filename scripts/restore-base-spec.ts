@@ -162,8 +162,10 @@ for (const [key, group] of byKey) {
   check('WIRING: no import site discards the saved months',
     !/historicalMonths:\s+\[\],/.test(app),
     'a restore drops Historical_Months again — asOf goes null and every leaf fails the gate');
-  check('WIRING: all three sites use the shared parser',
-    (app.match(/historicalMonths:\s+parseStoredMonths\(first\.Historical_Months\),/g) ?? []).length === 3,
+  // RE-AIMED 2026-09-24 (REQ-D7-02 clause 6): the Adjusted_Forecasts restore is deleted — a loaded session starts with no adjusted forecast — and it was
+  // the third import site that rebuilt a BaseForecast. Two remain.
+  check('WIRING: both remaining sites use the shared parser',
+    (app.match(/historicalMonths:\s+parseStoredMonths\(first\.Historical_Months\),/g) ?? []).length === 2,
     'the sites disagree about how to read one column');
 }
 

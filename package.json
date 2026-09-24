@@ -92,7 +92,8 @@
     "spec:arpu-basis": "tsx scripts/arpu-basis-mounted-spec.tsx",
     "spec:initiatives": "tsx scripts/initiatives-mounted-spec.tsx",
     "spec:actuals-coverage": "tsx scripts/actuals-coverage-mounted-spec.tsx",
-    "spec:accuracy-month": "tsx scripts/accuracy-month-mounted-spec.tsx"
+    "spec:accuracy-month": "tsx scripts/accuracy-month-mounted-spec.tsx",
+    "spec:step3-one-bar": "tsx scripts/step3-one-bar-mounted-spec.tsx"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

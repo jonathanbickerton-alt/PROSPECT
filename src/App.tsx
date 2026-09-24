@@ -1061,61 +1061,12 @@ export default function App() {
         }
 
         // ── Adjusted Forecasts ────────────────────────────────────────────────
-        const adjRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Adjusted_Forecasts']);
-        if (adjRaw.length > 0 && !isPlaceholderSheet(adjRaw)) {
-          // We need a baseForecast reference — use the one we just reconstructed above.
-          // Since React state is async, reconstruct inline from bfRaw.
-          const typedRows = bfRaw.filter(r => r.Source === 'Typed BaseForecast');
-          if (typedRows.length > 0) {
-            const first = typedRows[0];
-            const bfRef: BaseForecast = {
-              cohort: {
-                segment: String(first.Segment ?? 'All'),
-                product:  String(first.Product  ?? 'All'),
-                channel:  String(first.Channel  ?? 'All'),
-                scenario: String(first.Scenario ?? 'Standard Forecast'),
-              },
-              seedBaseVolume:        Number(first.Seed_Base_Volume       ?? 0),
-                seedBaseKnown:         restoreSeedKnown(first),
-              historicalMonths:      parseStoredMonths(first.Historical_Months),
-              lastHistoricalInflow:  Number(first.Last_Historical_Inflow ?? 0),
-              lastHistoricalOutflow: Number(first.Last_Historical_Outflow ?? 0),
-              // Provenance discriminant. A file with no Provenance column
-              // predates option C, and everything in one was fitted - so the
-              // default is a fact about old files, not a guess. Model_Used is
-              // EMPTY for a derived row, and must NOT be defaulted to a model
-              // name here: that would recreate the fiction on the way back in.
-              provenance: readProvenance(first),
-              months: typedRows.map(r => ({
-                month:     String(r.Month),
-                inflow:    { mean: Number(r.Inflow_Mean     ?? 0), optimistic: Number(r.Inflow_Optimistic     ?? 0), pessimistic: Number(r.Inflow_Pessimistic     ?? 0) },
-                outflow:   { mean: Number(r.Outflow_Mean    ?? 0), optimistic: Number(r.Outflow_Optimistic    ?? 0), pessimistic: Number(r.Outflow_Pessimistic    ?? 0) },
-                retention: { mean: Number(r.Retention_Mean  ?? 0), optimistic: Number(r.Retention_Optimistic  ?? 0), pessimistic: Number(r.Retention_Pessimistic  ?? 0) },
-                arpu:      { mean: Number(r.ARPU_Mean       ?? 0), optimistic: Number(r.ARPU_Optimistic       ?? 0), pessimistic: Number(r.ARPU_Pessimistic       ?? 0) },
-              })),
-            };
-            setAdjustedForecast({
-              base: bfRef,
-              marketEvents: restoredEvents,
-              adjustedMonths: adjRaw.map(r => ({
-                month: String(r.Month),
-                baseline: {
-                  inflow:    Number(r.Inflow_Baseline    ?? 0),
-                  outflow:   Number(r.Outflow_Baseline   ?? 0),
-                  retention: Number(r.Retention_Baseline ?? 0),
-                  arpu:      Number(r.ARPU_Baseline      ?? 0),
-                },
-                uplifted: {
-                  inflow:    Number(r.Inflow_Adjusted    ?? 0),
-                  outflow:   Number(r.Outflow_Adjusted   ?? 0),
-                  retention: Number(r.Retention_Adjusted ?? 0),
-                  arpu:      Number(r.ARPU_Adjusted      ?? 0),
-                },
-                appliedEventIds: String(r.Applied_Event_IDs ?? '').split('; ').filter(Boolean),
-              })),
-            });
-          }
-        }
+        // REQ-D7-02 clause 6: a loaded session starts with NO adjusted forecast.
+        // The restore that stood here rebuilt one keyed to the file's FIRST stored
+        // forecast, not the view it was computed for. The sheet is unchanged: still
+        // required by the validation above, still written on save. It is no longer
+        // read back into context. (Compare never read it: scenarioParser.worker.ts
+        // parses Baseline_Forecasts and the three event sheets only.)
 
         // ── Bulk Generation History ───────────────────────────────────────────
         const bulkRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Bulk_Generation_History']);
@@ -4811,7 +4762,6 @@ export default function App() {
             onRemoveActuals={handleRemoveActuals}
             onRequestExport={openExportModal}
             activeFilter={step3Filter}
-            onCohortFilterChange={handleStep3FilterChange}
           />
         )}
 

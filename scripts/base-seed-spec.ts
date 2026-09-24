@@ -249,8 +249,11 @@ function roll(bfs: BaseForecast[]): Map<string, number> {
   check('WIRING: the export writes the known-ness column',
     /Seed_Base_Known:\s+bf\.seedBaseKnown,/.test(app),
     'absence cannot survive a save — the number alone cannot carry it');
+  // RE-AIMED 2026-09-24 (REQ-D7-02 clause 6): 3 -> 2. The third site rebuilt a
+  // BaseForecast inside the Adjusted_Forecasts restore, which is deleted: a loaded
+  // session starts with no adjusted forecast. The two BaseForecast import sites remain.
   check('WIRING: and every import site restores it',
-    (app.match(/seedBaseKnown:\s+restoreSeedKnown\(first\),/g) ?? []).length === 3,
+    (app.match(/seedBaseKnown:\s+restoreSeedKnown\(first\),/g) ?? []).length === 2,
     'an import site reconstructs known-ness from the value alone');
   check('WIRING: the SCORER declines on an unknown seed too',
     /if \(!canShowBaseForecast\(derivedForRow\)\) return null;/.test(fva),
