@@ -10704,3 +10704,10 @@ forecast Base continues from the COVERED leaves' seed (289,211), not All's
 10. Session 2 realises clause 5: Step 3's badge and toggle describe the
     adjusted forecast OF the view on screen, computed on Step 3 from the
     event arrays; Step 2's global is no longer read by Step 3.
+11. (Jon, 2026-09-24, after the 1850 STOP) Option A: eventScopeSeriesFor's
+    body becomes a module-level function (forecasting.ts or a sibling)
+    taking the scope, the three event arrays, resolveForecast, data and the
+    columns, and returning the existing shape PLUS `adjustedMonths`
+    (additive). WhatIfTab keeps a thin useCallback wrapper; its five callers
+    are untouched. Step 3 is caller 6. computeAdjustedForecast stays 6 — the
+    one call moves, it does not multiply. ONE route to an adjusted run.
