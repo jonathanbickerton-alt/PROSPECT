@@ -914,7 +914,12 @@ async function main() {
         && tbl.includes('onSetInitiative(pickedRows, existingInitiative(name) ?? name)') && tbl.includes('const into = existingInitiative(to);'),
       `${count(tbl, 'initiativeKey(')} / ${count(tbl, 'existingInitiative(')}`);
     check('(X) no exact name comparison survives in the table', !tbl.includes('initiativeNames.includes('));
-    check('(X) computeAdjustedForecast stays 6', count(wi, 'computeAdjustedForecast(') === 6, String(count(wi, 'computeAdjustedForecast(')));
+    // RE-AIMED 2026-09-24 (REQ-D7-02 clause 11): the seam's body moved verbatim to
+    // src/utils/eventScopeSeries.ts, taking one call with it. The count is across
+    // WhatIfTab + that util, and is unchanged.
+    const seamUtil = fs.readFileSync('src/utils/eventScopeSeries.ts', 'utf8');
+    const engineSites = count(wi, 'computeAdjustedForecast(') + count(seamUtil, 'computeAdjustedForecast(');
+    check('(X) computeAdjustedForecast stays 6', engineSites === 6, String(engineSites));
   }
 
   report();

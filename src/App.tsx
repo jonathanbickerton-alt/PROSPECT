@@ -4,7 +4,7 @@ import { FileSpreadsheet, Info, XCircle } from 'lucide-react';
 import { format, isValid, parse } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import { isPlaceholderSheet } from './utils/sheetGuards';
-import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, readStoredRateMap, marketEventExportRow, marketEventFromRow, yieldEventExportRow, yieldEventFromRow, pricingEventExportRow, pricingEventFromRow, activeCohortMetaRows, readActiveCohortMeta, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey, monthsCarryingActuals, tariffScopeFor } from './utils/forecasting';
+import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, readStoredRateMap, marketEventExportRow, marketEventFromRow, yieldEventExportRow, yieldEventFromRow, pricingEventExportRow, pricingEventFromRow, activeCohortMetaRows, readActiveCohortMeta, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey, monthsCarryingActuals, tariffScopeFor, adjustedForecastSheetRows } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { runIngest, isSessionWorkbook, loadedLineText } from './utils/ingest';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
@@ -549,34 +549,11 @@ export default function App() {
     );
 
     // ── Sheet 4: Adjusted_Forecasts ───────────────────────────────────────────
-    if (adjustedForecast) {
-      const cohort = adjustedForecast.base.cohort;
-      const adjRows = adjustedForecast.adjustedMonths.map(am => ({
-        Segment:    cohort.segment,
-        Product:    cohort.product,
-        Product_L2: cohort.productL2 ?? 'All',
-        Channel:    cohort.channel,
-        Channel_L2: cohort.channelL2 ?? 'All',
-        Scenario:   cohort.scenario,
-        Month: am.month,
-        Inflow_Baseline: am.baseline.inflow,
-        Inflow_Adjusted: am.uplifted.inflow,
-        Outflow_Baseline: am.baseline.outflow,
-        Outflow_Adjusted: am.uplifted.outflow,
-        Retention_Baseline: am.baseline.retention,
-        Retention_Adjusted: am.uplifted.retention,
-        ARPU_Baseline: am.baseline.arpu,
-        ARPU_Adjusted: am.uplifted.arpu,
-        Applied_Event_IDs: am.appliedEventIds.join('; '),
-      }));
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(adjRows), 'Adjusted_Forecasts');
-    } else {
-      XLSX.utils.book_append_sheet(
-        wb,
-        XLSX.utils.json_to_sheet([{ Note: 'No market events applied — adjusted forecast not available' }]),
-        'Adjusted_Forecasts',
-      );
-    }
+    // REQ-D7-02 clause 8 — ONE writer: Step 2's rows, else the rows a loaded session
+    // carried in (verbatim), else the placeholder. See adjustedForecastSheetRows.
+    const adjRows = adjustedForecastSheetRows(adjustedForecast, carriedAdjustedRows)
+      ?? [{ Note: 'No market events applied — adjusted forecast not available' }];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(adjRows), 'Adjusted_Forecasts');
 
     // ── Sheet 5: Bulk_Generation_History ─────────────────────────────────────
     const bulkRows = bulkRuns.map(r => ({
@@ -1061,6 +1038,10 @@ export default function App() {
         }
 
         // ── Adjusted Forecasts ────────────────────────────────────────────────
+        // REQ-D7-02 clause 8: the loaded rows are CARRIED — kept verbatim in App
+        // state and written back by the export until Step 2 writes its own.
+        const adjRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Adjusted_Forecasts']);
+        setCarriedAdjustedRows(adjRaw.length > 0 && !isPlaceholderSheet(adjRaw) ? adjRaw : null);
         // REQ-D7-02 clause 6: a loaded session starts with NO adjusted forecast.
         // The restore that stood here rebuilt one keyed to the file's FIRST stored
         // forecast, not the view it was computed for. The sheet is unchanged: still
@@ -1219,6 +1200,17 @@ export default function App() {
   // ForecastContext state — owned here so App handlers can write to it
   const [baseForecast, setBaseForecast] = useState<BaseForecast | null>(null);
   const [adjustedForecast, setAdjustedForecast] = useState<MarketEventAdjustedForecast | null>(null);
+  /**
+   * REQ-D7-02 clause 8. THE LOADED Adjusted_Forecasts ROWS, verbatim, carried
+   * through a save until Step 2 writes its own adjusted forecast (which drops
+   * them: see `setAdjustedForecastFromStep2`). Read by the export only.
+   */
+  const [carriedAdjustedRows, setCarriedAdjustedRows] = useState<Record<string, unknown>[] | null>(null);
+  /** Step 2's writer, through context: a real write REPLACES the carried rows. */
+  const setAdjustedForecastFromStep2 = useCallback((v: MarketEventAdjustedForecast | null) => {
+    if (v) setCarriedAdjustedRows(null);
+    setAdjustedForecast(v);
+  }, []);
   const [forecastUpdatedAt, setForecastUpdatedAt] = useState<string | null>(null);
 
   // Multi-forecast store: all generated forecasts keyed by "segment|product|channel"
@@ -4372,7 +4364,7 @@ export default function App() {
       baseForecast={baseForecast}
       setBaseForecast={setBaseForecast}
       adjustedForecast={adjustedForecast}
-      setAdjustedForecast={setAdjustedForecast}
+      setAdjustedForecast={setAdjustedForecastFromStep2}
       forecastStore={forecastStore}
       resolveForecast={resolveForecast}
       canResolve={canResolve}
@@ -4762,6 +4754,10 @@ export default function App() {
             onRemoveActuals={handleRemoveActuals}
             onRequestExport={openExportModal}
             activeFilter={step3Filter}
+            // REQ-D7-02 clause 10: the arrays Step 2 receives, for Step 3's own run.
+            marketEvents={marketEvents}
+            yieldEvents={yieldEvents}
+            pricingEvents={pricingEvents}
           />
         )}
 

@@ -4360,6 +4360,49 @@ export function resolveFromStore(
 }
 
 /**
+ * REQ-D7-02 clause 8 — THE ROWS OF THE Adjusted_Forecasts SHEET, one writer.
+ *
+ * Step 2's adjusted forecast when it has written one; else the rows a loaded
+ * session carried in, VERBATIM, so a load-then-save does not lose them before
+ * Step 2 is opened; else null — and App's export writes its placeholder note,
+ * which stays in App with the sheet's other file-content literals. The row shape
+ * for Step 2's case is the one App's export wrote inline before this — moved.
+ */
+export function adjustedForecastSheetRows(
+  adjusted: { base: { cohort: { segment: string; product: string; productL2?: string | null;
+    channel: string; channelL2?: string | null; scenario: string } };
+    adjustedMonths: ReadonlyArray<{ month: string;
+      baseline: { inflow: number; outflow: number; retention: number; arpu: number };
+      uplifted: { inflow: number; outflow: number; retention: number; arpu: number };
+      appliedEventIds: string[] }> } | null,
+  carried: ReadonlyArray<Record<string, unknown>> | null,
+): Record<string, unknown>[] | null {
+  if (adjusted) {
+    const cohort = adjusted.base.cohort;
+    return adjusted.adjustedMonths.map(am => ({
+      Segment:    cohort.segment,
+      Product:    cohort.product,
+      Product_L2: cohort.productL2 ?? 'All',
+      Channel:    cohort.channel,
+      Channel_L2: cohort.channelL2 ?? 'All',
+      Scenario:   cohort.scenario,
+      Month: am.month,
+      Inflow_Baseline: am.baseline.inflow,
+      Inflow_Adjusted: am.uplifted.inflow,
+      Outflow_Baseline: am.baseline.outflow,
+      Outflow_Adjusted: am.uplifted.outflow,
+      Retention_Baseline: am.baseline.retention,
+      Retention_Adjusted: am.uplifted.retention,
+      ARPU_Baseline: am.baseline.arpu,
+      ARPU_Adjusted: am.uplifted.arpu,
+      Applied_Event_IDs: am.appliedEventIds.join('; '),
+    }));
+  }
+  if (carried && carried.length > 0) return carried.map(r => ({ ...r }));
+  return null;
+}
+
+/**
  * REQ-D7-01 (A) — THE LEAVES A SEAM ANSWER COVERS: the keys of `actualKeys` (the
  * 7-part keys the actuals are held under) that the forecast is the sum of.
  *

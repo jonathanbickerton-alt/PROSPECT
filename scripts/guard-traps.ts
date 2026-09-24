@@ -119,6 +119,7 @@ const INITIATIVES = 'scripts/initiatives-mounted-spec.tsx';
 const ACTUALSCOV = 'scripts/actuals-coverage-mounted-spec.tsx';
 const ACCMONTH = 'scripts/accuracy-month-mounted-spec.tsx';
 const STEP3BAR = 'scripts/step3-one-bar-mounted-spec.tsx';
+const SEAMUTIL = 'src/utils/eventScopeSeries.ts';
 const EVTOGGLE = 'scripts/event-toggle-spec.tsx';
 const SUMMARYBAR = 'src/components/ForecastSummaryBar.tsx';
 const AIHOLD = 'scripts/ai-hold-spec.ts';
@@ -132,7 +133,7 @@ const DEBUNDLE = 'src/locales/de/translation.json';
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const APP_COMPARE = 'src/components/ScenarioCompareTab.tsx';
 const SCENARPUENGINE = 'src/utils/scenarioArpu.ts';
-const TARGETS = [FILE, ENGINE, WHATIF, APP, INGEST, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE, SLIDERROW, TARGETPANEL, SUMMARYBAR, PKGJSON, ENVEXAMPLE, SUMMARYTABLE, ENLOCALE];
+const TARGETS = [FILE, ENGINE, WHATIF, APP, INGEST, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE, SLIDERROW, TARGETPANEL, SUMMARYBAR, PKGJSON, ENVEXAMPLE, SUMMARYTABLE, ENLOCALE, SEAMUTIL];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -1777,6 +1778,13 @@ const TRAPS: Trap[] = [
   { id: '108 the pricing series is fed the loaded cohort, not the draft slice',
     why: 'baseline ARPU and both weighting volumes revert to whatever Step 1 loaded',
     file: WHATIF, spec: MIXCARD,
+    // RE-POINTED 2026-09-24 (REQ-D7-02 clause 11): the seam body moved to
+    // src/utils/eventScopeSeries.ts, which takes a resolver and has no loaded
+    // cohort in scope — so the defect is now expressible only at the WRAPPER, by
+    // handing the util a resolver that answers with the loaded cohort's forecast
+    // wherever the draft slice resolves. Seen RED by hand (md5 d3d80b9b ->
+    // 804758f0 -> d3d80b9b): FAIL pricing scope: baseline ARPU is the EVENT SLICE,
+    // not the loaded cohort [stored 20.3999998779001 vs slice 24 ...]
     // RE-ANCHORED at D5-11, 2026-09-09. The three-line anchor was split when
     // the Value card's preview inserted `yieldsForRun` between the guard and
     // the call, and spec:trap-anchors caught it the same session. Anchored on
@@ -1787,8 +1795,8 @@ const TRAPS: Trap[] = [
     // `marketsForRun`, the market-draft splice. The plant is unchanged — the
     // loaded cohort's forecast in place of the draft slice's.
     mutate: s => s.replace(
-      '    baseForecast: resolution.forecast, marketEvents: marketsForRun, yieldEvents: yieldsForRun,',
-      '    baseForecast, marketEvents: marketsForRun, yieldEvents: yieldsForRun,') },
+      '      marketEvents, yieldEvents, pricingEvents, resolveForecast, data,' + nl,
+      '      marketEvents, yieldEvents, pricingEvents, resolveForecast: (k: string) => { const r = resolveForecast(k); return r.forecast ? { ...r, forecast: baseForecast } : r; }, data,' + nl) },
   // 109 forks the shared helper into a card-local copy. The count is what
   // catches it: the behaviour is IDENTICAL the moment it is planted, so no
   // figure moves and only the exactly-two-callers pin can see it. That is the
@@ -2771,7 +2779,10 @@ const TRAPS: Trap[] = [
   { id: '194 the preview ignores the draft (Adjusted always equals Baseline)',
     why: 'apply sites 2 and 5 read yieldEvents; a draft outside that list'
        + ' does nothing, and the box reports its own inertness as a result',
-    file: WHATIF, spec: YIELDROUND,
+    file: SEAMUTIL, spec: YIELDROUND,
+    // RE-POINTED 2026-09-24 (REQ-D7-02 clause 11): the seam body moved VERBATIM
+    // to src/utils/eventScopeSeries.ts, so the anchor is unchanged and the file is
+    // the util. Seen RED by hand there (md5 4bbba699 -> 6bc60caa -> 4bbba699).
     mutate: s => s.replace(
       "         ...(yieldDraft ? [yieldDraft] : [])]",
       "         ]") },
@@ -2812,7 +2823,10 @@ const TRAPS: Trap[] = [
   { id: '197 the seam drops the per-month winner and the line never renders',
     why: 'the box was right about the CHART and wrong about the DRAFT, and a'
        + ' silent box is exactly how that shipped',
-    file: WHATIF, spec: VIEWAPPLY,
+    file: SEAMUTIL, spec: VIEWAPPLY,
+    // RE-POINTED 2026-09-24 (REQ-D7-02 clause 11): the seam body moved VERBATIM
+    // to src/utils/eventScopeSeries.ts, so the anchor is unchanged and the file is
+    // the util. Seen RED by hand there (md5 4bbba699 -> fd1ccc13 -> 4bbba699).
     // RE-ANCHORED at REQ-D6-07: the single-line loop became a block when the
     // unrounded pair joined the same pass. The plant is the same one — the ids
     // never written, so the rival line has nothing to render from.
@@ -3585,7 +3599,10 @@ const TRAPS: Trap[] = [
   // draft never reaches the run, so delivered equals fitted at any mix.
   { id: '255 the market-draft splice is dropped from the seam',
     why: 'a promotion draft never reaches the run and the lead reads fitted at every mix',
-    file: WHATIF, spec: PROMOCOHORT,
+    file: SEAMUTIL, spec: PROMOCOHORT,
+    // RE-POINTED 2026-09-24 (REQ-D7-02 clause 11): the seam body moved VERBATIM
+    // to src/utils/eventScopeSeries.ts, so the anchor is unchanged and the file is
+    // the util. Seen RED by hand there (md5 4bbba699 -> 77c9fc8e -> 4bbba699).
     mutate: s => s.replace(
       '    baseForecast: resolution.forecast, marketEvents: marketsForRun, yieldEvents: yieldsForRun,',
       '    baseForecast: resolution.forecast, marketEvents, yieldEvents: yieldsForRun,') },
@@ -3885,25 +3902,69 @@ const TRAPS: Trap[] = [
     why: 'clicking a table row silently re-scopes (and can widen) the whole view',
     file: FILE, spec: STEP3BAR,
     mutate: s => s
-      .replace("  activeFilter," + nl + "}) => {", "  activeFilter, onCohortFilterChange," + nl + "}: any) => {")
+      // RE-ANCHORED 2026-09-24 (REQ-D7-02 clause 10): the props now end with the
+      // three event arrays. Seen RED by hand (md5 3da1ea55 -> 4aa26030 -> 3da1ea55).
+      .replace("pricingEvents = NO_EVENTS as PricingEvent[]," + nl + "}) => {", "pricingEvents = NO_EVENTS as PricingEvent[], onCohortFilterChange," + nl + "}: any) => {")
       .replace("                            if (c.worstKpi) setSelectedKpi(c.worstKpi);",
         "                            if (c.worstKpi) setSelectedKpi(c.worstKpi);" + nl
         + "                            onCohortFilterChange?.({ segment: c.seg, product: { l1: null, l2: null }, channel: { l1: null, l2: null }, tariff: { l1: null, l2: null } });") },
 
-  // 285 THE BADGE SHOWS FOR ANOTHER VIEW'S ADJUSTED FORECAST — the key check dropped.
-  //   FAIL  (d) moved to Corporate/Direct: the badge is HIDDEN
-  { id: "285 the Adjusted badge shows when the adjusted forecast's key is not the view's",
-    why: "Step 3 scores its view against Step 2's view's adjusted means (MAPE 12231.5% on the fixture)",
-    file: FILE, spec: STEP3BAR,
-    mutate: s => s.replace("    if (makeForecastKey(c.segment, c.product, c.productL2, c.channel, c.channelL2, c.tariffL1, c.tariffL2) !== viewSeam.key) return false;" + nl, "") },
+  // 285 RETIRED — REQ-D7-02 clause 10 build, 2026-09-24. It planted the removal
+  // of the key equality (adjusted forecast's key === the view's key). Clause 10
+  // removed that equality on purpose: Step 3 no longer reads Step 2's global, so
+  // there is no key to compare. Its claim — "the badge shows for a view the event
+  // does not reach" — is now carried by 288, planted against the predicate that
+  // replaced it. The id is retired rather than re-pointed; the number is not reused.
 
   // 286 THE BADGE SHOWS WITH NO APPLYING EVENT — clause 4.
-  //   FAIL  (e) disabled event only: the badge is hidden
+  //   RE-POINTED 2026-09-24 (REQ-D7-02 clause 10): the gate no longer reads the
+  //   global's marketEvents; it reads the events by prop, filtered by isEventOn.
+  //   Seen RED by hand on the new anchor (md5 3da1ea55 -> 9772dc07 -> 3da1ea55):
+  //   FAIL  (e) disabled event only: the badge is hidden — even with Step 2's global present
   { id: '286 the Adjusted badge shows with zero applying events',
     why: '"Using Adjusted Forecast" over numbers identical to the baseline',
     file: FILE, spec: STEP3BAR,
-    mutate: s => s.replace("    return (adjustedForecast.marketEvents as MarketEvent[]).some(e => isEventOn(e) && eventScopeMatchesView({",
-      "    return true || (adjustedForecast.marketEvents as MarketEvent[]).some(e => isEventOn(e) && eventScopeMatchesView({") },
+    mutate: s => s.replace("      ...marketEvents.filter(isEventOn).map(e => ({",
+      "      ...marketEvents.map(e => ({") },
+
+  // ══ REQ-D7-02 SESSION 2 — STEP 3 SCORES ITS OWN ADJUSTED MEANS (clauses 8-11) ══
+  //
+  // All four seen RED by hand on 2026-09-24 against a pre-plant md5 and restored
+  // from a scratchpad backup (the 2105 report quotes every triple and red line).
+  //
+  // 287 STEP 3 READS STEP 2'S GLOBAL AGAIN — clause 10.
+  //   FAIL  (g) toggle ON: the Inflow card is the engine's figure for THIS view's uplifted means  [3155.3% vs 12231.5%]
+  { id: "287 Step 3 scores against Step 2's global adjusted forecast",
+    why: "Step 3 scores its view against whatever view Step 2 last ran (3155.3% for 12231.5% on the fixture)",
+    file: FILE, spec: STEP3BAR,
+    mutate: s => s
+      .replace("  const { baseForecast, forecastStore, resolveForecast } = useForecast();",
+        "  const { baseForecast, forecastStore, resolveForecast, adjustedForecast } = useForecast() as any;")
+      .replace("    for (const am of viewRun.adjustedMonths) {",
+        "    for (const am of (adjustedForecast ?? viewRun).adjustedMonths) {") },
+
+  // 288 THE BADGE IGNORES THE VIEW — clause 10: any enabled event lights it.
+  //   FAIL  (d) moved to Corporate/Direct/Mobile Data, which the event does not reach: the badge is HIDDEN
+  { id: '288 the Adjusted badge shows for any enabled event, whatever the view',
+    why: 'the badge claims an adjustment at a view no event reaches',
+    file: FILE, spec: STEP3BAR,
+    mutate: s => s.replace("    return scopes.some(d => eventScopeMatchesView(d, view));",
+      "    return scopes.length > 0;") },
+
+  // 289 THE EXPORT DROPS LOADED ADJUSTED ROWS — clause 8 carry.
+  //   FAIL  (j) save BEFORE Step 2: the sheet's rows are identical to the loaded ones  [1 rows vs 12]
+  { id: '289 a save before Step 2 runs drops the loaded Adjusted_Forecasts rows',
+    why: 'load-then-save replaces a file\'s adjusted forecast with the placeholder note',
+    file: ENGINE, spec: STEP3BAR,
+    mutate: s => s.replace("  if (carried && carried.length > 0) return carried.map(r => ({ ...r }));" + nl, "") },
+
+  // 290 THE SEAM OMITS adjustedMonths — clause 11.
+  //   FAIL  (k) adjustedMonths is the run's own, UNROUNDED (the blended ARPU keeps more than 2 decimals)  [undefined]
+  { id: '290 the extracted seam returns no adjustedMonths',
+    why: 'Step 3 has no adjusted means to score against; the toggle silently scores nothing',
+    file: SEAMUTIL, spec: STEP3BAR,
+    mutate: s => s.replace("arpuIdsByMonth, rawArpuByMonth, adjustedMonths: run.adjustedMonths };",
+      "arpuIdsByMonth, rawArpuByMonth, adjustedMonths: [] };") },
 ];
 
 

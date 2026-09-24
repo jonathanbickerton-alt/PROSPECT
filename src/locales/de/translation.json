@@ -101,7 +101,6 @@
   "actuals_unit_revenue": "Gesamtumsatz",
   "actuals_revenue_no_band": "Konfidenzband wird nicht angezeigt — für den Umsatz gibt es kein gültiges Intervall",
   "actuals_drilled_into": "Aufgeschlüsselt nach:",
-  "actuals_clear": "Zurücksetzen",
   "actuals_no_forecast_matches_the_current_view_scope": "Keine Prognose entspricht dem aktuellen Ansichtsbereich",
   "common_month": "Monat",
   "actuals_actual": "Ist-Wert",

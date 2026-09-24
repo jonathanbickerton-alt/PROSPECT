@@ -1954,7 +1954,12 @@ async function main() {
       // comment would inflate the count, and this file's own history contains a
       // trap that matched an explanatory comment instead of the code it
       // described.
-      const srcRaw = (await import('node:fs')).readFileSync('src/components/WhatIfTab.tsx', 'utf8');
+      // RE-AIMED 2026-09-24 (REQ-D7-02 clause 11): the seam's BODY moved verbatim
+      // to src/utils/eventScopeSeries.ts; WhatIfTab keeps a thin wrapper. The seam is now
+      // those two files, so the source read here is both — the counts are unchanged.
+      const nodeFs = await import('node:fs');
+      const srcRaw = nodeFs.readFileSync('src/components/WhatIfTab.tsx', 'utf8') + '\n'
+        + nodeFs.readFileSync('src/utils/eventScopeSeries.ts', 'utf8');
       const src = srcRaw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
       const callers = (src.match(/resolveEventScopeForecast\s*\(/g) ?? []).length;
       // RAISED 2 -> 3, 2026-09-02 (UAT-D2-03). Jon should reverse this if he

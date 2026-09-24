@@ -101,7 +101,6 @@
   "actuals_unit_revenue": "Ingresos totales",
   "actuals_revenue_no_band": "La banda de confianza no se muestra: los ingresos no tienen un intervalo válido",
   "actuals_drilled_into": "Detalle de:",
-  "actuals_clear": "Borrar",
   "actuals_no_forecast_matches_the_current_view_scope": "Ninguna previsión coincide con el ámbito de la vista actual",
   "common_month": "Mes",
   "actuals_actual": "Real",

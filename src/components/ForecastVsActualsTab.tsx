@@ -7,6 +7,8 @@ import {
 import { RemoveActualsModal } from './RemoveActualsModal';
 import type { ForecastModel, BaseForecast, ActiveView } from '../types/forecast';
 import type { MarketEvent } from '../utils/forecasting';
+import type { YieldEvent, PricingEvent } from '../types/forecast';
+import { eventScopeSeries } from '../utils/eventScopeSeries';
 import { provenanceModel } from '../types/forecast';
 import {
   ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Tooltip,
@@ -67,6 +69,14 @@ interface ForecastVsActualsTabProps {
    * Drives chart scoping and the cards' scope. Step 3 reads it; it never writes it.
    */
   activeFilter?: ViewFilter;
+  /**
+   * REQ-D7-02 clause 10. THE EVENT ARRAYS, from App — the same arrays Step 2
+   * receives, not copies. Step 3 computes the adjusted forecast for ITS OWN view
+   * from these, through the one seam (`eventScopeSeries`). Absent = no events.
+   */
+  marketEvents?: MarketEvent[];
+  yieldEvents?: YieldEvent[];
+  pricingEvents?: PricingEvent[];
   // REQ-D7-02 clause 3: `onCohortFilterChange` is gone. Its readers were the
   // COMPARING chips, the row click, the row deselect and the Drilled-into Clear —
   // every one a second writer of the viewing bar. No control on Step 3 writes it.
@@ -1507,6 +1517,9 @@ export function buildCohortAccuracy(
 
 // Component
 // ---------------------------------------------------------------------------
+/** A stable empty default, so an absent array does not re-run the view's memo every render. */
+const NO_EVENTS: never[] = [];
+
 export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   data, wiDateCol, wiMetricCol, wiValueCol,
   wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal,
@@ -1516,9 +1529,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   onRunChallengerForecast, onAcceptPreviewForecast,
   handleImportActualsFile, onRemoveActuals, onRequestExport,
   activeFilter,
+  marketEvents = NO_EVENTS as MarketEvent[], yieldEvents = NO_EVENTS as YieldEvent[], pricingEvents = NO_EVENTS as PricingEvent[],
 }) => {
   const { t, i18n } = useTranslation();
-  const { baseForecast, adjustedForecast, forecastStore, resolveForecast } = useForecast();
+  // REQ-D7-02 clause 10: Step 2's `adjustedForecast` global is NOT read on Step 3.
+  const { baseForecast, forecastStore, resolveForecast } = useForecast();
   // The user's choice. It only takes effect while the gate below is open.
   const [useAdjustedScoring, setUseAdjustedScoring] = useState(false);
 
@@ -1819,7 +1834,9 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     const dAdjusted: { month: string; base: number }[] = [];
 
     baseForecast.months.forEach((bm, i) => {
-      const am = adjustedForecast ? adjustedForecast.adjustedMonths[i] : null;
+      // REQ-D7-02 clause 10: the global is no longer read here. These `adjusted`
+      // fields have no reader (the 1151 inventory), so they carry the baseline.
+      const am = null as { uplifted: { inflow: number; outflow: number; retention: number; arpu: number } } | null;
 
       const blInflow = bm.inflow.mean;
       const blOutflow = bm.outflow.mean;
@@ -1883,7 +1900,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     });
 
     return { comparisonRows: rows, derivedBaseline: dBaseline, derivedAdjusted: dAdjusted };
-  }, [baseForecast, adjustedForecast, actualsAggrMap]);
+  }, [baseForecast, actualsAggrMap]);
 
   // ---------------------------------------------------------------------------
   // 4b. Previous-model forecast lookup map (for paper-trail line on chart)
@@ -2013,42 +2030,71 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   }, [activeFilter, resolveForecast]);
 
   /**
-   * REQ-D7-02 clause 4 — THE ONE GATE for the "Using Adjusted Forecast" badge and
-   * the Adjusted-scoring toggle (interim, until Step 3 computes its own — clause 5).
+   * REQ-D7-02 clauses 4 and 10 — THE ONE GATE for the "Using Adjusted Forecast"
+   * badge and the Adjusted-scoring toggle, for the VIEW ON SCREEN.
    *
-   * The adjusted forecast in context is Step 2's, built for STEP 2's view. It is
-   * shown here only when that view IS the view on screen (key equality against
-   * the view's own seam key — no new predicate) AND at least one enabled event
-   * applies to that view (the existing `eventScopeMatchesView`, as Step 2's own
-   * tooltip reads it; "enabled" is `isEventOn`, where an absent flag is on).
-   * Otherwise both are hidden — no disabled control.
+   * Open when at least one enabled event, of any carrier, applies to this view:
+   * `isEventOn` (an absent flag is on) and the existing `eventScopeMatchesView`,
+   * each carrier mapped to scope dims exactly as Step 2's chart tooltip maps it.
+   * Step 2's global is not consulted: what Step 2 last showed no longer matters.
    */
   const showAdjusted = useMemo((): boolean => {
-    if (!adjustedForecast || !viewSeam || !activeFilter) return false;
-    const c = adjustedForecast.base.cohort;
-    if (makeForecastKey(c.segment, c.product, c.productL2, c.channel, c.channelL2, c.tariffL1, c.tariffL2) !== viewSeam.key) return false;
+    if (!activeFilter) return false;
     const view = {
       segment: activeFilter.segment || 'All',
       productL1: activeFilter.product.l1, productL2: activeFilter.product.l2,
       channelL1: activeFilter.channel.l1, channelL2: activeFilter.channel.l2,
       tariffL1: activeFilter.tariff?.l1 ?? null, tariffL2: activeFilter.tariff?.l2 ?? null,
     };
-    // The context types this as unknown[]; WhatIfTab writes its MarketEvent[] here.
-    return (adjustedForecast.marketEvents as MarketEvent[]).some(e => isEventOn(e) && eventScopeMatchesView({
-      segment: e.segment, product: e.product, productL2: e.productL2,
-      channelL1: e.channel, channelL2: e.channelL2,
-      tariffL1: e.tariffL1, tariffL2: e.tariffL2, tariffScope: e.tariffScope,
-    }, view));
-  }, [adjustedForecast, viewSeam, activeFilter]);
+    const scopes = [
+      ...marketEvents.filter(isEventOn).map(e => ({
+        segment: e.segment, product: e.product, productL2: e.productL2,
+        channelL1: e.channel, channelL2: e.channelL2,
+        tariffL1: e.tariffL1, tariffL2: e.tariffL2, tariffScope: e.tariffScope,
+      })),
+      ...yieldEvents.filter(isEventOn).map(e => ({
+        segment: e.segment, product: e.product,
+        channelL1: e.channelL1, channelL2: e.channelL2, tariffScope: e.tariffScope,
+      })),
+      ...pricingEvents.filter(isEventOn).map(e => e as unknown as Parameters<typeof eventScopeMatchesView>[0]),
+    ];
+    return scopes.some(d => eventScopeMatchesView(d, view));
+  }, [activeFilter, marketEvents, yieldEvents, pricingEvents]);
+
+  /**
+   * REQ-D7-02 clause 10 — THE VIEW'S OWN ADJUSTED RUN, through THE seam Step 2's
+   * cards use (`eventScopeSeries`, caller 6), scoped to the view (the draft shape
+   * the seam takes). Run only while the gate is open: a view no event applies to
+   * has nothing to adjust, and pays nothing. Memoised on the view and the arrays.
+   */
+  const viewRun = useMemo(() => {
+    if (!showAdjusted || !activeFilter) return null;
+    return eventScopeSeries({
+      draft: {
+        segment: activeFilter.segment || 'All',
+        product: activeFilter.product.l1 ?? 'All', productL2: activeFilter.product.l2 ?? 'All',
+        channelL1: activeFilter.channel.l1 ?? 'All', channelL2: activeFilter.channel.l2 ?? 'All',
+        tariffL1: activeFilter.tariff?.l1 ?? 'All', tariffL2: activeFilter.tariff?.l2 ?? 'All',
+      },
+      excludeId: null,
+      marketEvents, yieldEvents, pricingEvents, resolveForecast, data,
+      wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
+      wiTariffL1Col, wiTariffL2Col, wiValueCol,
+      wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
+    });
+  }, [showAdjusted, activeFilter, marketEvents, yieldEvents, pricingEvents, resolveForecast, data,
+      wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
+      wiTariffL1Col, wiTariffL2Col, wiValueCol, wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal]);
+
   /** The toggle's effect: the user's choice, forced off while the gate is closed. */
   const adjustedScoringOn = useAdjustedScoring && showAdjusted;
 
-  // Adjusted mean map — month → { inflow, outflow, retention, arpu } using uplifted values.
-  // Built only while adjusted scoring is ON and the gate is open; undefined otherwise.
+  // Adjusted mean map — month → { inflow, outflow, retention, arpu } from THE VIEW'S
+  // run, unrounded (`adjustedMonths[].uplifted`). Built only while scoring is on.
   const adjustedMeanMap = useMemo((): AdjustedMeanMap | undefined => {
-    if (!adjustedScoringOn || !adjustedForecast) return undefined;
+    if (!adjustedScoringOn || !viewRun) return undefined;
     const map: AdjustedMeanMap = new Map();
-    for (const am of adjustedForecast.adjustedMonths) {
+    for (const am of viewRun.adjustedMonths) {
       map.set(am.month, {
         inflow:    am.uplifted.inflow,
         outflow:   am.uplifted.outflow,
@@ -2057,7 +2103,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       });
     }
     return map;
-  }, [adjustedScoringOn, adjustedForecast]);
+  }, [adjustedScoringOn, viewRun]);
 
   /**
    * REQ-D7-01 clauses 2 and 8 — THE ACCURACY MONTHS: those carrying BOTH actuals

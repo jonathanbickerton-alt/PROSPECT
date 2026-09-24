@@ -315,7 +315,10 @@ const BASE: any = {
 // these three DO catch is each of the session's three traps, which is the bar
 // a trap must clear to be in the registry at all.
 {
-  const tab = fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8');
+  // RE-AIMED 2026-09-24 (REQ-D7-02 clause 11): the seam's BODY moved verbatim
+// to src/utils/eventScopeSeries.ts; WhatIfTab keeps a thin wrapper. The seam is now
+// those two files, so the source read here is both — the counts are unchanged.
+  const tab = fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8') + '\n' + fs.readFileSync('src/utils/eventScopeSeries.ts', 'utf8');
 
   // (1) THE DEFAULT BASIS. On Forecast the tiers are rescaled so their
   // equal-weight blend equals the fitted mean — the chart's own number — so
@@ -370,8 +373,11 @@ const BASE: any = {
   // What this pin has always been about is unchanged and is still asserted: the
   // engine runs ONCE into a local, and `series` is that run's own `chartData`
   // with nothing done to it, so the two Pricing callers are byte-identical.
+  // RE-AIMED 2026-09-24 (REQ-D7-02 clause 11): the return gained `adjustedMonths`,
+  // ADDITIVELY, when the body moved to utils/eventScopeSeries.ts. `series` is still
+  // the run's chartData untouched, which is what this pins.
   check('D5-13/D6-07: and series is that same run chartData, untouched',
-    tab.includes('return { series: run.chartData, reason: null, arpuIdsByMonth, rawArpuByMonth };'),
+    tab.includes('return { series: run.chartData, reason: null, arpuIdsByMonth, rawArpuByMonth, adjustedMonths: run.adjustedMonths };'),
     'the Pricing callers must get byte-identical series');
   check('D5-13: the ids are the engine appliedArpuIds, per month',
     tab.includes('arpuIdsByMonth[m.month] = m.appliedArpuIds ?? [];')
@@ -408,7 +414,8 @@ const BASE: any = {
         .includes('ARPU (Adjusted)')),
     'a column read inside the deliver helper is the rounded path returning');
   check('D5-13/D6-07: the null-forecast return carries BOTH fields too',
-    tab.includes('return { series: null, reason: resolution.reason ?? null, arpuIdsByMonth: {}, rawArpuByMonth: {} };'),
+    // RE-AIMED 2026-09-24 (clause 11): and the additive field, empty.
+    tab.includes('return { series: null, reason: resolution.reason ?? null, arpuIdsByMonth: {}, rawArpuByMonth: {}, adjustedMonths: [] };'),
     'an absent field would make the caller read undefined at the one moment'
     + ' it is already handling a failure');
   // THE WINNER IS FILTERED TO THE YIELD LIST. appliedArpuIds also carries

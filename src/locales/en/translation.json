@@ -101,7 +101,6 @@
   "actuals_unit_revenue": "Total revenue",
   "actuals_revenue_no_band": "Confidence band not shown — revenue has no valid interval",
   "actuals_drilled_into": "Drilled into:",
-  "actuals_clear": "Clear",
   "actuals_no_forecast_matches_the_current_view_scope": "No forecast matches the current view scope",
   "common_month": "Month",
   "actuals_actual": "Actual",

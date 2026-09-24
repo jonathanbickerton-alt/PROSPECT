@@ -185,7 +185,10 @@ const readerCalls = app.split('pricingEventFromRow').length - 1;
 check('wiring: EXACTLY ONE pricing import route calls the reader (plus the import)',
   readerCalls === 2, `${readerCalls} occurrences — 1 import + 1 call site expected`);
 
-const tab = fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8');
+// RE-AIMED 2026-09-24 (REQ-D7-02 clause 11): the seam's BODY moved verbatim
+// to src/utils/eventScopeSeries.ts; WhatIfTab keeps a thin wrapper. The seam is now
+// those two files, so the source read here is both — the counts are unchanged.
+const tab = fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8') + '\n' + fs.readFileSync('src/utils/eventScopeSeries.ts', 'utf8');
 check('wiring: the card restores the mode on reopen',
   tab.includes('pricingMode: ev.pricingMode'),
   'the yieldArpuMode shape — an unrestored mode misrepresents the event');

@@ -523,7 +523,10 @@ async function main() {
   // are stripped first, so an explanatory mention cannot satisfy a count.
   {
     const strip = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    const tab = strip(fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8'));
+    // RE-AIMED 2026-09-24 (REQ-D7-02 clause 11): the seam's BODY moved verbatim
+    // to src/utils/eventScopeSeries.ts; WhatIfTab keeps a thin wrapper. The seam is now
+    // those two files, so the source read here is both — the counts are unchanged.
+    const tab = strip(fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8') + '\n' + fs.readFileSync('src/utils/eventScopeSeries.ts', 'utf8'));
     const mix = strip(fs.readFileSync('src/utils/mixConstraint.ts', 'utf8'));
     const count = (t: string, needle: string) => t.split(needle).length - 1;
     check('(X) buildPromoEvents: 1 definition + 3 save paths + the preview = 5',
