@@ -19,7 +19,7 @@
  */
 import * as fs from 'fs';
 import * as XLSX from 'xlsx';
-import { buildCohortDataMap, buildRollUpIndex, deriveAggregate, calculateBaseForecast } from '../src/utils/forecasting';
+import { buildCohortDataMap, buildRollUpIndex, deriveAggregate, calculateBaseForecast, resolveFromStore } from '../src/utils/forecasting';
 import { buildCohortAccuracy } from '../src/components/ForecastVsActualsTab';
 import type { BaseForecast } from '../src/types/forecast';
 
@@ -139,16 +139,11 @@ for (const k of enumerated) {
   if (!store.has(fiveKey)) store.set(fiveKey, { ...bf, cohort: { ...bf.cohort, tariffL1: 'All', tariffL2: 'All' } });
 }
 
-const resolveForecast = (key: string) => {
-  const hit = store.get(key);
-  if (hit) return { forecast: hit, reason: null };
-  const lk = leafMap.get(key) ?? [];
-  const leaves = lk.map(k => store.get(k)).filter((b): b is BaseForecast => !!b);
-  if (!leaves.length) return { forecast: null as BaseForecast | null, reason: 'insufficient-history' as any };
-  const [segment, product, productL2, channel, channelL2, tariffL1, tariffL2] = key.split('|');
-  return { forecast: deriveAggregate(leaves, { segment, product, productL2, channel,
-    channelL2, tariffL1, tariffL2, scenario: 'Base Case' } as any), reason: null as any };
-};
+// RE-AIMED 2026-09-24 (REQ-D7-01): THE SEAM ITSELF, not a transcription of it. Step 3
+// now restricts actuals to the leaves the seam summed, so the harness must answer
+// as App does: with `leaves`, and ignoring a fitted forecast stored under an
+// All-bearing key (the 5-part entries below), exactly as resolveFromStore does.
+const resolveForecast = (key: string) => resolveFromStore(store, leafMap, key);
 
 const actualsMap = buildActualsMap();
 const anyBf = [...store.values()][0];
@@ -242,16 +237,8 @@ check('NO ROW carries a non-finite COMPONENT score either',
 {
   const sevenOnly = new Map<string, BaseForecast>();
   for (const k of enumerated) { const bf = store.get(k); if (bf) sevenOnly.set(k, bf); }
-  const resolveSeven = (key: string) => {
-    const hit = sevenOnly.get(key);
-    if (hit) return { forecast: hit, reason: null as any };
-    const lk = leafMap.get(key) ?? [];
-    const leaves = lk.map(k => sevenOnly.get(k)).filter((b): b is BaseForecast => !!b);
-    if (!leaves.length) return { forecast: null as BaseForecast | null, reason: 'insufficient-history' as any };
-    const [sg, pr, p2, ch, c2, t1, t2] = key.split('|');
-    return { forecast: deriveAggregate(leaves, { segment: sg, product: pr, productL2: p2,
-      channel: ch, channelL2: c2, tariffL1: t1, tariffL2: t2, scenario: 'Base Case' } as any), reason: null as any };
-  };
+  // RE-AIMED 2026-09-24 (REQ-D7-01): the seam itself, as above.
+  const resolveSeven = (key: string) => resolveFromStore(sevenOnly, leafMap, key);
   const sevenOut = buildCohortAccuracy(actualsMap, anyBf, FULL as any, sevenOnly, resolveSeven as any);
   const sevenScored = sevenOut.filter((r: any) => r.overallScore !== null).length;
 

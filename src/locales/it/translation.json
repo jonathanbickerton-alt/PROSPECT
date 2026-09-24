@@ -945,5 +945,6 @@
   "whatif_delete_initiative_title": "Eliminare l'iniziativa '{{name}}' — tutti i {{n}} eventi?",
   "whatif_delete_initiative_blurb": "Tutti gli eventi dell'iniziativa, su tutte le schede, vengono rimossi e la previsione ricalcolata. L'operazione non può essere annullata.",
   "whatif_delete_initiative_confirm": "Elimina iniziativa",
-  "whatif_delete_initiative_bin": "Elimina l'iniziativa '{{name}}' ({{n}} eventi)"
+  "whatif_delete_initiative_bin": "Elimina l'iniziativa '{{name}}' ({{n}} eventi)",
+  "actuals_coverage_line": "La previsione copre {{covered}} di {{total}} coorti"
 }

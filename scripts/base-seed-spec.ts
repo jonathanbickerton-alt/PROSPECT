@@ -233,9 +233,13 @@ function roll(bfs: BaseForecast[]): Map<string, number> {
   check('WIRING: the chart declines when the seed is not known',
     /if \(!canShowBaseForecast\(\{ seedBaseKnown: fcSeedKnown \}\)\) return null;/.test(fva),
     'the Base series is drawn from an unknown stock again');
-  check('WIRING: the aggregate seed is all-or-absent at the chart too',
-    /fcSeedKnown = matchFcs\.length > 0 && matchFcs\.every\(bf => bf\.seedBaseKnown\)/.test(fva),
-    'one unseeded leaf no longer stops the aggregate line');
+  // RE-AIMED 2026-09-24 (REQ-D7-01 clause 12): the chart's own aggregate — the seam-
+  // miss branch that summed seeds all-or-absent inline — is DELETED. The chart now
+  // takes known-ness from the seam's answer only, and the seam's derivation is the
+  // all-or-absent rule the DERIVE checks above pin.
+  check('WIRING: the aggregate seed is all-or-absent at the chart too — read from the seam\'s answer only',
+    /fcSeedKnown = specificForecast\.seedBaseKnown;/.test(fva) && !/matchFcs/.test(fva),
+    'the chart derives seed known-ness a second way again');
   // THE SCORER, which is the reader that matters most: it feeds baseScore ->
   // overallScore -> the rendered cell AND the CSV export. A chart line that
   // should not be there is visible and arguable; a KPI scored against a

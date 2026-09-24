@@ -945,5 +945,6 @@
   "whatif_delete_initiative_title": "Initiative '{{name}}' löschen — alle {{n}} Ereignisse?",
   "whatif_delete_initiative_blurb": "Alle Ereignisse der Initiative werden auf allen Karten entfernt und die Prognose neu berechnet. Dies kann nicht rückgängig gemacht werden.",
   "whatif_delete_initiative_confirm": "Initiative löschen",
-  "whatif_delete_initiative_bin": "Initiative '{{name}}' löschen ({{n}} Ereignisse)"
+  "whatif_delete_initiative_bin": "Initiative '{{name}}' löschen ({{n}} Ereignisse)",
+  "actuals_coverage_line": "Prognose deckt {{covered}} von {{total}} Kohorten ab"
 }

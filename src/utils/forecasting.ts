@@ -2,6 +2,7 @@ import { addMonths, format, isValid } from 'date-fns';
 import type { BaseForecast, BaseForecastMonth, CohortKey, ForecastBand, ForecastModel, FittedParams, SkipReason, ArpuBand, PricingEvent, YieldEvent, EventToggle } from '../types/forecast';
 // One direction only: mixConstraint imports nothing, so this cannot cycle.
 import { blendedArpu } from './mixConstraint';
+import { cohortInScope, ALL_DIMS } from './cohortScope';
 
 export interface MarketEvent extends EventToggle {
   id: string;
@@ -4356,6 +4357,48 @@ export function resolveFromStore(
   // makes it safe is that `derived` IS the sum of exactly these leaves, so a
   // ratio taken over them and a basis taken from `derived` share a denominator.
   return { forecast: derived, reason: null, leaves };
+}
+
+/**
+ * REQ-D7-01 (A) — THE LEAVES A SEAM ANSWER COVERS: the keys of `actualKeys` (the
+ * 7-part keys the actuals are held under) that the forecast is the sum of.
+ *
+ * A DERIVED forecast covers exactly its `leaves`; a STORED one covers its own
+ * key. In the app both are leaf keys, so this is set membership. A fit held
+ * under a broader key (a leaf of a derivation or a stored forecast) was fitted
+ * on the leaves under that key, so it covers those — read with the shared
+ * `cohortInScope`, which for a leaf key is plain equality. No forecast covers
+ * nothing.
+ *
+ * Step 3 restricts its actuals to this set, so the actual and the forecast it is
+ * compared with describe the same cohorts. It is read off the seam's own answer,
+ * not re-asked of the aggregate: asking whether a leaf lies under the row's OWN
+ * aggregate is always yes, which is how the restriction became vacuous (the 1855
+ * inventory, FINDING 2).
+ */
+export function coveredLeafKeys(
+  seam: { forecast: BaseForecast | null; leaves?: readonly BaseForecast[] },
+  key: string,
+  actualKeys: Iterable<string>,
+): Set<string> {
+  const out = new Set<string>();
+  if (!seam.forecast) return out;
+  const covers = (seam.leaves && seam.leaves.length > 0)
+    ? seam.leaves.map(b => makeForecastKey(b.cohort.segment, b.cohort.product, b.cohort.productL2,
+        b.cohort.channel, b.cohort.channelL2, b.cohort.tariffL1, b.cohort.tariffL2))
+    : [key];
+  const scopes = covers.map(c => {
+    const [segment, product, productL2, channel, channelL2, tariffL1, tariffL2] = c.split('|');
+    return { segment, product, productL2, channel, channelL2, tariffL1, tariffL2 };
+  });
+  const exact = new Set(covers);
+  for (const k of actualKeys) {
+    if (exact.has(k)) { out.add(k); continue; }
+    const [s, p, p2, c, c2, t1, t2] = k.split('|');
+    const cand = { segment: s, product: p, productL2: p2, channel: c, channelL2: c2, tariffL1: t1, tariffL2: t2 };
+    if (scopes.some(sc => cohortInScope(cand, sc, ALL_DIMS))) out.add(k);
+  }
+  return out;
 }
 
 /**

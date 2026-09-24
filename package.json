@@ -90,7 +90,8 @@
     "spec:value-cohort-target": "tsx scripts/value-cohort-target-mounted-spec.tsx",
     "spec:promo-cohort-target": "tsx scripts/promo-cohort-target-mounted-spec.tsx",
     "spec:arpu-basis": "tsx scripts/arpu-basis-mounted-spec.tsx",
-    "spec:initiatives": "tsx scripts/initiatives-mounted-spec.tsx"
+    "spec:initiatives": "tsx scripts/initiatives-mounted-spec.tsx",
+    "spec:actuals-coverage": "tsx scripts/actuals-coverage-mounted-spec.tsx"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

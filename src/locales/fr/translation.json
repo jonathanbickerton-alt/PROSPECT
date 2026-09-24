@@ -945,5 +945,6 @@
   "whatif_delete_initiative_title": "Supprimer l'initiative « {{name}} » — les {{n}} événements ?",
   "whatif_delete_initiative_blurb": "Tous les événements de l'initiative, sur toutes les cartes, sont supprimés et la prévision est recalculée. Cette action est irréversible.",
   "whatif_delete_initiative_confirm": "Supprimer l'initiative",
-  "whatif_delete_initiative_bin": "Supprimer l'initiative « {{name}} » ({{n}} événements)"
+  "whatif_delete_initiative_bin": "Supprimer l'initiative « {{name}} » ({{n}} événements)",
+  "actuals_coverage_line": "La prévision couvre {{covered}} cohortes sur {{total}}"
 }

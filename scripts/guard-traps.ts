@@ -116,6 +116,7 @@ const VALUECOHORT = 'scripts/value-cohort-target-mounted-spec.tsx';
 const PROMOCOHORT = 'scripts/promo-cohort-target-mounted-spec.tsx';
 const ARPUBASIS = 'scripts/arpu-basis-mounted-spec.tsx';
 const INITIATIVES = 'scripts/initiatives-mounted-spec.tsx';
+const ACTUALSCOV = 'scripts/actuals-coverage-mounted-spec.tsx';
 const EVTOGGLE = 'scripts/event-toggle-spec.tsx';
 const SUMMARYBAR = 'src/components/ForecastSummaryBar.tsx';
 const AIHOLD = 'scripts/ai-hold-spec.ts';
@@ -3794,6 +3795,43 @@ const TRAPS: Trap[] = [
     why: 'the user cannot re-case an initiative by renaming it',
     file: SUMMARYTABLE, spec: INITIATIVES,
     mutate: s => s.replace("    if (into === renaming.from) { onSetInitiative(members, to); return; }", "    if (into === renaming.from) return;") },
+
+  // ══ REQ-D7-01 SESSION 1 — STEP 3 COMPARES LIKE-FOR-LIKE ══
+  //
+  // All four seen RED by hand on 2026-09-24 against a pre-plant md5 and restored
+  // from a scratchpad backup (the 0838 report quotes every triple and red line).
+  //
+  // 276 THE CHART'S ACTUALS IGNORE THE SEAM'S LEAVES — the 1855 finding restored:
+  // at All/All the chart compares every leaf's actuals with 60 leaves' forecast.
+  //   FAIL  (a) All/All 2026-03: the chart's actual Inflow is the COVERED sum (33048) ...  [{"actual":299034,...}]
+  { id: "276 the chart's actual bucket ignores .leaves on the seam path",
+    why: 'the chart plots every leaf\'s actuals against a forecast of the covered leaves',
+    file: FILE, spec: ACTUALSCOV,
+    mutate: s => s.replace("      if (!covered) return null;", "      return null;") },
+
+  // 277 THE TABLE'S COVER IS THE ROW'S OWN AGGREGATE — the vacuous restriction the
+  // 1855 inventory found: every leaf under the row counts as covered.
+  //   FAIL  (b) the engine scores the Corporate row's 2026-03 Inflow on the COVERED actual (33048) ...  [58284]
+  { id: '277 effectiveActualMap keeps the row\'s own aggregate as its cover',
+    why: 'a partly covered row is scored on all its actuals against a partial forecast',
+    file: FILE, spec: ACTUALSCOV,
+    mutate: s => s.replace("        if (!coveredEarly.has(key)) continue;", "        if (key.split('|')[0] !== d.seg) continue;") },
+
+  // 278 THE COVERAGE LINE SHOWS AT FULL COVERAGE — clause 5: partial only.
+  //   FAIL  (c) Corporate/Direct: NO coverage line — 60 of 60 is complete  [Forecast covers 60 of 60 cohorts]
+  { id: '278 the coverage line shows at full coverage',
+    why: 'a view the forecast fully covers is labelled as if it were partial',
+    file: FILE, spec: ACTUALSCOV,
+    mutate: s => s.replace("{chartCoverage && chartCoverage.covered < chartCoverage.total && (",
+      "{chartCoverage && chartCoverage.covered <= chartCoverage.total && (") },
+
+  // 279 THE BASE ACTUAL IS UNRESTRICTED WHILE THE FLOWS ARE — clause 6 broken: the
+  // step between the actual and forecast Base lines comes back.
+  //   FAIL  (a) the Base actual is the COVERED Base (296883), not every leaf's (2685136) ...
+  { id: '279 the Base actual is unrestricted while the flows are restricted',
+    why: 'the actual Base line sits at every leaf\'s stock above a covered-leaf forecast',
+    file: FILE, spec: ACTUALSCOV,
+    mutate: s => s.replace("        base: bucket.base ?? null,", "        base: (actualsAggrMap.get(month) as any)?.base ?? null,") },
 ];
 
 
@@ -3982,6 +4020,8 @@ const CONTROL_SPEC_MAP: Record<string, string> = {
   ARPUBASIS,
   // REQ-D6-08 session 1. Registered WITH its first trap, 261.
   INITIATIVES,
+  // REQ-D7-01 session 1. Registered WITH its first trap, 276.
+  ACTUALSCOV,
 };
 const controlHashNow = () => GT.controlHash(
   [...Object.values(CONTROL_SPEC_MAP), ...TARGETS, 'scripts/guard-traps.ts', 'scripts/guard-traps-select.ts'],

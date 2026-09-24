@@ -945,5 +945,6 @@
   "whatif_delete_initiative_title": "Delete initiative '{{name}}' — all {{n}} events?",
   "whatif_delete_initiative_blurb": "Every event in the initiative, on every card, is removed and the forecast recalculated. This cannot be undone.",
   "whatif_delete_initiative_confirm": "Delete initiative",
-  "whatif_delete_initiative_bin": "Delete initiative '{{name}}' ({{n}} events)"
+  "whatif_delete_initiative_bin": "Delete initiative '{{name}}' ({{n}} events)",
+  "actuals_coverage_line": "Forecast covers {{covered}} of {{total}} cohorts"
 }

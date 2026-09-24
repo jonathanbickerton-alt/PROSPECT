@@ -158,8 +158,11 @@ async function main() {
         const lv = [...store.entries()].filter(([k]) => k !== key && keyCovers(key, k)).map(([, b]) => b);
         if (!lv.length) return { forecast: null, reason: 'never-enumerated' };
         const [sg, pr, p2, ch, c2, t1, t2] = key.split('|');
+        // RE-AIMED 2026-09-24 (REQ-D7-01): the seam's answer carries `leaves`, as App's
+    // does (resolveFromStore). Step 3 now restricts actuals to exactly those leaves,
+    // so a harness seam without them covered nothing and every row went unscored.
         return { forecast: deriveAggregate(lv, { segment: sg, product: pr, productL2: p2, channel: ch,
-          channelL2: c2, tariffL1: t1, tariffL2: t2, scenario: 'Base Case' } as any), reason: null };
+          channelL2: c2, tariffL1: t1, tariffL2: t2, scenario: 'Base Case' } as any), reason: null, leaves: lv };
       },
       canResolve: () => true,
       updatedAt: Date.now(), bulkRuns: [], setBulkRuns: noop,
