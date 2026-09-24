@@ -10682,3 +10682,19 @@ forecast Base continues from the COVERED leaves' seed (289,211), not All's
 2. The 'Using Adjusted Forecast' badge and the Adjusted-scoring toggle
    must reflect the forecast for THE VIEW ON SCREEN, never Step 2's last
    view — decided after the inventory.
+3. (Jon, 2026-09-24) A row click on Step 3 SELECTS the row only — chart
+   and table show it — and never writes the viewing bar; deselect
+   deselects; the 'Drilled into' Clear is removed. No control on Step 3
+   writes the viewing bar.
+4. The badge and the Adjusted-scoring toggle show ONLY when the adjusted
+   forecast was built for exactly the view on screen AND at least one
+   enabled event applies to that view; otherwise both are hidden (no
+   disabled control). Interim until 5.
+5. Step 3 computes the adjusted forecast for its OWN view (session 2):
+   computeAdjustedForecast sites 6 → 7 by decision; events reach Step 3
+   by prop.
+6. A loaded session starts with no Step 3 adjusted forecast; the
+   Adjusted_Forecasts sheet is unchanged.
+7. `actuals_comparing` and
+   `actuals_actuals_filtered_to_match_forecast_scope_like` retired from
+   six locales.
