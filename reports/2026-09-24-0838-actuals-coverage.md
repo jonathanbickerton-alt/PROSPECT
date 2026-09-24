@@ -6,9 +6,8 @@
 Generated: 2026-09-24 10:11 +0100 (UTC 2026-09-24 09:11)
 Certifies: caec3ce4a3918b2488169664e93a9a2f23ae06ce
 Repo: committed caec3ce, pushed (origin in sync)
-Decisions: 378f0c4 (premise correction + clauses 4-12, alone). Skeleton 000efc0.
-BASE NOT CLEAN, as at 1855: docs v3-3-18 deleted / v3-3-19 untracked; not
-touched, not staged, not committed.
+Decisions 378f0c4 (correction + clauses 4-12, alone). Skeleton 000efc0.
+BASE NOT CLEAN (as 1855): docs v3-3-18 D, v3-3-19 ??, yours, left untouched.
 NEVER-SHED MET, measured on screen, All/All 2026-03: chart Inflow actual
 33,048 (covered) vs forecast 33,136 - was 299,034. Base actual 296,883
 (covered) vs 298,891. Corporate row: 33,048 vs 33,136, dev -0.27%, month
