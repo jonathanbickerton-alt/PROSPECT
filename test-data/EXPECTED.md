@@ -10698,3 +10698,9 @@ forecast Base continues from the COVERED leaves' seed (289,211), not All's
 7. `actuals_comparing` and
    `actuals_actuals_filtered_to_match_forecast_scope_like` retired from
    six locales.
+8. (Jon, 2026-09-24) Loaded Adjusted_Forecasts rows are carried through a
+   save untouched until Step 2 rewrites them.
+9. `actuals_clear` retired.
+10. Session 2 realises clause 5: Step 3's badge and toggle describe the
+    adjusted forecast OF the view on screen, computed on Step 3 from the
+    event arrays; Step 2's global is no longer read by Step 3.
