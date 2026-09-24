@@ -10671,3 +10671,14 @@ forecast Base continues from the COVERED leaves' seed (289,211), not All's
     accuracy memo deleted, the coverage line partial-only; walked K.
     Carried: the Challenger's model-comparison chart still reads the full
     row; absent product/channel grain unexercised.
+
+## REQ-D7-02 — STEP 3 SCOPE: ONE VIEWING BAR; THE ADJUSTED BADGE AND TOGGLE (Jon, 2026-09-24)
+
+1. Step 3 has ONE scope control: the global viewing bar. The COMPARING
+   chip bar (Segment / Product / Channel / Tariff with × chips, 'Actuals
+   filtered to match forecast scope') is REMOVED; Step 3's actuals scope
+   IS the viewing bar's, and nothing on Step 3 narrows or clears it
+   separately.
+2. The 'Using Adjusted Forecast' badge and the Adjusted-scoring toggle
+   must reflect the forecast for THE VIEW ON SCREEN, never Step 2's last
+   view — decided after the inventory.
