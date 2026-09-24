@@ -7,8 +7,7 @@ Generated: 2026-09-24 12:59 +0100 (UTC 2026-09-24 11:59)
 Certifies: f30f67f (src read; no src/scripts/spec change)
 Repo: committed e0649b1, pushed (origin in sync)
 Decision commit: 5f5c87f (REQ-D7-02 1-2, committed alone before reading).
-BASE: the v3.3.19 docs commit is NOT in HEAD - still uncommitted (v3-3-18
-D, v3-3-19 ??), left untouched. src empty, scripts the ledger only.
+BASE: v3.3.19 docs commit NOT in HEAD (swap uncommitted, left untouched).
 FINDING 1: the COMPARING bar holds NO scope of its own. Its x chips call
 onCohortFilterChange = App's handleStep3FilterChange (App:4813-4814), the
 viewing bar's own setter. Step 3 has ONE scope state (step3Filter) already.
