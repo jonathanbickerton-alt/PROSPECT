@@ -5,7 +5,7 @@
 ```
 Generated: 2026-09-24 19:52 +0100 (UTC 2026-09-24 18:52)
 Certifies: none (nothing built; src at 8ccee41, unchanged)
-Repo: PENDING
+Repo: committed 4ae4148 (report only), pushed (origin in sync)
 Clauses 8-10 alone: bd0d668. Skeleton 9245ae5. Base clean, quoted s.0.
 STOP, per the brief: eventScopeSeriesFor cannot yield the per-month
 adjusted means the table scores against. It lacks two things:
