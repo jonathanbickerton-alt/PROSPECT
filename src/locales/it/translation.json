@@ -724,7 +724,6 @@
   "bulk_complete_series_generated": "serie del grafico generate (vista del passaggio 1)",
   "bulk_complete_leaves_uncovered": "foglie di previsione non è stato possibile adattarle. Gli aggregati sovrastanti sono sommati senza di esse:",
   "bulk_complete_series_uncovered": "serie del grafico non è stato possibile prevederle",
-  "actuals_cohort_months_compared": "{{n}} mesi-coorte confrontati",
   "actuals_mape_lower_is_better": "Più basso è, meglio è",
   "bulk_complete_leaves_uncovered_one": "foglia di previsione non è stato possibile adattarla. Gli aggregati sovrastanti sono sommati senza di essa:",
   "standard_scope_blocked": "{{count}} coorti hanno una storia troppo breve per essere previste",
@@ -946,5 +945,7 @@
   "whatif_delete_initiative_blurb": "Tutti gli eventi dell'iniziativa, su tutte le schede, vengono rimossi e la previsione ricalcolata. L'operazione non può essere annullata.",
   "whatif_delete_initiative_confirm": "Elimina iniziativa",
   "whatif_delete_initiative_bin": "Elimina l'iniziativa '{{name}}' ({{n}} eventi)",
-  "actuals_coverage_line": "La previsione copre {{covered}} di {{total}} coorti"
+  "actuals_coverage_line": "La previsione copre {{covered}} di {{total}} coorti",
+  "actuals_accuracy_month": "Mese di accuratezza",
+  "actuals_cohorts_compared_month": "{{n}} coorti confrontate, {{month}}"
 }

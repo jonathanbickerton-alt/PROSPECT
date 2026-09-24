@@ -117,6 +117,7 @@ const PROMOCOHORT = 'scripts/promo-cohort-target-mounted-spec.tsx';
 const ARPUBASIS = 'scripts/arpu-basis-mounted-spec.tsx';
 const INITIATIVES = 'scripts/initiatives-mounted-spec.tsx';
 const ACTUALSCOV = 'scripts/actuals-coverage-mounted-spec.tsx';
+const ACCMONTH = 'scripts/accuracy-month-mounted-spec.tsx';
 const EVTOGGLE = 'scripts/event-toggle-spec.tsx';
 const SUMMARYBAR = 'src/components/ForecastSummaryBar.tsx';
 const AIHOLD = 'scripts/ai-hold-spec.ts';
@@ -430,7 +431,9 @@ const TRAPS: Trap[] = [
   // planting at either site alone reddens the same check.
   { id: '22 the cohort-months label loses its grain', why: '240 cohort-months reads as a 240-month period',
     file: FVA_TAB, spec: COVCOPY, global: 2,
-    mutate: s => s.split("t('actuals_cohort_months_compared', { n: summaryMape.monthsWithActuals })")
+    // RE-AIMED 2026-09-24 (REQ-D7-01 clause 9): the label is now "{n} cohorts
+    // compared, {month}"; the plant still strips the words off the number.
+    mutate: s => s.split("t('actuals_cohorts_compared_month', { n: summaryMape.monthsWithActuals, month: accuracyMonth ? monthLabel(accuracyMonth, i18n.language) : '—' })")
                   .join('summaryMape.monthsWithActuals') },
   // Trap 23: `missing` goes back to meaning has-no-forecast. The button then
   // offers a generate for a leaf that cannot be fitted, produces nothing, and
@@ -3832,6 +3835,34 @@ const TRAPS: Trap[] = [
     why: 'the actual Base line sits at every leaf\'s stock above a covered-leaf forecast',
     file: FILE, spec: ACTUALSCOV,
     mutate: s => s.replace("        base: bucket.base ?? null,", "        base: (actualsAggrMap.get(month) as any)?.base ?? null,") },
+  // ══ REQ-D7-01 SESSION 2 — THE ACCURACY MONTH ══
+  //
+  // All three seen RED by hand on 2026-09-24 against a pre-plant md5 and restored
+  // from a scratchpad backup (the 1049 report quotes every triple and red line).
+  //
+  // 280 THE DEFAULT IS THE FILE'S LATEST MONTH, not the view's — clause 8 broken.
+  //   FAIL  (j) the view's months stop at 2026-05  [2026-01,...,2026-06]
+  { id: "280 the accuracy month defaults to the dataset-wide latest, not the view's",
+    why: "a view whose leaves stop early is scored on a month it has no actuals for",
+    file: FILE, spec: ACCMONTH,
+    mutate: s => s.replace("    return fc.months.map(m => m.month).filter(m => withActuals.has(m) && coveredMonths.has(m)).sort();",
+      "    return fc.months.map(m => m.month).filter(m => withActuals.has(m)).sort();") },
+
+  // 281 THE TABLE SCORES EVERY OVERLAP MONTH whatever the choice — clause 2.
+  //   FAIL  (g) ENGINE: the Corporate row scores exactly ONE month on 2026-03  [2026-01,...,2026-06]
+  { id: "281 the table scores every overlap month regardless of the accuracy month",
+    why: "the month selector moves the cards but not the table",
+    file: FILE, spec: ACCMONTH,
+    mutate: s => s.replace("    const scoredMonths: string[] = accuracyMonth ? forecastMonths.filter(m => m === accuracyMonth) : forecastMonths;",
+      "    const scoredMonths: string[] = forecastMonths;") },
+
+  // 282 TREND FOLLOWS THE CHOSEN MONTH ALONE — clause 7: its window is up-to.
+  //   FAIL  (h) ENGINE: on 2026-06 Trend has its 6 points (Jan-Jun) — not "insufficient"  [insufficient]
+  { id: "282 Trend follows the chosen month alone",
+    why: "every Trend cell reads insufficient, whatever month is chosen",
+    file: FILE, spec: ACCMONTH,
+    mutate: s => s.replace("    const trendMonths: string[] = accuracyMonth ? forecastMonths.filter(m => m <= accuracyMonth) : forecastMonths;",
+      "    const trendMonths: string[] = scoredMonths;") },
 ];
 
 
@@ -4022,6 +4053,8 @@ const CONTROL_SPEC_MAP: Record<string, string> = {
   INITIATIVES,
   // REQ-D7-01 session 1. Registered WITH its first trap, 276.
   ACTUALSCOV,
+  // REQ-D7-01 session 2. Registered WITH its first trap, 280.
+  ACCMONTH,
 };
 const controlHashNow = () => GT.controlHash(
   [...Object.values(CONTROL_SPEC_MAP), ...TARGETS, 'scripts/guard-traps.ts', 'scripts/guard-traps-select.ts'],

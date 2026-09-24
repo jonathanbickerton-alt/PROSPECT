@@ -54,15 +54,17 @@ const LOCALES = ['en', 'de', 'es', 'fr', 'it', 'pt'] as const;
     'it no longer aggregates per forecast — the cohort-months label may now be wrong');
   // The label must follow the grain. If the sum ever becomes a distinct-month
   // count, this check and the copy have to move together.
-  check('GRAIN: the label says cohort-months, matching that sum',
-    /actuals_cohort_months_compared/.test(fva)
-      && /cohort-months/.test(String(en['actuals_cohort_months_compared'] ?? '')),
+  // RE-AIMED 2026-09-24 (REQ-D7-01 clause 9): the cards now score ONE month, so
+  // the per-forecast sum counts COHORTS, and the label names the month.
+  check('GRAIN: the label says cohorts and names the month, matching that sum',
+    /actuals_cohorts_compared_month/.test(fva)
+      && /cohorts compared, \{\{month\}\}/.test(String(en['actuals_cohorts_compared_month'] ?? '')),
     'label and grain disagree');
   check('GRAIN: the hardcoded English is gone from both KPI cards',
     !/month\{summaryMape\.monthsWithActuals !== 1/.test(fva),
     'a hardcoded, never-translated string remains');
   // It was rendered twice; both must be keyed or one locale silently keeps English.
-  const occurrences = (fva.match(/actuals_cohort_months_compared/g) ?? []).length;
+  const occurrences = (fva.match(/actuals_cohorts_compared_month/g) ?? []).length;
   check('GRAIN: both KPI card sites are keyed', occurrences === 2, `found ${occurrences}`);
 }
 
@@ -158,10 +160,11 @@ const LOCALES = ['en', 'de', 'es', 'fr', 'it', 'pt'] as const;
   const NEW = ['bulk_complete_full_coverage', 'bulk_complete_with_gaps',
     'bulk_complete_series_generated', 'bulk_complete_leaves_uncovered',
     'bulk_complete_series_uncovered', 'bulk_complete_leaves_uncovered_one',
-    'actuals_cohort_months_compared',
+    'actuals_cohorts_compared_month', 'actuals_accuracy_month',
     'actuals_mape_lower_is_better'];
+  // RE-AIMED 2026-09-24: the cohort-months label is retired with the accuracy month.
   const DEAD = ['bulk_bulk_generation_complete', 'bulk_leaves_no_forecast',
-    'bulk_skipped_insufficient_data_points'];
+    'bulk_skipped_insufficient_data_points', 'actuals_cohort_months_compared'];
   for (const loc of LOCALES) {
     const d = JSON.parse(fs.readFileSync(`src/locales/${loc}/translation.json`, 'utf8'));
     const missing = NEW.filter(k => !(k in d));

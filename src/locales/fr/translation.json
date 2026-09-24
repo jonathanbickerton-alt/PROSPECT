@@ -724,7 +724,6 @@
   "bulk_complete_series_generated": "séries du graphique générées (vue de l'étape 1)",
   "bulk_complete_leaves_uncovered": "feuilles de prévision n'ont pas pu être ajustées. Les agrégats situés au-dessus sont sommés sans elles :",
   "bulk_complete_series_uncovered": "séries du graphique n'ont pas pu être prévues",
-  "actuals_cohort_months_compared": "{{n}} mois-cohorte comparés",
   "actuals_mape_lower_is_better": "Plus la valeur est basse, mieux c'est",
   "bulk_complete_leaves_uncovered_one": "feuille de prévision n'a pas pu être ajustée. Les agrégats situés au-dessus sont sommés sans elle :",
   "standard_scope_blocked": "{{count}} cohortes ont un historique trop court pour être prévues",
@@ -946,5 +945,7 @@
   "whatif_delete_initiative_blurb": "Tous les événements de l'initiative, sur toutes les cartes, sont supprimés et la prévision est recalculée. Cette action est irréversible.",
   "whatif_delete_initiative_confirm": "Supprimer l'initiative",
   "whatif_delete_initiative_bin": "Supprimer l'initiative « {{name}} » ({{n}} événements)",
-  "actuals_coverage_line": "La prévision couvre {{covered}} cohortes sur {{total}}"
+  "actuals_coverage_line": "La prévision couvre {{covered}} cohortes sur {{total}}",
+  "actuals_accuracy_month": "Mois de précision",
+  "actuals_cohorts_compared_month": "{{n}} cohortes comparées, {{month}}"
 }

@@ -20,7 +20,8 @@ import { rowInScope, cohortInScope, dimsFromGrouping, ALL_DIMS, L1_ONLY } from '
 // The ONE key builder. This file previously hand-rolled a 5-part key here,
 // which is the instance-3 defect.
 import {
-  canShowBaseForecast, makeForecastKey, deriveAggregate, coveredLeafKeys } from '../utils/forecasting';
+  canShowBaseForecast, makeForecastKey, deriveAggregate, coveredLeafKeys, monthsCarryingActuals } from '../utils/forecasting';
+import { monthLabel } from '../utils/monthFormat';
 
 // ---------------------------------------------------------------------------
 // Props — all IBRO column mappings come from App; forecast data from context
@@ -238,6 +239,8 @@ export function computeForecastMape(
   wiChannelL2Col = '',
   wiTariffL1Col = '',
   wiTariffL2Col = '',
+  /** REQ-D7-01 clause 2: score THIS month only; absent = every overlap month. */
+  accuracyMonth?: string,
 ): {
   inflow: number | null; outflow: number | null; retention: number | null; base: number | null; arpu: number | null;
   inflowArpu: number | null; outflowArpu: number | null; retentionArpu: number | null; baseArpu: number | null;
@@ -316,6 +319,7 @@ export function computeForecastMape(
   let prevBlOutflow = bf.lastHistoricalOutflow;
 
   const rows: Array<{
+    month: string;
     baseline: {
       inflow: number; outflow: number; retention: number; arpu: number; base: number;
       inflowArpu: number | null; outflowArpu: number | null; retentionArpu: number | null; baseArpu: number | null;
@@ -340,6 +344,7 @@ export function computeForecastMape(
 
     const adj = adjustedMeans?.get(bm.month);
     rows.push({
+      month: bm.month,
       baseline: {
         inflow:    adj ? adj.inflow    : bm.inflow.mean,
         outflow:   adj ? adj.outflow   : bm.outflow.mean,
@@ -361,7 +366,8 @@ export function computeForecastMape(
     });
   }
 
-  const withActuals = rows.filter(r => r.actual !== null);
+  // REQ-D7-01 clause 2: the chosen month only, when one is chosen.
+  const withActuals = rows.filter(r => r.actual !== null && (!accuracyMonth || r.month === accuracyMonth));
 
   const calcMapeField = (field: string): number | null => {
     const pairs = withActuals.map(r => {
@@ -592,6 +598,8 @@ export function buildCohortAccuracy(
   // REQ-D7-01: `leaves` travels with the answer — the covered set is read off it.
   resolveForecast: (key: string) => { forecast: import('../types/forecast').BaseForecast | null; reason: import('../types/forecast').SkipReason | null; leaves?: import('../types/forecast').BaseForecast[] },
   adjustedMeanMap?: AdjustedMeanMap,
+  /** REQ-D7-01 clauses 2 and 7: the accuracy month; absent = every overlap month. */
+  accuracyMonth?: string,
 ): CohortAccuracyRow[] {
   const merged = new Map<string, Map<string, CohortMonthEntry>>();
   // REQ-D7-01 clause 5: the leaves with actuals under each row — the coverage total.
@@ -825,6 +833,11 @@ export function buildCohortAccuracy(
       ? [...new Set(matchingBfs.flatMap(bf => bf.months.map(m => m.month)))].sort()
       : baseForecast.months.map(m => m.month);
     const forecastMonths: string[] = allFcMonths.filter(m => effectiveActualMap.has(m));
+    // REQ-D7-01 clause 7 — ONE FILTER, two windows. Scores, Bias and MAPE read the
+    // chosen month ONLY; Trend keeps its own window, every overlap month UP TO the
+    // chosen one — a trend of one month is not a trend.
+    const scoredMonths: string[] = accuracyMonth ? forecastMonths.filter(m => m === accuracyMonth) : forecastMonths;
+    const trendMonths: string[] = accuracyMonth ? forecastMonths.filter(m => m <= accuracyMonth) : forecastMonths;
 
     // ── DELETED: computeAvgShare / scaledBandFlow / derivedBaseBands ─────
     //
@@ -1078,7 +1091,7 @@ export function buildCohortAccuracy(
         inflowArpu: 'Inflow ARPU', outflowArpu: 'Outflow ARPU', retentionArpu: 'Retention ARPU', baseArpu: 'Base ARPU',
       };
       const detailRows: MonthScoreDetail[] = [];
-      for (const month of forecastMonths) {
+      for (const month of scoredMonths) {
         const act = effectiveActualMap.get(month);
         const actual = act?.[scenario] ?? 0;
         if (!actual) continue;
@@ -1110,7 +1123,7 @@ export function buildCohortAccuracy(
     };
     const calcArpuScenBias = (scenario: ArpuScen, bandMap: Map<string, { mean: number; opt?: number; pess?: number }>): BiasVal => {
       let above = 0, below = 0;
-      for (const month of forecastMonths) {
+      for (const month of scoredMonths) {
         const act = effectiveActualMap.get(month);
         const actual = act?.[scenario] ?? 0;
         if (!actual) continue;
@@ -1126,7 +1139,7 @@ export function buildCohortAccuracy(
     };
     const calcArpuScenTrend = (scenario: ArpuScen, bandMap: Map<string, { mean: number; opt?: number; pess?: number }>): TrendVal => {
       const devs: number[] = [];
-      for (const month of forecastMonths) {
+      for (const month of trendMonths) {
         const act = effectiveActualMap.get(month);
         const actual = act?.[scenario] ?? 0;
         if (!actual) continue;
@@ -1291,7 +1304,7 @@ export function buildCohortAccuracy(
 
     const calcComponentDetail = (kpi: KpiKey): ComponentDetail | null => {
       const detailRows: MonthScoreDetail[] = [];
-      for (const month of forecastMonths) {
+      for (const month of scoredMonths) {
         const p = getActualAndBand(month, kpi);
         if (!p) continue;
         const { actual, band } = p;
@@ -1347,7 +1360,7 @@ export function buildCohortAccuracy(
 
     const calcComponentBias = (kpi: KpiKey): BiasVal => {
       let above = 0, below = 0;
-      for (const month of forecastMonths) {
+      for (const month of scoredMonths) {
         const p = getActualAndBand(month, kpi);
         if (!p) continue;
         p.actual >= p.band.mean ? above++ : below++;
@@ -1363,7 +1376,7 @@ export function buildCohortAccuracy(
       // Trend compares mean absolute % deviation (recent 3 vs prior 3) so it
       // reflects direction of travel independently of the scoring model.
       const devs: number[] = [];
-      for (const month of forecastMonths) {
+      for (const month of trendMonths) {
         const p = getActualAndBand(month, kpi);
         if (!p || p.band.mean === 0) continue;
         devs.push(Math.abs(p.actual - p.band.mean) / Math.abs(p.band.mean) * 100);
@@ -1379,7 +1392,7 @@ export function buildCohortAccuracy(
 
     // ── MAPE (kept for AutoML Challenger threshold) ───────────────────────
     const calcMape = (kpi: 'inflow' | 'outflow' | 'retention'): number | null => {
-      const pairs = forecastMonths
+      const pairs = scoredMonths
         .map(month => {
           const p = getActualAndBand(month, kpi);
           if (!p) return null;
@@ -1504,7 +1517,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   handleImportActualsFile, onRemoveActuals, onRequestExport,
   activeFilter, onCohortFilterChange,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { baseForecast, adjustedForecast, forecastStore, resolveForecast } = useForecast();
   const [useAdjustedScoring, setUseAdjustedScoring] = useState(false);
 
@@ -1999,9 +2012,52 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   // Uses aggrSnapshotMap (baseForecast.cohort scope) as the proportional-scaling
   // denominator.  Cohorts outside the forecast scope produce null metrics and are
   // filtered out by the validity check inside buildCohortAccuracy.
+  /**
+   * REQ-D7-01 clause 8 — THE VIEW'S SEAM ANSWER, kept whole. The accuracy month is
+   * per VIEW, and the chart reads this same answer whenever no row is selected.
+   */
+  const viewSeam = useMemo(() => {
+    if (!activeFilter) return null;
+    const key = [
+      activeFilter.segment && activeFilter.segment !== 'All' ? activeFilter.segment : 'All',
+      activeFilter.product.l1 || 'All', activeFilter.product.l2 || 'All',
+      activeFilter.channel.l1 || 'All', activeFilter.channel.l2 || 'All',
+      activeFilter.tariff?.l1 || 'All', activeFilter.tariff?.l2 || 'All',
+    ].join('|');
+    return { key, result: resolveForecast(key) };
+  }, [activeFilter, resolveForecast]);
+
+  /**
+   * REQ-D7-01 clauses 2 and 8 — THE ACCURACY MONTHS: those carrying BOTH actuals
+   * and forecast FOR THE VIEW. The view forecast's months, ∩ the months the file
+   * carries actuals in (the helper Step 2's Delta month reads), ∩ the months the
+   * view's COVERED leaves hold actuals for — so a view whose leaves stop early
+   * defaults to their last month, not the file's. Chronological.
+   */
+  const accuracyMonthOptions = useMemo((): string[] => {
+    const fc = viewSeam?.result.forecast;
+    if (!viewSeam || !fc) return [];
+    const withActuals = monthsCarryingActuals(data, [wiDateCol], wiValueCol);
+    const coveredMonths = new Set<string>();
+    for (const k of coveredLeafKeys(viewSeam.result, viewSeam.key, cohortActualsMap.keys())) {
+      for (const m of cohortActualsMap.get(k)?.keys() ?? []) coveredMonths.add(m);
+    }
+    return fc.months.map(m => m.month).filter(m => withActuals.has(m) && coveredMonths.has(m)).sort();
+  }, [viewSeam, data, wiDateCol, wiValueCol, cohortActualsMap]);
+
+  /**
+   * THE DERIVED-DEFAULT PATTERN of Step 2's Delta month: '' means "not chosen", and
+   * the month read is the choice while it is offered, else the LATEST. No effect
+   * writes state, so a remount resets it and a view change re-defaults it.
+   */
+  const [selectedAccuracyMonth, setSelectedAccuracyMonth] = useState<string>('');
+  const accuracyMonth = accuracyMonthOptions.includes(selectedAccuracyMonth)
+    ? selectedAccuracyMonth
+    : (accuracyMonthOptions[accuracyMonthOptions.length - 1] ?? '');
+
   const cohortAccuracy = useMemo(
-    () => baseForecast ? buildCohortAccuracy(cohortActualsMap, baseForecast, cohortDims, forecastStore, resolveForecast, adjustedMeanMap) : [],
-    [baseForecast, cohortActualsMap, broadAggrSnapshotMap, cohortDims, forecastStore, adjustedMeanMap],
+    () => baseForecast ? buildCohortAccuracy(cohortActualsMap, baseForecast, cohortDims, forecastStore, resolveForecast, adjustedMeanMap, accuracyMonth || undefined) : [],
+    [baseForecast, cohortActualsMap, broadAggrSnapshotMap, cohortDims, forecastStore, adjustedMeanMap, accuracyMonth],
   );
 
   // When dims change the selected key may not exist in the new grouping — falls back to null.
@@ -2090,15 +2146,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       ].join('|');
       return { key, result: resolveForecast(key) };
     }
-    if (!activeFilter) return null;
-    const key = [
-      activeFilter.segment && activeFilter.segment !== 'All' ? activeFilter.segment : 'All',
-      activeFilter.product.l1 || 'All', activeFilter.product.l2 || 'All',
-      activeFilter.channel.l1 || 'All', activeFilter.channel.l2 || 'All',
-      activeFilter.tariff?.l1 || 'All', activeFilter.tariff?.l2 || 'All',
-    ].join('|');
-    return { key, result: resolveForecast(key) };
-  }, [selectedCohortRow, cohortDims, activeFilter, resolveForecast]);
+    return viewSeam;
+  }, [selectedCohortRow, cohortDims, viewSeam, resolveForecast]);
 
   const multiChartData = useMemo((): MultiChartRow[] => {
     const histMonths = baseForecast?.historicalMonths ?? [];
@@ -2430,6 +2479,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
         wiChannelL2Col,
         wiTariffL1Col,
         wiTariffL2Col,
+        accuracyMonth || undefined,
       )
     );
 
@@ -2450,7 +2500,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       baseArpu:      avg('baseArpu'),
       monthsWithActuals: perForecast.reduce((s, m) => s + m.monthsWithActuals, 0),
     };
-  }, [forecastStore, activeFilter, adjustedMeanMap, data, wiDateCol, wiMetricCol, wiValueCol,
+  }, [accuracyMonth, forecastStore, activeFilter, adjustedMeanMap, data, wiDateCol, wiMetricCol, wiValueCol,
       wiInflowVal, wiOutflowVal, wiRetentionVal, wiBaseVal, wiArpuCol, wiRevenueCol,
       wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col]);
 
@@ -2462,8 +2512,9 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
 
   // AutoML Challenger tab — driven by challengerDims (independent of cohortDims)
   const challengerCohortAccuracy = useMemo(
-    () => baseForecast ? buildCohortAccuracy(cohortActualsMap, baseForecast, challengerDims, forecastStore, resolveForecast) : [],
-    [baseForecast, cohortActualsMap, broadAggrSnapshotMap, challengerDims, forecastStore],
+    // REQ-D7-01 clause 11: the Challenger follows the accuracy month — same builder.
+    () => baseForecast ? buildCohortAccuracy(cohortActualsMap, baseForecast, challengerDims, forecastStore, resolveForecast, undefined, accuracyMonth || undefined) : [],
+    [baseForecast, cohortActualsMap, broadAggrSnapshotMap, challengerDims, forecastStore, accuracyMonth],
   );
 
   // ---------------------------------------------------------------------------
@@ -2962,6 +3013,27 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
 
         {/* ── Summary MAPE cards — 4 volume + 4 per-scenario ARPU ── */}
         <div className="space-y-3">
+          {/* REQ-D7-01 clause 2 — THE ACCURACY MONTH. The cards and the cohort table
+              score this month only; the chart is not moved by it. A native select,
+              as Step 2's Delta month is. */}
+          {accuracyMonthOptions.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label htmlFor="accuracy-month" className="text-xs font-semibold text-slate-500">
+                {t('actuals_accuracy_month')}
+              </label>
+              <select
+                id="accuracy-month"
+                data-testid="accuracy-month-select"
+                value={accuracyMonth}
+                onChange={e => setSelectedAccuracyMonth(e.target.value)}
+                className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white outline-none focus:border-[#e60000]"
+              >
+                {accuracyMonthOptions.map(mo => (
+                  <option key={mo} value={mo}>{monthLabel(mo, i18n.language)}</option>
+                ))}
+              </select>
+            </div>
+          )}
           {/* Row 1: Volume metrics */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {(['inflow', 'outflow', 'retention', 'base'] as const).map(kpi => {
@@ -2981,7 +3053,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                       a key at all: it was hardcoded English and had never been
                       translated in any locale. */}
                   <p className="text-[10px] text-slate-400 mt-1">
-                    {t('actuals_cohort_months_compared', { n: summaryMape.monthsWithActuals })}
+                    {t('actuals_cohorts_compared_month', { n: summaryMape.monthsWithActuals, month: accuracyMonth ? monthLabel(accuracyMonth, i18n.language) : '—' })}
                   </p>
                   <p className="text-[9px] font-medium text-slate-300 mt-0.5 uppercase tracking-wide">
                     {useAdjustedScoring && adjustedForecast ? t('actuals_adjusted') : t('actuals_baseline')}
@@ -3009,7 +3081,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                       a key at all: it was hardcoded English and had never been
                       translated in any locale. */}
                   <p className="text-[10px] text-slate-400 mt-1">
-                    {t('actuals_cohort_months_compared', { n: summaryMape.monthsWithActuals })}
+                    {t('actuals_cohorts_compared_month', { n: summaryMape.monthsWithActuals, month: accuracyMonth ? monthLabel(accuracyMonth, i18n.language) : '—' })}
                   </p>
                   <p className="text-[9px] font-medium text-slate-300 mt-0.5 uppercase tracking-wide">
                     {useAdjustedScoring && adjustedForecast ? t('actuals_adjusted') : t('actuals_baseline')}

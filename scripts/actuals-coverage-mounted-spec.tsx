@@ -241,10 +241,16 @@ async function main() {
     !!eM && Math.round(eM.actual) === Math.round(covInflow), eM ? `${eM.actual}` : 'no month');
   console.log(`  (b) engine Corporate: ${M} actual ${eM?.actual.toFixed(0)} forecast ${eM?.mean.toFixed(0)} dev ${eM?.dev.toFixed(2)}% month score ${eM?.score.toFixed(1)}; `
     + `Inflow score ${eCorp?.inflowScore?.toFixed(1)}, overall ${eCorp?.overallScore?.toFixed(1)}`);
+  // RE-AIMED 2026-09-24 (REQ-D7-01 session 2): the table now scores the ACCURACY
+  // MONTH, which defaults to the view's latest (2026-06). The rendered cell is the
+  // engine's score for that month; the all-months engine above still carries the
+  // 2026-03 detail this case quotes.
+  const eDef = mod.buildCohortAccuracy(cam, fcAll, dims, store, resolveForecast, undefined, '2026-06')
+    .find((r: any) => r.seg === 'Corporate');
   const cells = corp ? [...corp.querySelectorAll('td')].map((x: any) => (x.textContent || '').trim()) : [];
-  check('(b) the rendered Corporate Inflow score IS the engine\'s (same label)',
-    !!corp && cells[1].startsWith(eCorp?.inflowScore === null ? '—' : eCorp.inflowScore.toFixed(0)),
-    `${cells[1]} vs ${eCorp?.inflowScore?.toFixed(0)}`);
+  check('(b) the rendered Corporate Inflow score IS the engine\'s for the default month, 2026-06 (same label)',
+    !!corp && cells[1].startsWith(eDef?.inflowScore === null ? '—' : eDef.inflowScore.toFixed(0)),
+    `${cells[1]} vs ${eDef?.inflowScore?.toFixed(0)}`);
   for (const s of ['SOHO', 'SME', 'Large Enterprise', 'MNC']) {
     const r = rowFor(s);
     const c = r ? [...r.querySelectorAll('td')].slice(1, 5).map((x: any) => (x.textContent || '').trim()) : [];
@@ -265,9 +271,10 @@ async function main() {
   await (act as any)(async () => {});
   const flagged = ([...container.querySelectorAll('[data-testid^="challenger-group-"]')] as any[])
     .map(b => String(b.getAttribute('data-testid')).replace('challenger-group-', ''));
-  console.log(`  (e) Challenger flagged: before (a497ff5) [Corporate] at overall 38.3; after [${flagged.join(', ')}] at overall ${eCorp?.overallScore?.toFixed(1)}`);
-  check('(e) the Corporate row now scores at or above the Challenger threshold (85)',
-    typeof eCorp?.overallScore === 'number' && eCorp.overallScore >= 85, String(eCorp?.overallScore));
+  // RE-AIMED 2026-09-24 (session 2): the Challenger scores the accuracy month too.
+  console.log(`  (e) Challenger flagged: before (a497ff5) [Corporate] at overall 38.3; after [${flagged.join(', ')}] at overall ${eDef?.overallScore?.toFixed(1)} (default month 2026-06)`);
+  check('(e) the Corporate row now scores at or above the Challenger threshold (85) on the default month',
+    typeof eDef?.overallScore === 'number' && eDef.overallScore >= 85, String(eDef?.overallScore));
   check('(e) and the flagged set MOVED: Corporate is no longer flagged', !flagged.includes('Corporate'), flagged.join(','));
 
   // ── (c) CORPORATE/DIRECT: COMPLETE COVERAGE, NO LINE ─────────────────────
@@ -309,7 +316,8 @@ async function main() {
     const count = (t: string, n: string) => t.split(n).length - 1;
     check('(X) coveredLeafKeys is defined ONCE, in forecasting.ts', count(eng, 'export function coveredLeafKeys(') === 1
       && count(fva, 'function coveredLeafKeys') === 0);
-    check('(X) the chart, its coverage count and the table all read it (3 calls)', count(fva, 'coveredLeafKeys(') === 3,
+    // RE-AIMED 2026-09-24 (session 2): the accuracy-month options read it too (4).
+    check('(X) the chart, its coverage count, the table and the accuracy months read it (4 calls)', count(fva, 'coveredLeafKeys(') === 4,
       String(count(fva, 'coveredLeafKeys(')));
     check('(X) deriveAggregate is called ONCE in Step 3 (the seam-miss copy is gone)', count(fva, 'deriveAggregate(') === 1,
       String(count(fva, 'deriveAggregate(')));

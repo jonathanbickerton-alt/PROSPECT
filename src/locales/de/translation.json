@@ -724,7 +724,6 @@
   "bulk_complete_series_generated": "Diagrammreihen erstellt (Ansicht Schritt 1)",
   "bulk_complete_leaves_uncovered": "Prognoseblätter konnten nicht angepasst werden. Darüberliegende Aggregate werden ohne sie summiert:",
   "bulk_complete_series_uncovered": "Diagrammreihen konnten nicht prognostiziert werden",
-  "actuals_cohort_months_compared": "{{n}} Kohortenmonate verglichen",
   "actuals_mape_lower_is_better": "Niedriger ist besser",
   "bulk_complete_leaves_uncovered_one": "Prognoseblatt konnte nicht angepasst werden. Darüberliegende Aggregate werden ohne es summiert:",
   "standard_scope_blocked": "{{count}} Kohorten haben zu wenig Historie für eine Prognose",
@@ -946,5 +945,7 @@
   "whatif_delete_initiative_blurb": "Alle Ereignisse der Initiative werden auf allen Karten entfernt und die Prognose neu berechnet. Dies kann nicht rückgängig gemacht werden.",
   "whatif_delete_initiative_confirm": "Initiative löschen",
   "whatif_delete_initiative_bin": "Initiative '{{name}}' löschen ({{n}} Ereignisse)",
-  "actuals_coverage_line": "Prognose deckt {{covered}} von {{total}} Kohorten ab"
+  "actuals_coverage_line": "Prognose deckt {{covered}} von {{total}} Kohorten ab",
+  "actuals_accuracy_month": "Genauigkeitsmonat",
+  "actuals_cohorts_compared_month": "{{n}} Kohorten verglichen, {{month}}"
 }
