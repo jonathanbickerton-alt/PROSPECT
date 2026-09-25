@@ -10731,6 +10731,10 @@ forecast Base continues from the COVERED leaves' seed (289,211), not All's
 5. A one-step '← Back to {previous view}' control replaces the DRILLED
    INTO strip, restoring the view held before the click; the bar remains
    the general way out. The strip's wording goes.
+6. (Jon, 2026-09-25, 0746 finding 1, option a) The accuracy table stays
+   unfiltered; a click on a row OUTSIDE the current view moves the view to
+   that row's cohort (SOHO/Direct from Corporate/Direct) — sideways, with
+   Back returning it. Not a narrowing, not a widening; accepted as stated.
 
 ## REQ-D7-04 — ADJUSTED SCORING PER LEAF (Jon, 2026-09-25)
 
