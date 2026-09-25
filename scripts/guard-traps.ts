@@ -120,6 +120,7 @@ const ACTUALSCOV = 'scripts/actuals-coverage-mounted-spec.tsx';
 const ACCMONTH = 'scripts/accuracy-month-mounted-spec.tsx';
 const STEP3BAR = 'scripts/step3-one-bar-mounted-spec.tsx';
 const ONEVIEW = 'scripts/one-view-mounted-spec.tsx';
+const PRORATAHOIST = 'scripts/prorata-hoist-spec.tsx';
 const SEAMUTIL = 'src/utils/eventScopeSeries.ts';
 const EVTOGGLE = 'scripts/event-toggle-spec.tsx';
 const SUMMARYBAR = 'src/components/ForecastSummaryBar.tsx';
@@ -4037,6 +4038,31 @@ const TRAPS: Trap[] = [
     file: FILE, spec: ONEVIEW,
     mutate: s => s.replace("onClick={() => { const from = backTo.from; setBackTo(null); onViewChange?.(from); }}",
       "onClick={() => { const from = { segment: 'All', product: { l1: null, l2: null }, channel: { l1: null, l2: null } }; setBackTo(null); onViewChange?.(from); }}") },
+
+  // ══ REQ-D7-04 SESSION 1 — THE PRO-RATA LEAF SCANS HOISTED ══
+  //
+  // Both seen RED by hand on 2026-09-25 against a pre-plant md5 and restored from
+  // a scratchpad backup (the 1724 report quotes every triple and red line).
+  //
+  // 297 THE BUILDER DROPS ONE METRIC'S LIST. The engine does NOT fall back per
+  // metric (the override is all-or-nothing), so a dropped list would surface only
+  // when an event of that metric runs — the identity of the three LISTS against
+  // 379c48b's transcribed buildLeaves is the discriminator, not the outputs.
+  //   FAIL  (a) the builder's Retention list deep-equals 379c48b's (540 leaves)  [absent vs 540]
+  { id: "297 the pro-rata builder drops one metric's list",
+    why: 'Retention events are weighted by nothing once the lists are hoisted',
+    file: ENGINE, spec: PRORATAHOIST,
+    mutate: s => s.replace("    Retention: buildLeaves(wiRetentionVal ?? '')," + nl, "") },
+
+  // 298 THE SEAM REBUILDS THE LISTS PER RUN — the engine falls back and scans the
+  // rows three times a run. Identity stays GREEN (same numbers); the timing and
+  // the row-read discriminator go red.
+  //   FAIL  (b) 60 per-leaf runs under 2 s  [3.559 s]
+  //   FAIL  (a) DISCRIMINATOR: with the lists passed, the seam read the rows ZERO times (no fallback ran)  [12 iterations]
+  { id: '298 the seam rebuilds the pro-rata lists on every run',
+    why: 'per-leaf scoring costs ~3.3 s a view again (the 1339 band)',
+    file: SEAMUTIL, spec: PRORATAHOIST,
+    mutate: s => s.replace("    proRataLeavesOverride: proRataLeaves,", "    proRataLeavesOverride: undefined,") },
 ];
 
 
@@ -4233,6 +4259,8 @@ const CONTROL_SPEC_MAP: Record<string, string> = {
   STEP3BAR,
   // REQ-D7-03. Registered WITH its first trap, 291.
   ONEVIEW,
+  // REQ-D7-04 session 1. Registered WITH its first trap, 297.
+  PRORATAHOIST,
 };
 const controlHashNow = () => GT.controlHash(
   [...Object.values(CONTROL_SPEC_MAP), ...TARGETS, 'scripts/guard-traps.ts', 'scripts/guard-traps-select.ts'],

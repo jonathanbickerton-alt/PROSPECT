@@ -53,7 +53,11 @@ const run = (events: any[]) => computeAdjustedForecast({
   viewSegment: 'All', viewProduct: ALLV as any, viewChannel: ALLV as any, viewTariff: ALLV as any,
   data: [], wiSegmentCol: '', wiProductCol: '', wiProductL2Col: '',
   wiChannelCol: '', wiChannelL2Col: '', wiTariffL1Col: '', wiTariffL2Col: '',
-  wiValueCol: '', proRataLeavesOverride: LEAVES,
+  // RE-AIMED 2026-09-25 (REQ-D7-04 clause 5): the override is PER METRIC now. The
+  // engine used to spread one list across all three; the same list is passed for
+  // each, so the weights are unchanged. Seen RED first: "TypeError: Cannot read
+  // properties of undefined (reading 'forEach')".
+  wiValueCol: '', proRataLeavesOverride: { Inflow: LEAVES, Outflow: LEAVES, Retention: LEAVES },
 } as any);
 
 const base = { id: 'E1', date: M[0], sequence: 1, scenario: 'Inflow',

@@ -21,7 +21,7 @@
  * so the cycle is inert. Moving the engine itself out of the component would
  * remove it, and is not this clause.
  */
-import type { MarketEvent } from './forecasting';
+import type { MarketEvent, ProRataLeavesByMetric } from './forecasting';
 import { resolveEventScopeForecast } from './forecasting';
 import type { YieldEvent, PricingEvent, AdjustedForecastMonth } from '../types/forecast';
 import { computeAdjustedForecast, dimOrNull } from '../components/WhatIfTab';
@@ -43,6 +43,10 @@ export interface EventScopeSeriesInput {
   wiChannelCol: string; wiChannelL2Col: string;
   wiTariffL1Col: string; wiTariffL2Col: string; wiValueCol: string;
   wiMetricCol?: string; wiInflowVal?: string; wiOutflowVal?: string; wiRetentionVal?: string;
+  /** REQ-D7-04 clause 5 — the pro-rata leaf weights, built ONCE per dataset by
+   *  `buildProRataLeaves` and passed on every run. Required: a caller that forgot
+   *  them would silently pay three full row scans per run. */
+  proRataLeaves: ProRataLeavesByMetric;
 }
 
 export interface EventScopeSeriesResult {
@@ -61,7 +65,7 @@ export function eventScopeSeries(input: EventScopeSeriesInput): EventScopeSeries
     marketEvents, yieldEvents, pricingEvents, resolveForecast, data,
     wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
     wiTariffL1Col, wiTariffL2Col, wiValueCol,
-    wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
+    wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal, proRataLeaves,
   } = input;
     // CALLER 2 OF TWO — and the fix this returns is the whole point.
     //
@@ -113,6 +117,7 @@ export function eventScopeSeries(input: EventScopeSeriesInput): EventScopeSeries
     data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
     wiTariffL1Col, wiTariffL2Col, wiValueCol,
     wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
+    proRataLeavesOverride: proRataLeaves,
     });
     // ONE PASS over the months the run already produced. The Pricing card's
     // two callers read `.series` and nothing else, so this field is inert for

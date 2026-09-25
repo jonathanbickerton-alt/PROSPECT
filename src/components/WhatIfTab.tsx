@@ -18,7 +18,7 @@ import type { DragWall, CohortSolveOutcome, SolveOutcome } from '../utils/mixCon
 import { EventsSummaryTable } from './EventsSummaryTable';
 import { EventOnOffSwitch, OFF_ROW } from './EventOnOffSwitch';
 import { foldChurnRamp, linearChurnRamp, type ChurnFoldMonth } from '../utils/churnFold';
-import { canShowBaseForecast, resolveEventScopeForecast, tariffScopeFor, monthsCarryingActuals } from '../utils/forecasting';
+import { canShowBaseForecast, resolveEventScopeForecast, tariffScopeFor, monthsCarryingActuals, buildProRataLeaves } from '../utils/forecasting';
 import { eventScopeSeries } from '../utils/eventScopeSeries';
 import { applyDelta, scenarioAdjustedArpu } from '../utils/scenarioArpu';
 import { MixSliderRow } from './MixSliderRow';
@@ -29,7 +29,7 @@ import { nextAmountControlState, effectiveAmountControl, churnAvailableFor,
          type AmountControl } from '../utils/amountControl';
 import { carryInitiative, initiativeGroups, draftEventRate, resolveEventArpuRevenue, computeCohortTrailingArpu, blendTierMixOrNull, yieldRatioFrom, eventProRataShare, eventCoverage, forecastCoverage, applyEventsToMonth, resolvedEventVolume, nextSequence, resequenceRebuild, bySequence, eventArpuDelta, dilutionAmountPct, pricingEventSummary, buildEventsSummaryRows, applyPricingToBlend, pricingAdjustedBlend, pricingDraftBlockReason, eventScopeMatchesView, pricedVolumesFor, pricingBaselineArpu, eventVolumeLabel, isEventOn, effectStatusOf, eventMode } from '../utils/forecasting';
 import type { EventSummaryRow } from '../utils/forecasting';
-import type { ProRataLeaf, ProRataScope, PricingVolumes, ViewScope } from '../utils/forecasting';
+import type { ProRataLeaf, ProRataScope, PricingVolumes, ViewScope, ProRataLeavesByMetric } from '../utils/forecasting';
 import { HierarchicalDropdown } from './HierarchicalDropdown';
 import type { HierarchicalSelection } from './HierarchicalDropdown';
 import { MultiSelectDropdown } from './MultiSelectDropdown';
@@ -1339,8 +1339,11 @@ export interface AdjustedForecastInput {
    *  unfiltered blend rather than silently weighting everything as one metric. */
   wiMetricCol?: string;
   wiInflowVal?: string; wiOutflowVal?: string; wiRetentionVal?: string;
-  /** Injectable for tests: pass [] to reproduce the pre-pro-rata wildcard behaviour. */
-  proRataLeavesOverride?: ProRataLeaf[];
+  /** The pro-rata leaf weights, PER METRIC (REQ-D7-04 clause 5). The seam passes
+   *  the lists it built once per dataset; absent, the engine builds them from
+   *  `data` with the same builder. Tests pass their own (all three [] reproduces
+   *  the pre-pro-rata wildcard behaviour). */
+  proRataLeavesOverride?: ProRataLeavesByMetric;
   /** The leaf forecasts the view's own forecast is summed from, when it was
    *  DERIVED. Percentage events weight their coverage by these rather than by
    *  historical rows — see forecastCoverage. Absent for a stored forecast, and
@@ -1457,38 +1460,14 @@ export function computeAdjustedForecast(input: AdjustedForecastInput): { chartDa
     // metric falls back to the old unfiltered blend — the previous behaviour,
     // not a silent reinterpretation of it.
     type LeafMetric = 'Inflow' | 'Outflow' | 'Retention';
-    const buildLeaves = (metricValue: string): ProRataLeaf[] => (() => {
-      const byLeaf = new Map<string, ProRataLeaf>();
-      for (const row of data) {
-        if (wiMetricCol && metricValue && String(row[wiMetricCol]).trim() !== metricValue) continue;
-        const leaf: ProRataLeaf = {
-          segment:   wiSegmentCol  ? String(row[wiSegmentCol]  ?? 'All').trim() : 'All',
-          product:   wiProductCol  ? String(row[wiProductCol]  ?? 'All').trim() : 'All',
-          productL2: wiProductL2Col ? String(row[wiProductL2Col] ?? 'All').trim() : 'All',
-          channel:   wiChannelCol  ? String(row[wiChannelCol]  ?? 'All').trim() : 'All',
-          channelL2: wiChannelL2Col ? String(row[wiChannelL2Col] ?? 'All').trim() : 'All',
-          tariffL1:  wiTariffL1Col ? String(row[wiTariffL1Col] ?? 'All').trim() : 'All',
-          tariffL2:  wiTariffL2Col ? String(row[wiTariffL2Col] ?? 'All').trim() : 'All',
-          volume: 0,
-        };
-        const k = [leaf.segment, leaf.product, leaf.productL2, leaf.channel, leaf.channelL2, leaf.tariffL1, leaf.tariffL2].join('|');
-        const vol = wiValueCol ? Number(row[wiValueCol]) || 0 : 0;
-        // The row EXISTS for this metric, whatever its value — that is what
-        // distinguishes "churned nobody" from "no outflow history at all".
-        const cur = byLeaf.get(k);
-        if (cur) { cur.volume += vol; cur.hasMetricData = true; }
-        else { leaf.volume = vol; leaf.hasMetricData = true; byLeaf.set(k, leaf); }
-      }
-      return Array.from(byLeaf.values());
-    })();
-
-    const leavesByMetric: Record<LeafMetric, ProRataLeaf[]> = proRataLeavesOverride
-      ? { Inflow: proRataLeavesOverride, Outflow: proRataLeavesOverride, Retention: proRataLeavesOverride }
-      : {
-          Inflow:    buildLeaves(wiInflowVal ?? ''),
-          Outflow:   buildLeaves(wiOutflowVal ?? ''),
-          Retention: buildLeaves(wiRetentionVal ?? ''),
-        };
+    // REQ-D7-04 clause 5: the three lists are SCOPE-INDEPENDENT, so the seam
+    // builds them once per dataset (buildProRataLeaves) and passes them in. Any
+    // caller that passes nothing gets them built here, by the same builder.
+    const leavesByMetric: ProRataLeavesByMetric = proRataLeavesOverride
+      ?? buildProRataLeaves(data, {
+        wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
+        wiTariffL1Col, wiTariffL2Col, wiValueCol, wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
+      });
     const viewScope: ProRataScope = {
       segment: vseg === 'All' ? 'All' : vseg,
       product: vprodL1 ?? 'All',
@@ -3830,6 +3809,14 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
    * a 60 Hz frame, and it runs only when the dims or month change, never on a
    * keystroke. The memo below is what keeps that true.
    */
+  // REQ-D7-04 clause 5 — the pro-rata leaf weights, built ONCE per dataset: they
+  // read the rows and the columns and nothing about the scope, so every run the
+  // wrapper makes shares them.
+  const proRataLeaves = useMemo(() => buildProRataLeaves(data, {
+      wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
+      wiTariffL1Col, wiTariffL2Col, wiValueCol, wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
+    }), [data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
+      wiTariffL1Col, wiTariffL2Col, wiValueCol, wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal]);
   const eventScopeSeriesFor = useCallback((
     draft: Partial<PricingEvent>,
     excludeId: string | null,
@@ -3890,12 +3877,12 @@ export const WhatIfTab: React.FC<WhatIfTabProps> = ({
       marketEvents, yieldEvents, pricingEvents, resolveForecast, data,
       wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
       wiTariffL1Col, wiTariffL2Col, wiValueCol,
-      wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
+      wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal, proRataLeaves,
     });
     // `baseForecast` is NO LONGER READ HERE and is therefore not a dependency —
     // the read-set rule, applied in the direction that usually gets missed.
     // `resolveForecast` replaces it, and is what must retrigger this.
-  }, [resolveForecast, marketEvents, yieldEvents, pricingEvents, data,
+  }, [resolveForecast, marketEvents, yieldEvents, pricingEvents, data, proRataLeaves,
     wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
     wiTariffL1Col, wiTariffL2Col, wiValueCol,
     wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal]);

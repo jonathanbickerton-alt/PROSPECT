@@ -24,7 +24,7 @@ import { rowInScope, cohortInScope, dimsFromGrouping, ALL_DIMS, L1_ONLY } from '
 // which is the instance-3 defect.
 import {
   canShowBaseForecast, makeForecastKey, deriveAggregate, coveredLeafKeys, monthsCarryingActuals,
-  eventScopeMatchesView, isEventOn } from '../utils/forecasting';
+  eventScopeMatchesView, isEventOn, buildProRataLeaves } from '../utils/forecasting';
 import { monthLabel } from '../utils/monthFormat';
 import { filterToKey, describeScope } from '../utils/viewFilter';
 
@@ -2076,6 +2076,13 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
    * the seam takes). Run only while the gate is open: a view no event applies to
    * has nothing to adjust, and pays nothing. Memoised on the view and the arrays.
    */
+  // REQ-D7-04 clause 5 — the pro-rata leaf weights, built ONCE per dataset and
+  // handed to every run (scope-independent: rows and columns only).
+  const proRataLeaves = useMemo(() => buildProRataLeaves(data, {
+      wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
+      wiTariffL1Col, wiTariffL2Col, wiValueCol, wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
+    }), [data, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
+      wiTariffL1Col, wiTariffL2Col, wiValueCol, wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal]);
   const viewRun = useMemo(() => {
     if (!showAdjusted || !activeFilter) return null;
     return eventScopeSeries({
@@ -2089,9 +2096,9 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       marketEvents, yieldEvents, pricingEvents, resolveForecast, data,
       wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
       wiTariffL1Col, wiTariffL2Col, wiValueCol,
-      wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
+      wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal, proRataLeaves,
     });
-  }, [showAdjusted, activeFilter, marketEvents, yieldEvents, pricingEvents, resolveForecast, data,
+  }, [showAdjusted, activeFilter, marketEvents, yieldEvents, pricingEvents, resolveForecast, data, proRataLeaves,
       wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
       wiTariffL1Col, wiTariffL2Col, wiValueCol, wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal]);
 

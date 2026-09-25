@@ -3509,6 +3509,67 @@ export interface ProRataLeaf extends ProRataScope {
   hasMetricData?: boolean;
 }
 
+/** The pro-rata leaf weights, one list per metric, keyed as the engine keys them. */
+export type ProRataLeavesByMetric = Record<'Inflow' | 'Outflow' | 'Retention', ProRataLeaf[]>;
+
+/** The columns the leaf weights read — a subset of the engine's own inputs. */
+export interface ProRataLeafColumns {
+  wiSegmentCol: string; wiProductCol: string; wiProductL2Col: string;
+  wiChannelCol: string; wiChannelL2Col: string;
+  wiTariffL1Col: string; wiTariffL2Col: string; wiValueCol: string;
+  wiMetricCol?: string; wiInflowVal?: string; wiOutflowVal?: string; wiRetentionVal?: string;
+}
+
+/**
+ * THE PRO-RATA LEAF WEIGHTS — ONE builder (REQ-D7-04 clause 5).
+ *
+ * The body is computeAdjustedForecast's `buildLeaves`, moved VERBATIM: one pass
+ * over the rows per metric, a leaf per 7-part key, its volume of that metric,
+ * and `hasMetricData` for "has any row of it". It reads the rows and the columns
+ * and NOTHING about the scope, so the three lists are identical for every view,
+ * draft and event set — which is why they can be built ONCE per dataset and
+ * handed to every run. The 1339 measure: three full scans per run were ~99.7%
+ * of a per-leaf run's cost.
+ *
+ * The engine still calls this itself when no lists are passed, so callers
+ * outside the seam are unchanged.
+ */
+export function buildProRataLeaves(data: any[], cols: ProRataLeafColumns): ProRataLeavesByMetric {
+  const {
+    wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col,
+    wiTariffL1Col, wiTariffL2Col, wiValueCol, wiMetricCol, wiInflowVal, wiOutflowVal, wiRetentionVal,
+  } = cols;
+  const buildLeaves = (metricValue: string): ProRataLeaf[] => (() => {
+    const byLeaf = new Map<string, ProRataLeaf>();
+    for (const row of data) {
+      if (wiMetricCol && metricValue && String(row[wiMetricCol]).trim() !== metricValue) continue;
+      const leaf: ProRataLeaf = {
+        segment:   wiSegmentCol  ? String(row[wiSegmentCol]  ?? 'All').trim() : 'All',
+        product:   wiProductCol  ? String(row[wiProductCol]  ?? 'All').trim() : 'All',
+        productL2: wiProductL2Col ? String(row[wiProductL2Col] ?? 'All').trim() : 'All',
+        channel:   wiChannelCol  ? String(row[wiChannelCol]  ?? 'All').trim() : 'All',
+        channelL2: wiChannelL2Col ? String(row[wiChannelL2Col] ?? 'All').trim() : 'All',
+        tariffL1:  wiTariffL1Col ? String(row[wiTariffL1Col] ?? 'All').trim() : 'All',
+        tariffL2:  wiTariffL2Col ? String(row[wiTariffL2Col] ?? 'All').trim() : 'All',
+        volume: 0,
+      };
+      const k = [leaf.segment, leaf.product, leaf.productL2, leaf.channel, leaf.channelL2, leaf.tariffL1, leaf.tariffL2].join('|');
+      const vol = wiValueCol ? Number(row[wiValueCol]) || 0 : 0;
+      // The row EXISTS for this metric, whatever its value — that is what
+      // distinguishes "churned nobody" from "no outflow history at all".
+      const cur = byLeaf.get(k);
+      if (cur) { cur.volume += vol; cur.hasMetricData = true; }
+      else { leaf.volume = vol; leaf.hasMetricData = true; byLeaf.set(k, leaf); }
+    }
+    return Array.from(byLeaf.values());
+  })();
+  return {
+    Inflow:    buildLeaves(wiInflowVal ?? ''),
+    Outflow:   buildLeaves(wiOutflowVal ?? ''),
+    Retention: buildLeaves(wiRetentionVal ?? ''),
+  };
+}
+
 /** True when `leaf` falls inside `scope` ('All'/absent = no narrowing on that dim). */
 function leafWithinScope(scope: ProRataScope, leaf: ProRataScope): boolean {
   const dims: Array<keyof ProRataScope> = ['segment', 'product', 'productL2', 'channel', 'channelL2', 'tariffL1', 'tariffL2'];

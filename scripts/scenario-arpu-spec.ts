@@ -66,7 +66,11 @@ const run = (marketEvents: any[] = [], yieldEvents: any[] = [], pricingEvents: a
     viewSegment: 'All', viewProduct: ALL as any, viewChannel: ALL as any, viewTariff: ALL as any,
     data: [], wiSegmentCol: '', wiProductCol: '', wiProductL2Col: '',
     wiChannelCol: '', wiChannelL2Col: '', wiTariffL1Col: '', wiTariffL2Col: '',
-    wiValueCol: '', proRataLeavesOverride: [],
+    // RE-AIMED 2026-09-25 (REQ-D7-04 clause 5): the override is PER METRIC now. The
+    // engine used to spread one list across all three; the same list is passed for
+    // each, so the weights are unchanged. Seen RED first: "TypeError: Cannot read
+    // properties of undefined (reading 'forEach')".
+    wiValueCol: '', proRataLeavesOverride: { Inflow: [], Outflow: [], Retention: [] },
   } as any);
 
 const sc = (r: any, i: number) => (r.adjustedMonths[i] as any).scenarioArpu;
@@ -356,7 +360,7 @@ const baseline = sc(run(), 1);
     viewSegment: 'All', viewProduct: ALL as any, viewChannel: ALL as any, viewTariff: ALL as any,
     data: [], wiSegmentCol: '', wiProductCol: '', wiProductL2Col: '',
     wiChannelCol: '', wiChannelL2Col: '', wiTariffL1Col: '', wiTariffL2Col: '',
-    wiValueCol: '', proRataLeavesOverride: [],
+    wiValueCol: '', proRataLeavesOverride: { Inflow: [], Outflow: [], Retention: [] },
   } as any);
   const row: any = r.chartData[1];
   for (const sn of ['Inflow', 'Outflow', 'Retention', 'Base']) {
@@ -463,7 +467,7 @@ const baseline = sc(run(), 1);
     viewSegment: 'All', viewProduct: ALL as any, viewChannel: ALL as any, viewTariff: ALL as any,
     data: [], wiSegmentCol: '', wiProductCol: '', wiProductL2Col: '',
     wiChannelCol: '', wiChannelL2Col: '', wiTariffL1Col: '', wiTariffL2Col: '',
-    wiValueCol: '', proRataLeavesOverride: [],
+    wiValueCol: '', proRataLeavesOverride: { Inflow: [], Outflow: [], Retention: [] },
   } as any);
   const row: any = r.chartData[1];
   check('two-leaf: the chart column carries the AGGREGATE inflow ARPU',
