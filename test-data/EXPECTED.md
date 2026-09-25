@@ -10731,3 +10731,20 @@ forecast Base continues from the COVERED leaves' seed (289,211), not All's
 5. A one-step '← Back to {previous view}' control replaces the DRILLED
    INTO strip, restoring the view held before the click; the bar remains
    the general way out. The strip's wording goes.
+
+## REQ-D7-04 — ADJUSTED SCORING PER LEAF (Jon, 2026-09-25)
+
+1. Finding (2105): Adjusted scoring fed the VIEW's adjusted means into a
+   PER-LEAF MAPE — a scale mismatch present since the toggle existed
+   (12231.5% at Corporate/Direct).
+2. Option A: each covered leaf is scored against ITS OWN adjusted means —
+   the seam run for that leaf's scope, the events that apply to it — the
+   exact mirror of Baseline mode; the cards average per-leaf MAPEs as they
+   do for Baseline.
+3. Measure first: 60 per-leaf runs on the 18:39-shaped session. Under 2 s
+   per view → built as-is, memoised on view + arrays; 2–10 s → computed on
+   demand when the toggle is switched on, with a computing state; over
+   10 s → STOP and bring option B (a view-level figure, its own line) back
+   to Jon.
+4. Until built, the toggle stays as at 542a5cb (the mismatch is
+   pre-existing and released).
