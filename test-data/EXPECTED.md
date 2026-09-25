@@ -10711,3 +10711,23 @@ forecast Base continues from the COVERED leaves' seed (289,211), not All's
     (additive). WhatIfTab keeps a thin useCallback wrapper; its five callers
     are untouched. Step 3 is caller 6. computeAdjustedForecast stays 6 — the
     one call moves, it does not multiply. ONE route to an adjusted run.
+
+## REQ-D7-03 — ONE VIEWING STATE (Jon, 2026-09-24/25)
+
+1. Steps 2 and 3 share ONE viewing-bar state: a change on either step is
+   the view on the other. Step 1's cohort selector (what to GENERATE)
+   stays separate.
+2. The shared view is written to the save's Metadata sheet and restored
+   with the session; absent → All/All.
+3. The accuracy month is shown in each KPI card's TITLE ('INFLOW MAPE ·
+   MAR 2026'); the card's figure gets a brief highlight when the month
+   changes; the small line keeps '{n} cohorts compared, {month}'.
+4. (2026-09-25, Walk on 542a5cb) A row click on the cohort table WRITES
+   the shared viewing bar to the row's cohort, through the one setter: the
+   row's grouped dimensions replace the bar's, ungrouped dimensions keep
+   the bar's value — it narrows within the current view and never widens.
+   Supersedes REQ-D7-02 clause 3's 'selects only'; clause 3's 'no
+   separate scope on Step 3' still holds because the bar IS the scope.
+5. A one-step '← Back to {previous view}' control replaces the DRILLED
+   INTO strip, restoring the view held before the click; the bar remains
+   the general way out. The strip's wording goes.
