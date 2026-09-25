@@ -8,7 +8,7 @@ import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForeca
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { runIngest, isSessionWorkbook, loadedLineText } from './utils/ingest';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
-import { filterToKey, cohortToFilter, forecastForView, forecastForStep1Selection, step1ResolveDecision, describeScope } from './utils/viewFilter';
+import { filterToKey, cohortToFilter, forecastForView, forecastForStep1Selection, step1ResolveDecision, describeScope, ALL_VIEW, viewMetaRow, viewFromMeta } from './utils/viewFilter';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort, Provenance, SkipReason } from './types/forecast';
 import { provenanceModel, provenanceParams } from './types/forecast';
 import { ForecastProvider } from './context/ForecastContext';
@@ -643,6 +643,8 @@ export default function App() {
       { Field: 'Export_Timestamp',       Value: format(exportTs, 'dd MMM yyyy HH:mm') },
       { Field: 'PROSPECT_Version',       Value: '1.0.0' },
       { Field: 'Active_Step',            Value: activeView },
+      // REQ-D7-03 clause 2 — the shared viewing state, as its 7-part key.
+      viewMetaRow(viewFilter),
       // THE ACTIVE COHORT, as a cohort. Is_Active on the baseline rows cannot
       // express an AGGREGATE — it marks a match against a STORE key, and the
       // store holds leaves — so a session viewing an aggregate recorded nothing
@@ -757,6 +759,8 @@ export default function App() {
 
         const exportTimestamp: string = String(getMetaValue('Export_Timestamp') ?? '');
         const activeStepRaw: string   = String(getMetaValue('Active_Step') ?? 'home');
+        // REQ-D7-03 clause 2 — the shared view; absent → All/All.
+        const restoredView: ViewFilter = viewFromMeta(getMetaValue);
 
         // ── Actuals ───────────────────────────────────────────────────────────
         const actualsRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Actuals']);
@@ -897,9 +901,13 @@ export default function App() {
             if (bf) {
               setBaseForecast(bf);
               setForecastUpdatedAt(new Date().toISOString());
-              setStep2Filter(cohortToFilter(bf.cohort));
-              setStep3Filter(cohortToFilter(bf.cohort));
             }
+            // REQ-D7-03 clause 2: the view comes from its own Metadata cell, not
+            // from the active cohort. A step that owns the view shows the view's
+            // forecast at once, resolved from the store this load restored.
+            const viewOwned = forecastForView(activeStepRaw, restoredView,
+              k => resolveFromStore(restoredStore, restoredLeafMap, k));
+            if (viewOwned.owns) setBaseForecast(viewOwned.forecast as BaseForecast | null);
 
           } else {
             // ── Backward-compat: old format (Typed BaseForecast / legacy rows) ──
@@ -960,8 +968,6 @@ export default function App() {
               // by defaulting, the marker means something else.
               setBaseForecast(restoredBf);
               setForecastUpdatedAt(new Date().toISOString());
-              setStep2Filter(cohortToFilter(restoredBf.cohort));
-              setStep3Filter(cohortToFilter(restoredBf.cohort));
               if (first.Generated_At) {
                 try {
                   setCohortGenLog([{ cohortId: `${first.Segment}|${first.Product}|${first.Channel}|Standard Forecast|${first.Scenario ?? 'Base Case'}`, timestamp: new Date(String(first.Generated_At)).toISOString(), modelUsed: provenanceModel(readProvenance(first)) }]);
@@ -1085,6 +1091,7 @@ export default function App() {
         // ── Restore navigation & show banner ─────────────────────────────────
         const validViews: Array<'home' | 'standard' | 'whatif' | 'overall' | 'vsactuals'> =
           ['home', 'standard', 'whatif', 'overall', 'vsactuals'];
+        setViewFilter(restoredView);
         setActiveView(validViews.includes(activeStepRaw as any) ? (activeStepRaw as any) : 'home');
         setImportSaveResult({ success: true, timestamp: exportTimestamp });
 
@@ -1223,9 +1230,10 @@ export default function App() {
   // the file. Persisted in export via the One_Off_Months sheet.
   const [oneOffMonths, setOneOffMonths] = useState<Record<string, { month: string; reason: string }[]>>({});
 
-  // Per-tab view filter — each step remembers its own last-used selection independently
-  const [step2Filter, setStep2Filter] = useState<ViewFilter>({ segment: 'All', product: { l1: null, l2: null }, channel: { l1: null, l2: null } });
-  const [step3Filter, setStep3Filter] = useState<ViewFilter>({ segment: 'All', product: { l1: null, l2: null }, channel: { l1: null, l2: null } });
+  // REQ-D7-03 clause 1 — ONE viewing state for Steps 2 and 3: a change on either
+  // step is the view on the other. Step 1's cohort selector (what to GENERATE)
+  // is stdSelectionFilter and stays separate. Saved as the Metadata View cell.
+  const [viewFilter, setViewFilter] = useState<ViewFilter>(ALL_VIEW);
 
   // Bulk generate modal state
   const [showBulkGeneratePrompt, setShowBulkGeneratePrompt] = useState(false);
@@ -1837,21 +1845,14 @@ export default function App() {
     );
   }, [data, wiDateCol, wiMetricCol, wiValueCol, wiRevenueCol, wiArpuCol, wiSegmentCol, wiProductCol, wiProductL2Col, wiChannelCol, wiChannelL2Col, wiTariffL1Col, wiTariffL2Col, wiInflowVal, wiRetentionVal, newEvent.scenario, newEvent.segment, newEvent.product, newEvent.productL2, newEvent.channel, newEvent.channelL2, newEvent.tariffL1, newEvent.tariffL2]);
 
-  /** Handle ViewFilterBar change on Step 2 — loads the matching forecast (if any). */
-  const handleStep2FilterChange = useCallback((filter: ViewFilter) => {
-    setStep2Filter(filter);
-    // Routes through the seam. The old `if (bf !== undefined)` had NO else, so a
-    // miss silently RETAINED the previous cohort's forecast - the screen changed
-    // its label and kept its numbers. Now: stored fit, or derived from the
-    // leaves in scope, or explicitly nothing.
-    const { forecast } = resolveForecast(filterToKey(filter));
-    setBaseForecast(forecast);
-    setAdjustedForecast(null);
-  }, [resolveForecast]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  /** Handle ViewFilterBar change on Step 3 — loads the matching forecast (if any). */
-  const handleStep3FilterChange = useCallback((filter: ViewFilter) => {
-    setStep3Filter(filter);
+  /**
+   * THE ONE VIEW SETTER — REQ-D7-03 clauses 1 and 4. It replaces the per-step
+   * pair, and its callers are three: the viewing bar, Step 3's row click (which
+   * narrows) and Step 3's Back. Loads the matching forecast (if any) and clears
+   * the adjusted global — the one clear the two per-step setters used to repeat.
+   */
+  const handleViewFilterChange = useCallback((filter: ViewFilter) => {
+    setViewFilter(filter);
     // Routes through the seam. The old `if (bf !== undefined)` had NO else, so a
     // miss silently RETAINED the previous cohort's forecast - the screen changed
     // its label and kept its numbers. Now: stored fit, or derived from the
@@ -1868,7 +1869,7 @@ export default function App() {
     // forecast belonging to Step 2's filter.
     // Delegates to forecastForView so the Step 3 tripwire can DRIVE this
     // transition instead of modelling it - see utils/viewFilter.
-    const r = forecastForView(activeView, step2Filter, step3Filter, resolveForecast as any);
+    const r = forecastForView(activeView, viewFilter, resolveForecast as any);
     if (r.owns) setBaseForecast(r.forecast as any);
   }, [activeView]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2122,8 +2123,8 @@ export default function App() {
    * 17.83 against a forecast of 33.69, which was a single Mobile Voice / Direct
    * leaf. One chart, two populations.
    *
-   * Verbatim the shape `handleStep2FilterChange` and `handleStep3FilterChange`
-   * use — resolve through the seam, and assign the RESULT, null included. The
+   * Verbatim the shape `handleViewFilterChange` (once the per-step pair)
+   * uses — resolve through the seam, and assign the RESULT, null included. The
    * null is the point: `showResolvedAggregate` returns early on a miss, which
    * retains the previous cohort's numbers under a changed label, and that is the
    * `if (bf !== undefined)` with no else that Steps 2 and 3 already corrected.
@@ -2752,9 +2753,7 @@ export default function App() {
           setForecastStore(prev => new Map(prev).set(fKey, bf));
           setBaseForecast(bf);
           setForecastUpdatedAt(format(new Date(), 'dd MMM yyyy, HH:mm'));
-          const newFilter: ViewFilter = cohortToFilter(bf.cohort);
-          setStep2Filter(newFilter);
-          setStep3Filter(newFilter);
+          setViewFilter(cohortToFilter(bf.cohort));
         }
       }
 
@@ -2943,10 +2942,8 @@ export default function App() {
         setForecastStore(prev => new Map(prev).set(fKey, bf));
         setBaseForecast(bf);
         setForecastUpdatedAt(format(new Date(), 'dd MMM yyyy, HH:mm'));
-        // Sync both tab filters to the newly generated cohort so Steps 2 & 3 default to it
-        const newFilter: ViewFilter = cohortToFilter(bf.cohort);
-        setStep2Filter(newFilter);
-        setStep3Filter(newFilter);
+        // The shared view follows the newly generated cohort (REQ-D7-03 clause 1).
+        setViewFilter(cohortToFilter(bf.cohort));
 
         // ── PATH B REMOVED: the companion channel='All' write ──────────────
         //
@@ -4517,20 +4514,16 @@ export default function App() {
           }}
         />
 
-        {/* View filter bar — shown on Steps 2 and 3; each step has its own filter memory */}
+        {/* View filter bar — shown on Steps 2 and 3, both reading ONE viewing state */}
         {(activeView === 'whatif' || activeView === 'vsactuals') && (
           <ViewFilterBar
-            filter={activeView === 'whatif' ? step2Filter : step3Filter}
-            onChange={activeView === 'whatif' ? handleStep2FilterChange : handleStep3FilterChange}
+            filter={viewFilter}
+            onChange={handleViewFilterChange}
             segments={availableSegments}
             productTree={productTree}
             channelTree={channelTree}
             tariffTree={tariffTree}
-            hasForecast={
-              activeView === 'whatif'
-                ? canResolve(filterToKey(step2Filter))
-                : canResolve(filterToKey(step3Filter))
-            }
+            hasForecast={canResolve(filterToKey(viewFilter))}
             /* Gated on the SAME two-state split as the Step 2 panel. Passing the
                reason unconditionally would suppress the Step 1 link in a session
                where nothing has been generated at all - and there Step 1 is
@@ -4548,7 +4541,7 @@ export default function App() {
                recording, so there is now one. */
             noForecastReason={
               hasAnyForecast
-                ? resolveForecast(filterToKey(activeView === 'whatif' ? step2Filter : step3Filter)).reason
+                ? resolveForecast(filterToKey(viewFilter)).reason
                 : null
             }
             onGoToStep1={() => setActiveView('standard')}
@@ -4674,7 +4667,7 @@ export default function App() {
             resolves. Recomputed, never remembered. */}
         {activeView === 'whatif' && (
           <WhatIfTab
-            noForecastReason={resolveForecast(filterToKey(step2Filter)).reason}
+            noForecastReason={resolveForecast(filterToKey(viewFilter)).reason}
             data={data}
             wiDateCol={wiDateCol}
             wiSegmentCol={wiSegmentCol}
@@ -4753,7 +4746,9 @@ export default function App() {
             handleImportActualsFile={handleImportActualsFile}
             onRemoveActuals={handleRemoveActuals}
             onRequestExport={openExportModal}
-            activeFilter={step3Filter}
+            activeFilter={viewFilter}
+            // REQ-D7-03 clause 4: the row click and Back write the ONE view setter.
+            onViewChange={handleViewFilterChange}
             // REQ-D7-02 clause 10: the arrays Step 2 receives, for Step 3's own run.
             marketEvents={marketEvents}
             yieldEvents={yieldEvents}

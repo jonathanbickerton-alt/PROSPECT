@@ -7,9 +7,12 @@
  * inventory's (60 Corporate·Direct leaves fitted to 2025-12; actuals over 540
  * leaves to 2026-06; the real seam). In the order a user meets it:
  *  (a) at Corporate/Direct there is no COMPARING bar;
- *  (b) clicking the Corporate row SELECTS it — the chart shows it — and the
- *      viewing bar is untouched; clicking it again deselects, bar untouched;
- *  (c) there is no Drilled-into Clear;
+ *  (b) RE-AIMED 2026-09-25 (REQ-D7-03 clause 4): grouped by Segment + Product
+ *      L1, clicking Corporate · Mobile Data writes the bar ONCE, through App's
+ *      one setter, with the NARROWED view (channel kept) — the chart shows it; a
+ *      second click is nothing;
+ *  (c) there is no Drilled-into Clear — the strip is the Back control only, and
+ *      Back writes the previous view through the same setter;
  *  (d) Step 2, mounted at All/All with one enabled event that applies, writes the
  *      adjusted forecast: Step 3 at All/All shows the badge and the toggle; moved
  *      to Corporate/Direct, both are hidden and the scoring is baseline;
@@ -230,9 +233,9 @@ async function main() {
         wiRevenueCol: C.rev, wiArpuCol: '', activeFilter: v,
         // REQ-D7-02 clause 10: the arrays App passes Step 3 (the ones Step 2 receives).
         marketEvents: events.market ?? [], yieldEvents: events.yield ?? [], pricingEvents: events.pricing ?? [],
-        // THE SPY. App passed its viewing-bar setter here before this build; if any
-        // Step 3 control still tried to write the bar, it would land here.
-        onCohortFilterChange: (next: any) => { spyCalls.push(next); sv(next); },
+        // THE SPY is App's ONE view setter (REQ-D7-03): the row click and Back write
+        // the bar through it, and nothing else on Step 3 may.
+        onViewChange: (next: any) => { spyCalls.push(next); sv(next); },
         formatNumber: (x: any) => String(Math.round(Number(x))), setActiveView: noop, downloadExcel: noop,
       }));
     };
@@ -254,12 +257,11 @@ async function main() {
     const tds = [...tr.querySelectorAll('td')];
     return tds.length >= 5 && ((tds[0] as any)?.textContent || '').trim().startsWith(seg);
   });
-  const drilledStrip = () => ([...container.querySelectorAll('span')] as any[])
-    .find(s => (s.textContent || '').trim() === i18n.t('actuals_drilled_into'))?.parentElement ?? null;
   const cardLines = () => {
     for (const card of [...container.querySelectorAll('div')] as any[]) {
       const ps = [...card.querySelectorAll(':scope > p')] as any[];
-      if (ps.length >= 2 && /^Inflow MAPE$/.test((ps[0]?.textContent || '').trim())) return ps.map(p => (p.textContent || '').trim());
+      // RE-AIMED 2026-09-25 (REQ-D7-03 clause 3): the title carries the month.
+      if (ps.length >= 2 && /^Inflow MAPE( · .+)?$/.test((ps[0]?.textContent || '').trim())) return ps.map(p => (p.textContent || '').trim());
     }
     return [] as string[];
   };
@@ -273,28 +275,50 @@ async function main() {
   check('(a) no Segment / Channel chips', !([...container.querySelectorAll('button')] as any[])
     .some(b => /^(Segment|Product|Channel|Tariff)\s*(Corporate|Direct|All)/.test((b.textContent || '').trim())));
 
-  // ── (b) ROW CLICK SELECTS ONLY ───────────────────────────────────────────
-  const corp = rowFor('Corporate');
-  check('(b) the Corporate row is on screen (Group-by Segment)', !!corp);
-  if (corp) await (act as any)(async () => { corp.click(); });
+  // ── (b) A ROW CLICK NARROWS THE BAR — RE-AIMED 2026-09-25 to REQ-D7-03 clause 4
+  //    (supersedes REQ-D7-02 clause 3's 'selects only'). The spy is App's ONE view
+  //    setter; it must receive exactly one write, of the NARROWED view — the
+  //    row's grouped dimensions over the bar's, channel KEPT. Seen RED first:
+  //    "(b) the row is SELECTED: the Drilled-into strip names it [(none)]" and
+  //    "(c) the Drilled-into strip has no Clear control [undefined]".
+  const groupByProduct = async () => {
+    const cb: any = ([...container.querySelectorAll('input[type=checkbox]')] as any[])
+      .find((x: any) => /^Product L1/i.test((x.closest('label')?.textContent || '').trim()));
+    if (cb && !cb.checked) await (act as any)(async () => { cb.click(); });
+    await flush();
+    return !!cb && cb.checked;
+  };
+  check('(b) Group-by Segment + Product L1', await groupByProduct());
+  const md = rowFor('Corporate · Mobile Data');
+  check('(b) the Corporate · Mobile Data row is on screen', !!md);
+  if (md) await (act as any)(async () => { md.click(); });
   await flush();
-  check('(b) the row is SELECTED: the Drilled-into strip names it',
-    !!drilledStrip() && (drilledStrip().textContent || '').includes('Corporate'), (drilledStrip()?.textContent || '(none)').trim());
+  const keyOf = (f: any) => fc.makeForecastKey(f.segment, f.product.l1 ?? 'All', f.product.l2, f.channel.l1 ?? 'All', f.channel.l2, f.tariff?.l1, f.tariff?.l2);
+  check('(b) the viewing bar was written ONCE, through the one setter, with the NARROWED view',
+    spyCalls.length === 1 && keyOf(spyCalls[0]) === 'Corporate|Mobile Data|All|Direct|All|All|All',
+    JSON.stringify(spyCalls.map(keyOf)));
+  check('(b) and the view is Corporate/Mobile Data/Direct — channel kept', keyOf(currentView) === 'Corporate|Mobile Data|All|Direct|All|All|All',
+    keyOf(currentView));
+  const mdMean = resolveForecast('Corporate|Mobile Data|All|Direct|All|All|All').forecast?.months.find((m: any) => m.month === M)?.inflow.mean;
   const sel = varianceAt('Inflow', M);
-  check(`(b) the chart shows the row: ${M} Inflow 33048 against 33136`, sel?.actual === 33048 && sel?.forecast === 33136, JSON.stringify(sel));
-  check('(b) the viewing bar was NOT written: no call reached the old setter', spyCalls.length === 0, JSON.stringify(spyCalls));
-  check('(b) and step3Filter is the same Corporate/Direct state', currentView === cdView
-    && currentView.segment === 'Corporate' && currentView.channel.l1 === 'Direct', JSON.stringify(currentView));
+  check(`(b) the chart shows it: ${M} Inflow forecast is the narrowed view's`, !!sel && typeof mdMean === 'number'
+    && sel.forecast === Math.round(mdMean), `${JSON.stringify(sel)} vs ${mdMean}`);
 
-  // ── (c) NO CLEAR ─────────────────────────────────────────────────────────
-  check('(c) the Drilled-into strip has no Clear control', !!drilledStrip() && drilledStrip().querySelectorAll('button').length === 0,
-    String(drilledStrip()?.querySelectorAll('button').length));
-
-  const corp2 = rowFor('Corporate');
-  if (corp2) await (act as any)(async () => { corp2.click(); });
+  // ── (c) NO CLEAR: THE STRIP IS THE BACK CONTROL ONLY (clause 5) ──────────
+  const back = () => byTestId('step3-back');
+  check('(c) the strip is the Back control only, naming the previous view',
+    !!back() && back().parentElement.querySelectorAll('button').length === 1
+      && (back().textContent || '').trim() === i18n.t('actuals_back_to', { view: 'Corporate / Direct' }),
+    (back()?.textContent || '(none)').trim());
+  const md2 = rowFor('Corporate · Mobile Data');
+  if (md2) await (act as any)(async () => { md2.click(); });
   await flush();
-  check('(b) clicking again DESELECTS: the strip is gone', !drilledStrip());
-  check('(b) and the viewing bar is still untouched', spyCalls.length === 0 && currentView === cdView, JSON.stringify(spyCalls));
+  check('(b) a second click on the same row is nothing', spyCalls.length === 1, String(spyCalls.length));
+  if (back()) await (act as any)(async () => { back().click(); });
+  await flush();
+  check('(c) Back writes the previous view through the same setter, and goes',
+    spyCalls.length === 2 && keyOf(spyCalls[1]) === keyOf(cdView) && keyOf(currentView) === CD_KEY && !back(),
+    JSON.stringify(spyCalls.map(keyOf)));
 
   const toggleOn = async () => {
     const b = byTestId('adjusted-toggle') ? ([...byTestId('adjusted-toggle').querySelectorAll('button')] as any[])
@@ -486,13 +510,16 @@ async function main() {
     const wit = strip(fs.readFileSync('src/components/WhatIfTab.tsx', 'utf8'));
     const util = strip(fs.readFileSync('src/utils/eventScopeSeries.ts', 'utf8'));
     const count = (t: string, n: string) => t.split(n).length - 1;
-    check('(X) Step 3 holds no writer of the viewing bar: onCohortFilterChange appears nowhere in FVA or App',
+    check('(X) no second writer of the viewing bar: onCohortFilterChange appears nowhere in FVA or App',
       count(fva, 'onCohortFilterChange') === 0 && count(app, 'onCohortFilterChange') === 0,
       `${count(fva, 'onCohortFilterChange')} / ${count(app, 'onCohortFilterChange')}`);
-    check('(X) handleStep3FilterChange: defined once, called by the viewing bar only',
-      count(app, 'const handleStep3FilterChange = useCallback(') === 1 && count(app, 'handleStep3FilterChange') === 2
-        && /onChange=\{activeView === 'whatif' \? handleStep2FilterChange : handleStep3FilterChange\}/.test(app),
-      String(count(app, 'handleStep3FilterChange')));
+    // RE-AIMED 2026-09-25 (REQ-D7-03 clause 1): the per-step setters became ONE.
+    // Seen RED first: "(X) handleStep3FilterChange: defined once, called by the
+    // viewing bar only [0]".
+    check('(X) the ONE view setter: defined once; the bar and Step 3 (row click, Back) are its callers',
+      count(app, 'const handleViewFilterChange = useCallback(') === 1 && count(app, 'handleViewFilterChange') === 3
+        && app.includes('onChange={handleViewFilterChange}') && app.includes('onViewChange={handleViewFilterChange}'),
+      String(count(app, 'handleViewFilterChange')));
     check('(X) ONE gate: showAdjusted defined once; the badge and the toggle read it',
       count(fva, 'const showAdjusted = useMemo(') === 1 && count(fva, '{showAdjusted && (') === 2);
     // RE-AIMED (clause 10): adjustedMeanMap reads the VIEW's run, never the global.

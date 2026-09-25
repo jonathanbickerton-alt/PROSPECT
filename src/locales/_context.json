@@ -1,5 +1,6 @@
 {
   "actuals_average": "Check occurrence: noun (the average value) or adjective.",
+  "actuals_back_to": "Button, Step 3: returns the viewing bar to the view held before a table-row click. {{view}} is that view's scope, e.g. 'Corporate / Direct'. Keep the leading arrow.",
   "baseline_filters": "Noun, plural — the filter controls.",
   "baseline_generated": "Status label — past participle, a forecast that exists.",
   "baseline_none": "Seasonality label — no repeating pattern. Means \"none detected\", not the pronoun.",

@@ -247,7 +247,9 @@ async function main() {
   check('(g) the rendered Corporate Inflow score is the engine\'s single-month score',
     cellMar.startsWith(eMar.inflowScore.toFixed(0)), `${cellMar} vs ${eMar.inflowScore.toFixed(0)}`);
   const cMar = cardInflowAt('2026-03');
-  const inflowCard = cardText(/^Inflow MAPE$/);
+  // RE-AIMED 2026-09-25 (REQ-D7-03 clause 3): the title carries the accuracy month.
+  // Seen RED first: "(g) the Inflow MAPE card is that month's per-leaf average [ vs 0.6%]".
+  const inflowCard = cardText(/^Inflow MAPE · Mar 2026$/);
   console.log(`  (g) cards: Inflow MAPE 2026-03 per-leaf average ${cMar.mape.toFixed(2)}% over ${cMar.n}; card reads ${inflowCard.join(' | ')}`);
   check('(g) the Inflow MAPE card is that month\'s per-leaf average',
     inflowCard.some(p => p === cMar.mape.toFixed(1) + '%'), `${inflowCard.join(' | ')} vs ${cMar.mape.toFixed(1)}%`);

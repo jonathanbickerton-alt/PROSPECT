@@ -119,6 +119,7 @@ const INITIATIVES = 'scripts/initiatives-mounted-spec.tsx';
 const ACTUALSCOV = 'scripts/actuals-coverage-mounted-spec.tsx';
 const ACCMONTH = 'scripts/accuracy-month-mounted-spec.tsx';
 const STEP3BAR = 'scripts/step3-one-bar-mounted-spec.tsx';
+const ONEVIEW = 'scripts/one-view-mounted-spec.tsx';
 const SEAMUTIL = 'src/utils/eventScopeSeries.ts';
 const EVTOGGLE = 'scripts/event-toggle-spec.tsx';
 const SUMMARYBAR = 'src/components/ForecastSummaryBar.tsx';
@@ -284,21 +285,31 @@ const TRAPS: Trap[] = [
   // forecast fall back to the loaded aggregate, so a forecast line appears
   // beside an unscored table row. That is the disagreement, reinstated where it
   // would actually be visible.
-  { id: '9 the table/chart disagreement reinstated', why: 'table blank, chart drawing, same cohort',
-    file: FVA_TAB, spec: UNSCORED,
-    mutate: s => s.replace('      } else if (baseForecast && !selectedCohortRow &&',
-                           '      } else if (baseForecast &&') },
+  //
+  // 9 RETIRED — REQ-D7-03 clause 4 build, 2026-09-25. A row click no longer
+  // SELECTS a row: it narrows the shared view, so `selectedCohortRow` and the
+  // guard half this trap removed are gone with the selection. Its claim — "an
+  // unscored cohort gets no fabricated forecast line" — now lands on the
+  // narrowed view, whose seam answer is null, so Step 3 shows its no-forecast
+  // screen; the one fallback that could still draw a borrowed line is Case B's
+  // scope guard, which trap 10 keeps. The id is retired, not re-pointed; the
+  // number is not reused.
+  //
   // Trap 10 removes the OTHER half of the same guard: the scope check. Without
   // it an aggregate is drawn against filter-scoped actuals, which is the
   // +99.9%-variance defect the comment beside the guard records. A gate removed
   // this half and every spec stayed green - the guard was correct and
   // unverified, which is the state this trap exists to make impossible.
+  //   RE-POINTED 2026-09-25 (REQ-D7-03): the guard lost its `!selectedCohortRow`
+  //   half with the row selection; this is the half that remains. Seen RED by
+  //   hand (md5 a92ca82c -> 23783705 -> a92ca82c): FAIL CASE B: a forecast
+  //   scoped OUTSIDE the filter is NOT drawn against its actuals [4 of 4 drawn]
   { id: '10 the Case B scope guard removed', why: 'aggregate drawn against filter-scoped actuals',
     file: FVA_TAB, spec: UNSCORED,
     mutate: s => s.replace(
-      '      } else if (baseForecast && !selectedCohortRow &&' + nl +
+      '      } else if (baseForecast &&' + nl +
       '                 (!activeFilter || cohortMatchesFilter(baseForecast.cohort, activeFilter))) {',
-      '      } else if (baseForecast && !selectedCohortRow) {') },
+      '      } else if (baseForecast) {') },
   // Trap 11 is TWO mutations on purpose, and the pairing is the point: no
   // natural input produces a NaN component score, so weakening the filter
   // alone would change nothing and the trap would report a false green. The
@@ -598,8 +609,12 @@ const TRAPS: Trap[] = [
   { id: '36 the tab-switch effect stops resolving for Step 3', why: 'Actuals Review shows never-generated with a populated store',
     // Retargeted to the extracted function so the MOUNTED sequences kill it,
     // not merely a structural source check.
+    // RE-POINTED 2026-09-25 (REQ-D7-03 clause 1): one viewing state, so the arm
+    // resolves `viewFilter`. Seen RED by hand (md5 5f5965f4 -> cee57c13 ->
+    // 5f5965f4): FAIL SEQ restore -> Step 3: Actuals Review renders [the
+    // never-generated message is on screen — F1 REPRODUCED ...], all four sequences.
     file: VIEWFILTER, spec: STEP3,
-    mutate: s => s.replace("  if (view === 'vsactuals') return { owns: true, forecast: resolve(filterToKey(step3Filter)).forecast };",
+    mutate: s => s.replace("  if (view === 'vsactuals') return { owns: true, forecast: resolve(filterToKey(viewFilter)).forecast };",
                            "  if (view === 'vsactuals') return { owns: true, forecast: null };") },
   // Trap 37: the filter/key conversion drifts. The spec drives the production
   // helpers, so breaking the round trip breaks the sequences - which is the
@@ -3896,18 +3911,20 @@ const TRAPS: Trap[] = [
       "        {activeFilter && activeFilter.segment !== 'All' && (<div className=\"px-4 py-3\">Comparing Segment {activeFilter.segment}</div>)}" + nl
       + "        {/* REQ-D7-02 clause 1: the COMPARING chip bar is REMOVED. Step 3's scope is") },
 
-  // 284 A ROW CLICK WRITES THE VIEWING BAR — clause 3: it selects the row only.
-  //   FAIL  (b) the viewing bar was NOT written: no call reached the old setter  [[{"segment":"Corporate",...}]]
-  { id: '284 a Step 3 row click writes step3Filter',
-    why: 'clicking a table row silently re-scopes (and can widen) the whole view',
+  // 284 A ROW CLICK WRITES A SECOND, WIDENING VIEW.
+  //   RE-POINTED 2026-09-25 (REQ-D7-03 clause 4, which supersedes REQ-D7-02
+  //   clause 3's 'selects only'): the row click now writes the bar BY DECISION,
+  //   once, through the one setter, and only ever narrows. The defect this id
+  //   guards is therefore a second writer that widens — the row's segment alone,
+  //   every other dimension dropped. Seen RED by hand (md5 a92ca82c -> 256aa8a4
+  //   -> a92ca82c):
+  //   FAIL  (b) the viewing bar was written ONCE, through the one setter, with the NARROWED view  [["Corporate|All|All|All|All|All|All","Corporate|Mobile Data|All|Direct|All|All|All"]]
+  { id: '284 a Step 3 row click writes a second, widening view',
+    why: 'clicking a table row silently widens the whole view before narrowing it',
     file: FILE, spec: STEP3BAR,
-    mutate: s => s
-      // RE-ANCHORED 2026-09-24 (REQ-D7-02 clause 10): the props now end with the
-      // three event arrays. Seen RED by hand (md5 3da1ea55 -> 4aa26030 -> 3da1ea55).
-      .replace("pricingEvents = NO_EVENTS as PricingEvent[]," + nl + "}) => {", "pricingEvents = NO_EVENTS as PricingEvent[], onCohortFilterChange," + nl + "}: any) => {")
-      .replace("                            if (c.worstKpi) setSelectedKpi(c.worstKpi);",
-        "                            if (c.worstKpi) setSelectedKpi(c.worstKpi);" + nl
-        + "                            onCohortFilterChange?.({ segment: c.seg, product: { l1: null, l2: null }, channel: { l1: null, l2: null }, tariff: { l1: null, l2: null } });") },
+    mutate: s => s.replace("                          if (narrowViewTo(c) && c.worstKpi) setSelectedKpi(c.worstKpi);",
+      "                          onViewChange?.({ segment: c.seg, product: { l1: null, l2: null }, channel: { l1: null, l2: null }, tariff: { l1: null, l2: null } });" + nl
+      + "                          if (narrowViewTo(c) && c.worstKpi) setSelectedKpi(c.worstKpi);") },
 
   // 285 RETIRED — REQ-D7-02 clause 10 build, 2026-09-24. It planted the removal
   // of the key equality (adjusted forecast's key === the view's key). Clause 10
@@ -3965,6 +3982,61 @@ const TRAPS: Trap[] = [
     file: SEAMUTIL, spec: STEP3BAR,
     mutate: s => s.replace("arpuIdsByMonth, rawArpuByMonth, adjustedMonths: run.adjustedMonths };",
       "arpuIdsByMonth, rawArpuByMonth, adjustedMonths: [] };") },
+
+  // ══ REQ-D7-03 — ONE VIEWING STATE; THE ROW CLICK NARROWS; BACK; THE MONTH IN THE TITLES ══
+  //
+  // All six seen RED by hand on 2026-09-25 against a pre-plant md5 and restored
+  // from a scratchpad backup (the 0746 report quotes every triple and red line).
+  // 291 and 292 are caught by spec:one-view's STRUCTURAL pins: App is not
+  // mountable in this harness, so what App holds and writes is pinned by source.
+  //
+  // 291 STEP 3 KEEPS ITS OWN FILTER — clause 1.
+  //   FAIL  (X) both steps read the one state: the bar, hasForecast, Step 2's reason and Step 3's activeFilter
+  { id: "291 Step 3 keeps its own filter (Step 2's change unseen)",
+    why: 'a view set on Step 2 is not the view on Step 3',
+    file: APP, spec: ONEVIEW,
+    mutate: s => s
+      .replace("  const [viewFilter, setViewFilter] = useState<ViewFilter>(ALL_VIEW);" + nl,
+        "  const [viewFilter, setViewFilter] = useState<ViewFilter>(ALL_VIEW);" + nl + "  const [step3OwnFilter] = useState<ViewFilter>(ALL_VIEW);" + nl)
+      .replace("            activeFilter={viewFilter}" + nl, "            activeFilter={step3OwnFilter}" + nl) },
+
+  // 292 THE EXPORT OMITS THE VIEW CELL — clause 2.
+  //   FAIL  (X) the export writes the View cell ONCE, through the Metadata writer
+  { id: '292 the export omits the View cell',
+    why: 'a saved session reloads at All/All whatever view it was saved at',
+    file: APP, spec: ONEVIEW,
+    mutate: s => s.replace("      viewMetaRow(viewFilter)," + nl, "") },
+
+  // 293 THE LOAD IGNORES THE VIEW CELL — clause 2.
+  //   FAIL  (b) loaded: Step 3 at Corporate/Direct  [All/All/All]
+  { id: '293 the load ignores the View cell',
+    why: 'the saved view is written and never read back',
+    file: VIEWFILTER, spec: ONEVIEW,
+    mutate: s => s.replace("  const v = get(VIEW_META_FIELD);", "  const v = undefined as unknown; void get;") },
+
+  // 294 THE TITLES NEVER CHANGE WITH THE MONTH — clause 3. Both card rows.
+  //   FAIL  (f) after the change: MAR 2026 in all eight  [Inflow MAPE · Jun 2026 | ...]
+  { id: '294 the card titles never change with the accuracy month',
+    why: 'the title names a month the figure beneath it is not for',
+    file: FILE, spec: ONEVIEW, global: 2,
+    mutate: s => s.split("MAPE{accuracyMonth ? ` · ${monthLabel(accuracyMonth, i18n.language)}` : ''}")
+      .join("MAPE{accuracyMonth ? ` · ${monthLabel(accuracyMonthOptions[accuracyMonthOptions.length - 1], i18n.language)}` : ''}") },
+
+  // 295 THE ROW CLICK REPLACES THE VIEW — clause 4: it must narrow, never widen.
+  //   FAIL  (d) clicking Corporate at Corporate/Direct: the bar STAYS Corporate/Direct  [Corporate/All/All]
+  { id: '295 the row click replaces the view instead of narrowing it',
+    why: 'a Corporate row at Corporate/Direct widens the view to Corporate/All',
+    file: FILE, spec: ONEVIEW,
+    mutate: s => s.replace("    const next: ViewFilter = { ...v, ...rowDims };",
+      "    const next: ViewFilter = { ...{ segment: 'All', product: { l1: null, l2: null }, channel: { l1: null, l2: null }, tariff: { l1: null, l2: null } }, ...rowDims };") },
+
+  // 296 BACK RESTORES All/All — clause 5: it restores the view held before the click.
+  //   FAIL  (c) Back: Corporate/Direct  [All/All/All]
+  { id: '296 Back restores All/All instead of the previous view',
+    why: 'Back throws away the view the user was in',
+    file: FILE, spec: ONEVIEW,
+    mutate: s => s.replace("onClick={() => { const from = backTo.from; setBackTo(null); onViewChange?.(from); }}",
+      "onClick={() => { const from = { segment: 'All', product: { l1: null, l2: null }, channel: { l1: null, l2: null } }; setBackTo(null); onViewChange?.(from); }}") },
 ];
 
 
@@ -4159,6 +4231,8 @@ const CONTROL_SPEC_MAP: Record<string, string> = {
   ACCMONTH,
   // REQ-D7-02 session 1. Registered WITH its first trap, 283.
   STEP3BAR,
+  // REQ-D7-03. Registered WITH its first trap, 291.
+  ONEVIEW,
 };
 const controlHashNow = () => GT.controlHash(
   [...Object.values(CONTROL_SPEC_MAP), ...TARGETS, 'scripts/guard-traps.ts', 'scripts/guard-traps-select.ts'],

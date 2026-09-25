@@ -437,13 +437,43 @@ export function forecastForStep1Selection(
   return { key, forecast: r.forecast, reason: r.reason ?? null };
 }
 
+// REQ-D7-03 clause 1: Steps 2 and 3 share ONE viewing state, so both owning
+// views resolve the same filter. The two arms stay separate so a spec can still
+// sever one step's resolve (guard-trap 36) without touching the other.
 export function forecastForView(
   view: string,
-  step2Filter: ViewFilter,
-  step3Filter: ViewFilter,
+  viewFilter: ViewFilter,
   resolve: (key: string) => { forecast: unknown | null },
 ): { owns: boolean; forecast: unknown | null } {
-  if (view === 'whatif') return { owns: true, forecast: resolve(filterToKey(step2Filter)).forecast };
-  if (view === 'vsactuals') return { owns: true, forecast: resolve(filterToKey(step3Filter)).forecast };
+  if (view === 'whatif') return { owns: true, forecast: resolve(filterToKey(viewFilter)).forecast };
+  if (view === 'vsactuals') return { owns: true, forecast: resolve(filterToKey(viewFilter)).forecast };
   return { owns: false, forecast: null };
+}
+
+/** The unconstrained view: All/All. The shared state's initial value and what a
+ *  save without a View cell restores to (REQ-D7-03 clause 2). */
+export const ALL_VIEW: ViewFilter = { segment: 'All', product: { l1: null, l2: null }, channel: { l1: null, l2: null } };
+
+/**
+ * THE SHARED VIEW, AS ONE METADATA CELL — REQ-D7-03 clause 2.
+ *
+ * The 7-part forecast key, not the filter as JSON: it is the form every
+ * resolver, the store and the Active_Cohort block already speak, it reads in the
+ * sheet as the scope it is, and `filterToKey` / `cohortToFilter` already
+ * round-trip it — so no second encoding of a view enters the file.
+ */
+export const VIEW_META_FIELD = 'View';
+
+export function viewMetaRow(f: ViewFilter): { Field: string; Value: string } {
+  return { Field: VIEW_META_FIELD, Value: filterToKey(f) };
+}
+
+/** The inverse. Absent, blank, or not seven parts → All/All: an older save
+ *  recorded no view, and a malformed cell is not a view to guess at. */
+export function viewFromMeta(get: (field: string) => unknown): ViewFilter {
+  const v = get(VIEW_META_FIELD);
+  const parts = v === undefined || v === null ? [] : String(v).split('|');
+  if (parts.length !== 7 || parts.some(p => p === '')) return ALL_VIEW;
+  const [segment, product, productL2, channel, channelL2, tariffL1, tariffL2] = parts;
+  return cohortToFilter({ segment, product, productL2, channel, channelL2, tariffL1, tariffL2 });
 }

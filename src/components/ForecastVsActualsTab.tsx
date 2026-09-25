@@ -26,6 +26,7 @@ import {
   canShowBaseForecast, makeForecastKey, deriveAggregate, coveredLeafKeys, monthsCarryingActuals,
   eventScopeMatchesView, isEventOn } from '../utils/forecasting';
 import { monthLabel } from '../utils/monthFormat';
+import { filterToKey, describeScope } from '../utils/viewFilter';
 
 // ---------------------------------------------------------------------------
 // Props — all IBRO column mappings come from App; forecast data from context
@@ -65,10 +66,15 @@ interface ForecastVsActualsTabProps {
   /** Opens the session export modal in App.tsx */
   onRequestExport: () => void;
   /**
-   * The current filter selection from the ViewFilterBar (per-tab state in App.tsx).
-   * Drives chart scoping and the cards' scope. Step 3 reads it; it never writes it.
+   * The ONE viewing state Steps 2 and 3 share (App's `viewFilter`, REQ-D7-03).
+   * Drives chart scoping and the cards' scope.
    */
   activeFilter?: ViewFilter;
+  /**
+   * REQ-D7-03 clause 4 — App's ONE view setter. Step 3 calls it from exactly two
+   * places: the row click (which narrows) and Back (which restores).
+   */
+  onViewChange?: (filter: ViewFilter) => void;
   /**
    * REQ-D7-02 clause 10. THE EVENT ARRAYS, from App — the same arrays Step 2
    * receives, not copies. Step 3 computes the adjusted forecast for ITS OWN view
@@ -79,7 +85,8 @@ interface ForecastVsActualsTabProps {
   pricingEvents?: PricingEvent[];
   // REQ-D7-02 clause 3: `onCohortFilterChange` is gone. Its readers were the
   // COMPARING chips, the row click, the row deselect and the Drilled-into Clear —
-  // every one a second writer of the viewing bar. No control on Step 3 writes it.
+  // every one a second writer of the viewing bar. REQ-D7-03 clause 4 gives the row
+  // click back a write, through App's ONE setter (`onViewChange`), never a second.
 }
 
 // ---------------------------------------------------------------------------
@@ -1528,7 +1535,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   formatNumber, setActiveView, onAcceptChallengerModel, onAcceptAllChallengerModels,
   onRunChallengerForecast, onAcceptPreviewForecast,
   handleImportActualsFile, onRemoveActuals, onRequestExport,
-  activeFilter,
+  activeFilter, onViewChange,
   marketEvents = NO_EVENTS as MarketEvent[], yieldEvents = NO_EVENTS as YieldEvent[], pricingEvents = NO_EVENTS as PricingEvent[],
 }) => {
   const { t, i18n } = useTranslation();
@@ -1593,8 +1600,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   const [selectedCohortKey, setSelectedCohortKey] = useState<string | null>(null);
   const [activeSubView, setActiveSubView] = useState<'forecast' | 'challenger'>('forecast');
 
-  // Selected cohort row in the Historical Accuracy table — drives chart scoping.
-  const [selectedForecastCohortKey, setSelectedForecastCohortKey] = useState<string | null>(null);
+  // REQ-D7-03 clauses 4-5 — the row click NARROWS the shared view, so there is no
+  // separate row selection: the selected row would always BE the view. This is
+  // the ONE piece of state Back needs: the view held before the click, and the
+  // key the click moved to. Back shows only while the bar still reads that key.
+  const [backTo, setBackTo] = useState<{ from: ViewFilter; to: string } | null>(null);
 
   // Dimension selectors — each sub-view owns its own independent selection so
   // changing grouping in one tab does not disturb the other.
@@ -1934,8 +1944,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   }, [previousForecast, selectedKpi]);
 
   // ---------------------------------------------------------------------------
-  // 4. Per-cohort accuracy (needed before the chart memos so selectedCohortRow can
-  //    be derived and passed into the chart memo below).
+  // 4. Per-cohort accuracy (the table's rows; a row click narrows the view).
   // ---------------------------------------------------------------------------
 
   // aggrSnapshotMap — derived from actualsAggrMap (baseForecast.cohort scope, including L2).
@@ -2138,21 +2147,60 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
     [baseForecast, cohortActualsMap, broadAggrSnapshotMap, cohortDims, forecastStore, adjustedMeanMap, accuracyMonth],
   );
 
-  // When dims change the selected key may not exist in the new grouping — falls back to null.
-  const selectedCohortRow = selectedForecastCohortKey
-    ? (cohortAccuracy.find(c => c.cohortKey === selectedForecastCohortKey) ?? null)
-    : null;
+  /**
+   * REQ-D7-03 clause 3 — the cards' figures flash briefly when the accuracy month
+   * CHANGES (not on first render). One effect, one class.
+   */
+  const [monthFlash, setMonthFlash] = useState(false);
+  const flashFromMonth = React.useRef(accuracyMonth);
+  useEffect(() => {
+    if (flashFromMonth.current === accuracyMonth) return;
+    flashFromMonth.current = accuracyMonth;
+    setMonthFlash(true);
+    const id = setTimeout(() => setMonthFlash(false), 600);
+    return () => clearTimeout(id);
+  }, [accuracyMonth]);
+
+  /**
+   * REQ-D7-03 clause 4 — A ROW CLICK NARROWS THE SHARED VIEW.
+   * `next = { ...view, ...rowDims }`: the row's GROUPED dimensions replace the
+   * bar's, the ungrouped keep the bar's value. Segment is always grouped. The
+   * row's grouped values are read the way the table's grouping reads them
+   * (`cohortDims` over the row's dims); no new predicate. A row inside the view
+   * can only narrow it, never widen it; a click that changes nothing is nothing.
+   */
+  const narrowViewTo = (c: CohortAccuracyRow): boolean => {
+    if (!activeFilter || !onViewChange) return false;
+    const v = activeFilter;
+    const byProduct = cohortDims.product || cohortDims.productL2;
+    const byChannel = cohortDims.channelL1 || cohortDims.channelL2;
+    const byTariff  = cohortDims.tariffL1 || cohortDims.tariffL2;
+    const rowDims: Partial<ViewFilter> = {
+      segment: c.seg,
+      ...(byProduct ? { product: { l1: c.prod, l2: cohortDims.productL2 ? c.prodL2 : v.product.l2 } } : {}),
+      ...(byChannel ? { channel: { l1: c.chan, l2: cohortDims.channelL2 ? c.chanL2 : v.channel.l2 } } : {}),
+      ...(byTariff  ? { tariff:  { l1: c.tariffL1, l2: cohortDims.tariffL2 ? c.tariffL2 : (v.tariff?.l2 ?? null) } } : {}),
+    };
+    const next: ViewFilter = { ...v, ...rowDims };
+    const nextKey = filterToKey(next);
+    if (nextKey === filterToKey(v)) return false;
+    setBackTo({ from: v, to: nextKey });
+    onViewChange(next);
+    return true;
+  };
+
+  // A bar change by hand (anything but the click's own write) retires Back: the
+  // previous view no longer applies.
+  useEffect(() => {
+    if (backTo && (!activeFilter || filterToKey(activeFilter) !== backTo.to)) setBackTo(null);
+  }, [activeFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   // ---------------------------------------------------------------------------
   // 5. Chart data for selected KPI (historical actual months + forecast months)
   //
-  //    When a cohort row is selected:
-  //      - the Actual line uses cohort-specific values from selectedCohortRow.monthMap
-  //      - the Baseline/Optimistic/Pessimistic lines are SCALED by the cohort's
-  //        proportional share (cohortActual / totalActual) so both series are at
-  //        the same scale.  The average share over matched months is used as the
-  //        fallback for forecast-only months where no actuals exist yet.
-  //    When no cohort is selected, aggregate values are used for all series.
+  //    Always the VIEW's: REQ-D7-03 clause 4 retired the row selection — a row
+  //    click narrows the view itself, so the chart has one scope, the bar's.
   // ---------------------------------------------------------------------------
   // ── chartData DELETED — it was dead code, and stayed dead for a long time.
   //
@@ -2209,28 +2257,14 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
 
   /**
    * REQ-D7-01 — THE CHART'S ONE SEAM ANSWER, kept whole so its covered leaves can
-   * be read. The selected row's key while a row is selected, else the view's.
+   * be read. REQ-D7-03 clause 4: a row click narrows the VIEW, so there is no
+   * selected row with a key of its own — the chart's seam IS the view's.
    */
-  const chartSeam = useMemo(() => {
-    if (selectedCohortRow) {
-      const key = [
-        selectedCohortRow.seg,
-        cohortDims.product   ? selectedCohortRow.prod   : 'All',
-        cohortDims.productL2 ? selectedCohortRow.prodL2 : 'All',
-        cohortDims.channelL1 ? selectedCohortRow.chan    : 'All',
-        cohortDims.channelL2 ? selectedCohortRow.chanL2  : 'All',
-        cohortDims.tariffL1  ? selectedCohortRow.tariffL1 : 'All',
-        cohortDims.tariffL2  ? selectedCohortRow.tariffL2 : 'All',
-      ].join('|');
-      return { key, result: resolveForecast(key) };
-    }
-    return viewSeam;
-  }, [selectedCohortRow, cohortDims, viewSeam, resolveForecast]);
+  const chartSeam = viewSeam;
 
   const multiChartData = useMemo((): MultiChartRow[] => {
     const histMonths = baseForecast?.historicalMonths ?? [];
 
-    const cohortMonthMap = selectedCohortRow?.monthMap ?? null;
     const specificForecast = chartSeam?.result.forecast ?? null;
 
     // Build specificFcMonthMap
@@ -2325,21 +2359,6 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
 
     // Helper to get actuals bucket for a month
     const getActBucket = (month: string): SynActBucket | null => {
-      // A selected row with a forecast reads the restricted buckets below; with no
-      // forecast (a miss) it charts the row's own actuals.
-      if (cohortMonthMap && !synActualsMap) {
-        const entry = cohortMonthMap.get(month);
-        if (!entry) return null;
-        return {
-          inflow: entry.inflow, outflow: entry.outflow, retention: entry.retention,
-          base: entry.base,
-          arpuSubVol: entry.arpuSubVol, revSum: entry.arpuRevSum,
-          inflowRev: entry.inflowRev, inflowSubVol: entry.inflowSubVol,
-          outflowRev: entry.outflowRev, outflowSubVol: entry.outflowSubVol,
-          retentionRev: entry.retentionRev, retentionSubVol: entry.retentionSubVol,
-          baseRev: entry.baseRev, baseSubVol: entry.baseSubVol,
-        };
-      }
       const src = synActualsMap ?? actualsAggrMap;
       const bucket = src.get(month) as any;
       if (!bucket) return null;
@@ -2405,10 +2424,8 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       // dead code nobody reads — so the reasoning was recorded where it could
       // never be found by anyone reading the code that actually runs.
       //
-      // Both halves of the guard earn their place:
-      //   !selectedCohortRow          — a SELECTED cohort with no forecast must
-      //                                 get nothing, not the loaded aggregate.
-      //                                 Covered by guard-traps trap 9.
+      // The guard (REQ-D7-03 retired its `!selectedCohortRow` half with the
+      // row selection — a row click now narrows the view, and trap 9 with it):
       //   cohortMatchesFilter(...)    — an aggregate must not be drawn against
       //                                 filter-scoped actuals; that produced
       //                                 nonsense variances around +99.9%.
@@ -2416,7 +2433,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       //                                 Case B pair in spec:unscored, added
       //                                 after a gate removed this half and
       //                                 every spec stayed green.
-      } else if (baseForecast && !selectedCohortRow &&
+      } else if (baseForecast &&
                  (!activeFilter || cohortMatchesFilter(baseForecast.cohort, activeFilter))) {
         // Fall back to baseForecast — only when its cohort scope matches the
         // current view scope. A cohort-level forecast must never be compared
@@ -2455,16 +2472,15 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
 
     return [...histRows, ...fcRows];
   }, [baseForecast, comparisonRows, actualsAggrMap, cohortActualsMap, aggrSnapshotMap, broadAggrSnapshotMap,
-      selectedCohortRow, cohortDims, forecastStore, activeFilter, chartSeam]);
+      cohortDims, forecastStore, activeFilter, chartSeam]);
 
   /**
    * REQ-D7-01 clause 5 — THE CHART'S COVERAGE: covered leaves with actuals, of all
-   * leaves with actuals under the view (the selected row's own, when one is).
+   * leaves with actuals under the view.
    * Counted over the actuals' own keys with the shared scope predicate.
    */
   const chartCoverage = useMemo((): { covered: number; total: number } | null => {
     if (!chartSeam?.result.forecast) return null;
-    if (selectedCohortRow) return selectedCohortRow.coverage ?? null;
     const cov = coveredLeafKeys(chartSeam.result, chartSeam.key, cohortActualsMap.keys());
     const [segment, product, productL2, channel, channelL2, tariffL1, tariffL2] = chartSeam.key.split('|');
     const scope = { segment, product, productL2, channel, channelL2, tariffL1, tariffL2 };
@@ -2477,7 +2493,7 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
       if (cov.has(key)) covered++;
     }
     return { covered, total };
-  }, [chartSeam, selectedCohortRow, cohortActualsMap]);
+  }, [chartSeam, cohortActualsMap]);
 
   // True when at least one forecast-month row carries a baseline at the current
   // view scope. False means no stored forecast matches the filter/cohort scope
@@ -2892,10 +2908,29 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
   // ---------------------------------------------------------------------------
   // Empty state — no baseline forecast yet
   // ---------------------------------------------------------------------------
+  /**
+   * REQ-D7-03 clause 5 — ONE-STEP BACK, in place of the Drilled-into strip:
+   * restores the view held before the last row click, then clears itself. ONE
+   * control, placed twice — above the chart, and on the no-forecast screen, which
+   * is exactly where a click on an unscored row lands. The viewing bar remains the
+   * general way out.
+   */
+  const backControl = backTo && activeFilter && filterToKey(activeFilter) === backTo.to ? (
+    <button
+      type="button"
+      data-testid="step3-back"
+      onClick={() => { const from = backTo.from; setBackTo(null); onViewChange?.(from); }}
+      className="text-xs font-medium text-indigo-700 hover:text-indigo-900 hover:underline"
+    >
+      {t('actuals_back_to', { view: describeScope(backTo.from, t('viewfilter_all')) })}
+    </button>
+  ) : null;
+
   if (!baseForecast) {
     return (
       <div className="flex-1 flex items-center justify-center p-12 bg-slate-50">
         <div className="text-center max-w-md">
+          {backControl && <div className="mb-4">{backControl}</div>}
           <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4">
             <AlertTriangle size={28} className="text-slate-400" />
           </div>
@@ -3073,10 +3108,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               return (
                 <div key={kpi} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
-                    {SCENARIO_LABELS[kpi]} MAPE
+                    {/* REQ-D7-03 clause 3: the accuracy month in the TITLE ('INFLOW MAPE · MAR 2026'). */}
+                    {SCENARIO_LABELS[kpi]} MAPE{accuracyMonth ? ` · ${monthLabel(accuracyMonth, i18n.language)}` : ''}
                   </p>
                   <p className="text-[9px] text-slate-400 -mt-0.5 mb-1">{t('actuals_mape_lower_is_better')}</p>
-                  <p className={`text-xl font-bold ${mapeColor(mape)}`}>{mapeLabel(mape)}</p>
+                  <p className={`text-xl font-bold ${mapeColor(mape)}${monthFlash ? ' mape-month-flash' : ''}`}>{mapeLabel(mape)}</p>
                   {/* COHORT-months, not months. summaryMape sums
                       monthsWithActuals across every matching forecast, so with
                       40 cohorts over 6 months this reads 240 - a figure that
@@ -3101,10 +3137,11 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
               return (
                 <div key={kpi} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
-                    {SCENARIO_LABELS[kpi]} MAPE
+                    {/* REQ-D7-03 clause 3: the accuracy month in the TITLE ('INFLOW MAPE · MAR 2026'). */}
+                    {SCENARIO_LABELS[kpi]} MAPE{accuracyMonth ? ` · ${monthLabel(accuracyMonth, i18n.language)}` : ''}
                   </p>
                   <p className="text-[9px] text-slate-400 -mt-0.5 mb-1">{t('actuals_mape_lower_is_better')}</p>
-                  <p className={`text-xl font-bold ${mapeColor(mape)}`}>{mapeLabel(mape)}</p>
+                  <p className={`text-xl font-bold ${mapeColor(mape)}${monthFlash ? ' mape-month-flash' : ''}`}>{mapeLabel(mape)}</p>
                   {/* COHORT-months, not months. summaryMape sums
                       monthsWithActuals across every matching forecast, so with
                       40 cohorts over 6 months this reads 240 - a figure that
@@ -3133,12 +3170,10 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
             <button onClick={() => setChartView('value')} className={`px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${chartView === 'value' ? 'text-[#e60000] border-[#e60000]' : 'text-slate-500 border-transparent hover:text-slate-700'}`}>{valueUnit === 'revenue' ? t('actuals_value_revenue') : t('actuals_value_arpu')}</button>
           </div>
 
-          {/* Selected cohort indicator */}
-          {selectedCohortRow && (
+          {/* REQ-D7-03 clause 5 — the Back control (defined once, above). */}
+          {backControl && (
             <div className="px-6 py-2 border-b border-slate-100 bg-indigo-50/40 flex items-center gap-2">
-              <span className="text-[10px] font-semibold text-indigo-500 uppercase tracking-wide">{t('actuals_drilled_into')}</span>
-              <span className="text-xs font-medium text-indigo-800">{selectedCohortRow.label}</span>
-              {/* REQ-D7-02 clause 3: the Clear is removed — clicking the row again deselects. */}
+              {backControl}
             </div>
           )}
 
@@ -3517,7 +3552,6 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                     const key = c.cohortKey.toLowerCase();
                     return cohortSearch.trim().toLowerCase().split(/\s+/).every(token => key.includes(token));
                   }).map(c => {
-                    const isSelected = selectedForecastCohortKey === c.cohortKey;
 
                     // Inline helper: renders one component score cell with bias + trend.
                     // Tooltip is triggered via showTooltip/hideTooltip which render a
@@ -3564,23 +3598,14 @@ export const ForecastVsActualsTab: React.FC<ForecastVsActualsTabProps> = ({
                       <tr
                         key={c.cohortKey}
                         onClick={() => {
-                          if (!isSelected) {
-                            setSelectedForecastCohortKey(c.cohortKey);
-                            if (c.worstKpi) setSelectedKpi(c.worstKpi);
-                            // REQ-D7-02 clause 3: a row click SELECTS the row — the chart
-                            // shows it through its own seam (chartSeam) — and never
-                            // writes the viewing bar.
-                          } else {
-                            setSelectedForecastCohortKey(null);
-                          }
+                          // REQ-D7-03 clause 4 (supersedes REQ-D7-02 clause 3's
+                          // 'selects only'): the click NARROWS the shared view to
+                          // the row's cohort, through App's one setter.
+                          if (narrowViewTo(c) && c.worstKpi) setSelectedKpi(c.worstKpi);
                         }}
-                        className={`cursor-pointer transition-colors ${
-                          isSelected
-                            ? 'bg-indigo-50 ring-1 ring-inset ring-indigo-200'
-                            : 'hover:bg-slate-50/50'
-                        }`}
+                        className="cursor-pointer transition-colors hover:bg-slate-50/50"
                       >
-                        <td className={`px-4 py-3 font-medium sticky left-0 z-10 ${isSelected ? 'bg-indigo-50 text-indigo-900' : 'bg-white text-slate-800'}`}>
+                        <td className="px-4 py-3 font-medium sticky left-0 z-10 bg-white text-slate-800">
                           {c.label}
                           {c.coverage && c.coverage.covered < c.coverage.total && (
                             <span className="block text-[10px] font-normal text-slate-400" data-testid={`cohort-coverage-${c.cohortKey}`}>

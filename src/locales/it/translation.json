@@ -100,7 +100,7 @@
   "actuals_unit_arpu": "ARPU",
   "actuals_unit_revenue": "Ricavi totali",
   "actuals_revenue_no_band": "Banda di confidenza non mostrata — i ricavi non hanno un intervallo valido",
-  "actuals_drilled_into": "Dettaglio su:",
+  "actuals_back_to": "← Torna a {{view}}",
   "actuals_no_forecast_matches_the_current_view_scope": "Nessuna previsione corrisponde all'ambito della vista corrente",
   "common_month": "Mese",
   "actuals_actual": "Effettivo",

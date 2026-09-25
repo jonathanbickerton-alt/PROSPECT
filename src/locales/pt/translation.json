@@ -100,7 +100,7 @@
   "actuals_unit_arpu": "ARPU",
   "actuals_unit_revenue": "Receita total",
   "actuals_revenue_no_band": "Banda de confiança não apresentada — a receita não tem um intervalo válido",
-  "actuals_drilled_into": "Detalhe de:",
+  "actuals_back_to": "← Voltar para {{view}}",
   "actuals_no_forecast_matches_the_current_view_scope": "Nenhuma previsão corresponde ao âmbito da vista atual",
   "common_month": "Mês",
   "actuals_actual": "Real",

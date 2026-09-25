@@ -41,3 +41,13 @@ input[type='range']::-moz-range-thumb {
 input[type='range']::-moz-range-thumb:hover {
   background: #1e293b;
 }
+
+/* REQ-D7-03 clause 3 — a KPI card's figure, briefly, after the accuracy month
+   changes. Toggled for ~600 ms by one effect in ForecastVsActualsTab. */
+.mape-month-flash {
+  animation: mape-month-flash 600ms ease-out;
+}
+@keyframes mape-month-flash {
+  from { background-color: #fef3c7; }
+  to   { background-color: transparent; }
+}

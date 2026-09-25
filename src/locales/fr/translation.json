@@ -100,7 +100,7 @@
   "actuals_unit_arpu": "ARPU",
   "actuals_unit_revenue": "Chiffre d'affaires total",
   "actuals_revenue_no_band": "Intervalle de confiance non affiché — le chiffre d'affaires n'a pas d'intervalle valide",
-  "actuals_drilled_into": "Détail de :",
+  "actuals_back_to": "← Retour à {{view}}",
   "actuals_no_forecast_matches_the_current_view_scope": "Aucune prévision ne correspond au périmètre de la vue actuelle",
   "common_month": "Mois",
   "actuals_actual": "Réel",

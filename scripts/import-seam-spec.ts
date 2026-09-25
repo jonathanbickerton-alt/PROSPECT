@@ -100,7 +100,14 @@ const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails
     // resolved and shown. Seam-routed, and verified as such below.
     showResolvedAggregate: { count: 1, seam: true,
       why: 'sets the `forecast` destructured from resolveForecast(). The second site - a NULL clear - went away when the panel became derived: with nothing written there is nothing to clear' },
-    handleStep2FilterChange: { count: 1, seam: true,
+    // RE-AIMED 2026-09-25 (REQ-D7-03 clause 1): the per-step pair
+    // handleStep2FilterChange / handleStep3FilterChange became ONE setter over ONE
+    // viewing state. Same body, same reason, one site instead of two. Seen RED
+    // first: "handleStep2FilterChange still has exactly 1 site(s) [found 0 ...]",
+    // the same for Step 3, both "really does reach the seam", and
+    // "every setBaseForecast call site is accounted for BY SITE [App.tsx:1861 in
+    // handleViewFilterChange]".
+    handleViewFilterChange: { count: 1, seam: true,
       why: 'sets the `forecast` destructured from resolveForecast() one line above' },
     // ADDED 2026-08-09 when Step 1 stopped keeping the last forecast. Same
     // shape as the two filter-change handlers around it, deliberately: Step 1
@@ -110,8 +117,6 @@ const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails
     // cohort's numbers under a changed label, which is the defect being fixed.
     showStep1Selection: { count: 1, seam: true,
       why: 'sets the `forecast` returned by forecastForStep1Selection(selection, resolveForecast) — the seam reached through the extracted transition helper, null included, no early return on a miss' },
-    handleStep3FilterChange: { count: 1, seam: true,
-      why: 'sets the `forecast` destructured from resolveForecast() one line above' },
     // RE-AIMED at REQ-D6-04, 2026-09-10. The two sites did not move, did not
     // change, and did not gain a third: the FUNCTION AROUND THEM was renamed,
     // because the import-save body was lifted out of its own FileReader
@@ -130,8 +135,15 @@ const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails
     // RE-AIMED, NOT LOOSENED: the count stays exactly 2 and the reason is
     // unchanged, so a third site appearing inside the extracted body still
     // goes red rather than inheriting a reason nobody re-checked.
-    applyImportSaveWorkbook: { count: 2, seam: false,
-      why: 'two sites: the Is_Active restore resolves via resolveFromStore before setting (bf); the legacy pre-option-C restore is CLEARED at the site (restoredBf)' },
+    //
+    // RE-AIMED AGAIN 2026-09-25 (REQ-D7-03 clause 2): 2 -> 3. The load now
+    // restores the shared view from its Metadata cell, and a step that owns the
+    // view shows the view's forecast, resolved through forecastForView with
+    // resolveFromStore over the restored store. Seen RED first: "both
+    // session-import sites were located [found 3]" and "applyImportSaveWorkbook
+    // still has exactly 2 site(s) [found 3 ...]".
+    applyImportSaveWorkbook: { count: 3, seam: false,
+      why: 'three sites: the Is_Active restore resolves via resolveFromStore before setting (bf); the legacy pre-option-C restore is CLEARED at the site (restoredBf); the REQ-D7-03 view restore sets forecastForView(step, restoredView, resolveFromStore) (viewOwned)' },
     generateStandardForecast: { count: 2, seam: false,
       why: 'fresh fit; the anyAggregated decline above it makes an All-bearing cohort unreachable' },
     acceptChallengerModel: { count: 1, seam: false,
@@ -155,7 +167,7 @@ const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails
   // The import fix specifically: the Is_Active site must resolve before setting.
   // RE-AIMED at REQ-D6-04 to the extracted body's name — see ACCOUNTED above.
   const importSites = rest.filter(s => fnOf(s.line) === 'applyImportSaveWorkbook');
-  check('ENUMERATION: both session-import sites were located', importSites.length === 2,
+  check('ENUMERATION: the three session-import sites were located', importSites.length === 3,
     `found ${importSites.length}`);
 
   const unaccounted = rest.filter(s => !(fnOf(s.line) in ACCOUNTED));

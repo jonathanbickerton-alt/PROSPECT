@@ -110,7 +110,9 @@ const BASELINE: Record<string, number> = {
   'regression-traps.tsx': 1,
   'scan-i18n.ts': 1,
   'step1-selection-spec.tsx': 6,
-  'unscored-row-spec.tsx': 4,
+  // 4 -> 3 on 2026-09-25 (REQ-D7-03): the re-aimed row pair no longer reads the
+  // variance table's rows, which held one `t[0].textContent` — removed, not moved.
+  'unscored-row-spec.tsx': 3,
   // 10 since 2026-09-05 (D5-05), superseding the 4 and 5 recorded earlier
   // today. This spec deliberately does not judge guarded from unguarded, so
   // the judgement is recorded here in prose beside the count. Every one is guarded, checked individually:

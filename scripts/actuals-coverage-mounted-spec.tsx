@@ -15,8 +15,9 @@
  *      the engine scores them; the other four segments show the em dash;
  *  (c) the coverage line: "60 of 540" at All/All, "60 of 108" on the Corporate
  *      row, and NO line at Corporate/Direct, where coverage is complete;
- *  (d) a seam miss charts actuals only: the SOHO row selected under All/All (the
- *      case the deleted branch served), and a SOHO view mounts without a crash;
+ *  (d) a seam miss: clicking the SOHO row under All/All narrows the view to SOHO
+ *      (REQ-D7-03 clause 4, re-aimed) and Step 3 shows no forecast rather than
+ *      fabricating one; a SOHO view mounts without a crash;
  *  (e) the Challenger's flagged set moves with the restriction (clause 11).
  *
  * Every expected figure below is measured from the fixture's own rows in this
@@ -151,8 +152,12 @@ async function main() {
   const mount = async (activeFilter: any) => {
     host.replaceChildren(); container = document.createElement('div'); host.appendChild(container);
     const root = createRoot(container);
-    const viewKey = fc.makeForecastKey(activeFilter.segment, 'All', 'All', activeFilter.channel.l1 ?? 'All', 'All', 'All', 'All');
-    await (act as any)(async () => {
+    // RE-AIMED 2026-09-25 (REQ-D7-03 clause 4): Step 3 is handed App's one view
+    // setter, verbatim in behaviour — the view re-renders and its forecast
+    // re-resolves through the seam — because a row click now narrows the view.
+    const render = (f: any) => {
+      const viewKey = fc.makeForecastKey(f.segment, 'All', 'All', f.channel.l1 ?? 'All', 'All', 'All', 'All');
+      const activeFilter = f;
       root.render(React.createElement(ForecastProvider as any, {
         baseForecast: resolveForecast(viewKey).forecast, setBaseForecast: noop,
         adjustedForecast: null, setAdjustedForecast: noop,
@@ -164,10 +169,11 @@ async function main() {
         wiInflowVal: 'Inflow', wiOutflowVal: 'Outflow', wiRetentionVal: 'Retention', wiBaseVal: 'Base',
         wiSegmentCol: C.seg, wiProductCol: C.prod, wiProductL2Col: C.prodL2,
         wiChannelCol: C.chan, wiChannelL2Col: C.chanL2, wiTariffL1Col: C.t1, wiTariffL2Col: C.t2,
-        wiRevenueCol: C.rev, wiArpuCol: '', activeFilter,
+        wiRevenueCol: C.rev, wiArpuCol: '', activeFilter, onViewChange: render,
         formatNumber: round, setActiveView: noop, downloadExcel: noop,
       })));
-    });
+    };
+    await (act as any)(async () => { render(activeFilter); });
     await (act as any)(async () => {});
   };
   const byTestId = (id: string) => container.querySelector(`[data-testid="${id}"]`) as any;
@@ -284,25 +290,33 @@ async function main() {
   check('(c) Corporate/Direct: NO coverage line — 60 of 60 is complete', !byTestId('actuals-coverage-line'),
     (byTestId('actuals-coverage-line')?.textContent || '').trim());
 
-  // ── (d) A SEAM MISS: ACTUALS ONLY, NO CRASH ──────────────────────────────
-  //    The deleted branch served ONE case: a scope the seam cannot answer while a
-  //    forecast is loaded — a SELECTED ROW with no forecast. That is driven here.
-  //    A view-level miss has no loaded forecast and so no months to chart at all,
-  //    before and after this build; it is checked for not crashing.
+  // ── (d) A SEAM MISS: NO FABRICATED FORECAST, NO CRASH ────────────────────
+  //    RE-AIMED 2026-09-25 (REQ-D7-03 clause 4). The case the deleted seam-miss
+  //    branch served — a SELECTED ROW with no forecast, charted beside a loaded
+  //    one — no longer exists: a row click narrows the VIEW. Clicking SOHO under
+  //    All/All therefore lands on the SOHO view, whose seam answer is nothing, and
+  //    Step 3 says so rather than drawing a line. The before-click series are the
+  //    positive control, so the after-click absence is evidence. Seen RED first:
+  //    "(d) NO forecast is drawn for the miss [4 of 4]" and "(d) no coverage line
+  //    on a miss" — the click no longer selected a row.
   check('(d) PREMISE: SOHO resolves to nothing', resolveForecast('SOHO|All|All|All|All|All|All').forecast === null);
   await mount(filterOf('All', null));
+  const fBefore = [...container.querySelectorAll('g.recharts-line.series-forecast')];
+  const aBefore = [...container.querySelectorAll('g.recharts-line.series-actual')];
+  check('(d) SELECTOR: before the click both series are findable and drawn — positive control',
+    fBefore.some(geom) && aBefore.some(geom), `${fBefore.filter(geom).length} / ${aBefore.filter(geom).length}`);
   const soho = rowFor('SOHO');
   check('(d) the SOHO row is on screen at All/All', !!soho);
   let crashed = '';
   try { if (soho) await (act as any)(async () => { soho.click(); }); await (act as any)(async () => {}); }
   catch (e: any) { crashed = String(e?.message ?? e); }
-  check('(d) selecting the SOHO row does not crash', crashed === '', crashed);
+  check('(d) clicking the SOHO row does not crash', crashed === '', crashed);
   const fSeries = [...container.querySelectorAll('g.recharts-line.series-forecast')];
-  const aSeries = [...container.querySelectorAll('g.recharts-line.series-actual')];
-  check('(d) SELECTOR: the actual series is findable', aSeries.length > 0);
-  check('(d) the SOHO actuals ARE drawn — positive control', aSeries.some(geom), `${aSeries.filter(geom).length} of ${aSeries.length}`);
+  check('(d) the view is now SOHO, and Step 3 shows its no-forecast screen',
+    (container.textContent || '').includes(i18n.t('actuals_no_forecast_loaded')));
   check('(d) NO forecast is drawn for the miss', fSeries.every(el => !geom(el)), `${fSeries.filter(geom).length} of ${fSeries.length}`);
   check('(d) no coverage line on a miss', !byTestId('actuals-coverage-line'));
+  check('(d) and Back is offered', !!byTestId('step3-back'));
   let crashedView = '';
   try { await mount(filterOf('SOHO', null)); } catch (e: any) { crashedView = String(e?.message ?? e); }
   check('(d) a view-level miss (SOHO) mounts without a crash', crashedView === '', crashedView);
@@ -321,7 +335,10 @@ async function main() {
       String(count(fva, 'coveredLeafKeys(')));
     check('(X) deriveAggregate is called ONCE in Step 3 (the seam-miss copy is gone)', count(fva, 'deriveAggregate(') === 1,
       String(count(fva, 'deriveAggregate(')));
-    check('(X) resolveForecast( stays at 4 calls', count(fva, 'resolveForecast(') === 4, String(count(fva, 'resolveForecast(')));
+    // RE-AIMED 2026-09-25 (REQ-D7-03 clause 4): 4 -> 3. The fourth was the selected
+    // row's own resolve in chartSeam; the row selection is retired, so the chart's
+    // seam IS the view's. Seen RED first: "resolveForecast( stays at 4 calls [3]".
+    check('(X) resolveForecast( is 3 calls (the row selection resolve went with it)', count(fva, 'resolveForecast(') === 3, String(count(fva, 'resolveForecast(')));
     check('(X) the dead accuracy memo is gone', !/const accuracy = useMemo/.test(fva));
     check('(X) no store scan in the chart any more — only summaryMape\'s pinned one', count(fva, 'forecastStore.entries()') === 0
       && count(fva, 'forecastStore.values()') === 1, `${count(fva, 'forecastStore.entries()')} / ${count(fva, 'forecastStore.values()')}`);

@@ -53,6 +53,7 @@ async function main() {
   await (i18n as any).init?.();
   const fc: any = await import('../src/utils/forecasting');
   const { ForecastProvider } = await import('../src/context/ForecastContext');
+  const { filterToKey } = await import('../src/utils/viewFilter');
   const { buildCohortDataMap, buildRollUpIndex, deriveAggregate } = fc;
   const mod: any = await import('../src/components/ForecastVsActualsTab');
   const Tab = mod.default ?? mod.ForecastVsActualsTab ?? Object.values(mod).find((x: any) => typeof x === 'function');
@@ -155,14 +156,23 @@ async function main() {
     formatNumber: (x: any) => String(x), setActiveView: noop, downloadExcel: noop,
   };
 
-  await (act as any)(async () => {
-    root.render(React.createElement(ForecastProvider as any, {
-      baseForecast: loaded, setBaseForecast: noop, adjustedForecast: null, setAdjustedForecast: noop,
+  // RE-AIMED 2026-09-25 (REQ-D7-03 clause 4): a row click no longer SELECTS the
+  // row; it narrows the shared view through App's one setter. So the harness
+  // hands Step 3 that setter, verbatim in behaviour: the view becomes the row's
+  // cohort and baseForecast re-resolves through the seam, null included. The
+  // claim is unchanged — an unscored cohort gets no fabricated forecast line —
+  // it is now reached through the view instead of a row selection. Seen RED
+  // first: "PANEL 2 (chart): NO forecast series is drawn for the unscored row
+  // [4 of 4 forecast series carry geometry — a fabricated line is back]".
+  const renderAt = (filter: any, bf: any) => root.render(React.createElement(ForecastProvider as any, {
+      baseForecast: bf, setBaseForecast: noop, adjustedForecast: null, setAdjustedForecast: noop,
       forecastStore: store, setForecastStore: noop, hasLegacyBaseline: true,
       resolveForecast, canResolve: () => true,
       updatedAt: Date.now(), bulkRuns: [], setBulkRuns: noop,
-    }, React.createElement(Tab as any, props)));
-  });
+    }, React.createElement(Tab as any, { ...props, activeFilter: filter })));
+  props.onViewChange = (f: any) => renderAt(f, resolveForecast(filterToKey(f)).forecast);
+
+  await (act as any)(async () => { renderAt(props.activeFilter, loaded); });
 
   const flush = async () => { await (act as any)(async () => {}); };
 
@@ -217,81 +227,53 @@ async function main() {
       [...row.querySelectorAll('td')].slice(1, 5).every(td => /^[—\s]+$/.test((td.textContent || '').trim())),
       label);
 
-    await (act as any)(async () => { (row as any).click(); });
-    await flush();
-
-    // PANEL 2: the chart. Recharts draws each series as a path; a series with no
-    // defined points produces no path data. Assert on geometry, because the memo
-    // looked right throughout the period the screen did not.
-    const curves = [...container.querySelectorAll('path.recharts-curve')] as any[];
-    if (process.env.DBG) console.log('GEOM COUNT:', curves.filter((p: any) => /[ML]\s*-?\d/.test(p.getAttribute('d')||'')).length, 'of', curves.length);
-    if (process.env.DBG) console.log('LINE CLASSES:', [...container.querySelectorAll('g.recharts-line')].map((e: any) => e.getAttribute('class')).join(' || '));
-    const withGeometry = curves.filter(p => {
-      const d = p.getAttribute('d') || '';
-      return d.length > 0 && /[ML]\s*-?\d/.test(d);
-    });
-    check('PANEL 2 (chart): the chart rendered at all', curves.length > 0,
-      `${curves.length} curve paths - if 0, nothing below is evidence`);
-    check('PANEL 2 (chart): ACTUALS are still drawn for the unscored row',
-      withGeometry.length > 0, `${withGeometry.length} of ${curves.length} curves carry geometry`);
-
-    if (process.env.DBG) {
-      const txt = container.textContent || '';
-      console.log('NOTICE(no forecast matches scope):', /no forecast matches the current view scope/i.test(txt));
-      const varRows = [...container.querySelectorAll('tbody tr')].filter(tr => {
-        const t = [...tr.querySelectorAll('td')];
-        return t.length >= 5 && /^\d{4}-\d{2}$/.test((t[0].textContent || '').trim());
-      });
-      console.log('VARIANCE ROWS (actual AND baseline present):', varRows.length);
-      console.log('GEOM:', curves.filter((p: any) => /[ML]\s*-?\d/.test(p.getAttribute('d') || '')).length, 'of', curves.length);
-    }
-    // ── THE ASSERTION PAIR, same mechanism for both ─────────────────────────
-    //
-    // The earlier attempt selected by Recharts' own class and matched nothing,
-    // so "no forecast curve has geometry" passed for free - proven vacuous by
-    // trap 9. The component now gives both series a stable className, VERIFIED
-    // to reach the DOM: the groups render as `recharts-layer recharts-line
-    // series-forecast` and `... series-actual`.
-    //
-    // Both halves use the same selector and the same geometry test, so the
-    // ACTUALS half is a genuine positive control: it proves the selector matches
-    // and that geometry is detectable. An absence assertion is only worth its
-    // place when its mirror can be shown present by the same means.
+    // RE-AIMED 2026-09-25 (REQ-D7-03 clause 4). THE PAIR, BEFORE THE CLICK: the
+    // same one-selector-one-geometry discipline, as the POSITIVE CONTROL — at the
+    // loaded view both series are findable and drawn, so the absences asserted
+    // after the click are evidence, not a selector that missed.
     const geom = (el: Element) => {
       const p = el.querySelector('path.recharts-curve');
       const d = p?.getAttribute('d') || '';
       return d.length > 0 && /[ML]\s*-?\d/.test(d);
     };
-    const forecastSeries = [...container.querySelectorAll('g.recharts-line.series-forecast')];
-    const actualSeries   = [...container.querySelectorAll('g.recharts-line.series-actual')];
+    const series = (cls: string) => [...container.querySelectorAll('g.recharts-line.' + cls)];
+    check('SELECTOR: before the click, the forecast series is findable and drawn',
+      series('series-forecast').some(geom), String(series('series-forecast').length));
+    check('SELECTOR: before the click, the actuals series is findable and drawn',
+      series('series-actual').some(geom), String(series('series-actual').length));
 
-    check('SELECTOR: the forecast series is findable at all',
-      forecastSeries.length > 0,
-      'no g.recharts-line.series-forecast — the absence assertion below would be vacuous');
-    check('SELECTOR: the actuals series is findable at all',
-      actualSeries.length > 0, 'no g.recharts-line.series-actual');
-
-    check('PANEL 2 (chart): ACTUALS are drawn for the unscored row — positive control',
-      actualSeries.some(geom),
-      `${actualSeries.filter(geom).length} of ${actualSeries.length} actual series carry geometry`);
-    check('PANEL 2 (chart): NO forecast series is drawn for the unscored row',
-      forecastSeries.every(el => !geom(el)),
-      `${forecastSeries.filter(geom).length} of ${forecastSeries.length} forecast series carry geometry — a fabricated line is back`);
-
-    // The pair as one property: this is the disagreement the branch closes.
-    check('BOTH PANELS AGREE: table blank, chart forecast absent, actuals present',
-      [...row.querySelectorAll('td')].slice(1, 5).every(td => /^[—\s]+$/.test((td.textContent || '').trim()))
-      && forecastSeries.every(el => !geom(el))
-      && actualSeries.some(geom),
-      'the two panels disagree about whether this cohort has a forecast');
+    // THE CLICK NARROWS THE VIEW to the unscored cohort (it used to SELECT the row
+    // and chart it beside the view). Its forecast resolves to nothing, so App's
+    // setter hands Step 3 a null forecast — and Step 3 says so, rather than
+    // drawing a line it does not have. Trap 9's reinstated disagreement (a table
+    // blank beside a chart that draws) has no screen left to happen on; the
+    // fallback that could still fabricate a line is Case B's scope guard, below.
+    // Seen RED first: "PANEL 2 (chart): NO forecast series is drawn for the
+    // unscored row [4 of 4 forecast series carry geometry — a fabricated line is
+    // back]" and "BOTH PANELS AGREE: ..." — the click no longer selected a row.
+    await (act as any)(async () => { (row as any).click(); });
+    await flush();
+    const txt = container.textContent || '';
+    check('PANEL 2: the click leaves Step 3 on its no-forecast screen for the unscored cohort',
+      txt.includes(i18n.t('actuals_no_forecast_loaded')), label);
+    check('PANEL 2: NO forecast series is drawn for the unscored cohort',
+      series('series-forecast').filter(geom).length === 0,
+      `${series('series-forecast').filter(geom).length} forecast series carry geometry — a fabricated line is back`);
+    const back = container.querySelector('[data-testid="step3-back"]') as any;
+    check('PANEL 2: Back is offered on that screen', !!back);
+    if (back) await (act as any)(async () => { back.click(); });
+    await flush();
+    check('BOTH PANELS AGREE: Back restores the loaded view, with both series drawn again',
+      series('series-forecast').some(geom) && series('series-actual').some(geom),
+      'Back did not return to a charted view');
   }
 
   // ── CASE B's SECOND HALF: the scope guard ────────────────────────────────
   //
   // The retained Case B branch has two conditions and they do different jobs:
   //
-  //   !selectedCohortRow        — a SELECTED cohort with no forecast gets
-  //                               nothing. Covered by guard-traps trap 9.
+  //   !selectedCohortRow        — RETIRED with the row selection (REQ-D7-03,
+  //                               2026-09-25) and trap 9 with it.
   //   cohortMatchesFilter(...)  — an aggregate must NOT be drawn against
   //                               filter-scoped actuals. Removing it produced
   //                               nonsense variances around +99.9%.

@@ -116,8 +116,11 @@ async function main() {
   // DRIVES the production function, does not model it. The previous version
   // reimplemented the effect's body here, so trap 36 could break the real
   // effect and leave all four sequences green.
+  // RE-AIMED 2026-09-25 (REQ-D7-03 clause 1): Steps 2 and 3 share ONE view, so
+  // forecastForView takes the one filter. Seen RED first: "TypeError: resolve is
+  // not a function" — the old four-argument call handed the filter as resolve.
   const onEnterStep3 = (step3Filter: any) =>
-    vf.forecastForView('vsactuals', step3Filter, step3Filter, resolveForecast).forecast;
+    vf.forecastForView('vsactuals', step3Filter, resolveForecast).forecast;
 
   // Restore picks the Is_Active cohort, resolves it through the seam, and sets
   // step3Filter from the RESOLVED forecast's cohort (App.tsx:893).
@@ -225,7 +228,7 @@ async function main() {
       'the gate moved — this tripwire may be watching the wrong thing');
     const app = fs.readFileSync('src/App.tsx', 'utf8');
     check('GATE: the tab-switch effect still delegates to forecastForView',
-      /forecastForView\(activeView, step2Filter, step3Filter/.test(app),
+      /forecastForView\(activeView, viewFilter, resolveForecast/.test(app),
       'the transition under test changed shape');
     check('GATE: App delegates the filter conversion rather than owning a copy',
       /from '\.\/utils\/viewFilter'/.test(app),
