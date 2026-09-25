@@ -10748,3 +10748,13 @@ forecast Base continues from the COVERED leaves' seed (289,211), not All's
    to Jon.
 4. Until built, the toggle stays as at 542a5cb (the mismatch is
    pre-existing and released).
+5. (Jon, 2026-09-25, after the 1339 measure) Option (b): the three pro-rata
+   leaf scans (buildLeaves, one per metric) are scope-independent and are
+   HOISTED — built ONCE per dataset, memoised on the data reference, and
+   passed to computeAdjustedForecast through a per-metric override; the seam
+   passes them on every run. Weights are byte-identical to today's for every
+   scope. The per-leaf scoring (clause 2) is session 2, built as-is with no
+   computing state.
+6. Recorded: the Challenger passes no adjusted map (never scored Adjusted);
+   the four per-scenario ARPU cards read unadjusted ARPU and do not move with
+   the toggle — a pre-existing limit, unchanged by D7-04.
