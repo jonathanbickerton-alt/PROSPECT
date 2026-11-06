@@ -10889,3 +10889,21 @@ report reports/2026-11-05-0830-bigquery-data-contract.md (certified at
     Cloud Run 32 MiB response limit, whether the front end and the API share
     one origin, and real row volumes for one market's full table and a
     typical selection.
+
+Resolutions (Jon, 2026-11-06):
+
+- Clause 9: team saves are collaborative. Saving a session opened from Team
+  saves adds a new version under that save's name. Every version records the
+  user who saved it.
+- Clause 10, team saves: the delete rule for versions added by a teammate is
+  OPEN, to be recorded when Jon answers.
+- Clause 22: a restore reads back the forecast settings
+  (Pre_Horizon_Uncertainty_Pct, Post_Horizon_Expansion_Rate_Pct,
+  Confidence_Horizon_Months, Forecast_Length_Months), which until now were
+  written but never read (inventory s.4.11).
+- Clause 3, figures measured in report 2026-11-06-1305 at src 92f9b0f: the
+  warning is below 24 months with data (SEASONAL_MIN_POINTS,
+  forecasting.ts:2583); the refusal is below 4 months with data
+  (forecasting.ts:2613, :2893). A month with data is one where the cohort's
+  Inflow, Outflow or Retention volume is non-zero (App:2905,
+  forecasting.worker.ts:503); gaps are not filled.
