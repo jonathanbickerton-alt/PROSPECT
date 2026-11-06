@@ -10937,3 +10937,10 @@ Resolutions, second set (Jon, 2026-11-06):
   format and timeouts; Identity-Aware Proxy; whether the front end and the
   API share one origin; where configuration lives; and an API description
   for an in-repo mock.
+
+Clause 22 scope (Jon, 2026-11-06): the restore of the four forecast settings
+applies to Excel and BigQuery restores alike. The values are read from
+Metadata (Pre_Horizon_Uncertainty_Pct, Post_Horizon_Expansion_Rate_Pct,
+Confidence_Horizon_Months, Forecast_Length_Months). A value that is absent or
+not a finite number leaves the current setting unchanged. The settings govern
+the next generation only; restored forecasts are never refitted.
