@@ -433,7 +433,12 @@ async function main() {
     check('(X) the tab transition resolves the one state', app.includes('forecastForView(activeView, viewFilter, resolveForecast as any)'));
     check('(X) the export writes the View cell ONCE, through the Metadata writer', count(app, 'viewMetaRow(viewFilter)') === 1
       && app.indexOf('viewMetaRow(viewFilter)') > app.indexOf('const metaRows = [')
-      && app.indexOf('viewMetaRow(viewFilter)') < app.indexOf("json_to_sheet(metaRows), 'Metadata')"));
+      // RE-AIMED 2026-11-06 (REQ-D8-01 Item 1(d)): the Metadata sheet is now the
+      // save record's `Metadata: metaRows` entry, serialised by
+      // workbookFromSheetRows; the per-sheet json_to_sheet call is gone. Seen
+      // RED first: "FAIL  (X) the export writes the View cell ONCE, through the
+      // Metadata writer". Still exactly once, still inside metaRows.
+      && app.indexOf('viewMetaRow(viewFilter)') < app.indexOf('      Metadata: metaRows,'));
     check('(X) the load reads it once through the Metadata reader and sets the one state once',
       count(app, 'viewFromMeta(getMetaValue)') === 1 && count(app, 'setViewFilter(restoredView)') === 1);
     check('(X) Back and the previous view are ONE piece of FVA state', count(fva, 'useState<{ from: ViewFilter; to: string } | null>') === 1);

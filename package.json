@@ -95,7 +95,8 @@
     "spec:accuracy-month": "tsx scripts/accuracy-month-mounted-spec.tsx",
     "spec:step3-one-bar": "tsx scripts/step3-one-bar-mounted-spec.tsx",
     "spec:one-view": "tsx scripts/one-view-mounted-spec.tsx",
-    "spec:prorata-hoist": "tsx scripts/prorata-hoist-spec.tsx"
+    "spec:prorata-hoist": "tsx scripts/prorata-hoist-spec.tsx",
+    "spec:row-source": "tsx scripts/row-source-spec.tsx"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

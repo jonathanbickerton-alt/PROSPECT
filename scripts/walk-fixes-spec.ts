@@ -470,13 +470,23 @@ function stateOf(store: Map<string, BaseForecast>, unfittable: ReadonlySet<strin
     for (let i = line - 1; i >= 0; i--) {
       const m = lines[i].match(/^  const ([A-Za-z0-9_]+)\s*=\s*(useCallback|async|\(|function)/);
       if (m) return m[1];
+      // REQ-D8-01: a module-scope function encloses its sites too (see below).
+      const mm = lines[i].match(/^export function ([A-Za-z0-9_]+)\s*\(/);
+      if (mm) return mm[1];
     }
     return '<top-level>';
   };
 
   /** One row per enclosing function, with a reason true of it. */
   const WRITERS: Record<string, { count: number; why: string }> = {
-    handleFileUpload: { count: 1,
+    // RE-AIMED 2026-11-06 (REQ-D8-01 Item 1(a)): handleFileUpload ->
+    // applyBaselineRows, the module-scope hand-off the upload now calls with
+    // rows. Seen RED first:
+    //   FAIL WRITERS: every setForecastData site is accounted for BY SITE
+    //        [App.tsx:846 in handleConfirm]
+    //   FAIL WRITERS: handleFileUpload still has exactly 1 site(s)  [found 0 - ...]
+    // Count unchanged at 1, reason unchanged.
+    applyBaselineRows: { count: 1,
       why: 'clears on a new upload - legitimate, and the only write that is not a panel feed' },
     onSelectCohort: { count: 1,
       why: 'DEAD for the panel: writes savedForecasts rows, which stdPanelRows never reads outside compare mode' },

@@ -7,6 +7,8 @@ import { isPlaceholderSheet } from './utils/sheetGuards';
 import { calculateHoltWinters, MarketEvent, getUniqueCombos, calculateBaseForecast, buildCohortDataMap, computeCohortTrailingArpu, resolveEventArpuRevenue, draftEventRate, nextSequence, backfillSequences, bySequence, deriveAggregate , buildRollUpIndex, isRetiredAggregateFit, hasAnyUsableForecast, restoreSeedKnown, parseStoredMonths, canShowBaseForecast, readStoredEventModifiers, readStoredRateMap, marketEventExportRow, marketEventFromRow, yieldEventExportRow, yieldEventFromRow, pricingEventExportRow, pricingEventFromRow, activeCohortMetaRows, readActiveCohortMeta, isAllBearing, missingLeavesForKey, buildPanelRowsFromStore, resolveFromStore, buildRestoredLeafIndex, makeForecastKey as sharedMakeForecastKey, monthsCarryingActuals, tariffScopeFor, adjustedForecastSheetRows } from './utils/forecasting';
 import type { AggregatedIBRORow, PreAggRow, CohortDataMap } from './utils/forecasting';
 import { runIngest, isSessionWorkbook, loadedLineText } from './utils/ingest';
+import { sheetRowsFromWorkbook, columnsFromRows, workbookFromSheetRows } from './utils/rowSource';
+import type { SheetRows } from './utils/rowSource';
 import { rowInScope, ALL_DIMS } from './utils/cohortScope';
 import { filterToKey, cohortToFilter, forecastForView, forecastForStep1Selection, step1ResolveDecision, describeScope, ALL_VIEW, viewMetaRow, viewFromMeta } from './utils/viewFilter';
 import type { BaseForecast, MarketEventAdjustedForecast, ForecastModel, BulkRunRecord, YieldEvent, PricingEvent, SkippedCohort, Provenance, SkipReason } from './types/forecast';
@@ -118,599 +120,57 @@ const formatNumber = (num: number | null | undefined) => {
   }
 };
 
-export default function App() {
-  const { t } = useTranslation();
-  const [activeView, setActiveView] = useState<'home' | 'standard' | 'whatif' | 'overall' | 'vsactuals' | 'compare'>('home');
-  const [data, setData] = useState<any[]>([]);
-  const [columns, setColumns] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  /** REQ-D6-04 decision 2 — the pre-parse notice, painted before any parse. */
-  const [ingestNotice, setIngestNotice] = useState<string | null>(null);
-  const [routedLine, setRoutedLine] = useState<string | null>(null);
-  /** REQ-D6-04 decision 2 — "Loaded N rows in S s", the measured figure. */
-  const [loadedLine, setLoadedLine] = useState<string | null>(null);
-  const [logoError, setLogoError] = useState(false);
+/**
+ * REQ-D8-01 Item 1(c) — THE SESSION RESTORE, FROM ROWS.
+ *
+ * Lifted out of the component so that a source other than a workbook can hand
+ * a session in: it takes a record of sheet name → rows plus the list of sheet
+ * names, and every sheet it reads goes through ONE accessor, `sheetRows`. An
+ * Excel file reaches it through `sheetRowsFromWorkbook` (the thin workbook
+ * wrapper, `applyImportSaveFromWorkbook` in App); nothing in here parses.
+ *
+ * Module scope, not inside App, because a component closure cannot be driven
+ * by a spec — `spec:row-source` restores through this function directly and
+ * through the wrapper and compares the two. The setters arrive in `sink` and
+ * are destructured under their own names, so the body below is the body that
+ * stood in App, text unchanged apart from the sheet reads.
+ */
+export interface RestoreSink {
+  setRestoreFellBack: (v: any) => void;
+  setImportSaveResult: (v: any) => void;
+  setData: (v: any) => void;
+  setColumns: (v: any) => void;
+  setForecastStore: (v: any) => void;
+  setCohortGenLog: (v: any) => void;
+  setBaseForecast: (v: any) => void;
+  setForecastUpdatedAt: (v: any) => void;
+  setSavedForecasts: (v: any) => void;
+  setMarketEvents: (v: any) => void;
+  setYieldEvents: (v: any) => void;
+  setPricingEvents: (v: any) => void;
+  setOneOffMonths: (v: any) => void;
+  setSelectedTariffs: (v: any) => void;
+  setCarriedAdjustedRows: (v: any) => void;
+  setBulkRuns: (v: any) => void;
+  setModelAcceptanceLog: (v: any) => void;
+  setViewFilter: (v: any) => void;
+  setActiveView: (v: any) => void;
+  setPreHorizonUncertainty: (v: number) => void;
+  setPostHorizonExpansionRate: (v: number) => void;
+  setConfidenceHorizon: (v: number) => void;
+  t: (key: string, opts?: any) => string;
+  makeForecastKey: typeof sharedMakeForecastKey;
+}
 
-  // Shared Data Mapping State
-  const [wiDateCol, setWiDateCol] = useState('');
-  const [wiMetricCol, setWiMetricCol] = useState('');
-  const [wiValueCol, setWiValueCol] = useState('');
-  const [wiCustomerCol, setWiCustomerCol] = useState('');
-  const [wiRevenueCol, setWiRevenueCol] = useState('');
-  const [wiArpuCol, setWiArpuCol] = useState('');
-  const [wiInflowVal, setWiInflowVal] = useState('');
-  const [wiOutflowVal, setWiOutflowVal] = useState('');
-  const [wiBaseVal, setWiBaseVal] = useState('');
-  const [wiRetentionVal, setWiRetentionVal] = useState('');
-  const [wiSegmentCol, setWiSegmentCol] = useState('');
-  const [wiProductCol, setWiProductCol] = useState('');
-  const [wiProductL2Col, setWiProductL2Col] = useState('');
-  const [wiChannelCol, setWiChannelCol] = useState('');
-  const [wiChannelL2Col, setWiChannelL2Col] = useState('');
-  const [wiTariffL1Col, setWiTariffL1Col] = useState('');
-  const [wiTariffL2Col, setWiTariffL2Col] = useState('');
-  const [showMappingMenu, setShowMappingMenu] = useState(false);
-
-  // Missing State Variables
-  const [dateCol, setDateCol] = useState('');
-  const [targetCol, setTargetCol] = useState('');
-  const [segmentCol, setSegmentCol] = useState('');
-  const [productCol, setProductCol] = useState('');
-  const [channelCol, setChannelCol] = useState('');
-  const [segmentValue, setSegmentValue] = useState('All (Aggregated)');
-  const [productValue, setProductValue] = useState('All (Aggregated)');
-  const [productL2Value, setProductL2Value] = useState('');
-  const [channelValue, setChannelValue] = useState('All (Aggregated)');
-  const [channelL2Value, setChannelL2Value] = useState('');
-  const [tariffValue, setTariffValue] = useState('All (Aggregated)');
-  const [tariffL2Value, setTariffL2Value] = useState('');
-  const [stdForecastLength] = useState(24);
-
-  // Standard Forecast State
-  const [selectedForecastModel, setSelectedForecastModel] = useState<ForecastModel>('Holt Linear');
-  const [stdScenario, setStdScenario] = useState('Inflow');
-  const [forecastData, setForecastData] = useState<any[]>([]);
-  // preHorizonUncertainty: z-score applied within the confidence horizon (1.0 = ±1σ√h ≈ 68%)
-  const [preHorizonUncertainty, setPreHorizonUncertainty] = useState(1.0);
-  // postHorizonExpansionRate: multiplier on z=1.96 beyond the horizon (1.0 = exactly ±1.96σ√h)
-  const [postHorizonExpansionRate, setPostHorizonExpansionRate] = useState(1.0);
-  const [confidenceHorizon, setConfidenceHorizon] = useState(3);
-  const [stdSegmentValue, setStdSegmentValue] = useState('All (Aggregated)');
-  const [stdProductValue, setStdProductValue] = useState('All (Aggregated)');
-  const [stdChannelValue, setStdChannelValue] = useState('All (Aggregated)');
-  const [compareCategories, setCompareCategories] = useState<string[]>([]);
-  const [segmentMode, setSegmentMode] = useState<'filter' | 'compare'>('filter');
-  const [productMode, setProductMode] = useState<'filter' | 'compare'>('filter');
-  const [channelMode, setChannelMode] = useState<'filter' | 'compare'>('filter');
-  
-  // Windowing State
-  const [windowSize, setWindowSize] = useState(12);
-  const [windowOffset, setWindowOffset] = useState(0);
-
-  // What-If State
-  const [wiSegmentValue, setWiSegmentValue] = useState('All (Aggregated)');
-  const [wiProductValue, setWiProductValue] = useState('All (Aggregated)');
-  const [wiChannelValue, setWiChannelValue] = useState('All (Aggregated)');
-  const [wiUpliftPct, setWiUpliftPct] = useState(0);
-  const [wiInflowLag, setWiInflowLag] = useState(0);
-  const [wiRetentionUpliftPct, setWiRetentionUpliftPct] = useState(0);
-  const [wiRetentionLag, setWiRetentionLag] = useState(0);
-  const [wiArpuUpliftPct, setWiArpuUpliftPct] = useState(0);
-  const [marketEvents, setMarketEvents] = useState<MarketEvent[]>([]);
-  // whatIfDelta / whatIfRevenueDelta / whatIfMissingMonths deleted 2026-07-31:
-  // their only setters lived in generateWhatIfForecast, so all three were stuck
-  // at their initial values. WhatIfTab still declares an optional missingMonths
-  // prop and renders a gap warning from it; that block now has NO SUPPLIER and
-  // has never fired. Left in place rather than deleted -- removing a UI
-  // capability is a product decision. See EXPECTED.md.
-  const [selectedKpis, setSelectedKpis] = useState<string[]>(['Inflow Volume', 'Base Volume']);
-  const [forecastLength] = useState(24);
-
-  // Overall Forecasts State
-  const [savedForecasts, setSavedForecasts] = useState<Record<string, any>>({});
-  /**
-   * Bottom-up forecasting: cohortId → short-leaf diagnostics for aggregates
-   * whose constituent leaves are mostly too short to fit seasonality. Advisory
-   * only; it changes no forecast values, it makes the caveat visible.
-   */
-  const [shortLeafWarnings, setShortLeafWarnings] = useState<Record<string, { shortLeaves: number; totalLeaves: number; share: number }>>({});
-  const addMarketEvent = () => {
-    if (!newEvent.date || newEvent.subscriberVolume === undefined) return;
-    // Outflow events always represent subscribers leaving — negate the magnitudes so
-    // the stored values are negative, which is the correct sign for an increase in outflow.
-    const isOutflow = newEvent.scenario === 'Outflow';
-    // Absolute Outflow volumes are STORED negative. Percentage amounts are
-    // not: a percentage applies in its natural direction, so +10% means more
-    // outflow and negating it would invert what the user typed.
-    const isPct = newEvent.amountType === 'percentage';
-    const neg = (v: number) => (isOutflow && !isPct) ? -Math.abs(v) : v;
-    // Phase 3 P4: a volume-only Inflow/Retention event (ARPU left blank) is
-    // auto-populated from the cohort's trailing 3-month average — baked into the
-    // stored event exactly as if the user had typed it, never overriding an
-    // explicit non-zero value.
-    // A percentage event carries no per-subscriber ARPU, so the trailing-
-    // average auto-fill is skipped: storing one would be a number with no
-    // meaning, and the table dashes the column for these rows anyway.
-    // THE FIFTH WRITER. This is the DEFAULT add path — WhatIfTab's
-    // handleAddMarketEvent routes here whenever month-spreading is off, which
-    // it is unless the user turns it on. It built its own rate inline and never
-    // carried arpuOverride, so an ordinary Add click discarded a stated rate
-    // silently. Found by the stage-2 gate; the count of writers was four in my
-    // head and five in the code.
-    const resolved = draftEventRate(
-      newEvent, cohortAvgArpu, newEvent.subscriberVolume || 0, newEvent.revenue, isPct);
-    const event: MarketEvent = {
-      id: Math.random().toString(36).substr(2, 9),
-      scenario: newEvent.scenario as any,
-      segment: newEvent.segment || 'All',
-      product: newEvent.product || 'All',
-      productL2: newEvent.productL2 || 'All',
-      channel: newEvent.channel || 'All',
-      channelL2: newEvent.channelL2 || 'All',
-      tariffL1: newEvent.tariffL1 || 'All',
-      tariffL2: newEvent.tariffL2 || 'All',
-      // D5-10, tariff scope site 9 of 10 — VOLUME, App's default add path.
-      // The one this file's own comment calls THE FIFTH WRITER: it is reached
-      // whenever month-spreading is off, which is unless the user turns it on,
-      // so it is the site a scope field would most easily have been missed at.
-      tariffScope: tariffScopeFor(newEvent.tariffL1, selectedTariffs, [...tariffTree.keys()]),
-      date: newEvent.date,
-      subscriberVolume: neg(newEvent.subscriberVolume || 0),
-      customerVolume:   neg(newEvent.customerVolume   || 0),
-      revenue:          neg(resolved.revenue),
-      arpu:             neg(resolved.arpu),
-      arpuOverride:     newEvent.arpuOverride,
-      name:         newEvent.name         || '',
-      campaignName: newEvent.campaignName || '',
-      comment:      newEvent.comment      || '',
-      contractLength: newEvent.contractLength ?? 24,
-      amountType: newEvent.amountType ?? 'absolute',
-      percentageBasis: newEvent.percentageBasis ?? 'baseline',
-      retentionLinked: newEvent.retentionLinked ?? true,
-      // Placeholder — the real slot is allocated against prev inside the
-      // updater below, so two adds in one batch cannot collide.
-      sequence: 0,
-    };
-    setMarketEvents(prev => [...prev, { ...event, sequence: nextSequence(prev) }]);
-    setNewEvent({
-      scenario: 'Inflow',
-      segment: 'All',
-      product: 'All',
-      productL2: 'All',
-      channel: 'All',
-      channelL2: 'All',
-      tariffL1: 'All',
-      tariffL2: 'All',
-      date: format(new Date(), 'yyyy-MM'),
-      subscriberVolume: 0,
-      customerVolume: 0,
-      revenue: 0,
-      arpu: 0,
-      name: '',
-      campaignName: '',
-      comment: '',
-      contractLength: 24,
-    });
-  };
-
-  const removeMarketEvent = (id: string) => {
-    setMarketEvents(prev => prev.filter(e => e.id !== id));
-  };
-
-  // ONE update-by-id primitive, closed over whichever array it is given.
-  // Volume/Promotion had this; Yield and Pricing had no update path at all, so
-  // their cards could not offer edit. Three bespoke copies would have been the
-  // shape this project has paid for repeatedly -- six cohort-scoping predicates,
-  // five missing-cohort filters. The forms genuinely differ and stay separate;
-  // the patch operation does not.
-  //
-  // .map() rather than in-place mutation is load-bearing: computeAdjustedForecast
-  // is a useMemo keyed on the array reference, so an edit only recomputes the
-  // forecast if the reference actually changes.
-  function updateById<T extends { id: string }>(
-    setter: React.Dispatch<React.SetStateAction<T[]>>,
-    id: string,
-    patch: Partial<T>,
-  ) {
-    setter(prev => prev.map(e => (e.id === id ? { ...e, ...patch } : e)));
-  }
-
-  const updateMarketEvent = (id: string, patch: Partial<MarketEvent>) =>
-    updateById(setMarketEvents, id, patch);
-
-  const handleImportActualsFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-
-    // REQ-D6-04 decision 1 and 2 — INGEST PATH 3 of 3, Import Actuals. This
-    // path had NO SIZE CHECK either; it reads the one constant now.
-    // A NEW ingest clears the previous routing line: it explains THIS file.
-    setRoutedLine(null);
-    void runIngest<any>({
-      file, t,
-      showNotice: setIngestNotice,
-      onRefuse: (message) => { alert(message); },
-      read: (f) => readWorkbook(f as File),
-      onError: (err) => {
-        console.error(err);
-        alert('Error reading file. Please ensure it is a valid .xlsx or .xls file.');
-      },
-      onResult: (wb) => {
-      try {
-        const sheetName = wb.SheetNames[0];
-        const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[sheetName]);
-        if (rows.length === 0) return;
-
-        // Detect date column: prefer already-mapped wiDateCol, else auto-detect
-        const firstRowKeys = Object.keys(rows[0] as object);
-        const detectDateCol = (): string => {
-          if (wiDateCol && firstRowKeys.includes(wiDateCol)) return wiDateCol;
-          const patterns = ['date', 'time', 'period', 'month'];
-          for (const p of patterns) {
-            const found = firstRowKeys.find(c => c.toLowerCase().replace(/[^a-z0-9]/g, '').includes(p));
-            if (found) return found;
-          }
-          return firstRowKeys[0] || '';
-        };
-        const dateCol = detectDateCol();
-
-        // Build unique month → row count map
-        const monthCounts = new Map<string, number>();
-        rows.forEach(row => {
-          const raw = row[dateCol];
-          if (!raw) return;
-          let d: Date;
-          if (raw instanceof Date) {
-            d = raw;
-          } else {
-            d = new Date(raw);
-          }
-          if (!isValid(d)) return;
-          const label = format(d, 'yyyy-MM');
-          monthCounts.set(label, (monthCounts.get(label) || 0) + 1);
-        });
-
-        if (monthCounts.size === 0) {
-          alert('Could not detect any valid dates in the file.');
-          return;
-        }
-
-        // Detect the value column in the incoming file (use mapped wiValueCol if present)
-        const valueColCandidates = [wiValueCol, 'Subscriber_Volume', 'Subscriber Volume', 'Value', 'value', 'Volume'];
-        const detectedValueCol = valueColCandidates.find(c => c && firstRowKeys.includes(c)) || '';
-
-        // A month is "already loaded" when the current dataset contains at least one row
-        // for that month where the actual value column is populated (non-blank, non-zero).
-        // We do NOT use date-existence alone, because forecast rows share the same dates.
-        //
-        // REQ-D6-02(B): the rule that stood here is now `monthsCarryingActuals` in
-        // `utils/forecasting.ts`, because the delta-month selector asks the
-        // same question of the same dataset. This is one of its two callers;
-        // the inline copy is retired rather than duplicated.
-        const monthsLoaded = monthsCarryingActuals(
-          data, [wiDateCol, dateCol], wiValueCol || detectedValueCol);
-
-        const sortedMonths = Array.from(monthCounts.entries())
-          .sort((a, b) => b[0].localeCompare(a[0])) // newest first
-          .map(([label, count]) => ({
-            label,
-            count,
-            alreadyLoaded: monthsLoaded.has(label),
-          }));
-
-        setImportActualsState({ rows, months: sortedMonths, detectedDateCol: dateCol });
-      } catch (err) {
-        console.error(err);
-        alert('Error reading file. Please ensure it is a valid .xlsx or .xls file.');
-      }
-      },
-    });
-  };
-
-  const handleImportActualsConfirm = (selectedMonths: Set<string>) => {
-    if (!importActualsState) return;
-    const { rows, detectedDateCol } = importActualsState;
-
-    const toAppend = rows.filter(row => {
-      const raw = row[detectedDateCol];
-      if (!raw) return false;
-      const d = raw instanceof Date ? raw : new Date(raw);
-      if (!isValid(d)) return false;
-      return selectedMonths.has(format(d, 'yyyy-MM'));
-    });
-
-    setData(prev => [...prev, ...toAppend]);
-    // Refresh columns to include any new ones from the imported file
-    if (toAppend.length > 0) {
-      const newCols = Object.keys(toAppend[0] as object);
-      setColumns(prev => Array.from(new Set([...prev, ...newCols])));
-    }
-    setImportActualsState(null);
-  };
-
-  const handleRemoveActuals = (keepFn: (row: any) => boolean, _removedCount: number) => {
-    setData(prev => prev.filter(keepFn));
-  };
-
-  // ---------------------------------------------------------------------------
-  // Session export — builds a full save-point workbook across 7 sheets.
-  // Triggered from the filename modal; fileName has already been sanitised.
-  // ---------------------------------------------------------------------------
-  const exportSession = (fileName: string) => {
-    try {
-    const wb = XLSX.utils.book_new();
-    const exportTs = new Date();
-
-    // ── Sheet 1: Actuals ──────────────────────────────────────────────────────
-    // Raw uploaded actuals with dates normalised to yyyy-MM.
-    const actualsRows = data.map(row => {
-      const out: Record<string, any> = {};
-      Object.keys(row).forEach(col => {
-        if (col === wiDateCol && row[col]) {
-          const d = row[col] instanceof Date ? row[col] : new Date(row[col]);
-          out[col] = isValid(d) ? format(d, 'yyyy-MM') : row[col];
-        } else {
-          const v = row[col];
-          out[col] = typeof v === 'string' && v.length > 32000 ? v.substring(0, 32000) : v;
-        }
-      });
-      return out;
-    });
-    XLSX.utils.book_append_sheet(
-      wb,
-      XLSX.utils.json_to_sheet(actualsRows.length ? actualsRows : [{ Note: 'No actuals data loaded' }]),
-      'Actuals',
-    );
-
-    // ── Sheet 2: Baseline_Forecasts ───────────────────────────────────────────
-    // One row per cohort-month across ALL forecasts in forecastStore.
-    // Every IBRO metric + per-IBRO ARPU band is exported so the full session
-    // can be restored without re-running the forecast model.
-    const bfRows: Record<string, any>[] = [];
-
-    const activeForecastKey = baseForecast
-      ? makeForecastKey(baseForecast.cohort.segment, baseForecast.cohort.product, baseForecast.cohort.productL2, baseForecast.cohort.channel, baseForecast.cohort.channelL2, baseForecast.cohort.tariffL1, baseForecast.cohort.tariffL2)
-      : null;
-
-    forecastStore.forEach((bf, storeKey) => {
-      const logEntry = cohortGenLog.find(e =>
-        e.cohortId.startsWith(`${bf.cohort.segment}|${bf.cohort.product}|${bf.cohort.channel}`)
-      );
-      const bulkRun = bulkRuns.find(r => r.cohortIds.includes(storeKey));
-      const meta = {
-        Cohort_Key:  storeKey,
-        Is_Active:   storeKey === activeForecastKey ? 'Yes' : 'No',
-        Source:      'ForecastStore',
-        Segment:     bf.cohort.segment,
-        Product:     bf.cohort.product,
-        Product_L2:  bf.cohort.productL2 ?? 'All',
-        Channel:     bf.cohort.channel,
-        Channel_L2:  bf.cohort.channelL2 ?? 'All',
-        Tariff_L1:   bf.cohort.tariffL1 ?? 'All',
-        Tariff_L2:   bf.cohort.tariffL2 ?? 'All',
-        Scenario:    bf.cohort.scenario,
-        Model_Used:  provenanceModel(bf.provenance) ?? '',
-        Provenance:  bf.provenance.kind,
-        Leaf_Count:  bf.provenance.kind === 'derived' ? bf.provenance.leafCount : '',
-        Seed_Base_Volume:      bf.seedBaseVolume,
-        // Absence needs its own column: an unseeded forecast stores 0 for
-        // arithmetic safety, and 0 is a legitimate opening stock, so the
-        // number alone cannot carry the distinction across a save.
-        Seed_Base_Known:       bf.seedBaseKnown,
-        Historical_Months:     [...new Set(bf.historicalMonths)].join(', '),
-        Last_Historical_Inflow:  bf.lastHistoricalInflow,
-        Last_Historical_Outflow: bf.lastHistoricalOutflow,
-        Seasonal_Fallback: bf.seasonalFallback ? 'Yes' : 'No',
-        Fitted_Params_JSON: provenanceParams(bf.provenance) ? JSON.stringify(provenanceParams(bf.provenance)) : '',
-        Pre_Horizon_Uncertainty_Pct:     bf.preHorizonUncertaintyUsed     ?? preHorizonUncertainty,
-        Post_Horizon_Expansion_Rate_Pct: bf.postHorizonExpansionRateUsed  ?? postHorizonExpansionRate,
-        Confidence_Horizon_Months:       bf.confidenceHorizonUsed         ?? confidenceHorizon,
-        Forecast_Length_Months:          stdForecastLength,
-        Bulk_Run_Name:    bulkRun?.name ?? '',
-        Bulk_Run_Comment: bulkRun?.comment ?? '',
-        Generated_At: logEntry?.timestamp ? format(new Date(logEntry.timestamp), 'dd MMM yyyy HH:mm') : '',
-      };
-      bf.months.forEach(bm => {
-        bfRows.push({
-          ...meta,
-          Month: bm.month,
-          Inflow_Mean:      bm.inflow.mean,      Inflow_Optimistic:      bm.inflow.optimistic,      Inflow_Pessimistic:      bm.inflow.pessimistic,
-          Outflow_Mean:     bm.outflow.mean,     Outflow_Optimistic:     bm.outflow.optimistic,     Outflow_Pessimistic:     bm.outflow.pessimistic,
-          Retention_Mean:   bm.retention.mean,   Retention_Optimistic:   bm.retention.optimistic,   Retention_Pessimistic:   bm.retention.pessimistic,
-          ARPU_Mean:        bm.arpu.mean,        ARPU_Optimistic:        bm.arpu.optimistic ?? '',        ARPU_Pessimistic:        bm.arpu.pessimistic ?? '',
-          InflowARPU_Mean:     bm.inflowArpu?.mean     ?? '', InflowARPU_Optimistic:     bm.inflowArpu?.optimistic     ?? '', InflowARPU_Pessimistic:     bm.inflowArpu?.pessimistic     ?? '',
-          OutflowARPU_Mean:    bm.outflowArpu?.mean    ?? '', OutflowARPU_Optimistic:    bm.outflowArpu?.optimistic    ?? '', OutflowARPU_Pessimistic:    bm.outflowArpu?.pessimistic    ?? '',
-          RetentionARPU_Mean:  bm.retentionArpu?.mean  ?? '', RetentionARPU_Optimistic:  bm.retentionArpu?.optimistic  ?? '', RetentionARPU_Pessimistic:  bm.retentionArpu?.pessimistic  ?? '',
-          BaseARPU_Mean:       bm.baseArpu?.mean       ?? '', BaseARPU_Optimistic:       bm.baseArpu?.optimistic       ?? '', BaseARPU_Pessimistic:       bm.baseArpu?.pessimistic       ?? '',
-        });
-      });
-    });
-
-    XLSX.utils.book_append_sheet(
-      wb,
-      XLSX.utils.json_to_sheet(bfRows.length ? bfRows : [{ Note: 'No baseline forecasts generated' }]),
-      'Baseline_Forecasts',
-    );
-
-    // ── Sheet 3: Market_Events ────────────────────────────────────────────────
-    // Sorted by sequence so the sheet reads in the order the user sees,
-    // independent of insertion history.
-    // ONE writer. This row shape used to live inline here and was COPIED into
-    // spec:event-roundtrip, so the spec certified its own copy — the weakness
-    // recorded as Finding 2 of the 2026-08-13 R2 diagnosis. Extracted so the
-    // spec drives the real thing and a column added here reaches both.
-    const evtRows = [...marketEvents].sort(bySequence).map(marketEventExportRow);
-    XLSX.utils.book_append_sheet(
-      wb,
-      XLSX.utils.json_to_sheet(evtRows.length ? evtRows : [{ Note: 'No market events defined' }]),
-      'Market_Events',
-    );
-
-    // ── Sheet 4: Adjusted_Forecasts ───────────────────────────────────────────
-    // REQ-D7-02 clause 8 — ONE writer: Step 2's rows, else the rows a loaded session
-    // carried in (verbatim), else the placeholder. See adjustedForecastSheetRows.
-    const adjRows = adjustedForecastSheetRows(adjustedForecast, carriedAdjustedRows)
-      ?? [{ Note: 'No market events applied — adjusted forecast not available' }];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(adjRows), 'Adjusted_Forecasts');
-
-    // ── Sheet 5: Bulk_Generation_History ─────────────────────────────────────
-    const bulkRows = bulkRuns.map(r => ({
-      Run_ID: r.id,
-      Run_Name: r.name || `Bulk Run — ${format(new Date(r.timestamp), 'dd MMM yyyy')}`,
-      Comment: r.comment ?? '',
-      Timestamp: format(new Date(r.timestamp), 'dd MMM yyyy HH:mm'),
-      Model: r.settings.model,
-      Pre_Horizon_Uncertainty_Pct: r.settings.preHorizonUncertainty,
-      Post_Horizon_Expansion_Rate_Pct: r.settings.postHorizonExpansionRate,
-      Confidence_Horizon_Months: r.settings.confidenceHorizon,
-      Forecast_Length_Months: r.settings.forecastLength,
-      Cohorts_Generated: r.generated,
-      Cohorts_Failed: r.failed,
-      Cohort_IDs: r.cohortIds.join('; ').substring(0, 32000),
-    }));
-    XLSX.utils.book_append_sheet(
-      wb,
-      XLSX.utils.json_to_sheet(bulkRows.length ? bulkRows : [{ Note: 'No bulk generation runs recorded' }]),
-      'Bulk_Generation_History',
-    );
-
-    // ── Sheet 6: Model_Acceptance_Log ─────────────────────────────────────────
-    const acceptRows = modelAcceptanceLog.map(r => ({
-      Cohort_Key: r.cohortKey,
-      Previous_Model: r.previousModel,
-      Accepted_Model: r.acceptedModel,
-      Switchover_Month: r.switchoverMonth ?? '',
-      Date_of_Switch: format(new Date(r.timestamp), 'dd MMM yyyy HH:mm'),
-    }));
-    XLSX.utils.book_append_sheet(
-      wb,
-      XLSX.utils.json_to_sheet(acceptRows.length ? acceptRows : [{ Note: 'No AutoML model switches recorded this session' }]),
-      'Model_Acceptance_Log',
-    );
-
-    // ── Sheet 7: Yield_Events ─────────────────────────────────────────────────
-    // ONE writer, extracted for the reason the market and pricing rows were:
-    // spec:yield-roundtrip held a COPY of this literal and round-tripped that,
-    // so a column added here reached the sheet and not the check.
-    const yieldRows = yieldEvents.map(yieldEventExportRow);
-    XLSX.utils.book_append_sheet(
-      wb,
-      XLSX.utils.json_to_sheet(yieldRows.length ? yieldRows : [{ Note: 'No yield events defined' }]),
-      'Yield_Events',
-    );
-
-    // ── Sheet 8: Pricing_Events ───────────────────────────────────────────────
-    // ONE writer. This row shape used to live inline here and would have been
-    // COPIED into the spec — the seam marketEventExportRow already closed for
-    // market events. Extracted so the spec drives the real export.
-    const pricingRows = pricingEvents.map(pricingEventExportRow);
-    XLSX.utils.book_append_sheet(
-      wb,
-      XLSX.utils.json_to_sheet(pricingRows.length ? pricingRows : [{ Note: 'No pricing events defined' }]),
-      'Pricing_Events',
-    );
-
-    // ── Sheet 9: One_Off_Months (P10) ─────────────────────────────────────────
-    const oneOffRows: Record<string, any>[] = [];
-    Object.entries(oneOffMonths).forEach(([key, flags]: [string, { month: string; reason: string }[]]) => {
-      const [segment, product, productL2, channel, channelL2, tariffL1, tariffL2] = key.split('|');
-      flags.forEach(f => {
-        oneOffRows.push({
-          Segment: segment, Product: product, Product_L2: productL2,
-          Channel_L1: channel, Channel_L2: channelL2,
-          Tariff_L1: tariffL1, Tariff_L2: tariffL2,
-          Month: f.month, Reason: f.reason ?? '',
-        });
-      });
-    });
-    XLSX.utils.book_append_sheet(
-      wb,
-      XLSX.utils.json_to_sheet(oneOffRows.length ? oneOffRows : [{ Note: 'No one-off months flagged' }]),
-      'One_Off_Months',
-    );
-
-    // ── Sheet 8b: Tariff_Selection (Phase 2b) — the tariffs in scope ──────────
-    const tariffSelRows = selectedTariffs.length
-      ? selectedTariffs.map(t => ({ Tariff_L1: t }))
-      : [{ Note: 'No tariffs selected' }];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tariffSelRows), 'Tariff_Selection');
-
-    // ── Sheet 9: Metadata ─────────────────────────────────────────────────────
-    const forecastMonths = baseForecast?.months ?? [];
-    const metaRows = [
-      { Field: 'Export_Timestamp',       Value: format(exportTs, 'dd MMM yyyy HH:mm') },
-      { Field: 'PROSPECT_Version',       Value: '1.0.0' },
-      { Field: 'Active_Step',            Value: activeView },
-      // REQ-D7-03 clause 2 — the shared viewing state, as its 7-part key.
-      viewMetaRow(viewFilter),
-      // THE ACTIVE COHORT, as a cohort. Is_Active on the baseline rows cannot
-      // express an AGGREGATE — it marks a match against a STORE key, and the
-      // store holds leaves — so a session viewing an aggregate recorded nothing
-      // active and restored to an arbitrary first leaf. Written through the
-      // shared seam so the reader cannot disagree about the field names, and
-      // omitted entirely when nothing is active.
-      ...activeCohortMetaRows(baseForecast?.cohort),
-      { Field: 'Forecast_Period_Start',  Value: forecastMonths[0]?.month ?? (bfRows[0]?.Month as string ?? '') },
-      { Field: 'Forecast_Period_End',    Value: forecastMonths[forecastMonths.length - 1]?.month ?? (bfRows[bfRows.length - 1]?.Month as string ?? '') },
-      { Field: 'Baseline_Cohorts',       Value: forecastStore.size + Object.keys(savedForecasts).length },
-      { Field: 'Market_Events',          Value: marketEvents.length },
-      { Field: 'Yield_Events',           Value: yieldEvents.length },
-      { Field: 'Pricing_Events',         Value: pricingEvents.length },
-      { Field: 'Selected_Tariffs',       Value: selectedTariffs.length },
-      { Field: 'Bulk_Runs',              Value: bulkRuns.length },
-      { Field: 'Model_Switches',         Value: modelAcceptanceLog.length },
-      { Field: 'Pre_Horizon_Uncertainty_Pct',       Value: preHorizonUncertainty },
-      { Field: 'Post_Horizon_Expansion_Rate_Pct',   Value: postHorizonExpansionRate },
-      { Field: 'Confidence_Horizon_Months',          Value: confidenceHorizon },
-      { Field: 'Forecast_Length_Months',             Value: stdForecastLength },
-    ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(metaRows), 'Metadata');
-
-    XLSX.writeFile(wb, `${fileName}.xlsx`);
-    } catch (err) {
-      console.error('[ExportSession] Error:', err);
-      alert(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  };
-
-  // Open the export modal (replaces the old exportToExcel function).
-  const openExportModal = () => setShowExportModal(true);
-
-  // ---------------------------------------------------------------------------
-  // Session import — restores full ForecastContext state from a PROSPECT save.
-  // ---------------------------------------------------------------------------
-  /**
-   * REQ-D6-04 — READ A FILE TO A WORKBOOK. One place, three ingest paths.
-   *
-   * A promise rather than a callback, because `runIngest` owns the ordering
-   * now: it paints the notice, waits for a frame, and only then awaits this.
-   * The SheetJS options are the ones all three paths already used, unchanged.
-   */
-  const readWorkbook = (file: File): Promise<any> => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try { resolve(XLSX.read(evt.target?.result, { type: 'array', cellDates: true })); }
-      catch (err) { reject(err); }
-    };
-    reader.onerror = () => reject(new Error('Failed to read file.'));
-    reader.readAsArrayBuffer(file);
-  });
-
-  /**
-   * REQ-D6-04 decision 3 — THE IMPORT-SAVE BODY, extracted from its own
-   * FileReader callback so the INPUT DROP can hand a sniffed session workbook
-   * straight to it.
-   *
-   * EXTRACTED, NOT COPIED, and not re-read either: routing by re-opening the
-   * file would parse a file we have already parsed — up to 200MB of it, twice,
-   * on the one thread the notice exists to apologise for. The workbook comes
-   * in as an argument.
-   *
-   * The body below is unchanged from the callback it was lifted out of.
-   */
-  const applyImportSaveWorkbook = (wb: any) => {
+export function restoreSessionSheets(sheets: SheetRows, sheetNames: readonly string[], sink: RestoreSink): void {
+      const {
+        setRestoreFellBack, setImportSaveResult, setData, setColumns, setForecastStore, setCohortGenLog, setBaseForecast, setForecastUpdatedAt, setSavedForecasts, setMarketEvents, setYieldEvents, setPricingEvents, setOneOffMonths, setSelectedTariffs, setCarriedAdjustedRows, setBulkRuns, setModelAcceptanceLog, setViewFilter, setActiveView,
+        setPreHorizonUncertainty, setPostHorizonExpansionRate, setConfidenceHorizon,
+        t, makeForecastKey,
+      } = sink;
+      // THE ONE ACCESSOR. Every sheet this restore reads comes through here; a
+      // second way in is what `spec:row-source` pins against.
+      const sheetRows = (name: string): any[] => sheets[name] ?? [];
       // ── WALK B10 — THE BANNER IS CLEARED AT THE START OF EVERY IMPORT ────
       //
       // `restoreFellBack` had exactly ONE writer to `true` (the fallback
@@ -738,7 +198,7 @@ export default function App() {
           'Adjusted_Forecasts', 'Bulk_Generation_History',
           'Model_Acceptance_Log', 'Metadata',
         ];
-        const missingSheets = requiredSheets.filter(s => !wb.SheetNames.includes(s));
+        const missingSheets = requiredSheets.filter(s => !sheetNames.includes(s));
         if (missingSheets.length > 0) {
           setImportSaveResult({
             success: false,
@@ -747,7 +207,7 @@ export default function App() {
           return;
         }
 
-        const metaRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Metadata']);
+        const metaRaw: any[] = sheetRows('Metadata');
         const getMetaValue = (field: string) => metaRaw.find(r => r.Field === field)?.Value;
         if (!getMetaValue('PROSPECT_Version')) {
           setImportSaveResult({
@@ -763,14 +223,15 @@ export default function App() {
         const restoredView: ViewFilter = viewFromMeta(getMetaValue);
 
         // ── Actuals ───────────────────────────────────────────────────────────
-        const actualsRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Actuals']);
+        const actualsRaw: any[] = sheetRows('Actuals');
         if (actualsRaw.length > 0 && !isPlaceholderSheet(actualsRaw)) {
           setData(actualsRaw);
-          setColumns(Object.keys(actualsRaw[0] as object));
+          // REQ-D8-01 clause 21: the union of keys over every row, not row 0's.
+          setColumns(columnsFromRows(actualsRaw));
         }
 
         // ── Baseline Forecasts ────────────────────────────────────────────────
-        const bfRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Baseline_Forecasts']);
+        const bfRaw: any[] = sheetRows('Baseline_Forecasts');
         if (bfRaw.length > 0 && !isPlaceholderSheet(bfRaw)) {
 
           // ── New format: ForecastStore rows (one row per cohort-month) ─────────
@@ -989,7 +450,7 @@ export default function App() {
         }
 
         // ── Market Events ─────────────────────────────────────────────────────
-        const evtRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Market_Events']);
+        const evtRaw: any[] = sheetRows('Market_Events');
         let restoredEvents: MarketEvent[] = [];
         if (evtRaw.length > 0 && !isPlaceholderSheet(evtRaw)) {
           // THE SHARED READER. This literal used to live here; a reader inside a
@@ -1001,24 +462,24 @@ export default function App() {
         }
 
         // ── Yield Events ──────────────────────────────────────────────────────
-        if (wb.SheetNames.includes('Yield_Events')) {
-          const yieldRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Yield_Events']);
+        if (sheetNames.includes('Yield_Events')) {
+          const yieldRaw: any[] = sheetRows('Yield_Events');
           if (yieldRaw.length > 0 && !isPlaceholderSheet(yieldRaw)) {
             setYieldEvents(yieldRaw.map(yieldEventFromRow));
           }
         }
 
         // ── Pricing Events ────────────────────────────────────────────────────
-        if (wb.SheetNames.includes('Pricing_Events')) {
-          const pricingRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Pricing_Events']);
+        if (sheetNames.includes('Pricing_Events')) {
+          const pricingRaw: any[] = sheetRows('Pricing_Events');
           if (pricingRaw.length > 0 && !isPlaceholderSheet(pricingRaw)) {
             setPricingEvents(pricingRaw.map(pricingEventFromRow));
           }
         }
 
         // ── One-Off Months (P10) ──────────────────────────────────────────────
-        if (wb.SheetNames.includes('One_Off_Months')) {
-          const oneOffRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['One_Off_Months']);
+        if (sheetNames.includes('One_Off_Months')) {
+          const oneOffRaw: any[] = sheetRows('One_Off_Months');
           if (oneOffRaw.length > 0 && !isPlaceholderSheet(oneOffRaw)) {
             const restored: Record<string, { month: string; reason: string }[]> = {};
             oneOffRaw.forEach(r => {
@@ -1035,8 +496,8 @@ export default function App() {
         }
 
         // ── Tariff Selection (Phase 2b) ───────────────────────────────────────
-        if (wb.SheetNames.includes('Tariff_Selection')) {
-          const tsRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Tariff_Selection']);
+        if (sheetNames.includes('Tariff_Selection')) {
+          const tsRaw: any[] = sheetRows('Tariff_Selection');
           const restored = tsRaw
             .filter(r => !r.Note && r.Tariff_L1 != null && String(r.Tariff_L1).trim() !== '')
             .map(r => String(r.Tariff_L1).trim());
@@ -1046,7 +507,7 @@ export default function App() {
         // ── Adjusted Forecasts ────────────────────────────────────────────────
         // REQ-D7-02 clause 8: the loaded rows are CARRIED — kept verbatim in App
         // state and written back by the export until Step 2 writes its own.
-        const adjRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Adjusted_Forecasts']);
+        const adjRaw: any[] = sheetRows('Adjusted_Forecasts');
         setCarriedAdjustedRows(adjRaw.length > 0 && !isPlaceholderSheet(adjRaw) ? adjRaw : null);
         // REQ-D7-02 clause 6: a loaded session starts with NO adjusted forecast.
         // The restore that stood here rebuilt one keyed to the file's FIRST stored
@@ -1056,7 +517,7 @@ export default function App() {
         // parses Baseline_Forecasts and the three event sheets only.)
 
         // ── Bulk Generation History ───────────────────────────────────────────
-        const bulkRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Bulk_Generation_History']);
+        const bulkRaw: any[] = sheetRows('Bulk_Generation_History');
         if (bulkRaw.length > 0 && !isPlaceholderSheet(bulkRaw)) {
           setBulkRuns(bulkRaw.map(r => ({
             id:        String(r.Run_ID ?? Math.random().toString(36).substr(2, 9)),
@@ -1077,7 +538,7 @@ export default function App() {
         }
 
         // ── Model Acceptance Log ──────────────────────────────────────────────
-        const logRaw: any[] = XLSX.utils.sheet_to_json(wb.Sheets['Model_Acceptance_Log']);
+        const logRaw: any[] = sheetRows('Model_Acceptance_Log');
         if (logRaw.length > 0 && !isPlaceholderSheet(logRaw)) {
           setModelAcceptanceLog(logRaw.map(r => ({
             cohortKey:      String(r.Cohort_Key      ?? ''),
@@ -1087,6 +548,27 @@ export default function App() {
             timestamp:      String(r.Date_of_Switch  ?? ''),
           })));
         }
+
+        // ── Forecast settings (REQ-D8-01 clause 22, Jon 2026-11-06) ──────────
+        // Written to Metadata since the settings existed and never read back
+        // until now. Each is set only when its cell holds a finite number — a
+        // number cell, or a non-blank string that parses as one; absent, blank
+        // or anything else leaves the current setting as it is. They govern
+        // the NEXT generation only: nothing restored above is refitted.
+        //
+        // Forecast_Length_Months is NOT read. The length is
+        // `const [stdForecastLength] = useState(24)` in App, with no setter
+        // and no Step 1 control, so restoring it would change what the next
+        // generation does with nothing on screen saying so. HELD for Jon.
+        const restoreSetting = (field: string, set: (v: number) => void) => {
+          const raw = getMetaValue(field);
+          const n = typeof raw === 'number' ? raw
+            : typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : NaN;
+          if (Number.isFinite(n)) set(n);
+        };
+        restoreSetting('Pre_Horizon_Uncertainty_Pct', setPreHorizonUncertainty);
+        restoreSetting('Post_Horizon_Expansion_Rate_Pct', setPostHorizonExpansionRate);
+        restoreSetting('Confidence_Horizon_Months', setConfidenceHorizon);
 
         // ── Restore navigation & show banner ─────────────────────────────────
         const validViews: Array<'home' | 'standard' | 'whatif' | 'overall' | 'vsactuals'> =
@@ -1102,7 +584,793 @@ export default function App() {
           error: 'Failed to parse the file — ensure it is a valid PROSPECT save (.xlsx).',
         });
       }
+}
+
+/**
+ * REQ-D8-01 Item 1(d) — THE SAVE RECORD: the session as sheet name → rows,
+ * in the order the export has always written them, each sheet's placeholder
+ * row included where it has nothing to say. `exportSession` serialises this
+ * through `workbookFromSheetRows` and nothing else; a BigQuery save will take
+ * the same record. ONE builder: the row arrays below are the ones that stood
+ * inline in exportSession, text unchanged; only their book_append_sheet calls
+ * left, gathered into the record returned at the end.
+ */
+export interface SessionSaveState {
+  data: any;
+  wiDateCol: any;
+  baseForecast: any;
+  forecastStore: any;
+  cohortGenLog: any;
+  bulkRuns: any;
+  preHorizonUncertainty: any;
+  postHorizonExpansionRate: any;
+  confidenceHorizon: any;
+  stdForecastLength: any;
+  marketEvents: any;
+  adjustedForecast: any;
+  carriedAdjustedRows: any;
+  modelAcceptanceLog: any;
+  yieldEvents: any;
+  pricingEvents: any;
+  oneOffMonths: any;
+  selectedTariffs: any;
+  activeView: any;
+  viewFilter: any;
+  savedForecasts: any;
+}
+
+export function buildSessionSheetRecord(state: SessionSaveState, exportTs: Date): SheetRows {
+    const {
+      data, wiDateCol, baseForecast, forecastStore, cohortGenLog, bulkRuns, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon, stdForecastLength, marketEvents, adjustedForecast, carriedAdjustedRows, modelAcceptanceLog, yieldEvents, pricingEvents, oneOffMonths, selectedTariffs, activeView, viewFilter, savedForecasts,
+    } = state;
+    const makeForecastKey = sharedMakeForecastKey;
+
+    // ── Sheet 1: Actuals ──────────────────────────────────────────────────────
+    // Raw uploaded actuals with dates normalised to yyyy-MM.
+    const actualsRows = data.map(row => {
+      const out: Record<string, any> = {};
+      Object.keys(row).forEach(col => {
+        if (col === wiDateCol && row[col]) {
+          const d = row[col] instanceof Date ? row[col] : new Date(row[col]);
+          out[col] = isValid(d) ? format(d, 'yyyy-MM') : row[col];
+        } else {
+          const v = row[col];
+          out[col] = typeof v === 'string' && v.length > 32000 ? v.substring(0, 32000) : v;
+        }
+      });
+      return out;
+    });
+
+    // ── Sheet 2: Baseline_Forecasts ───────────────────────────────────────────
+    // One row per cohort-month across ALL forecasts in forecastStore.
+    // Every IBRO metric + per-IBRO ARPU band is exported so the full session
+    // can be restored without re-running the forecast model.
+    const bfRows: Record<string, any>[] = [];
+
+    const activeForecastKey = baseForecast
+      ? makeForecastKey(baseForecast.cohort.segment, baseForecast.cohort.product, baseForecast.cohort.productL2, baseForecast.cohort.channel, baseForecast.cohort.channelL2, baseForecast.cohort.tariffL1, baseForecast.cohort.tariffL2)
+      : null;
+
+    forecastStore.forEach((bf, storeKey) => {
+      const logEntry = cohortGenLog.find(e =>
+        e.cohortId.startsWith(`${bf.cohort.segment}|${bf.cohort.product}|${bf.cohort.channel}`)
+      );
+      const bulkRun = bulkRuns.find(r => r.cohortIds.includes(storeKey));
+      const meta = {
+        Cohort_Key:  storeKey,
+        Is_Active:   storeKey === activeForecastKey ? 'Yes' : 'No',
+        Source:      'ForecastStore',
+        Segment:     bf.cohort.segment,
+        Product:     bf.cohort.product,
+        Product_L2:  bf.cohort.productL2 ?? 'All',
+        Channel:     bf.cohort.channel,
+        Channel_L2:  bf.cohort.channelL2 ?? 'All',
+        Tariff_L1:   bf.cohort.tariffL1 ?? 'All',
+        Tariff_L2:   bf.cohort.tariffL2 ?? 'All',
+        Scenario:    bf.cohort.scenario,
+        Model_Used:  provenanceModel(bf.provenance) ?? '',
+        Provenance:  bf.provenance.kind,
+        Leaf_Count:  bf.provenance.kind === 'derived' ? bf.provenance.leafCount : '',
+        Seed_Base_Volume:      bf.seedBaseVolume,
+        // Absence needs its own column: an unseeded forecast stores 0 for
+        // arithmetic safety, and 0 is a legitimate opening stock, so the
+        // number alone cannot carry the distinction across a save.
+        Seed_Base_Known:       bf.seedBaseKnown,
+        Historical_Months:     [...new Set(bf.historicalMonths)].join(', '),
+        Last_Historical_Inflow:  bf.lastHistoricalInflow,
+        Last_Historical_Outflow: bf.lastHistoricalOutflow,
+        Seasonal_Fallback: bf.seasonalFallback ? 'Yes' : 'No',
+        Fitted_Params_JSON: provenanceParams(bf.provenance) ? JSON.stringify(provenanceParams(bf.provenance)) : '',
+        Pre_Horizon_Uncertainty_Pct:     bf.preHorizonUncertaintyUsed     ?? preHorizonUncertainty,
+        Post_Horizon_Expansion_Rate_Pct: bf.postHorizonExpansionRateUsed  ?? postHorizonExpansionRate,
+        Confidence_Horizon_Months:       bf.confidenceHorizonUsed         ?? confidenceHorizon,
+        Forecast_Length_Months:          stdForecastLength,
+        Bulk_Run_Name:    bulkRun?.name ?? '',
+        Bulk_Run_Comment: bulkRun?.comment ?? '',
+        Generated_At: logEntry?.timestamp ? format(new Date(logEntry.timestamp), 'dd MMM yyyy HH:mm') : '',
+      };
+      bf.months.forEach(bm => {
+        bfRows.push({
+          ...meta,
+          Month: bm.month,
+          Inflow_Mean:      bm.inflow.mean,      Inflow_Optimistic:      bm.inflow.optimistic,      Inflow_Pessimistic:      bm.inflow.pessimistic,
+          Outflow_Mean:     bm.outflow.mean,     Outflow_Optimistic:     bm.outflow.optimistic,     Outflow_Pessimistic:     bm.outflow.pessimistic,
+          Retention_Mean:   bm.retention.mean,   Retention_Optimistic:   bm.retention.optimistic,   Retention_Pessimistic:   bm.retention.pessimistic,
+          ARPU_Mean:        bm.arpu.mean,        ARPU_Optimistic:        bm.arpu.optimistic ?? '',        ARPU_Pessimistic:        bm.arpu.pessimistic ?? '',
+          InflowARPU_Mean:     bm.inflowArpu?.mean     ?? '', InflowARPU_Optimistic:     bm.inflowArpu?.optimistic     ?? '', InflowARPU_Pessimistic:     bm.inflowArpu?.pessimistic     ?? '',
+          OutflowARPU_Mean:    bm.outflowArpu?.mean    ?? '', OutflowARPU_Optimistic:    bm.outflowArpu?.optimistic    ?? '', OutflowARPU_Pessimistic:    bm.outflowArpu?.pessimistic    ?? '',
+          RetentionARPU_Mean:  bm.retentionArpu?.mean  ?? '', RetentionARPU_Optimistic:  bm.retentionArpu?.optimistic  ?? '', RetentionARPU_Pessimistic:  bm.retentionArpu?.pessimistic  ?? '',
+          BaseARPU_Mean:       bm.baseArpu?.mean       ?? '', BaseARPU_Optimistic:       bm.baseArpu?.optimistic       ?? '', BaseARPU_Pessimistic:       bm.baseArpu?.pessimistic       ?? '',
+        });
+      });
+    });
+
+
+    // ── Sheet 3: Market_Events ────────────────────────────────────────────────
+    // Sorted by sequence so the sheet reads in the order the user sees,
+    // independent of insertion history.
+    // ONE writer. This row shape used to live inline here and was COPIED into
+    // spec:event-roundtrip, so the spec certified its own copy — the weakness
+    // recorded as Finding 2 of the 2026-08-13 R2 diagnosis. Extracted so the
+    // spec drives the real thing and a column added here reaches both.
+    const evtRows = [...marketEvents].sort(bySequence).map(marketEventExportRow);
+
+    // ── Sheet 4: Adjusted_Forecasts ───────────────────────────────────────────
+    // REQ-D7-02 clause 8 — ONE writer: Step 2's rows, else the rows a loaded session
+    // carried in (verbatim), else the placeholder. See adjustedForecastSheetRows.
+    const adjRows = adjustedForecastSheetRows(adjustedForecast, carriedAdjustedRows)
+      ?? [{ Note: 'No market events applied — adjusted forecast not available' }];
+
+    // ── Sheet 5: Bulk_Generation_History ─────────────────────────────────────
+    const bulkRows = bulkRuns.map(r => ({
+      Run_ID: r.id,
+      Run_Name: r.name || `Bulk Run — ${format(new Date(r.timestamp), 'dd MMM yyyy')}`,
+      Comment: r.comment ?? '',
+      Timestamp: format(new Date(r.timestamp), 'dd MMM yyyy HH:mm'),
+      Model: r.settings.model,
+      Pre_Horizon_Uncertainty_Pct: r.settings.preHorizonUncertainty,
+      Post_Horizon_Expansion_Rate_Pct: r.settings.postHorizonExpansionRate,
+      Confidence_Horizon_Months: r.settings.confidenceHorizon,
+      Forecast_Length_Months: r.settings.forecastLength,
+      Cohorts_Generated: r.generated,
+      Cohorts_Failed: r.failed,
+      Cohort_IDs: r.cohortIds.join('; ').substring(0, 32000),
+    }));
+
+    // ── Sheet 6: Model_Acceptance_Log ─────────────────────────────────────────
+    const acceptRows = modelAcceptanceLog.map(r => ({
+      Cohort_Key: r.cohortKey,
+      Previous_Model: r.previousModel,
+      Accepted_Model: r.acceptedModel,
+      Switchover_Month: r.switchoverMonth ?? '',
+      Date_of_Switch: format(new Date(r.timestamp), 'dd MMM yyyy HH:mm'),
+    }));
+
+    // ── Sheet 7: Yield_Events ─────────────────────────────────────────────────
+    // ONE writer, extracted for the reason the market and pricing rows were:
+    // spec:yield-roundtrip held a COPY of this literal and round-tripped that,
+    // so a column added here reached the sheet and not the check.
+    const yieldRows = yieldEvents.map(yieldEventExportRow);
+
+    // ── Sheet 8: Pricing_Events ───────────────────────────────────────────────
+    // ONE writer. This row shape used to live inline here and would have been
+    // COPIED into the spec — the seam marketEventExportRow already closed for
+    // market events. Extracted so the spec drives the real export.
+    const pricingRows = pricingEvents.map(pricingEventExportRow);
+
+    // ── Sheet 9: One_Off_Months (P10) ─────────────────────────────────────────
+    const oneOffRows: Record<string, any>[] = [];
+    Object.entries(oneOffMonths).forEach(([key, flags]: [string, { month: string; reason: string }[]]) => {
+      const [segment, product, productL2, channel, channelL2, tariffL1, tariffL2] = key.split('|');
+      flags.forEach(f => {
+        oneOffRows.push({
+          Segment: segment, Product: product, Product_L2: productL2,
+          Channel_L1: channel, Channel_L2: channelL2,
+          Tariff_L1: tariffL1, Tariff_L2: tariffL2,
+          Month: f.month, Reason: f.reason ?? '',
+        });
+      });
+    });
+
+    // ── Sheet 8b: Tariff_Selection (Phase 2b) — the tariffs in scope ──────────
+    const tariffSelRows = selectedTariffs.length
+      ? selectedTariffs.map(t => ({ Tariff_L1: t }))
+      : [{ Note: 'No tariffs selected' }];
+
+    // ── Sheet 9: Metadata ─────────────────────────────────────────────────────
+    const forecastMonths = baseForecast?.months ?? [];
+    const metaRows = [
+      { Field: 'Export_Timestamp',       Value: format(exportTs, 'dd MMM yyyy HH:mm') },
+      { Field: 'PROSPECT_Version',       Value: '1.0.0' },
+      { Field: 'Active_Step',            Value: activeView },
+      // REQ-D7-03 clause 2 — the shared viewing state, as its 7-part key.
+      viewMetaRow(viewFilter),
+      // THE ACTIVE COHORT, as a cohort. Is_Active on the baseline rows cannot
+      // express an AGGREGATE — it marks a match against a STORE key, and the
+      // store holds leaves — so a session viewing an aggregate recorded nothing
+      // active and restored to an arbitrary first leaf. Written through the
+      // shared seam so the reader cannot disagree about the field names, and
+      // omitted entirely when nothing is active.
+      ...activeCohortMetaRows(baseForecast?.cohort),
+      { Field: 'Forecast_Period_Start',  Value: forecastMonths[0]?.month ?? (bfRows[0]?.Month as string ?? '') },
+      { Field: 'Forecast_Period_End',    Value: forecastMonths[forecastMonths.length - 1]?.month ?? (bfRows[bfRows.length - 1]?.Month as string ?? '') },
+      { Field: 'Baseline_Cohorts',       Value: forecastStore.size + Object.keys(savedForecasts).length },
+      { Field: 'Market_Events',          Value: marketEvents.length },
+      { Field: 'Yield_Events',           Value: yieldEvents.length },
+      { Field: 'Pricing_Events',         Value: pricingEvents.length },
+      { Field: 'Selected_Tariffs',       Value: selectedTariffs.length },
+      { Field: 'Bulk_Runs',              Value: bulkRuns.length },
+      { Field: 'Model_Switches',         Value: modelAcceptanceLog.length },
+      { Field: 'Pre_Horizon_Uncertainty_Pct',       Value: preHorizonUncertainty },
+      { Field: 'Post_Horizon_Expansion_Rate_Pct',   Value: postHorizonExpansionRate },
+      { Field: 'Confidence_Horizon_Months',          Value: confidenceHorizon },
+      { Field: 'Forecast_Length_Months',             Value: stdForecastLength },
+    ];
+
+    return {
+      Actuals: actualsRows.length ? actualsRows : [{ Note: 'No actuals data loaded' }],
+      Baseline_Forecasts: bfRows.length ? bfRows : [{ Note: 'No baseline forecasts generated' }],
+      Market_Events: evtRows.length ? evtRows : [{ Note: 'No market events defined' }],
+      Adjusted_Forecasts: adjRows,
+      Bulk_Generation_History: bulkRows.length ? bulkRows : [{ Note: 'No bulk generation runs recorded' }],
+      Model_Acceptance_Log: acceptRows.length ? acceptRows : [{ Note: 'No AutoML model switches recorded this session' }],
+      Yield_Events: yieldRows.length ? yieldRows : [{ Note: 'No yield events defined' }],
+      Pricing_Events: pricingRows.length ? pricingRows : [{ Note: 'No pricing events defined' }],
+      One_Off_Months: oneOffRows.length ? oneOffRows : [{ Note: 'No one-off months flagged' }],
+      Tariff_Selection: tariffSelRows,
+      Metadata: metaRows,
+    };
+}
+
+/**
+ * REQ-D8-01 Item 1(a) — THE BASELINE HAND-OFF, FROM ROWS.
+ *
+ * Everything the upload did once it had the data sheet's rows: the empty
+ * refusal, the column list, `data`, the measured success line, the cleared
+ * Step 1 chart, and the optional Market_Events read beside them. It takes the
+ * data rows plus, optionally, the other sheets' rows by name; it parses
+ * nothing. `handleFileUpload` reads the file as it always did and calls this;
+ * a BigQuery pull will call it with rows it fetched.
+ *
+ * Module scope so `spec:row-source` can drive it; the setters arrive in
+ * `sink` under their own names.
+ */
+export interface BaselineSink {
+  setError: (v: string) => void;
+  setIsLoading: (v: boolean) => void;
+  setColumns: (v: string[]) => void;
+  setData: (v: any[]) => void;
+  setLoadedLine: (v: string | null) => void;
+  setForecastData: (v: any[]) => void;
+  setMarketEvents: (v: MarketEvent[]) => void;
+  t: (key: string, opts?: any) => string;
+}
+
+export function applyBaselineRows(jsonData: any[], parseMs: number, sheets: SheetRows | undefined, sink: BaselineSink): void {
+    const { setError, setIsLoading, setColumns, setData, setLoadedLine, setForecastData, setMarketEvents, t } = sink;
+
+    if (!jsonData || jsonData.length === 0) {
+      setError('The actuals sheet is empty.');
+      setIsLoading(false);
+      return;
+    }
+
+    // REQ-D8-01 clause 21: the union of keys over every row, not row 0's.
+    const cols = columnsFromRows(jsonData);
+    setColumns(cols);
+    setData(jsonData);
+
+    setError('');
+    // REQ-D6-04 decision 2 — THE SUCCESS LINE CARRIES THE MEASURED TIME.
+    //
+    // `parseMs` is wall time across `read` and nothing else, taken by
+    // `runIngest` from a real clock. It is here so the notice's "up to a
+    // minute" can be replaced by a figure someone READ rather than
+    // estimated — which is the whole reason the line exists, and why trap
+    // 214 plants its removal.
+    setLoadedLine(loadedLineText(jsonData.length, parseMs, t));
+    setForecastData([]);
+
+    // Restore market events if the file contains a Market_Events sheet
+    const eventsSheetName = sheets ? Object.keys(sheets).find(n => n.toLowerCase() === 'market_events') : undefined;
+    if (sheets && eventsSheetName && sheets[eventsSheetName]?.length > 0) {
+      // THE SAME READER, told which kind of sheet this is. A raw workbook has
+      // no ID column, treats a blank cell as unset, and states the SIZE of an
+      // Outflow rather than its sign — differences that are real and are now
+      // declared in one place instead of diverging across two literals.
+      const restoredEvents: MarketEvent[] = sheets[eventsSheetName]
+        .map((r: any) => marketEventFromRow(r, 'workbook'));
+      setMarketEvents(backfillSequences(restoredEvents));
+    }
+}
+
+/**
+ * Rebuild a Provenance from an exported row (option C).
+ *
+ * `Provenance` empty or absent => the file predates the column, and every
+ * forecast in such a file was fitted. `Model_Used` empty on a derived row is
+ * deliberate and must stay empty: defaulting it to a model name here is the
+ * exact silent relabelling this phase removes.
+ */
+export const readProvenance = (row: Record<string, any>): Provenance => {
+  const kind = String(row.Provenance ?? '').trim() || 'fitted';
+  if (kind === 'derived') {
+    return {
+      kind: 'derived',
+      leafCount: Number(row.Leaf_Count ?? 0),
+      models: {},
+      coverage: { inScope: 0, withForecast: 0, skipped: [] },
+    };
+  }
+  const modelUsed = (String(row.Model_Used ?? '').trim() || 'Holt Linear') as ForecastModel;
+  if (kind === 'accepted') {
+    return {
+      kind: 'accepted', modelUsed,
+      replacedModel: (String(row.Replaced_Model ?? '').trim() || modelUsed) as ForecastModel,
+      acceptedAt: String(row.Accepted_At ?? ''),
+    };
+  }
+  return { kind: 'fitted', modelUsed };
+};
+
+/**
+ * THE AUTO-DETECT ROLES, as one pure function of the column list. Lifted
+ * verbatim from App's "Auto-select columns on data load" effect so that
+ * `spec:row-source` can assert, role by role, that the clause-21 column list
+ * (union of keys over all rows) picks the same column for every role as the
+ * row-0 list did. The effect still sets a role only when it is unset.
+ */
+export interface ColumnRoles {
+  dateCol: string;
+  targetCol: string;
+  segmentCol: string;
+  productCol: string;
+  channelCol: string;
+  wiDateCol: string;
+  wiMetricCol: string;
+  wiValueCol: string;
+  wiCustomerCol: string;
+  wiRevenueCol: string;
+  wiArpuCol: string;
+  wiSegmentCol: string;
+  wiProductCol: string;
+  wiProductL2Col: string;
+  wiChannelCol: string;
+  wiChannelL2Col: string;
+  wiTariffL1Col: string;
+  wiTariffL2Col: string;
+  dataTypeCol: string;
+}
+
+export function detectColumnRoles(columns: readonly string[]): ColumnRoles {
+  const match = (patterns: string[]) => {
+    for (const p of patterns) {
+      const cleanP = p.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const found = columns.find(c => c.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanP));
+      if (found) return found;
+    }
+    return undefined;
   };
+  return {
+    dateCol: match(['date', 'time', 'period', 'month']) || columns[0] || '',
+    targetCol: match(['subscriber', 'volume', 'value', 'measure', 'amount', 'total', 'base', 'revenue']) || columns[1] || '',
+    segmentCol: match(['segment', 'category', 'region']) || '',
+    productCol: match(['product', 'item', 'sku', 'service']) || '',
+    channelCol: match(['channel', 'source', 'platform']) || '',
+    wiDateCol: match(['date', 'time', 'period', 'month']) || columns[0] || '',
+    wiMetricCol: match(['ibro', 'scenario', 'type', 'metric', 'dimension', 'kpi', 'indicator']) || columns[1] || '',
+    wiValueCol: match(['subscriber', 'volume', 'subs', 'value', 'measure', 'amount', 'total']) || columns[2] || columns[1] || '',
+    wiCustomerCol: match(['customer', 'cust', 'account']) || '',
+    wiRevenueCol: match(['revenue', 'gbp', 'monthly']) || '',
+    wiArpuCol: match(['arpu', 'average revenue', 'revenue per']) || '',
+    wiSegmentCol: match(['segment', 'category', 'region']) || '',
+    wiProductCol: match(['product_l1', 'product level 1', 'productlevel1', 'product', 'item', 'sku']) || '',
+    wiProductL2Col: match(['product_l2', 'product level 2', 'productlevel2', 'product_sub', 'productsub']) || '',
+    wiChannelCol: match(['channel_l1', 'channel level 1', 'channellevel1', 'channel', 'source', 'platform']) || '',
+    wiChannelL2Col: match(['channel_l2', 'channel level 2', 'channellevel2', 'channel_sub', 'channelsub']) || '',
+    // Tariff (Phase 2a) — real data column is `tariff_tier_l1/l2`; also match `tariff_l1` and spaced variants.
+    // Specific L1/L2 patterns only (no bare 'tariff') so L1 and L2 never cross-match.
+    wiTariffL1Col: match(['tariff_tier_l1', 'tariff tier l1', 'tariff_l1', 'tariff level 1', 'tarifflevel1']) || '',
+    wiTariffL2Col: match(['tariff_tier_l2', 'tariff tier l2', 'tariff_l2', 'tariff level 2', 'tarifflevel2']) || '',
+    dataTypeCol: match(['datatype', 'isforecast', 'type', 'status']) || '',
+  };
+}
+
+export default function App() {
+  const { t } = useTranslation();
+  const [activeView, setActiveView] = useState<'home' | 'standard' | 'whatif' | 'overall' | 'vsactuals' | 'compare'>('home');
+  const [data, setData] = useState<any[]>([]);
+  const [columns, setColumns] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  /** REQ-D6-04 decision 2 — the pre-parse notice, painted before any parse. */
+  const [ingestNotice, setIngestNotice] = useState<string | null>(null);
+  const [routedLine, setRoutedLine] = useState<string | null>(null);
+  /** REQ-D6-04 decision 2 — "Loaded N rows in S s", the measured figure. */
+  const [loadedLine, setLoadedLine] = useState<string | null>(null);
+  const [logoError, setLogoError] = useState(false);
+
+  // Shared Data Mapping State
+  const [wiDateCol, setWiDateCol] = useState('');
+  const [wiMetricCol, setWiMetricCol] = useState('');
+  const [wiValueCol, setWiValueCol] = useState('');
+  const [wiCustomerCol, setWiCustomerCol] = useState('');
+  const [wiRevenueCol, setWiRevenueCol] = useState('');
+  const [wiArpuCol, setWiArpuCol] = useState('');
+  const [wiInflowVal, setWiInflowVal] = useState('');
+  const [wiOutflowVal, setWiOutflowVal] = useState('');
+  const [wiBaseVal, setWiBaseVal] = useState('');
+  const [wiRetentionVal, setWiRetentionVal] = useState('');
+  const [wiSegmentCol, setWiSegmentCol] = useState('');
+  const [wiProductCol, setWiProductCol] = useState('');
+  const [wiProductL2Col, setWiProductL2Col] = useState('');
+  const [wiChannelCol, setWiChannelCol] = useState('');
+  const [wiChannelL2Col, setWiChannelL2Col] = useState('');
+  const [wiTariffL1Col, setWiTariffL1Col] = useState('');
+  const [wiTariffL2Col, setWiTariffL2Col] = useState('');
+  const [showMappingMenu, setShowMappingMenu] = useState(false);
+
+  // Missing State Variables
+  const [dateCol, setDateCol] = useState('');
+  const [targetCol, setTargetCol] = useState('');
+  const [segmentCol, setSegmentCol] = useState('');
+  const [productCol, setProductCol] = useState('');
+  const [channelCol, setChannelCol] = useState('');
+  const [segmentValue, setSegmentValue] = useState('All (Aggregated)');
+  const [productValue, setProductValue] = useState('All (Aggregated)');
+  const [productL2Value, setProductL2Value] = useState('');
+  const [channelValue, setChannelValue] = useState('All (Aggregated)');
+  const [channelL2Value, setChannelL2Value] = useState('');
+  const [tariffValue, setTariffValue] = useState('All (Aggregated)');
+  const [tariffL2Value, setTariffL2Value] = useState('');
+  const [stdForecastLength] = useState(24);
+
+  // Standard Forecast State
+  const [selectedForecastModel, setSelectedForecastModel] = useState<ForecastModel>('Holt Linear');
+  const [stdScenario, setStdScenario] = useState('Inflow');
+  const [forecastData, setForecastData] = useState<any[]>([]);
+  // preHorizonUncertainty: z-score applied within the confidence horizon (1.0 = ±1σ√h ≈ 68%)
+  const [preHorizonUncertainty, setPreHorizonUncertainty] = useState(1.0);
+  // postHorizonExpansionRate: multiplier on z=1.96 beyond the horizon (1.0 = exactly ±1.96σ√h)
+  const [postHorizonExpansionRate, setPostHorizonExpansionRate] = useState(1.0);
+  const [confidenceHorizon, setConfidenceHorizon] = useState(3);
+  const [stdSegmentValue, setStdSegmentValue] = useState('All (Aggregated)');
+  const [stdProductValue, setStdProductValue] = useState('All (Aggregated)');
+  const [stdChannelValue, setStdChannelValue] = useState('All (Aggregated)');
+  const [compareCategories, setCompareCategories] = useState<string[]>([]);
+  const [segmentMode, setSegmentMode] = useState<'filter' | 'compare'>('filter');
+  const [productMode, setProductMode] = useState<'filter' | 'compare'>('filter');
+  const [channelMode, setChannelMode] = useState<'filter' | 'compare'>('filter');
+  
+  // Windowing State
+  const [windowSize, setWindowSize] = useState(12);
+  const [windowOffset, setWindowOffset] = useState(0);
+
+  // What-If State
+  const [wiSegmentValue, setWiSegmentValue] = useState('All (Aggregated)');
+  const [wiProductValue, setWiProductValue] = useState('All (Aggregated)');
+  const [wiChannelValue, setWiChannelValue] = useState('All (Aggregated)');
+  const [wiUpliftPct, setWiUpliftPct] = useState(0);
+  const [wiInflowLag, setWiInflowLag] = useState(0);
+  const [wiRetentionUpliftPct, setWiRetentionUpliftPct] = useState(0);
+  const [wiRetentionLag, setWiRetentionLag] = useState(0);
+  const [wiArpuUpliftPct, setWiArpuUpliftPct] = useState(0);
+  const [marketEvents, setMarketEvents] = useState<MarketEvent[]>([]);
+  // whatIfDelta / whatIfRevenueDelta / whatIfMissingMonths deleted 2026-07-31:
+  // their only setters lived in generateWhatIfForecast, so all three were stuck
+  // at their initial values. WhatIfTab still declares an optional missingMonths
+  // prop and renders a gap warning from it; that block now has NO SUPPLIER and
+  // has never fired. Left in place rather than deleted -- removing a UI
+  // capability is a product decision. See EXPECTED.md.
+  const [selectedKpis, setSelectedKpis] = useState<string[]>(['Inflow Volume', 'Base Volume']);
+  const [forecastLength] = useState(24);
+
+  // Overall Forecasts State
+  const [savedForecasts, setSavedForecasts] = useState<Record<string, any>>({});
+  /**
+   * Bottom-up forecasting: cohortId → short-leaf diagnostics for aggregates
+   * whose constituent leaves are mostly too short to fit seasonality. Advisory
+   * only; it changes no forecast values, it makes the caveat visible.
+   */
+  const [shortLeafWarnings, setShortLeafWarnings] = useState<Record<string, { shortLeaves: number; totalLeaves: number; share: number }>>({});
+  const addMarketEvent = () => {
+    if (!newEvent.date || newEvent.subscriberVolume === undefined) return;
+    // Outflow events always represent subscribers leaving — negate the magnitudes so
+    // the stored values are negative, which is the correct sign for an increase in outflow.
+    const isOutflow = newEvent.scenario === 'Outflow';
+    // Absolute Outflow volumes are STORED negative. Percentage amounts are
+    // not: a percentage applies in its natural direction, so +10% means more
+    // outflow and negating it would invert what the user typed.
+    const isPct = newEvent.amountType === 'percentage';
+    const neg = (v: number) => (isOutflow && !isPct) ? -Math.abs(v) : v;
+    // Phase 3 P4: a volume-only Inflow/Retention event (ARPU left blank) is
+    // auto-populated from the cohort's trailing 3-month average — baked into the
+    // stored event exactly as if the user had typed it, never overriding an
+    // explicit non-zero value.
+    // A percentage event carries no per-subscriber ARPU, so the trailing-
+    // average auto-fill is skipped: storing one would be a number with no
+    // meaning, and the table dashes the column for these rows anyway.
+    // THE FIFTH WRITER. This is the DEFAULT add path — WhatIfTab's
+    // handleAddMarketEvent routes here whenever month-spreading is off, which
+    // it is unless the user turns it on. It built its own rate inline and never
+    // carried arpuOverride, so an ordinary Add click discarded a stated rate
+    // silently. Found by the stage-2 gate; the count of writers was four in my
+    // head and five in the code.
+    const resolved = draftEventRate(
+      newEvent, cohortAvgArpu, newEvent.subscriberVolume || 0, newEvent.revenue, isPct);
+    const event: MarketEvent = {
+      id: Math.random().toString(36).substr(2, 9),
+      scenario: newEvent.scenario as any,
+      segment: newEvent.segment || 'All',
+      product: newEvent.product || 'All',
+      productL2: newEvent.productL2 || 'All',
+      channel: newEvent.channel || 'All',
+      channelL2: newEvent.channelL2 || 'All',
+      tariffL1: newEvent.tariffL1 || 'All',
+      tariffL2: newEvent.tariffL2 || 'All',
+      // D5-10, tariff scope site 9 of 10 — VOLUME, App's default add path.
+      // The one this file's own comment calls THE FIFTH WRITER: it is reached
+      // whenever month-spreading is off, which is unless the user turns it on,
+      // so it is the site a scope field would most easily have been missed at.
+      tariffScope: tariffScopeFor(newEvent.tariffL1, selectedTariffs, [...tariffTree.keys()]),
+      date: newEvent.date,
+      subscriberVolume: neg(newEvent.subscriberVolume || 0),
+      customerVolume:   neg(newEvent.customerVolume   || 0),
+      revenue:          neg(resolved.revenue),
+      arpu:             neg(resolved.arpu),
+      arpuOverride:     newEvent.arpuOverride,
+      name:         newEvent.name         || '',
+      campaignName: newEvent.campaignName || '',
+      comment:      newEvent.comment      || '',
+      contractLength: newEvent.contractLength ?? 24,
+      amountType: newEvent.amountType ?? 'absolute',
+      percentageBasis: newEvent.percentageBasis ?? 'baseline',
+      retentionLinked: newEvent.retentionLinked ?? true,
+      // Placeholder — the real slot is allocated against prev inside the
+      // updater below, so two adds in one batch cannot collide.
+      sequence: 0,
+    };
+    setMarketEvents(prev => [...prev, { ...event, sequence: nextSequence(prev) }]);
+    setNewEvent({
+      scenario: 'Inflow',
+      segment: 'All',
+      product: 'All',
+      productL2: 'All',
+      channel: 'All',
+      channelL2: 'All',
+      tariffL1: 'All',
+      tariffL2: 'All',
+      date: format(new Date(), 'yyyy-MM'),
+      subscriberVolume: 0,
+      customerVolume: 0,
+      revenue: 0,
+      arpu: 0,
+      name: '',
+      campaignName: '',
+      comment: '',
+      contractLength: 24,
+    });
+  };
+
+  const removeMarketEvent = (id: string) => {
+    setMarketEvents(prev => prev.filter(e => e.id !== id));
+  };
+
+  // ONE update-by-id primitive, closed over whichever array it is given.
+  // Volume/Promotion had this; Yield and Pricing had no update path at all, so
+  // their cards could not offer edit. Three bespoke copies would have been the
+  // shape this project has paid for repeatedly -- six cohort-scoping predicates,
+  // five missing-cohort filters. The forms genuinely differ and stay separate;
+  // the patch operation does not.
+  //
+  // .map() rather than in-place mutation is load-bearing: computeAdjustedForecast
+  // is a useMemo keyed on the array reference, so an edit only recomputes the
+  // forecast if the reference actually changes.
+  function updateById<T extends { id: string }>(
+    setter: React.Dispatch<React.SetStateAction<T[]>>,
+    id: string,
+    patch: Partial<T>,
+  ) {
+    setter(prev => prev.map(e => (e.id === id ? { ...e, ...patch } : e)));
+  }
+
+  const updateMarketEvent = (id: string, patch: Partial<MarketEvent>) =>
+    updateById(setMarketEvents, id, patch);
+
+  /**
+   * REQ-D8-01 Item 1(b) — IMPORT ACTUALS, FROM ROWS. Date and value detection,
+   * the month picker's list and the "already loaded" rule, unchanged; the
+   * append is behind it, in handleImportActualsConfirm. The file path parses
+   * sheet [0] as it always did and calls this; it parses nothing itself.
+   */
+  const applyActualsRows = (rows: any[]) => {
+    if (rows.length === 0) return;
+
+    // Detect date column: prefer already-mapped wiDateCol, else auto-detect
+    const firstRowKeys = Object.keys(rows[0] as object);
+    const detectDateCol = (): string => {
+      if (wiDateCol && firstRowKeys.includes(wiDateCol)) return wiDateCol;
+      const patterns = ['date', 'time', 'period', 'month'];
+      for (const p of patterns) {
+        const found = firstRowKeys.find(c => c.toLowerCase().replace(/[^a-z0-9]/g, '').includes(p));
+        if (found) return found;
+      }
+      return firstRowKeys[0] || '';
+    };
+    const dateCol = detectDateCol();
+
+    // Build unique month → row count map
+    const monthCounts = new Map<string, number>();
+    rows.forEach(row => {
+      const raw = row[dateCol];
+      if (!raw) return;
+      let d: Date;
+      if (raw instanceof Date) {
+        d = raw;
+      } else {
+        d = new Date(raw);
+      }
+      if (!isValid(d)) return;
+      const label = format(d, 'yyyy-MM');
+      monthCounts.set(label, (monthCounts.get(label) || 0) + 1);
+    });
+
+    if (monthCounts.size === 0) {
+      alert('Could not detect any valid dates in the file.');
+      return;
+    }
+
+    // Detect the value column in the incoming file (use mapped wiValueCol if present)
+    const valueColCandidates = [wiValueCol, 'Subscriber_Volume', 'Subscriber Volume', 'Value', 'value', 'Volume'];
+    const detectedValueCol = valueColCandidates.find(c => c && firstRowKeys.includes(c)) || '';
+
+    // A month is "already loaded" when the current dataset contains at least one row
+    // for that month where the actual value column is populated (non-blank, non-zero).
+    // We do NOT use date-existence alone, because forecast rows share the same dates.
+    //
+    // REQ-D6-02(B): the rule that stood here is now `monthsCarryingActuals` in
+    // `utils/forecasting.ts`, because the delta-month selector asks the
+    // same question of the same dataset. This is one of its two callers;
+    // the inline copy is retired rather than duplicated.
+    const monthsLoaded = monthsCarryingActuals(
+      data, [wiDateCol, dateCol], wiValueCol || detectedValueCol);
+
+    const sortedMonths = Array.from(monthCounts.entries())
+      .sort((a, b) => b[0].localeCompare(a[0])) // newest first
+      .map(([label, count]) => ({
+        label,
+        count,
+        alreadyLoaded: monthsLoaded.has(label),
+      }));
+
+    setImportActualsState({ rows, months: sortedMonths, detectedDateCol: dateCol });
+  };
+
+  const handleImportActualsFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+
+    // REQ-D6-04 decision 1 and 2 — INGEST PATH 3 of 3, Import Actuals. This
+    // path had NO SIZE CHECK either; it reads the one constant now.
+    // A NEW ingest clears the previous routing line: it explains THIS file.
+    setRoutedLine(null);
+    void runIngest<any>({
+      file, t,
+      showNotice: setIngestNotice,
+      onRefuse: (message) => { alert(message); },
+      read: (f) => readWorkbook(f as File),
+      onError: (err) => {
+        console.error(err);
+        alert('Error reading file. Please ensure it is a valid .xlsx or .xls file.');
+      },
+      onResult: (wb) => {
+      try {
+        const sheetName = wb.SheetNames[0];
+        const rows: any[] = XLSX.utils.sheet_to_json(wb.Sheets[sheetName]);
+        applyActualsRows(rows);
+      } catch (err) {
+        console.error(err);
+        alert('Error reading file. Please ensure it is a valid .xlsx or .xls file.');
+      }
+      },
+    });
+  };
+
+  const handleImportActualsConfirm = (selectedMonths: Set<string>) => {
+    if (!importActualsState) return;
+    const { rows, detectedDateCol } = importActualsState;
+
+    const toAppend = rows.filter(row => {
+      const raw = row[detectedDateCol];
+      if (!raw) return false;
+      const d = raw instanceof Date ? raw : new Date(raw);
+      if (!isValid(d)) return false;
+      return selectedMonths.has(format(d, 'yyyy-MM'));
+    });
+
+    setData(prev => [...prev, ...toAppend]);
+    // Refresh columns to include any new ones from the imported file
+    if (toAppend.length > 0) {
+      // REQ-D8-01 clause 21: the same helper, seeded with the current list, so a
+      // header first seen on any appended row is added, not only row 0's.
+      setColumns(prev => columnsFromRows(toAppend, prev));
+    }
+    setImportActualsState(null);
+  };
+
+  const handleRemoveActuals = (keepFn: (row: any) => boolean, _removedCount: number) => {
+    setData(prev => prev.filter(keepFn));
+  };
+
+  // ---------------------------------------------------------------------------
+  // Session export — builds a full save-point workbook across 7 sheets.
+  // Triggered from the filename modal; fileName has already been sanitised.
+  // ---------------------------------------------------------------------------
+  const exportSession = (fileName: string) => {
+    try {
+    const exportTs = new Date();
+    const record = buildSessionSheetRecord({
+      data, wiDateCol, baseForecast, forecastStore, cohortGenLog, bulkRuns, preHorizonUncertainty, postHorizonExpansionRate, confidenceHorizon, stdForecastLength, marketEvents, adjustedForecast, carriedAdjustedRows, modelAcceptanceLog, yieldEvents, pricingEvents, oneOffMonths, selectedTariffs, activeView, viewFilter, savedForecasts,
+    }, exportTs);
+    const wb = workbookFromSheetRows(record);
+
+    XLSX.writeFile(wb, `${fileName}.xlsx`);
+    } catch (err) {
+      console.error('[ExportSession] Error:', err);
+      alert(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  // Open the export modal (replaces the old exportToExcel function).
+  const openExportModal = () => setShowExportModal(true);
+
+  // ---------------------------------------------------------------------------
+  // Session import — restores full ForecastContext state from a PROSPECT save.
+  // ---------------------------------------------------------------------------
+  /**
+   * REQ-D6-04 — READ A FILE TO A WORKBOOK. One place, three ingest paths.
+   *
+   * A promise rather than a callback, because `runIngest` owns the ordering
+   * now: it paints the notice, waits for a frame, and only then awaits this.
+   * The SheetJS options are the ones all three paths already used, unchanged.
+   */
+  const readWorkbook = (file: File): Promise<any> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try { resolve(XLSX.read(evt.target?.result, { type: 'array', cellDates: true })); }
+      catch (err) { reject(err); }
+    };
+    reader.onerror = () => reject(new Error('Failed to read file.'));
+    reader.readAsArrayBuffer(file);
+  });
+
+  /**
+   * REQ-D6-04 decision 3 — THE IMPORT-SAVE BODY, extracted from its own
+   * FileReader callback so the INPUT DROP can hand a sniffed session workbook
+   * straight to it.
+   *
+   * EXTRACTED, NOT COPIED, and not re-read either: routing by re-opening the
+   * file would parse a file we have already parsed — up to 200MB of it, twice,
+   * on the one thread the notice exists to apologise for. The workbook comes
+   * in as an argument.
+   *
+   * The body below is unchanged from the callback it was lifted out of.
+   */
+  const applyImportSaveWorkbook = (sheets: SheetRows, sheetNames: readonly string[]) =>
+    restoreSessionSheets(sheets, sheetNames, {
+      setRestoreFellBack, setImportSaveResult, setData, setColumns, setForecastStore, setCohortGenLog, setBaseForecast, setForecastUpdatedAt, setSavedForecasts, setMarketEvents, setYieldEvents, setPricingEvents, setOneOffMonths, setSelectedTariffs, setCarriedAdjustedRows, setBulkRuns, setModelAcceptanceLog, setViewFilter, setActiveView,
+      setPreHorizonUncertainty, setPostHorizonExpansionRate, setConfidenceHorizon,
+      t, makeForecastKey,
+    });
+
+  /**
+   * REQ-D8-01 Item 1(c) — THE THIN WORKBOOK WRAPPER. Import Save and the
+   * drop-zone routing both arrive here with a parsed workbook; it becomes rows
+   * once, in `sheetRowsFromWorkbook`, and the restore never sees it.
+   */
+  const applyImportSaveFromWorkbook = (wb: any) =>
+    applyImportSaveWorkbook(sheetRowsFromWorkbook(wb), wb.SheetNames);
 
   /**
    * REQ-D6-04 decision 1 and 2 — INGEST PATH 2 of 3, Import Save.
@@ -1122,7 +1390,7 @@ export default function App() {
       showNotice: setIngestNotice,
       onRefuse: (message) => setImportSaveResult({ success: false, error: message }),
       read: (f) => readWorkbook(f as File),
-      onResult: (wb) => applyImportSaveWorkbook(wb),
+      onResult: (wb) => applyImportSaveFromWorkbook(wb),
       onError: (err) => {
         console.error('[ImportSave] Error:', err);
         setImportSaveResult({
@@ -1342,40 +1610,30 @@ export default function App() {
     setPricingEvents([]);
   };
 
-  // Auto-select columns on data load
+  // Auto-select columns on data load — the picks are detectColumnRoles's
+  // (module scope, above); a role already chosen is left as it is.
   useEffect(() => {
     if (data.length > 0) {
-      const match = (patterns: string[]) => {
-        for (const p of patterns) {
-          const cleanP = p.toLowerCase().replace(/[^a-z0-9]/g, '');
-          const found = columns.find(c => c.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanP));
-          if (found) return found;
-        }
-        return undefined;
-      };
-
-      if (!dateCol) setDateCol(match(['date', 'time', 'period', 'month']) || columns[0] || '');
-      if (!targetCol) setTargetCol(match(['subscriber', 'volume', 'value', 'measure', 'amount', 'total', 'base', 'revenue']) || columns[1] || '');
-      if (!segmentCol) setSegmentCol(match(['segment', 'category', 'region']) || '');
-      if (!productCol) setProductCol(match(['product', 'item', 'sku', 'service']) || '');
-      if (!channelCol) setChannelCol(match(['channel', 'source', 'platform']) || '');
-
-      if (!wiDateCol) setWiDateCol(match(['date', 'time', 'period', 'month']) || columns[0] || '');
-      if (!wiMetricCol) setWiMetricCol(match(['ibro', 'scenario', 'type', 'metric', 'dimension', 'kpi', 'indicator']) || columns[1] || '');
-      if (!wiValueCol) setWiValueCol(match(['subscriber', 'volume', 'subs', 'value', 'measure', 'amount', 'total']) || columns[2] || columns[1] || '');
-      if (!wiCustomerCol) setWiCustomerCol(match(['customer', 'cust', 'account']) || '');
-      if (!wiRevenueCol) setWiRevenueCol(match(['revenue', 'gbp', 'monthly']) || '');
-      if (!wiArpuCol) setWiArpuCol(match(['arpu', 'average revenue', 'revenue per']) || '');
-      if (!wiSegmentCol) setWiSegmentCol(match(['segment', 'category', 'region']) || '');
-      if (!wiProductCol) setWiProductCol(match(['product_l1', 'product level 1', 'productlevel1', 'product', 'item', 'sku']) || '');
-      if (!wiProductL2Col) setWiProductL2Col(match(['product_l2', 'product level 2', 'productlevel2', 'product_sub', 'productsub']) || '');
-      if (!wiChannelCol) setWiChannelCol(match(['channel_l1', 'channel level 1', 'channellevel1', 'channel', 'source', 'platform']) || '');
-      if (!wiChannelL2Col) setWiChannelL2Col(match(['channel_l2', 'channel level 2', 'channellevel2', 'channel_sub', 'channelsub']) || '');
-      // Tariff (Phase 2a) — real data column is `tariff_tier_l1/l2`; also match `tariff_l1` and spaced variants.
-      // Specific L1/L2 patterns only (no bare 'tariff') so L1 and L2 never cross-match.
-      if (!wiTariffL1Col) setWiTariffL1Col(match(['tariff_tier_l1', 'tariff tier l1', 'tariff_l1', 'tariff level 1', 'tarifflevel1']) || '');
-      if (!wiTariffL2Col) setWiTariffL2Col(match(['tariff_tier_l2', 'tariff tier l2', 'tariff_l2', 'tariff level 2', 'tarifflevel2']) || '');
-      if (!dataTypeCol) setDataTypeCol(match(['datatype', 'isforecast', 'type', 'status']) || '');
+      const roles = detectColumnRoles(columns);
+      if (!dateCol) setDateCol(roles.dateCol);
+      if (!targetCol) setTargetCol(roles.targetCol);
+      if (!segmentCol) setSegmentCol(roles.segmentCol);
+      if (!productCol) setProductCol(roles.productCol);
+      if (!channelCol) setChannelCol(roles.channelCol);
+      if (!wiDateCol) setWiDateCol(roles.wiDateCol);
+      if (!wiMetricCol) setWiMetricCol(roles.wiMetricCol);
+      if (!wiValueCol) setWiValueCol(roles.wiValueCol);
+      if (!wiCustomerCol) setWiCustomerCol(roles.wiCustomerCol);
+      if (!wiRevenueCol) setWiRevenueCol(roles.wiRevenueCol);
+      if (!wiArpuCol) setWiArpuCol(roles.wiArpuCol);
+      if (!wiSegmentCol) setWiSegmentCol(roles.wiSegmentCol);
+      if (!wiProductCol) setWiProductCol(roles.wiProductCol);
+      if (!wiProductL2Col) setWiProductL2Col(roles.wiProductL2Col);
+      if (!wiChannelCol) setWiChannelCol(roles.wiChannelCol);
+      if (!wiChannelL2Col) setWiChannelL2Col(roles.wiChannelL2Col);
+      if (!wiTariffL1Col) setWiTariffL1Col(roles.wiTariffL1Col);
+      if (!wiTariffL2Col) setWiTariffL2Col(roles.wiTariffL2Col);
+      if (!dataTypeCol) setDataTypeCol(roles.dataTypeCol);
     }
   }, [data, columns]);
 
@@ -1417,34 +1675,8 @@ export default function App() {
    * tariff column) defaults to 'All', preserving backward compatibility.
    * 'All' is used for any dimension that is unfiltered.
    */
-  /**
-   * Rebuild a Provenance from an exported row (option C).
-   *
-   * `Provenance` empty or absent => the file predates the column, and every
-   * forecast in such a file was fitted. `Model_Used` empty on a derived row is
-   * deliberate and must stay empty: defaulting it to a model name here is the
-   * exact silent relabelling this phase removes.
-   */
-  const readProvenance = (row: Record<string, any>): Provenance => {
-    const kind = String(row.Provenance ?? '').trim() || 'fitted';
-    if (kind === 'derived') {
-      return {
-        kind: 'derived',
-        leafCount: Number(row.Leaf_Count ?? 0),
-        models: {},
-        coverage: { inScope: 0, withForecast: 0, skipped: [] },
-      };
-    }
-    const modelUsed = (String(row.Model_Used ?? '').trim() || 'Holt Linear') as ForecastModel;
-    if (kind === 'accepted') {
-      return {
-        kind: 'accepted', modelUsed,
-        replacedModel: (String(row.Replaced_Model ?? '').trim() || modelUsed) as ForecastModel,
-        acceptedAt: String(row.Accepted_At ?? ''),
-      };
-    }
-    return { kind: 'fitted', modelUsed };
-  };
+  // readProvenance lives at module scope (REQ-D8-01): the session restore, which
+  // moved there, reads it, and so does every caller below.
 
   // Delegates to the shared builder. Kept as a local name so the ~40 call
   // sites in this file are untouched, but there is now ONE format.
@@ -1944,14 +2176,11 @@ export default function App() {
           // Its OWN state — see the render site. Set through setIngestNotice
           // this line was cleared by runIngest's finally before it painted.
           setRoutedLine(t('app_routed_to_import_save'));
-          applyImportSaveWorkbook(wb);
+          applyImportSaveFromWorkbook(wb);
           return;
         }
 
-        const sheetsData: Record<string, any[]> = {};
-        wb.SheetNames.forEach(name => {
-          sheetsData[name] = XLSX.utils.sheet_to_json(wb.Sheets[name]);
-        });
+        const sheetsData: SheetRows = sheetRowsFromWorkbook(wb);
         setWorkbookSheets(sheetsData);
 
         const actualsName = wb.SheetNames.find(n => n.toLowerCase() === 'actuals') || wb.SheetNames[0];
@@ -1960,40 +2189,9 @@ export default function App() {
         setActualsSheet(actualsName);
         setForecastsSheet(forecastsName);
 
-        const jsonData = sheetsData[actualsName];
-
-        if (!jsonData || jsonData.length === 0) {
-          setError('The actuals sheet is empty.');
-          setIsLoading(false);
-          return;
-        }
-
-        const cols = Object.keys(jsonData[0] as object);
-        setColumns(cols);
-        setData(jsonData);
-
-        setError('');
-        // REQ-D6-04 decision 2 — THE SUCCESS LINE CARRIES THE MEASURED TIME.
-        //
-        // `parseMs` is wall time across `read` and nothing else, taken by
-        // `runIngest` from a real clock. It is here so the notice's "up to a
-        // minute" can be replaced by a figure someone READ rather than
-        // estimated — which is the whole reason the line exists, and why trap
-        // 214 plants its removal.
-        setLoadedLine(loadedLineText(jsonData.length, parseMs, t));
-        setForecastData([]);
-
-        // Restore market events if the file contains a Market_Events sheet
-        const eventsSheetName = wb.SheetNames.find(n => n.toLowerCase() === 'market_events');
-        if (eventsSheetName && sheetsData[eventsSheetName]?.length > 0) {
-          // THE SAME READER, told which kind of sheet this is. A raw workbook has
-          // no ID column, treats a blank cell as unset, and states the SIZE of an
-          // Outflow rather than its sign — differences that are real and are now
-          // declared in one place instead of diverging across two literals.
-          const restoredEvents: MarketEvent[] = sheetsData[eventsSheetName]
-            .map((r: any) => marketEventFromRow(r, 'workbook'));
-          setMarketEvents(backfillSequences(restoredEvents));
-        }
+        applyBaselineRows(sheetsData[actualsName], parseMs, sheetsData, {
+          setError, setIsLoading, setColumns, setData, setLoadedLine, setForecastData, setMarketEvents, t,
+        });
       } catch (err) {
         console.error(err);
         setError('Error reading Excel file. Please ensure it is a valid .xlsx or .xls file.');

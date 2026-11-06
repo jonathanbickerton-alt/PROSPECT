@@ -66,6 +66,12 @@ const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails
     for (let i = line - 1; i >= 0; i--) {
       const m = lines[i].match(/^  const ([A-Za-z0-9_]+)\s*=\s*(useCallback|async|\(|function)/);
       if (m) return m[1];
+      // REQ-D8-01: a MODULE-SCOPE function encloses its sites too. The restore
+      // body moved out of App to `export function restoreSessionSheets`, and
+      // without this the walk-back crossed into ExportFilenameModal and gave the
+      // three import sites to its `handleConfirm`.
+      const mm = lines[i].match(/^export function ([A-Za-z0-9_]+)\s*\(/);
+      if (mm) return mm[1];
       if (/^  const handleFile|^  const importSession/.test(lines[i])) return 'importSession';
     }
     return '<top-level>';
@@ -142,7 +148,18 @@ const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails
     // resolveFromStore over the restored store. Seen RED first: "both
     // session-import sites were located [found 3]" and "applyImportSaveWorkbook
     // still has exactly 2 site(s) [found 3 ...]".
-    applyImportSaveWorkbook: { count: 3, seam: false,
+    //
+    // RE-AIMED 2026-11-06 (REQ-D8-01 Item 1(c)): applyImportSaveWorkbook ->
+    // restoreSessionSheets. The restore body moved, text unchanged, to a
+    // module-scope function that takes sheet rows. Seen RED first, all three:
+    //   FAIL ENUMERATION: the three session-import sites were located  [found 0]
+    //   FAIL ENUMERATION: every setBaseForecast call site is accounted for BY
+    //        SITE  [App.tsx:359 in handleConfirm ; App.tsx:367 in handleConfirm ;
+    //        App.tsx:426 in handleConfirm]
+    //   FAIL ENUMERATION: applyImportSaveWorkbook still has exactly 3 site(s)
+    //        [found 0 — ...]
+    // The count stays exactly 3, with the same reason.
+    restoreSessionSheets: { count: 3, seam: false,
       why: 'three sites: the Is_Active restore resolves via resolveFromStore before setting (bf); the legacy pre-option-C restore is CLEARED at the site (restoredBf); the REQ-D7-03 view restore sets forecastForView(step, restoredView, resolveFromStore) (viewOwned)' },
     generateStandardForecast: { count: 2, seam: false,
       why: 'fresh fit; the anyAggregated decline above it makes an All-bearing cohort unreachable' },
@@ -166,7 +183,7 @@ const check = (n: string, c: boolean, d?: string) => { if (c) pass++; else fails
 
   // The import fix specifically: the Is_Active site must resolve before setting.
   // RE-AIMED at REQ-D6-04 to the extracted body's name — see ACCOUNTED above.
-  const importSites = rest.filter(s => fnOf(s.line) === 'applyImportSaveWorkbook');
+  const importSites = rest.filter(s => fnOf(s.line) === 'restoreSessionSheets');
   check('ENUMERATION: the three session-import sites were located', importSites.length === 3,
     `found ${importSites.length}`);
 

@@ -130,7 +130,13 @@ const store = new Map<string, any>([
     falses === 2, `${falses} — a lone dismiss means a banner survives the next import`);
   // The clear must be INSIDE the import body, and before the fallback can set
   // it: a clear placed after would erase a banner this very import raised.
-  const body = app.indexOf('const applyImportSaveWorkbook');
+  // RE-AIMED 2026-11-06 (REQ-D8-01 Item 1(c)): the import body is now the
+  // module-scope restoreSessionSheets. Seen RED first:
+  //   FAIL  BANNER: and clears it BEFORE the fallback can raise it  [clear@236665 raise@-1]
+  // and the check above it, "the import clears it", stayed GREEN VACUOUSLY: the
+  // old anchor now sits after the body, so the next clear it found was the
+  // dismiss button's. Anchored at the body itself, both are real again.
+  const body = app.indexOf('export function restoreSessionSheets(');
   const clear = app.indexOf('setRestoreFellBack(false)', body);
   const raise = app.indexOf('setRestoreFellBack(true)', body);
   check('BANNER: the import clears it', body >= 0 && clear > body, `${body} / ${clear}`);

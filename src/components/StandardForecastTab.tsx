@@ -918,6 +918,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                     <input
                       type="number"
                       step="0.05"
+                      data-testid="std-setting-pre-horizon"
                       value={preHorizonUncertainty}
                       onChange={(e) => setPreHorizonUncertainty(Number(e.target.value))}
                       className="w-16 text-xs font-semibold text-emerald-600 border border-slate-200 rounded px-1 outline-none focus:border-emerald-500"
@@ -939,6 +940,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                     <input
                       type="number"
                       step="0.05"
+                      data-testid="std-setting-post-horizon"
                       value={postHorizonExpansionRate}
                       onChange={(e) => setPostHorizonExpansionRate(Number(e.target.value))}
                       className="w-16 text-xs font-semibold text-rose-600 border border-slate-200 rounded px-1 outline-none focus:border-rose-500"
@@ -958,7 +960,7 @@ export const StandardForecastTab: React.FC<StandardForecastTabProps> = ({
                   </div>
                   <span className="text-xs font-semibold text-slate-600">{confidenceHorizon}</span>
                 </div>
-                <input type="range" min="0" max="6" value={confidenceHorizon} onChange={(e) => setConfidenceHorizon(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-500" />
+                <input type="range" data-testid="std-setting-confidence-horizon" min="0" max="6" value={confidenceHorizon} onChange={(e) => setConfidenceHorizon(Number(e.target.value))} className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-500" />
               </div>
             </div>
 

@@ -121,6 +121,8 @@ const ACCMONTH = 'scripts/accuracy-month-mounted-spec.tsx';
 const STEP3BAR = 'scripts/step3-one-bar-mounted-spec.tsx';
 const ONEVIEW = 'scripts/one-view-mounted-spec.tsx';
 const PRORATAHOIST = 'scripts/prorata-hoist-spec.tsx';
+const ROWSOURCESPEC = 'scripts/row-source-spec.tsx';
+const ROWSOURCE = 'src/utils/rowSource.ts';
 const SEAMUTIL = 'src/utils/eventScopeSeries.ts';
 const EVTOGGLE = 'scripts/event-toggle-spec.tsx';
 const SUMMARYBAR = 'src/components/ForecastSummaryBar.tsx';
@@ -135,7 +137,7 @@ const DEBUNDLE = 'src/locales/de/translation.json';
 /** Every file any trap mutates, snapshotted before anything is planted. */
 const APP_COMPARE = 'src/components/ScenarioCompareTab.tsx';
 const SCENARPUENGINE = 'src/utils/scenarioArpu.ts';
-const TARGETS = [FILE, ENGINE, WHATIF, APP, INGEST, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE, SLIDERROW, TARGETPANEL, SUMMARYBAR, PKGJSON, ENVEXAMPLE, SUMMARYTABLE, ENLOCALE, SEAMUTIL];
+const TARGETS = [FILE, ENGINE, WHATIF, APP, INGEST, SFT, MODAL, VIEWFILTER, MIXENGINE, SCENHELPER, APP_COMPARE, SHEETGUARD, CHURNENGINE, AMTENGINE, SCENARPUENGINE, DEBUNDLE, SLIDERROW, TARGETPANEL, SUMMARYBAR, PKGJSON, ENVEXAMPLE, SUMMARYTABLE, ENLOCALE, SEAMUTIL, ROWSOURCE];
 const originals = new Map<string, string>(TARGETS.map(f => [f, fs.readFileSync(f, 'utf8')]));
 
 const orig = originals.get(FILE)!;
@@ -4063,6 +4065,52 @@ const TRAPS: Trap[] = [
     why: 'per-leaf scoring costs ~3.3 s a view again (the 1339 band)',
     file: SEAMUTIL, spec: PRORATAHOIST,
     mutate: s => s.replace("    proRataLeavesOverride: proRataLeaves,", "    proRataLeavesOverride: undefined,") },
+
+  // ══ REQ-D8-01 — THE ROW-SOURCE SEAM, THE COLUMN LIST, RESTORED SETTINGS ══
+  //
+  // All five seen RED by hand on 2026-11-06 against a pre-plant md5 and restored
+  // from a scratchpad backup (the 1532 report quotes every triple).
+  //
+  // 299 THE ACCESSOR BYPASSED FOR ONE SHEET. A second way in is invisible at run
+  // time (the bypass below reads the same rows), so only the structure sees it.
+  //   FAIL  (S) restoreSessionSheets contains ZERO sheet_to_json calls  [1]
+  //   FAIL  (S) and reads all 11 sheets through it  [10]
+  { id: '299 the restore reads one sheet around its accessor',
+    why: 'a BigQuery record would be bypassed for that sheet',
+    file: APP, spec: ROWSOURCESPEC,
+    mutate: s => s.replace("          const tsRaw: any[] = sheetRows('Tariff_Selection');",
+      "          const tsRaw: any[] = XLSX.utils.sheet_to_json(XLSX.utils.json_to_sheet(sheets['Tariff_Selection'] ?? []));") },
+  // 300 THE SAVE RECORD DROPS ONE SHEET. The export would write ten sheets and
+  // the restore would silently clear the tariff selection.
+  //   FAIL  (iii) the record has the 11 sheets, in the export's order
+  //   FAIL  (iii) Tariff_Selection: the record equals the sheet read back  [[] vs undefined]
+  { id: '300 the save record drops a sheet',
+    why: 'a saved session loses its tariff selection',
+    file: APP, spec: ROWSOURCESPEC,
+    mutate: s => s.replace("      Tariff_Selection: tariffSelRows," + nl, "") },
+  // 301 THE BASELINE HAND-OFF SKIPS THE Market_Events READ beside the data.
+  //   FAIL  (i) the Market_Events sheet beside the data is read: one event,
+  //         Launch A, 250 in 2024-03  [[]]
+  { id: '301 the baseline hand-off skips the Market_Events sheet',
+    why: 'a workbook carrying events loads without them',
+    file: APP, spec: ROWSOURCESPEC,
+    mutate: s => s.replace("    if (sheets && eventsSheetName && sheets[eventsSheetName]?.length > 0) {",
+      "    if (false && sheets && eventsSheetName && sheets[eventsSheetName]?.length > 0) {") },
+  // 302 THE COLUMN LIST REVERTS TO ROW 0 (clause 21).
+  //   FAIL  (C) AFTER (the union) is the 19-column list, Applied_Flow_Rate_% last  [[... 18 ...]]
+  //   FAIL  (C) the actuals append adds a header first seen on row 2, after the current list
+  //   FAIL  (C) the restore's column list is the union: Extra_Col ... is in it
+  { id: '302 the column list is row 0 keys again',
+    why: 'Applied_Flow_Rate_% is in the data and missing from every column picker',
+    file: ROWSOURCE, spec: ROWSOURCESPEC,
+    mutate: s => s.replace("  for (const row of rows) {", "  for (const row of rows.slice(0, 1)) {") },
+  // 303 THE SETTINGS READ REMOVED (clause 22), for one of the three.
+  //   FAIL  (M) the three settings restore: 7 / 4 / 5
+  //   FAIL  (M) PRESENT: after restoring P, Step 1 shows 7 / 4 / 5  [landed=true {"pre":"1","post":"4","horizon":"5"}]
+  { id: '303 the restore stops reading a forecast setting',
+    why: 'a restored session generates with the default band again',
+    file: APP, spec: ROWSOURCESPEC,
+    mutate: s => s.replace("        restoreSetting('Pre_Horizon_Uncertainty_Pct', setPreHorizonUncertainty);" + nl, "") },
 ];
 
 
@@ -4261,6 +4309,8 @@ const CONTROL_SPEC_MAP: Record<string, string> = {
   ONEVIEW,
   // REQ-D7-04 session 1. Registered WITH its first trap, 297.
   PRORATAHOIST,
+  // REQ-D8-01 row-source seam. Registered WITH its first trap, 299.
+  ROWSOURCESPEC,
 };
 const controlHashNow = () => GT.controlHash(
   [...Object.values(CONTROL_SPEC_MAP), ...TARGETS, 'scripts/guard-traps.ts', 'scripts/guard-traps-select.ts'],
