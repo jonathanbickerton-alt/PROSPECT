@@ -10762,3 +10762,130 @@ forecast Base continues from the COVERED leaves' seed (289,211), not All's
 6. Recorded: the Challenger passes no adjusted map (never scored Adjusted);
    the four per-scenario ARPU cards read unadjusted ARPU and do not move with
    the toggle — a pre-existing limit, unchanged by D7-04.
+
+## REQ-D8-01 — BIGQUERY DATA SOURCE AND SAVES (Jon, 2026-11-06)
+
+Recorded before any design or code. "s.N" is section N of the inventory
+report reports/2026-11-05-0830-bigquery-data-contract.md (certified at
+92f9b0f); each reference names it.
+
+1. Data source is a deployment setting: Excel or BigQuery. The Excel path
+   stays, because some markets allow Excel. In BigQuery mode no Excel control
+   is shown: no upload drop, no Import Save, no Import Actuals file input, no
+   Compare file input, and none of the three downloads in clause 11.
+2. Step 0 selection panel: one multi-select per dimension (Customer Segment,
+   Product L1/L2, Channel L1/L2, Tariff L1/L2), where no selection means every
+   value. The choices cascade, so a choice narrows the values offered below
+   it. There is a month range. The source table is fixed by deployment
+   configuration, and the user never names it. The panel states that this
+   selection decides which cohorts are loaded, and that the viewing bar
+   decides what is shown afterwards.
+3. Minimum history: a warning below the seasonal-model threshold, and a
+   refusal below the point where no model can fit. The figures come from the
+   code (Item 2), never from a guess.
+4. Size guard: before the baseline pull and before Import Actuals, a
+   pre-check shows rows, cohorts, months and estimated size. An amber level
+   warns and allows; a red level refuses. The thresholds are held in backend
+   configuration. Their first values are measured on real selections on a
+   laptop of Alessandro's specification. The app never starts a load it has
+   not pre-checked.
+5. A BigQuery save writes ONLY what the app creates: Baseline_Forecasts,
+   Market_Events, Yield_Events, Pricing_Events, Adjusted_Forecasts,
+   Bulk_Generation_History, Model_Acceptance_Log, One_Off_Months,
+   Tariff_Selection and Metadata. It never writes the source data rows (the
+   Excel save's Actuals sheet). Metadata additionally records what was
+   pulled: the dimension selection, the baseline month range, every month
+   added by Import Actuals, and the pull timestamp. A restore re-pulls the
+   rows from that record, then applies the saved forecasts and events.
+   Measured on the 23 Sep 2026 18:39 save: Actuals 90,720 rows was 68.9 MB of
+   73.9 MB; everything the app creates was about 5 MB, of which
+   Baseline_Forecasts (1,440 rows) was 4.9 MB.
+6. Storage: fixed tables, one per saved sheet in clause 5 (there is no
+   Actuals table). Every row is tagged with session ID, save name, save
+   timestamp and user. Each saved row's columns are stored as JSON alongside
+   those key columns, so a column added by a later app version needs no
+   migration. The app's existing readers' absent-column defaults (s.4 of
+   reports/2026-11-05-0830-bigquery-data-contract.md) apply unchanged.
+7. Versions: saving under an existing name always creates a new version,
+   identified by name plus timestamp. The load list shows each name once
+   with its latest version, and earlier versions sit beneath it.
+8. Autosave: one rolling draft per user, created at the first data pull and
+   overwritten after the data pull, after generation completes, and on each
+   step change. Baseline_Forecasts is rewritten only when forecasts have
+   changed since the last write. "Save as…" names the draft and keeps it as
+   a version. On opening the app: "You have an unsaved session from {time}.
+   Resume or Discard?" A visible save status reads "Saved {time}" or "Not
+   saved — Retry".
+9. Visibility: a user sees their own saves by default, with a "Team saves"
+   toggle (already requested by the users). OPEN — what saving a teammate's
+   session does; to be recorded when Jon answers.
+10. Delete: a user can delete their own saves, a whole name or one version,
+    through a confirm dialog. The autosave draft is replaced, never deleted
+    by hand.
+11. Downloads: in BigQuery mode all three are removed. They are Export
+    Session (Step 3 and Overall Forecast), Step 1 Export to Excel and Step 2
+    Export (s.1 rows 6–7 of
+    reports/2026-11-05-0830-bigquery-data-contract.md). Saving to BigQuery
+    replaces them. The header carries a "Saved at {time}" stamp.
+12. Import Actuals: triggered by the user. The app reads the session's last
+    actuals month from the clause-5 record, asks the backend whether newer
+    months exist for the session's selection, and offers only those for the
+    user to pick. The dimensions are locked to the session's selection. When
+    nothing is newer it says "No actuals after {month} for this selection".
+    Months already loaded are never offered, which designs out the
+    duplicate-append defect (s.3 of
+    reports/2026-11-05-0830-bigquery-data-contract.md). Each import updates
+    the clause-5 record.
+13. Scenario Compare: the same list as Load, multi-select up to four. Compare
+    reads only Baseline_Forecasts and the three event sheets (s.5 of
+    reports/2026-11-05-0830-bigquery-data-contract.md), so it needs no data
+    pull.
+14. Restatement: the backend runs a three-month rolling load, so the latest
+    three months can change after they first arrive. A restore always
+    re-pulls current rows. It warns, naming the months reloaded since the
+    save timestamp: "{months} have been reloaded since this session was
+    saved". This needs a load date per month or per row from the backend
+    (TBC). Saved forecasts are never refitted on restore.
+15. Rows contract: the backend returns rows shaped as the Excel parser
+    produces them today (s.8 of
+    reports/2026-11-05-0830-bigquery-data-contract.md). That means the same
+    header names in a fixed order, numbers as numbers, and months as yyyy-MM
+    text. Rows are leaf rows only: no dimension ever holds the literal All,
+    and no dimension is ever NULL. The front end converts a NULL to an absent
+    key at one seam function, for data rows only. Session rows keep '' as the
+    save writes it (s.8 of
+    reports/2026-11-05-0830-bigquery-data-contract.md). If a pull contains a
+    NULL dimension or an All anyway, the app refuses it and states how many
+    rows were affected. This keeps bottom-up with read-time derivation
+    (EXPECTED.md:1629) and the write-time-aggregation rejection
+    (EXPECTED.md:1637).
+16. Errors: one error format for every endpoint (a code, a user message, a
+    detail for logs), and a stated timeout per endpoint.
+17. Identity: Identity-Aware Proxy in front of Cloud Run supplies the user
+    identity used by clauses 6–10.
+18. Configuration: the table name, the column mapping and the clause-4
+    thresholds are held in backend configuration and served to the front
+    end. The front end never names the table.
+19. Test environments: both a non-production BigQuery dataset with masked or
+    synthetic data (for Jon's walks) and a mock backend in the repo serving
+    the existing fixtures (so the suite and guard-traps run offline as
+    today).
+20. Old Excel saves are not migrated; they are test data.
+21. Inventory defects: the first-row-only column list (s.2 of
+    reports/2026-11-05-0830-bigquery-data-contract.md, Applied_Flow_Rate_%
+    dropped) is fixed in this build. The duplicate actuals append is designed
+    out by clause 12. The "7 sheets" dialog copy goes with clause 11. The
+    west-of-UTC month shift (s.2 of
+    reports/2026-11-05-0830-bigquery-data-contract.md) and the four
+    blank-dimension readings (s.2 of
+    reports/2026-11-05-0830-bigquery-data-contract.md) wait until after this
+    build.
+22. OPEN: restoring the forecast settings (uncertainty, expansion rate,
+    confidence horizon, forecast length), which are written but never read
+    back (s.4.11 of reports/2026-11-05-0830-bigquery-data-contract.md). To be
+    recorded when Jon answers.
+23. TBC with the backend team: the table schema (clause 15), the per-month or
+    per-row load date (clause 14), the endpoint set, how large pulls pass the
+    Cloud Run 32 MiB response limit, whether the front end and the API share
+    one origin, and real row volumes for one market's full table and a
+    typical selection.
