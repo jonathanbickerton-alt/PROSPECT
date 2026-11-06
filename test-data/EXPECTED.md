@@ -10907,3 +10907,33 @@ Resolutions (Jon, 2026-11-06):
   (forecasting.ts:2613, :2893). A month with data is one where the cohort's
   Inflow, Outflow or Retention volume is non-zero (App:2905,
   forecasting.worker.ts:503); gaps are not filled.
+
+Resolutions, second set (Jon, 2026-11-06):
+
+- Clause 10, team saves: a user deletes only the versions they saved. Only
+  the user who created a save can delete it whole. This supersedes the OPEN
+  line for clause 10 in the first resolutions block.
+- Clause 15: the source table has one row per cohort, month and flow at leaf
+  level, as in today's Excel files. Its column order is fixed. Names, types
+  and nullability are pending the data engineer's table build.
+- Clause 12: history and actuals are in the same table, distinguished by
+  month.
+- Clause 14: the rolling load restates the latest three calendar months. It
+  runs monthly, after each month closes. Whether a per-month or per-row load
+  date exists is still TBC.
+- Renames: dimension values may be renamed, though this is very unlikely. A
+  restore therefore checks every saved cohort against the re-pulled rows and
+  names any that match none: "{n} saved cohorts have no matching data —
+  dimension values may have changed."
+- Clause 6: the Advanced Analytics team accepts the save design: fixed
+  tables, one per saved sheet, rows tagged with session ID, save name, save
+  timestamp and user, plus a JSON payload.
+- Clause 23 now reads, as still TBC: the table's names, types and
+  nullability; the month column's type; NUMERIC or FLOAT64; the load date;
+  real row volumes; the non-production dataset; the endpoint set; the row
+  format returned; how large pulls pass the 32 MiB response limit; the
+  pre-check's contents and latency; cascading filters; a size limit per
+  save; who counts as a team; retention of versions and drafts; the error
+  format and timeouts; Identity-Aware Proxy; whether the front end and the
+  API share one origin; where configuration lives; and an API description
+  for an in-repo mock.
